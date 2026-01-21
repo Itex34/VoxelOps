@@ -58,3 +58,12 @@
 49	3051	7907102828339574	VoxelOps/CMakeFiles/VoxelOps.dir/graphics/Lighting.cpp.obj	a0be98216aeaeaee
 3052	4127	7907102858358776	VoxelOps/VoxelOps.exe	b850b0cc3ba92acc
 44	1327	7907103745350473	VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/voxels/Voxel.cpp.obj	4a0eaf23fa9a014b
+45	4407	7907168135139684	VoxelOps/CMakeFiles/VoxelOps.dir/graphics/Lighting.cpp.obj	a0be98216aeaeaee
+38	4588	7907168135062578	VoxelOps/CMakeFiles/VoxelOps.dir/graphics/ChunkMeshBuilder.cpp.obj	4c6f2b4304897091
+4589	6022	7907168180581606	VoxelOps/VoxelOps.exe	b850b0cc3ba92acc
+119	6081	7907169379444938	VoxelOps/CMakeFiles/VoxelOps.dir/physics/RayManager.cpp.obj	66cb1acdf80b4d81
+105	6620	7907169379315288	VoxelOps/CMakeFiles/VoxelOps.dir/input/InputCallbacks.cpp.obj	a50219e5a8bed3b7
+99	6874	7907169379255443	VoxelOps/CMakeFiles/VoxelOps.dir/player/Player.cpp.obj	c3df11da2997b864
+110	8304	7907169379365153	VoxelOps/CMakeFiles/VoxelOps.dir/graphics/ChunkManager.cpp.obj	1bfab772b57b007f
+87	8421	7907169379135763	VoxelOps/CMakeFiles/VoxelOps.dir/main.cpp.obj	259e6d8a20177c42
+8422	9702	7907169462489240	VoxelOps/VoxelOps.exe	b850b0cc3ba92acc
