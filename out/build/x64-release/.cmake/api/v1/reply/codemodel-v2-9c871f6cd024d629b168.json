@@ -1,0 +1,140 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"childIndexes" : 
+					[
+						1,
+						2,
+						3
+					],
+					"jsonFile" : "directory-.-Release-d0094a50bb2071803777.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.8"
+					},
+					"projectIndex" : 0,
+					"source" : "."
+				},
+				{
+					"build" : "VoxelOps",
+					"jsonFile" : "directory-VoxelOps-Release-e86916a29df59a6b1353.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.20"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "VoxelOps",
+					"targetIndexes" : 
+					[
+						1
+					]
+				},
+				{
+					"build" : "VoxelOps-Headless",
+					"jsonFile" : "directory-VoxelOps-Headless-Release-755629be883481a76bfb.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.20"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 1,
+					"source" : "VoxelOps-Headless",
+					"targetIndexes" : 
+					[
+						2
+					]
+				},
+				{
+					"build" : "Shared",
+					"jsonFile" : "directory-Shared-Release-4bbb585c21f50946eff6.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.8"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "Shared",
+					"targetIndexes" : 
+					[
+						0
+					]
+				}
+			],
+			"name" : "Release",
+			"projects" : 
+			[
+				{
+					"childIndexes" : 
+					[
+						1
+					],
+					"directoryIndexes" : 
+					[
+						0,
+						1,
+						3
+					],
+					"name" : "VoxelOps",
+					"targetIndexes" : 
+					[
+						0,
+						1
+					]
+				},
+				{
+					"directoryIndexes" : 
+					[
+						2
+					],
+					"name" : "VoxelOps-Headless",
+					"parentIndex" : 0,
+					"targetIndexes" : 
+					[
+						2
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 3,
+					"id" : "Shared::@a5a0faf7a4ef51a63049",
+					"jsonFile" : "target-Shared-Release-41a4cf6586ae3743b7c7.json",
+					"name" : "Shared",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 1,
+					"id" : "VoxelOps::@aaec958be361b57fd66b",
+					"jsonFile" : "target-VoxelOps-Release-9926b339634d8bc6f6f1.json",
+					"name" : "VoxelOps",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "VoxelOps-Headless::@1828f87ff132708c0ee3",
+					"jsonFile" : "target-VoxelOps-Headless-Release-3f4a94006bf05872975c.json",
+					"name" : "VoxelOps-Headless",
+					"projectIndex" : 1
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "C:/Users/Sophie/source/repos/VoxelOps/out/build/x64-release",
+		"source" : "C:/Users/Sophie/source/repos/VoxelOps"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 8
+	}
+}

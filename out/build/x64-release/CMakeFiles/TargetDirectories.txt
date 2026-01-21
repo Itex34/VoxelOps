@@ -1,0 +1,11 @@
+C:/Users/Sophie/source/repos/VoxelOps/out/build/x64-release/CMakeFiles/edit_cache.dir
+C:/Users/Sophie/source/repos/VoxelOps/out/build/x64-release/CMakeFiles/rebuild_cache.dir
+C:/Users/Sophie/source/repos/VoxelOps/out/build/x64-release/VoxelOps/CMakeFiles/VoxelOps.dir
+C:/Users/Sophie/source/repos/VoxelOps/out/build/x64-release/VoxelOps/CMakeFiles/edit_cache.dir
+C:/Users/Sophie/source/repos/VoxelOps/out/build/x64-release/VoxelOps/CMakeFiles/rebuild_cache.dir
+C:/Users/Sophie/source/repos/VoxelOps/out/build/x64-release/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir
+C:/Users/Sophie/source/repos/VoxelOps/out/build/x64-release/VoxelOps-Headless/CMakeFiles/edit_cache.dir
+C:/Users/Sophie/source/repos/VoxelOps/out/build/x64-release/VoxelOps-Headless/CMakeFiles/rebuild_cache.dir
+C:/Users/Sophie/source/repos/VoxelOps/out/build/x64-release/Shared/CMakeFiles/Shared.dir
+C:/Users/Sophie/source/repos/VoxelOps/out/build/x64-release/Shared/CMakeFiles/edit_cache.dir
+C:/Users/Sophie/source/repos/VoxelOps/out/build/x64-release/Shared/CMakeFiles/rebuild_cache.dir
