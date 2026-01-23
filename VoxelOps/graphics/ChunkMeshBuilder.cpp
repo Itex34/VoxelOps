@@ -338,10 +338,6 @@ ChunkMesh ChunkMeshBuilder::buildChunkMesh(
                     v[3] = v[0] + dv;                  // (0,1)
 
 
-                    if (c.sign < 0) {
-                        origin[d] -= 1;
-                    }
-
                     int face =
                         (d == 0) ? (c.sign > 0 ? 0 : 1) :
                         (d == 1) ? (c.sign > 0 ? 2 : 3) :
