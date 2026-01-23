@@ -491,7 +491,7 @@ int main(int argc, char** argv) {
 
         chunkShader.setInt("texture1", 0);
 
-
+        glPolygonMode(GL_FRONT_AND_BACK, toggleWireframe ? GL_LINE : GL_FILL); 
 
         chunkManager.renderChunks(chunkShader, frustum, player, player.renderDistance);
         

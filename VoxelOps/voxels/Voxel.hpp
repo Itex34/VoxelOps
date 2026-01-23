@@ -17,6 +17,8 @@ extern const glm::ivec3 faceAxisU[6];
 extern const glm::ivec3 faceAxisV[6];
 extern const int FACE_CORNER_SIGNS[6][4][2];
 
+extern const std::array<glm::vec2, 4> baseUVs;
+extern const uint8_t uvRemap[6][4];
 
 
 enum class BlockID : uint8_t {

@@ -24,18 +24,13 @@ public:
 
 
 
-    // Compute a single corner AO on demand (world corner coordinate)
-    float computeCornerAO(
-        const glm::ivec3& cornerWorld,
-        int face,
-        int corner,
-        BlockGetter getBlock
+
+
+    void prepareChunkAO(
+        const glm::ivec3& chunkPos,
+        BlockGetter getBlock,
+        std::vector<uint8_t>& aoBuffer
     ) const;
-    
-
-
-
-
 
 
     void prepareChunkSunlight(

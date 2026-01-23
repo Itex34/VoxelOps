@@ -129,12 +129,34 @@ const int FACE_CORNER_SIGNS[6][4][2] = {
 
 
 
-static const std::array<glm::vec2, 4> baseUVs = {
+const std::array<glm::vec2, 4> baseUVs = {
     glm::vec2(0.0f, 0.0f),
     glm::vec2(1.0f, 0.0f),
     glm::vec2(1.0f, 1.0f),
     glm::vec2(0.0f, 1.0f)
 };
+
+
+
+
+const uint8_t uvRemap[6][4] = {
+    // +X
+    { 1, 2, 3, 0 },
+    // -X
+    { 0, 3, 2, 1 },
+
+    // +Y
+    { 0, 1, 2, 3 },
+    // -Y
+    { 3, 2, 1, 0 },
+
+    // +Z
+    { 0, 1, 2, 3 },
+    // -Z
+    { 1, 0, 3, 2 }
+};
+
+
 
 std::array<glm::vec2, 4> getTexCoordsForFace(BlockID blockID, int face, const TextureAtlas& atlas) {
     const auto& block = blockTypes.at(blockID);

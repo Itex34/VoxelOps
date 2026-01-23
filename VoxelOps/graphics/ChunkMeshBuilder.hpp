@@ -14,8 +14,8 @@ struct GreedyCell {
 	int sign = 0; // +1 or -1
 	BlockID block = BlockID::Air;
 	uint8_t matId = 0;
-	uint8_t ao[4] = { 15,15,15,15 };
-	uint8_t sun[4] = { 15,15,15,15 };
+	uint8_t ao[4] = { 0,0,0,0 };
+	uint8_t sun[4] = { 0,0,0,0 };
 };
 
 

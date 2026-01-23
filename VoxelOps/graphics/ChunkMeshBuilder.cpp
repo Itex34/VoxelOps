@@ -136,10 +136,15 @@ ChunkMesh ChunkMeshBuilder::buildChunkMesh(
     // ------------------------------------------------------------
     Lighting lighting(CHUNK_SIZE);
     std::vector<float> cornerSun;
+    std::vector<uint8_t> cornerAO;
 
 
     if (enableShadows) {
         lighting.prepareChunkSunlight(chunk, chunkPos, getBlock, cornerSun, 1.0f);
+    }
+
+    if (enableAO) { 
+        lighting.prepareChunkAO(chunkPos, getBlock, cornerAO);
     }
 
     const float chunkSizeF = float(CHUNK_SIZE);
@@ -192,6 +197,7 @@ ChunkMesh ChunkMeshBuilder::buildChunkMesh(
                     BlockID b = getBlock(wb);
 
 
+
                     // If both are solid or both are air → no face
                     if ((a != BlockID::Air) == (b != BlockID::Air))
                         continue;
@@ -202,6 +208,9 @@ ChunkMesh ChunkMeshBuilder::buildChunkMesh(
                     GreedyCell& c = mask[j * CHUNK_SIZE + i];
                     c.valid = true;
                     c.sign = (a != BlockID::Air) ? +1 : -1;
+
+
+
                     c.block = (a != BlockID::Air) ? a : b;
 
                     // Face index
@@ -225,47 +234,42 @@ ChunkMesh ChunkMeshBuilder::buildChunkMesh(
                     // AO / Sunlight
                     if (enableAO || enableShadows) {
 
-                        glm::ivec3 origin(0);
-                        origin[u] = i;
-                        origin[v] = j;
-                        origin[d] = s;
+
+                        // Pick the correct solid voxel based on sign so lighting is sampled from
+                        // the same side of the plane that produced the geometry.
+                        glm::ivec3 solid;
+                        if (c.sign > 0) {
+                            // 'a' (pa) was solid → face is on the +normal side of pa (plane at pa + 1)
+                            solid = pa;
+                            solid[d] += 1;
+                        }
+                        else {
+                            // 'b' (pb) was solid → face is on the -normal side of pb (plane at pb)
+                            solid = pb;
+                            // no +1 offset here
+                        }
+
 
                         glm::ivec3 du_i = eU;
                         glm::ivec3 dv_i = eV;
 
+                        // These corners now belong unambiguously to the solid voxel face
                         glm::ivec3 corners[4] = {
-                            origin,                 // v0
-                            origin + du_i,          // v1
-                            origin + du_i + dv_i,   // v2
-                            origin + dv_i           // v3
+                            solid,
+                            solid + du_i,
+                            solid + du_i + dv_i,
+                            solid + dv_i
                         };
 
+
+         
                         for (int k = 0; k < 4; ++k) {
-
                             if (enableAO) {
-
-
-                                glm::ivec3 solidLocal = origin;
-                                solidLocal[d] += (c.sign > 0 ? -1 : 0); // shift to solid voxel
-
-                                glm::ivec3 solidVoxel = chunkPos * CHUNK_SIZE + solidLocal;
-
-
-                                float ao = lighting.computeCornerAO(
-                                    solidVoxel, // world-space solid voxel
-                                    face,            // face index 0..5
-                                    k,               // corner index 0..3
-                                    getBlock
-                                );
-
-
-
-
-
-
-
-
-                                c.ao[k] = uint8_t(ao * 15.f + 0.5f);
+                                int ci = lighting.cornerIndexPadded(
+                                    corners[k].x,
+                                    corners[k].y,
+                                    corners[k].z);
+                                c.ao[k] = cornerAO[ci]; 
                             }
 
                             if (enableShadows) {
@@ -273,10 +277,10 @@ ChunkMesh ChunkMeshBuilder::buildChunkMesh(
                                     corners[k].x,
                                     corners[k].y,
                                     corners[k].z);
-
                                 c.sun[k] = uint8_t(cornerSun[ci] * 15.f + 0.5f);
                             }
                         }
+
                     }
 
 
@@ -334,21 +338,30 @@ ChunkMesh ChunkMeshBuilder::buildChunkMesh(
                     v[3] = v[0] + dv;                  // (0,1)
 
 
+                    if (c.sign < 0) {
+                        origin[d] -= 1;
+                    }
+
                     int face =
                         (d == 0) ? (c.sign > 0 ? 0 : 1) :
                         (d == 1) ? (c.sign > 0 ? 2 : 3) :
                         (c.sign > 0 ? 4 : 5);
 
+
+
                     for (int k = 0; k < 4; ++k) {
+                        uint8_t uvCorner = uvRemap[face][k];
+
                         vertices.push_back(packVoxelVertex(
                             v[k],
                             chunkSizeF,
                             face,
-                            k,                 // canonical corner index
+                            uvCorner,
                             c.matId,
                             c.ao[k] / 15.f,
                             c.sun[k] / 15.f
                         ));
+
                     }
 
 
