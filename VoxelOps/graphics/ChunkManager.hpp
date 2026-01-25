@@ -55,7 +55,7 @@ constexpr int WORLD_SIZE_Y = (WORLD_MAX_Y - WORLD_MIN_Y + 1);
 constexpr int REGION_SIZE = 8;
 
 // Bytes per region (tune based on your needs)
-constexpr size_t REGION_VERTEX_BYTES = 4 * 1024 * 1024; // 16 MB
+constexpr size_t REGION_VERTEX_BYTES = 3 * 1024 * 1024; // 16 MB
 constexpr size_t REGION_INDEX_BYTES = 2 * 1024 * 1024; // 8 MB
 
 

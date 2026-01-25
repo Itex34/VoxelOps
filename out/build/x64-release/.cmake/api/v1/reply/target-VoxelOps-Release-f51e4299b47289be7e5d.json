@@ -57,24 +57,6 @@
 			{
 				"command" : 2,
 				"file" : 1,
-				"line" : 46,
-				"parent" : 0
-			},
-			{
-				"command" : 2,
-				"file" : 1,
-				"line" : 47,
-				"parent" : 0
-			},
-			{
-				"command" : 2,
-				"file" : 1,
-				"line" : 48,
-				"parent" : 0
-			},
-			{
-				"command" : 2,
-				"file" : 1,
 				"line" : 49,
 				"parent" : 0
 			},
@@ -94,6 +76,24 @@
 				"command" : 2,
 				"file" : 1,
 				"line" : 52,
+				"parent" : 0
+			},
+			{
+				"command" : 2,
+				"file" : 1,
+				"line" : 53,
+				"parent" : 0
+			},
+			{
+				"command" : 2,
+				"file" : 1,
+				"line" : 54,
+				"parent" : 0
+			},
+			{
+				"command" : 2,
+				"file" : 1,
+				"line" : 55,
 				"parent" : 0
 			},
 			{
@@ -132,7 +132,7 @@
 			{
 				"command" : 6,
 				"file" : 1,
-				"line" : 40,
+				"line" : 43,
 				"parent" : 0
 			},
 			{
@@ -186,7 +186,7 @@
 			{
 				"command" : 6,
 				"file" : 1,
-				"line" : 43,
+				"line" : 46,
 				"parent" : 0
 			},
 			{
@@ -272,19 +272,19 @@
 			{
 				"command" : 8,
 				"file" : 1,
-				"line" : 82,
+				"line" : 85,
 				"parent" : 0
 			},
 			{
 				"command" : 9,
 				"file" : 1,
-				"line" : 62,
+				"line" : 65,
 				"parent" : 0
 			},
 			{
 				"command" : 10,
 				"file" : 1,
-				"line" : 56,
+				"line" : 59,
 				"parent" : 0
 			}
 		]
@@ -392,7 +392,8 @@
 				21,
 				22,
 				23,
-				24
+				24,
+				25
 			]
 		}
 	],
@@ -582,7 +583,8 @@
 				21,
 				22,
 				23,
-				24
+				24,
+				25
 			]
 		},
 		{
@@ -742,6 +744,12 @@
 			"backtrace" : 2,
 			"compileGroupIndex" : 0,
 			"path" : "VoxelOps/misc/ThreadPool.cpp",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 2,
+			"compileGroupIndex" : 0,
+			"path" : "VoxelOps/graphics/RegionMeshBuffer.cpp",
 			"sourceGroupIndex" : 0
 		}
 	],

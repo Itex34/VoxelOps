@@ -22,6 +22,13 @@ public:
     void destroyChunkMesh(ChunkMesh& mesh);
     void drawChunkMesh(const ChunkMesh& mesh) const;
 
+    void uploadSubData(
+        const ChunkMesh& mesh,
+        const std::vector<VoxelVertex>& vertices,
+        const std::vector<uint16_t>& indices
+    );
+
+	void orphanBuffers();
 private:
     GLuint vao = 0;
     GLuint vbo = 0;

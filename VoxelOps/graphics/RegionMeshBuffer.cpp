@@ -113,6 +113,9 @@ void RegionMeshBuffer::freeIndices(BufferRange range)
     freeAndMerge(freeIndexRanges, range);
 }
 
+
+
+
 ChunkMesh RegionMeshBuffer::createChunkMesh(
     const std::vector<VoxelVertex>& vertices,
     const std::vector<uint16_t>& indices)
@@ -120,37 +123,27 @@ ChunkMesh RegionMeshBuffer::createChunkMesh(
     ChunkMesh mesh;
 
     if (!allocVertices(vertices.size(), mesh.vertexRange)) {
-        std::cerr << "[RegionMeshBuffer] vertex alloc failed\n";
+        mesh.status = ChunkMeshStatus::OutOfMemory;
         return mesh;
     }
 
     if (!allocIndices(indices.size(), mesh.indexRange)) {
         freeVertices(mesh.vertexRange);
-        std::cerr << "[RegionMeshBuffer] index alloc failed\n";
+        mesh.status = ChunkMeshStatus::OutOfMemory;
         return mesh;
     }
 
     mesh.indexCount = (uint32_t)indices.size();
     mesh.valid = true;
+    mesh.status = ChunkMeshStatus::Ok;
 
-    glBindVertexArray(vao);
-
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferSubData(
-        GL_ARRAY_BUFFER,
-        mesh.vertexRange.offset * sizeof(VoxelVertex),
-        mesh.vertexRange.count * sizeof(VoxelVertex),
-        vertices.data());
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    glBufferSubData(
-        GL_ELEMENT_ARRAY_BUFFER,
-        mesh.indexRange.offset * sizeof(uint16_t),
-        mesh.indexRange.count * sizeof(uint16_t),
-        indices.data());
-
+    uploadSubData(mesh, vertices, indices);
     return mesh;
 }
+
+
+
+
 
 void RegionMeshBuffer::destroyChunkMesh(ChunkMesh& mesh)
 {
@@ -172,5 +165,32 @@ void RegionMeshBuffer::drawChunkMesh(const ChunkMesh& mesh) const
         GL_UNSIGNED_SHORT,
         (void*)(mesh.indexRange.offset * sizeof(uint16_t)),
         mesh.vertexRange.offset
+    );
+}
+
+
+
+
+void RegionMeshBuffer::uploadSubData(
+    const ChunkMesh& mesh,
+    const std::vector<VoxelVertex>& vertices,
+    const std::vector<uint16_t>& indices)
+{
+    glBindVertexArray(vao);
+
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferSubData(
+        GL_ARRAY_BUFFER,
+        mesh.vertexRange.offset * sizeof(VoxelVertex),
+        vertices.size() * sizeof(VoxelVertex),
+        vertices.data()
+    );
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferSubData(
+        GL_ELEMENT_ARRAY_BUFFER,
+        mesh.indexRange.offset * sizeof(uint16_t),
+        indices.size() * sizeof(uint16_t),
+        indices.data()
     );
 }

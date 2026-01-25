@@ -81,10 +81,17 @@ struct BufferRange {
     size_t count = 0;
 };
 
+
+enum class ChunkMeshStatus {
+    Ok,
+    OutOfMemory
+};
+
 struct ChunkMesh {
     BufferRange vertexRange;
     BufferRange indexRange;
     uint32_t indexCount = 0;
     bool valid = false;
+    ChunkMeshStatus status = ChunkMeshStatus::Ok;
 };
 

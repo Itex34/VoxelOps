@@ -1029,23 +1029,31 @@ void ChunkManager::uploadChunkMesh(
     const std::vector<VoxelVertex>& vertices,
     const std::vector<uint16_t>& indices)
 {
-    if (vertices.empty() || indices.empty()) return;
-
     Region& region = getOrCreateRegion(chunkPos);
 
-    // Remove old mesh if exists
-    auto meshIt = region.chunks.find(chunkPos);
-    if (meshIt != region.chunks.end()) {
-        region.gpu->destroyChunkMesh(meshIt->second);
-        region.chunks.erase(meshIt);
+    // remove old mesh if present
+    auto old = region.chunks.find(chunkPos);
+    if (old != region.chunks.end()) {
+        region.gpu->destroyChunkMesh(old->second);
+        region.chunks.erase(old);
     }
 
-    // Create new mesh
     ChunkMesh mesh = region.gpu->createChunkMesh(vertices, indices);
-    if (mesh.valid) {
-        region.chunks[chunkPos] = mesh;
+
+    if (mesh.status == ChunkMeshStatus::OutOfMemory) {
+        // rebuild region once
+        rebuildRegion(chunkToRegionPos(chunkPos));
+
+        mesh = region.gpu->createChunkMesh(vertices, indices);
+        if (!mesh.valid) {
+            std::cerr << "[FATAL] Region rebuild failed permanently\n";
+            return;
+        }
     }
+
+    region.chunks.emplace(chunkPos, mesh);
 }
+
 
 
 
@@ -1075,7 +1083,7 @@ void ChunkManager::removeChunkMesh(const glm::ivec3& chunkPos) {
 
 
 
-/*
+
 void ChunkManager::rebuildRegion(const glm::ivec3& regionPos)
 {
     auto it = regions.find(regionPos);
@@ -1093,23 +1101,20 @@ void ChunkManager::rebuildRegion(const glm::ivec3& regionPos)
     for (auto& [chunkPos, oldMesh] : oldRegion.chunks) {
         Chunk& chunk = chunkMap.at(chunkPos);
 
-        std::vector<VoxelVertex> vertices;
-        std::vector<uint16_t> indices;
-
-        builder.buildChunkMeshCPU(
+        auto built = builder.buildChunkMesh(
             chunk,
             chunkPos,
             atlas,
-            [&](const glm::ivec3& wp) {
-                return getBlockGlobal(wp.x, wp.y, wp.z);
+            [&](const glm::ivec3& worldPos) -> BlockID {
+                return getBlockGlobal(worldPos.x, worldPos.y, worldPos.z);
             },
             enableAO,
-            enableShadows,
-            vertices,
-            indices
+            enableShadows
         );
 
-        ChunkMesh mesh = newGpu->createChunkMesh(vertices, indices);
+
+
+        ChunkMesh mesh = newGpu->createChunkMesh(built.vertices, built.indices);
         if (!mesh.valid) {
             std::cerr << "[FATAL] Region rebuild failed\n";
             return;
@@ -1121,4 +1126,25 @@ void ChunkManager::rebuildRegion(const glm::ivec3& regionPos)
     oldRegion.gpu = std::move(newGpu);
     oldRegion.chunks = std::move(newMeshes);
 }
-*/
+
+
+
+
+void RegionMeshBuffer::orphanBuffers()
+{
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(
+        GL_ARRAY_BUFFER,
+        vertexCapacity * sizeof(VoxelVertex),
+        nullptr,
+        GL_DYNAMIC_DRAW
+    );
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferData(
+        GL_ELEMENT_ARRAY_BUFFER,
+        indexCapacity * sizeof(uint16_t),
+        nullptr,
+        GL_DYNAMIC_DRAW
+    );
+}
