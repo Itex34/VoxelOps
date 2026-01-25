@@ -4,6 +4,7 @@
 
 
 #include "Model.hpp"
+#include "Mesh.hpp"
 
 
 constexpr int FACE_VERTICES = 6; // two triangles
@@ -16,43 +17,58 @@ constexpr int MAX_INDICES_PER_CHUNK = MAX_FACES_PER_CHUNK * FACE_INDICES;
 
 constexpr int MAX_CHUNKS_LOADED = 1024;
 
-constexpr int MAX_VERTEX_BUFFER_BYTES =
-MAX_VERTICES_PER_CHUNK * MAX_CHUNKS_LOADED * 8; //size of voxel vertex is 8
+constexpr int MAX_VERTEX_BUFFER_BYTES = 256 * 1024 * 1024;
 
-constexpr int MAX_INDEX_BUFFER_BYTES =
-MAX_INDICES_PER_CHUNK * MAX_CHUNKS_LOADED * sizeof(unsigned short);
+
+
+//MAX_VERTICES_PER_CHUNK * MAX_CHUNKS_LOADED * 8;
+
+constexpr int MAX_INDEX_BUFFER_BYTES = 128 * 1024 * 1024;
+
+
+ 
+// MAX_INDICES_PER_CHUNK * MAX_CHUNKS_LOADED * sizeof(unsigned short);
 
 struct VoxelVertex;
 
+
+
+
+
+
+struct GpuMeshStats {
+	size_t totalVertexCapacity;
+	size_t totalIndexCapacity;
+
+	size_t usedVertexCount;
+	size_t usedIndexCount;
+
+	size_t freeVertexCount;
+	size_t freeIndexCount;
+
+	size_t largestFreeVertexBlock;
+	size_t largestFreeIndexBlock;
+};
+
+
+struct BufferRange;
+struct ChunkMesh;
+
+
 class Renderer {
 public:
+	Renderer() = default;
+
 	GLuint loadTexture(const char* path);
-	void initWorldBuffers();
 
-	void allocateMesh(
-		size_t vertexCount, 
-		size_t indexCount,
-		size_t& outVertexOffset,
-		size_t& outIndexOffset
-	);
+	void beginFrame();
+	void endFrame();
 
-	GLuint worldVAO;
-	GLuint worldVBO;
-	GLuint worldEBO;
+	void drawMesh(const ChunkMesh& mesh);
 
-	GLuint indirectVBO;
-	GLuint modelSSBO;
-	GLuint instanceID_SSBO;
-
-	GLuint chunkBasesSSBO;
-
-	size_t currentVertexOffset = 0;
-	size_t currentIndexOffset = 0;
 private:
-
-
-
-};	
+	// Renderer does NOT own VAOs anymore
+};
 
 
 

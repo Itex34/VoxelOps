@@ -117,9 +117,7 @@ inline VoxelVertex packVoxelVertex(
 
 
 
-
-ChunkMesh ChunkMeshBuilder::buildChunkMesh(
-    Renderer& renderer,
+BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
     const Chunk& chunk,
     const glm::ivec3& chunkPos,
     const TextureAtlas& atlas,
@@ -393,7 +391,8 @@ ChunkMesh ChunkMeshBuilder::buildChunkMesh(
         }
     }
 
-    return ChunkMesh(renderer, std::move(vertices), std::move(indices));
+    return { std::move(vertices), std::move(indices) };
+
 }
 
 

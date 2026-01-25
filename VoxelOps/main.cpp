@@ -80,8 +80,6 @@ int main(int argc, char** argv) {
     Renderer renderer;
 
 
-    renderer.initWorldBuffers();
-
 
     ChunkManager chunkManager(renderer);
 

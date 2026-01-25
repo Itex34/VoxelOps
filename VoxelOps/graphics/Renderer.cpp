@@ -59,97 +59,19 @@ GLuint Renderer::loadTexture(const char* path) {
 }
 
 
-void Renderer::initWorldBuffers()
+
+void Renderer::beginFrame()
 {
-    // ==========================
-    // 1. VAO WITH WORLD GEOMETRY
-    // ==========================
-    glGenVertexArrays(1, &worldVAO);
-    glBindVertexArray(worldVAO);
-
-    // ---- VERTEX BUFFER ----
-    glGenBuffers(1, &worldVBO);
-    glBindBuffer(GL_ARRAY_BUFFER, worldVBO);
-    glBufferData(GL_ARRAY_BUFFER,
-        MAX_VERTEX_BUFFER_BYTES,
-        nullptr,
-        GL_STATIC_DRAW);
-
-    // ---- INDEX BUFFER ----
-    glGenBuffers(1, &worldEBO);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, worldEBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-        MAX_INDEX_BUFFER_BYTES,
-        nullptr,
-        GL_STATIC_DRAW);
-
-    // ---- VERTEX ATTRIBUTES ----
-    glEnableVertexAttribArray(0);
-    glVertexAttribIPointer(0, 1, GL_UNSIGNED_INT,
-        sizeof(VoxelVertex),
-        (void*)offsetof(VoxelVertex, low));
-
-    glEnableVertexAttribArray(1);
-    glVertexAttribIPointer(1, 1, GL_UNSIGNED_INT,
-        sizeof(VoxelVertex),
-        (void*)offsetof(VoxelVertex, high));
-
-
-
-    glBindVertexArray(0);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-
-
-
-
-
-
-
-void Renderer::allocateMesh(size_t vertexCount, size_t indexCount,
-    size_t& outVertexOffset, size_t& outIndexOffset)
+void Renderer::endFrame()
 {
-    const size_t vertexBytesReq = vertexCount * sizeof(VoxelVertex);
-    const size_t indexBytesReq = indexCount * sizeof(unsigned short);
-
-    const size_t vertexOffsetBytes = currentVertexOffset * sizeof(VoxelVertex);
-    const size_t indexOffsetBytes = currentIndexOffset * sizeof(unsigned short);
-
-    //std::cout << "[allocateMesh] curV=" << currentVertexOffset
-    //    << " curI=" << currentIndexOffset
-    //    << " reqV=" << vertexCount << " (" << vertexBytesReq << " bytes)"
-    //    << " reqI=" << indexCount << " (" << indexBytesReq << " bytes)"
-    //    << " MAX_VERTEX_BUFFER_BYTES=" << MAX_VERTEX_BUFFER_BYTES
-    //    << " MAX_INDEX_BUFFER_BYTES=" << MAX_INDEX_BUFFER_BYTES
-    //    << std::endl;
-
-    // Check overflow for vertex buffer
-    if (vertexOffsetBytes + vertexBytesReq > (size_t)MAX_VERTEX_BUFFER_BYTES) {
-        std::cerr << "[allocateMesh] ERROR: vertex buffer overflow. "
-            << "required end = " << (vertexOffsetBytes + vertexBytesReq)
-            << " > MAX_VERTEX_BUFFER_BYTES = " << MAX_VERTEX_BUFFER_BYTES << std::endl;
-        // fail fast: do not allocate; set out offsets to invalid/sentinel
-        outVertexOffset = SIZE_MAX;
-        outIndexOffset = SIZE_MAX;
-        return;
-    }
-
-    // Check overflow for index buffer
-    if (indexOffsetBytes + indexBytesReq > (size_t)MAX_INDEX_BUFFER_BYTES) {
-        std::cerr << "[allocateMesh] ERROR: index buffer overflow. "
-            << "required end = " << (indexOffsetBytes + indexBytesReq)
-            << " > MAX_INDEX_BUFFER_BYTES = " << MAX_INDEX_BUFFER_BYTES << std::endl;
-        outVertexOffset = SIZE_MAX;
-        outIndexOffset = SIZE_MAX;
-        return;
-    }
-
-    // All good, allocate
-    outVertexOffset = currentVertexOffset;
-    outIndexOffset = currentIndexOffset;
-
-    currentVertexOffset += vertexCount;
-    currentIndexOffset += indexCount;
-
+    // swap buffers (outside if handled elsewhere)
 }
 
+void Renderer::drawMesh(const ChunkMesh& mesh)
+{
+    // Intentionally empty: draw call is owned by RegionMeshBuffer
+    // Renderer should NOT know which VAO to bind
+}

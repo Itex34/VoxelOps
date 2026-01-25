@@ -18,6 +18,10 @@ struct GreedyCell {
 	uint8_t sun[4] = { 0,0,0,0 };
 };
 
+struct BuiltChunkMesh {
+	std::vector<VoxelVertex> vertices;
+	std::vector<uint16_t> indices;
+};
 
 
 class ChunkMeshBuilder {
@@ -69,7 +73,7 @@ public:
 
 	using BlockGetter = std::function<BlockID(const glm::ivec3& worldPos)>;
 
-	ChunkMesh buildChunkMesh(Renderer& renderer,
+	BuiltChunkMesh buildChunkMesh(
 		const Chunk& chunk,
 		const glm::ivec3& chunkPos,   // chunk coordinates (in chunks)
 		const TextureAtlas& atlas,

@@ -266,63 +266,76 @@ void ChunkManager::renderChunks(
        One-time atlas setup
        ============================ */
 
-    if (!m_tileInfoInitialized) { 
+    if (!m_tileInfoInitialized) {
 
-        for (size_t i = 0; i < 256; ++i) 
-            m_tileInfo[i] = glm::vec4(0, 0, 1, 1); 
+        for (size_t i = 0; i < 256; ++i)
+            m_tileInfo[i] = glm::vec4(0, 0, 1, 1);
 
-        for (const auto& [name, tilePos] : atlas.tileMap) { 
-            int tileX = tilePos.x; 
-            int tileY = tilePos.y; 
-            int index = tileY * TEXTURE_ATLAS_SIZE + tileX; 
+        for (const auto& [name, tilePos] : atlas.tileMap) {
+            int tileX = tilePos.x;
+            int tileY = tilePos.y;
+            int index = tileY * TEXTURE_ATLAS_SIZE + tileX;
 
-            auto [min, max] = atlas.getUVRect(name); 
-            m_tileInfo[index] = glm::vec4(min, max - min); 
-        } 
+            auto [min, max] = atlas.getUVRect(name);
+            m_tileInfo[index] = glm::vec4(min, max - min);
+        }
 
         shader.setVec4v("u_tileInfo", 256, m_tileInfo);
-        shader.setFloat("u_chunkSize", float(CHUNK_SIZE)); 
+        shader.setFloat("u_chunkSize", float(CHUNK_SIZE));
 
-        m_tileInfoInitialized = true; 
+        m_tileInfoInitialized = true;
     }
 
     /* ============================
        Rendering
        ============================ */
 
-    glBindVertexArray(renderer.worldVAO);
-
     const int maxDistSq = maxRenderDistance * maxRenderDistance;
 
-    for (const auto& [pos, mesh] : chunkMeshes)
+    for (auto& [regionPos, region] : regions)
     {
-        // ---- distance culling (no sqrt)
-        glm::ivec3 d = pos - playerChunkPos;
-        if (d.x * d.x + d.y * d.y + d.z * d.z > maxDistSq)
+        // ---- REGION FRUSTUM CULLING (GOES HERE)
+        glm::vec3 regionMin =
+            glm::vec3(regionPos * REGION_SIZE * CHUNK_SIZE);
+
+        glm::vec3 regionMax =
+            regionMin + glm::vec3(REGION_SIZE * CHUNK_SIZE);
+
+        if (!frustum.isBoxVisible(regionMin, regionMax))
             continue;
 
-        // ---- frustum culling (inline AABB)
-        glm::vec3 min = glm::vec3(pos * CHUNK_SIZE);
-        glm::vec3 max = min + glm::vec3(CHUNK_SIZE);
+        RegionMeshBuffer& gpu = *region.gpu;
 
-        if (!frustum.isBoxVisible(min, max))
-            continue;
+        // ---- CHUNK LOOP
+        for (const auto& [chunkPos, mesh] : region.chunks)
+        {
+            if (!mesh.valid)
+                continue;
 
-        // ---- model matrix (cheap)
-        glm::mat4 model(1.0f);
-        model[3] = glm::vec4(min, 1.0f);
+            // ---- distance culling (per-chunk)
+            glm::ivec3 d = chunkPos - playerChunkPos;
+            if (d.x * d.x + d.y * d.y + d.z * d.z > maxDistSq)
+                continue;
 
-        shader.setMat4("model", model);
+            // ---- chunk frustum culling (optional but fine)
+            glm::vec3 min = glm::vec3(chunkPos * CHUNK_SIZE);
+            glm::vec3 max = min + glm::vec3(CHUNK_SIZE);
 
-        glDrawElementsBaseVertex(
-            GL_TRIANGLES,
-            mesh.indexCount_,
-            GL_UNSIGNED_SHORT,
-            (void*)(mesh.indexOffset_ * sizeof(unsigned short)),
-            mesh.baseVertex_
-        );
+            if (!frustum.isBoxVisible(min, max))
+                continue;
+
+            // ---- model matrix
+            glm::mat4 model(1.0f);
+            model[3] = glm::vec4(min, 1.0f);
+            shader.setMat4("model", model);
+
+            // ---- draw
+            gpu.drawChunkMesh(mesh);
+        }
     }
+
 }
+
 
 
 
@@ -404,31 +417,31 @@ void ChunkManager::updateDirtyChunks() {
     for (auto& pos : toUpdate) {
         auto it = chunkMap.find(pos);
         if (it == chunkMap.end()) continue;
+
         Chunk& chunk = it->second;
 
-        chunkMeshes.insert_or_assign(
+        auto built = builder.buildChunkMesh(
+            chunk,
             pos,
-            builder.buildChunkMesh(
-                renderer,
-                chunk,
-                pos,
-                atlas,
-                [&](const glm::ivec3& worldPos) -> BlockID {
-                    return getBlockGlobal(worldPos.x, worldPos.y, worldPos.z);
-                },
-                enableAO,
-                enableShadows
-            )
+            atlas,
+            [&](const glm::ivec3& worldPos) -> BlockID {
+                return getBlockGlobal(worldPos.x, worldPos.y, worldPos.z);
+            },
+            enableAO,
+            enableShadows
         );
+
+        uploadChunkMesh(pos, built.vertices, built.indices);
 
         chunk.dirty = false;
 
-        // 2c. Mark 6-neighbor chunks dirty to rebuild faces properly
+        // Mark neighbors dirty
         static const glm::ivec3 dirs[6] = {
             { 1, 0, 0}, {-1, 0, 0},
             { 0, 1, 0}, { 0,-1, 0},
             { 0, 0, 1}, { 0, 0,-1}
         };
+
         for (auto d : dirs) {
             glm::ivec3 nPos = pos + d;
             if (inBounds(nPos)) {
@@ -439,6 +452,7 @@ void ChunkManager::updateDirtyChunks() {
         }
     }
 }
+
 
 
 
@@ -706,31 +720,48 @@ BlockID ChunkManager::getBlockSafe(Chunk& currentChunk, const glm::ivec3& pos) {
 
 
 
-void ChunkManager::debugMemoryEstimate() {
+void ChunkManager::debugMemoryEstimate()
+{
     std::cout << "---- MEMORY ESTIMATE ----\n";
-    std::cout << "Process resident memory (MB): " << getProcessMemoryMB() << "\n";
-    std::cout << "sizeof(Chunk): " << sizeof(Chunk) << " bytes\n";
-    std::cout << "chunkMap.size(): " << chunkMap.size() << "\n";
-    std::size_t estimatedChunkBytes = size_t(chunkMap.size()) * sizeof(Chunk);
-    std::cout << "estimated raw chunk bytes: " << (estimatedChunkBytes / (1024.0 * 1024.0)) << " MB\n";
 
-    std::cout << "chunkMeshes.size(): " << chunkMeshes.size() << "\n";
+    std::cout << "Process resident memory (MB): "
+        << getProcessMemoryMB() << "\n";
 
-    size_t totalCpuMeshBytes = 0;
-    size_t totalVerts = 0;
-    size_t totalIdx = 0;
-    for (auto& kv : chunkMeshes) {
-        const ChunkMesh& m = kv.second;
-        totalVerts += m.vertexCount();
-        totalIdx += m.indexCount();
-        totalCpuMeshBytes += m.cpuSideMemoryBytes();
-    }
+    std::cout << "sizeof(Chunk): "
+        << sizeof(Chunk) << " bytes\n";
 
-    std::cout << "total vertices (estimate): " << totalVerts << ", total indices: " << totalIdx << "\n";
-    std::cout << "total mesh CPU-side bytes (reported): " << (totalCpuMeshBytes / (1024.0 * 1024.0)) << " MB\n";
+    std::cout << "chunkMap.size(): "
+        << chunkMap.size() << "\n";
 
-    std::cout << "-------------------------\n";
+    double chunkMB =
+        chunkMap.size() * sizeof(Chunk) / (1024.0 * 1024.0);
+
+    std::cout << "estimated raw chunk bytes: "
+        << chunkMB << " MB\n";
+
+    std::cout << "chunkMeshes.size(): "
+        << chunkMeshes.size() << "\n";
+
+    //// GPU stats
+    //auto gpu = renderer.getGpuMeshStats();
+
+    //std::cout << "GPU vertices used: "
+    //    << gpu.usedVertexCount << " / "
+    //    << gpu.totalVertexCapacity << "\n";
+
+    //std::cout << "GPU indices used: "
+    //    << gpu.usedIndexCount << " / "
+    //    << gpu.totalIndexCapacity << "\n";
+
+    //std::cout << "largest free vertex block: "
+    //    << gpu.largestFreeVertexBlock << "\n";
+
+    //std::cout << "largest free index block: "
+    //    << gpu.largestFreeIndexBlock << "\n";
+
+    //std::cout << "-------------------------\n";
 }
+
 
 
 
@@ -765,6 +796,8 @@ void ChunkManager::playerBreakBlockAt(const glm::ivec3& blockCoords) {
             updateDirtyChunkAt(neighborChunk);
         }
     }
+
+    debugMemoryEstimate();
 }
 
 void ChunkManager::playerPlaceBlockAt(glm::ivec3 blockCoords, int faceNormal, BlockID blockType) {
@@ -913,27 +946,25 @@ void ChunkManager::playerPlaceBlockAt(glm::ivec3 blockCoords, int faceNormal, Bl
 void ChunkManager::updateDirtyChunkAt(const glm::ivec3& chunkPos) {
     auto it = chunkMap.find(chunkPos);
     if (it == chunkMap.end()) return;
+
     Chunk& chunk = it->second;
 
-
-    // --- Build mesh with the stable chunkID ---
-    chunkMeshes.insert_or_assign(
+    auto built = builder.buildChunkMesh(
+        chunk,
         chunkPos,
-        builder.buildChunkMesh(
-            renderer,
-            chunk,
-            chunkPos,
-            atlas,
-            [&](const glm::ivec3& worldPos) -> BlockID {
-                return getBlockGlobal(worldPos.x, worldPos.y, worldPos.z);
-            },
-            enableAO,
-            enableShadows
-        )
+        atlas,
+        [&](const glm::ivec3& worldPos) -> BlockID {
+            return getBlockGlobal(worldPos.x, worldPos.y, worldPos.z);
+        },
+        enableAO,
+        enableShadows
     );
+
+    uploadChunkMesh(chunkPos, built.vertices, built.indices);
 
     chunk.dirty = false;
 }
+
 
 
 
@@ -959,33 +990,135 @@ void ChunkManager::buildChunkMeshWorker(glm::ivec3 pos) {
 }
 
 
-/*
-void ChunkManager::buildChunkMeshWorker(glm::ivec3 pos) {
-    Chunk* chunk;
-    {
-        std::lock_guard lock(chunkMapMutex);
-        auto it = chunkMap.find(pos);
-        if (it == chunkMap.end()) return;
-        chunk = &it->second;
+
+
+
+
+
+
+
+
+
+//region management
+
+Region& ChunkManager::getOrCreateRegion(const glm::ivec3& chunkPos) {
+    glm::ivec3 regionPos = chunkToRegionPos(chunkPos);
+
+    auto it = regions.find(regionPos);
+    if (it != regions.end()) {
+        return it->second;
     }
 
-    // Copy chunk voxel data under lock
-    Chunk copiedChunk;
-    {
-        std::lock_guard lock(chunk->mtx);
-        copiedChunk.copyFrom(*chunk);
+    // Create new region
+    auto [newIt, inserted] = regions.emplace(
+        regionPos,
+        Region(regionPos, REGION_VERTEX_BYTES, REGION_INDEX_BYTES)
+    );
+
+    std::cout << "[ChunkManager] Created region at ("
+        << regionPos.x << ", " << regionPos.y << ", " << regionPos.z << ")\n";
+
+    return newIt->second;
+}
+
+
+
+
+void ChunkManager::uploadChunkMesh(
+    const glm::ivec3& chunkPos,
+    const std::vector<VoxelVertex>& vertices,
+    const std::vector<uint16_t>& indices)
+{
+    if (vertices.empty() || indices.empty()) return;
+
+    Region& region = getOrCreateRegion(chunkPos);
+
+    // Remove old mesh if exists
+    auto meshIt = region.chunks.find(chunkPos);
+    if (meshIt != region.chunks.end()) {
+        region.gpu->destroyChunkMesh(meshIt->second);
+        region.chunks.erase(meshIt);
     }
 
-    // CPU mesh build (no GPU here)
-    CpuMesh cpuMesh;
-    cpuMesh.pos = pos;
-    builder.buildChunkMesh_CPU(copiedChunk, cpuMesh.vertices, cpuMesh.indices);
-
-    // Push into upload queue
-    {
-        std::lock_guard lock(uploadMutex);
-        pendingUploads.push(std::move(cpuMesh));
+    // Create new mesh
+    ChunkMesh mesh = region.gpu->createChunkMesh(vertices, indices);
+    if (mesh.valid) {
+        region.chunks[chunkPos] = mesh;
     }
 }
 
+
+
+
+void ChunkManager::removeChunkMesh(const glm::ivec3& chunkPos) {
+    glm::ivec3 regionPos = chunkToRegionPos(chunkPos);
+
+    auto regionIt = regions.find(regionPos);
+    if (regionIt == regions.end()) return;
+
+    Region& region = regionIt->second;
+    auto meshIt = region.chunks.find(chunkPos);
+    if (meshIt != region.chunks.end()) {
+        region.gpu->destroyChunkMesh(meshIt->second);
+        region.chunks.erase(meshIt);
+    }
+
+    // Optional: Remove empty regions to free GPU memory
+    if (region.chunks.empty()) {
+        regions.erase(regionIt);
+    }
+}
+
+
+
+
+
+
+
+/*
+void ChunkManager::rebuildRegion(const glm::ivec3& regionPos)
+{
+    auto it = regions.find(regionPos);
+    if (it == regions.end()) return;
+
+    Region& oldRegion = it->second;
+
+    auto newGpu = std::make_unique<RegionMeshBuffer>(
+        REGION_VERTEX_BYTES,
+        REGION_INDEX_BYTES
+    );
+
+    std::unordered_map<glm::ivec3, ChunkMesh, IVec3Hash> newMeshes;
+
+    for (auto& [chunkPos, oldMesh] : oldRegion.chunks) {
+        Chunk& chunk = chunkMap.at(chunkPos);
+
+        std::vector<VoxelVertex> vertices;
+        std::vector<uint16_t> indices;
+
+        builder.buildChunkMeshCPU(
+            chunk,
+            chunkPos,
+            atlas,
+            [&](const glm::ivec3& wp) {
+                return getBlockGlobal(wp.x, wp.y, wp.z);
+            },
+            enableAO,
+            enableShadows,
+            vertices,
+            indices
+        );
+
+        ChunkMesh mesh = newGpu->createChunkMesh(vertices, indices);
+        if (!mesh.valid) {
+            std::cerr << "[FATAL] Region rebuild failed\n";
+            return;
+        }
+
+        newMeshes.emplace(chunkPos, mesh);
+    }
+
+    oldRegion.gpu = std::move(newGpu);
+    oldRegion.chunks = std::move(newMeshes);
+}
 */

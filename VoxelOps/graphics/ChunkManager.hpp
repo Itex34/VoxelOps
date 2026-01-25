@@ -10,6 +10,9 @@
 #include "Camera.hpp"
 #include "Mesh.hpp"
 #include "TextureAtlas.hpp"
+#include "RegionMeshBuffer.hpp"
+
+
 #include "../ExternLibs/FastNoiseLite.h"
 #include "../ExternLibs/skarupke/flat_hash_map.hpp"
 #include "../ExternLibs/tsl/robin_hash.h"
@@ -47,11 +50,22 @@ constexpr int WORLD_SIZE_Y = (WORLD_MAX_Y - WORLD_MIN_Y + 1);
 
 
 
+
+// Region size in chunks (e.g., 8x8x8 chunks per region)
+constexpr int REGION_SIZE = 8;
+
+// Bytes per region (tune based on your needs)
+constexpr size_t REGION_VERTEX_BYTES = 4 * 1024 * 1024; // 16 MB
+constexpr size_t REGION_INDEX_BYTES = 2 * 1024 * 1024; // 8 MB
+
+
 struct Vec3Hasher {
     size_t operator()(const glm::ivec3& v) const {
         return std::hash<int>()(v.x) ^ std::hash<int>()(v.y << 1) ^ std::hash<int>()(v.z << 2);
     }
 };
+
+
 
 
 struct IVec3Hash {
@@ -65,6 +79,26 @@ struct IVec3Hash {
         return static_cast<std::size_t>(h);
     }
 };
+
+
+
+
+struct Region {
+    glm::ivec3 regionPos;
+    std::unique_ptr<RegionMeshBuffer> gpu;
+    std::unordered_map<glm::ivec3, ChunkMesh, IVec3Hash> chunks;
+
+    Region() = default;
+    Region(glm::ivec3 pos, size_t vertexBytes, size_t indexBytes)
+        : regionPos(pos)
+        , gpu(std::make_unique<RegionMeshBuffer>(vertexBytes, indexBytes))
+    {
+    }
+};
+
+
+
+
 
 struct IVec3Eq {
     bool operator()(glm::ivec3 const& a, glm::ivec3 const& b) const noexcept {
@@ -141,13 +175,37 @@ public:
     void debugMemoryEstimate();
 private:
 
-
+    std::unordered_map<glm::ivec3, Region, IVec3Hash> regions;
 
 
     //std::unordered_map<glm::ivec3, Chunk, IVec3Hash> chunkMap;
     std::unordered_map<glm::ivec3, Chunk, IVec3Hash> chunkMap;
-    
+
     std::unordered_map<glm::ivec3, ChunkMesh, IVec3Hash> chunkMeshes;
+
+     
+    // Convert chunk position to region position
+    inline glm::ivec3 chunkToRegionPos(const glm::ivec3& chunkPos) const {
+        return glm::ivec3(
+            floorDiv(chunkPos.x, REGION_SIZE),
+            floorDiv(chunkPos.y, REGION_SIZE),
+            floorDiv(chunkPos.z, REGION_SIZE)
+        );
+    }
+
+    // Get or create region for a chunk
+    Region& getOrCreateRegion(const glm::ivec3& chunkPos);
+
+	void rebuildRegion(const glm::ivec3& regionPos);
+
+    // Upload mesh to appropriate region
+    void uploadChunkMesh(const glm::ivec3& chunkPos,
+        const std::vector<VoxelVertex>& vertices,
+        const std::vector<uint16_t>& indices);
+
+    // Remove mesh from region
+    void removeChunkMesh(const glm::ivec3& chunkPos);
+
 
     
     void appendChunkMesh();
@@ -191,20 +249,6 @@ private:
     FastNoiseLite noise;
 
 
-    inline int floorDiv(int a, int b) {
-        int q = a / b;
-        int r = a % b;
-        if ((r != 0) && ((r > 0) != (b > 0))) {
-            q--;
-        }
-        return q;
-    }
-
-    inline int mod(int a, int b) {
-        int r = a % b;
-        if (r < 0) r += std::abs(b); 
-        return r;
-    }
 
     inline std::array<bool, 6> isEdgeBlock(glm::ivec3 localPos){
         return {
@@ -225,9 +269,25 @@ private:
     }
 
 
+    inline int floorDiv(int a, int b) const{
+        int q = a / b;
+        int r = a % b;
+        if ((r != 0) && ((r > 0) != (b > 0))) {
+            q--;
+        }
+        return q;
+    }
+
+    inline int mod(int a, int b) const {
+        int r = a % b;
+        if (r < 0) r += std::abs(b);
+        return r;
+    }
 
     Renderer& renderer;
 };
+
+
 
 
 
