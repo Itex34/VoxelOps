@@ -32,8 +32,11 @@ add_executable(VoxelOps
     "application/VoxelopsApp.cpp"
     "graphics/Lighting.cpp"
     "network/ClientNetwork.cpp"
- "player/Hitbox.cpp"    "gun/Gun.cpp"
- "misc/ThreadPool.cpp")
+    "player/Hitbox.cpp"    
+    "gun/Gun.cpp"
+    "misc/ThreadPool.cpp" 
+    "graphics/RegionMeshBuffer.cpp"
+)
 
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
