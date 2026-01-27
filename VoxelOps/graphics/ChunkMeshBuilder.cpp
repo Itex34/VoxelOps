@@ -342,6 +342,7 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
                         indices.push_back(indexOffset + 2);
                         indices.push_back(indexOffset + 3);
                     }
+
                     else {
                         indices.push_back(indexOffset + 0);
                         indices.push_back(indexOffset + 2);

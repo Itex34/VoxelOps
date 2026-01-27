@@ -69,3 +69,12 @@
 13316	14526	7910738782262987	VoxelOps/VoxelOps.exe	6eb07ea8d9790913
 76	5687	7910751763473634	VoxelOps/CMakeFiles/VoxelOps.dir/graphics/ChunkMeshBuilder.cpp.obj	4c6f2b4304897091
 5688	7430	7910751819572297	VoxelOps/VoxelOps.exe	6eb07ea8d9790913
+116	5530	7912478471667986	VoxelOps/CMakeFiles/VoxelOps.dir/player/Player.cpp.obj	c3df11da2997b864
+135	5608	7912478471857917	VoxelOps/CMakeFiles/VoxelOps.dir/physics/RayManager.cpp.obj	66cb1acdf80b4d81
+123	5914	7912478471732923	VoxelOps/CMakeFiles/VoxelOps.dir/input/InputCallbacks.cpp.obj	a50219e5a8bed3b7
+108	6032	7912478471589989	VoxelOps/CMakeFiles/VoxelOps.dir/graphics/ChunkMeshBuilder.cpp.obj	4c6f2b4304897091
+142	6253	7912478471917747	VoxelOps/CMakeFiles/VoxelOps.dir/graphics/Lighting.cpp.obj	a0be98216aeaeaee
+148	6715	7912478471992846	VoxelOps/CMakeFiles/VoxelOps.dir/gun/Gun.cpp.obj	b6eb82c9c45dd4c5
+99	7679	7912478471497961	VoxelOps/CMakeFiles/VoxelOps.dir/main.cpp.obj	259e6d8a20177c42
+129	7992	7912478471792944	VoxelOps/CMakeFiles/VoxelOps.dir/graphics/ChunkManager.cpp.obj	1bfab772b57b007f
+7992	9615	7912478550434505	VoxelOps/VoxelOps.exe	6eb07ea8d9790913
