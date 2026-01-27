@@ -27,16 +27,17 @@ public:
 
 
     void prepareChunkAO(
+		const Chunk& chunk,
         const glm::ivec3& chunkPos,
-        BlockGetter getBlock,
+        const Chunk* neighbors[6],
         std::vector<uint8_t>& aoBuffer
     ) const;
 
 
     void prepareChunkSunlight(
-        const Chunk& ,
+        const Chunk& chunk,
         const glm::ivec3& chunkPos,
-        BlockGetter getBlock,
+        const Chunk* neighbors[6],
         std::vector<float>& sunlightBuffer,
         float sunFalloff // how quickly light dims below occluders
     ) const;
@@ -57,4 +58,75 @@ private:
     int paddedSize;
     static constexpr float AO_TABLE[4] = { 1.00f, 0.85f, 0.65f, 0.53f };
     static const glm::ivec3 CANONICAL_CORNER_OFF[3];
+
+
+    inline BlockID getBlockWithNeighbors(const glm::ivec3& pos, const Chunk& chunk, const Chunk* neighbors[6]) const noexcept
+    {
+        int x = pos.x;
+        int y = pos.y;
+        int z = pos.z;
+
+        // Fast interior path
+        if ((unsigned)x < CHUNK_SIZE &&
+            (unsigned)y < CHUNK_SIZE &&
+            (unsigned)z < CHUNK_SIZE)
+        {
+            return chunk.getBlockUnchecked(x, y, z);
+        }
+
+        // Only ONE axis can be out of bounds in meshing
+        if (x < 0) {
+            const Chunk* n = neighbors[1]; // -X
+            return n ? n->getBlockUnchecked(x + CHUNK_SIZE, y, z) : BlockID::Air;
+        }
+        if (x >= CHUNK_SIZE) {
+            const Chunk* n = neighbors[0]; // +X
+            return n ? n->getBlockUnchecked(x - CHUNK_SIZE, y, z) : BlockID::Air;
+        }
+        if (y < 0) {
+            const Chunk* n = neighbors[3]; // -Y
+            return n ? n->getBlockUnchecked(x, y + CHUNK_SIZE, z) : BlockID::Air;
+        }
+        if (y >= CHUNK_SIZE) {
+            const Chunk* n = neighbors[2]; // +Y
+            return n ? n->getBlockUnchecked(x, y - CHUNK_SIZE, z) : BlockID::Air;
+        }
+        if (z < 0) {
+            const Chunk* n = neighbors[5]; // -Z
+            return n ? n->getBlockUnchecked(x, y, z + CHUNK_SIZE) : BlockID::Air;
+        }
+        if (z >= CHUNK_SIZE) {
+            const Chunk* n = neighbors[4]; // +Z
+            return n ? n->getBlockUnchecked(x, y, z - CHUNK_SIZE) : BlockID::Air;
+        }
+
+        return BlockID::Air;
+    }
+
+
+
+
+    inline bool isSolidSafe(
+        int x, int y, int z,
+        const Chunk& chunk,
+        const Chunk* neighbors[6]
+    ) const noexcept
+    {
+        // Hard clamp Y: lighting does not support vertical neighbors beyond ±1 chunk
+        if (y < -1 || y > CHUNK_SIZE)
+            return false;
+
+        int oob =
+            (x < 0 || x >= CHUNK_SIZE) +
+            (y < 0 || y >= CHUNK_SIZE) +
+            (z < 0 || z >= CHUNK_SIZE);
+
+        if (oob > 1)
+            return false;
+
+        return getBlockWithNeighbors({ x, y, z }, chunk, neighbors) != BlockID::Air;
+    }
+
+
+
 };

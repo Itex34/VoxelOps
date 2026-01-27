@@ -420,16 +420,36 @@ void ChunkManager::updateDirtyChunks() {
 
         Chunk& chunk = it->second;
 
-        auto built = builder.buildChunkMesh(
-            chunk,
-            pos,
-            atlas,
-            [&](const glm::ivec3& worldPos) -> BlockID {
-                return getBlockGlobal(worldPos.x, worldPos.y, worldPos.z);
-            },
-            enableAO,
-            enableShadows
-        );
+        auto findChunk = [&](const glm::ivec3& pos) -> const Chunk* {
+            auto it = chunkMap.find(pos);
+            return (it != chunkMap.end()) ? &it->second : nullptr;
+            };
+
+        const Chunk* neighbors[6] = {};
+
+        constexpr glm::ivec3 offsets[6] = {
+            {1,0,0},{-1,0,0},
+            {0,1,0},{0,-1,0},
+            {0,0,1},{0,0,-1}
+        };
+
+        for (int i = 0; i < 6; ++i)
+            neighbors[i] = findChunk(pos + offsets[i]);
+
+
+
+
+        auto start = std::chrono::high_resolution_clock::now();
+
+        auto built = builder.buildChunkMesh(chunk, neighbors, pos, atlas, enableAO, enableShadows);
+
+        auto end = std::chrono::high_resolution_clock::now();
+
+        std::chrono::duration<double, std::micro> elapsed = end - start;
+
+
+        std::cout << "Chunk meshed in : " << elapsed.count() << " microseconds" << '\n';
+
 
         uploadChunkMesh(pos, built.vertices, built.indices);
 
@@ -949,16 +969,34 @@ void ChunkManager::updateDirtyChunkAt(const glm::ivec3& chunkPos) {
 
     Chunk& chunk = it->second;
 
-    auto built = builder.buildChunkMesh(
-        chunk,
-        chunkPos,
-        atlas,
-        [&](const glm::ivec3& worldPos) -> BlockID {
-            return getBlockGlobal(worldPos.x, worldPos.y, worldPos.z);
-        },
-        enableAO,
-        enableShadows
-    );
+    auto findChunk = [&](const glm::ivec3& pos) -> const Chunk* {
+        auto it = chunkMap.find(pos);
+        return (it != chunkMap.end()) ? &it->second : nullptr;
+        };
+
+    const Chunk* neighbors[6] = {};
+
+    constexpr glm::ivec3 offsets[6] = {
+        {1,0,0},{-1,0,0},
+        {0,1,0},{0,-1,0},
+        {0,0,1},{0,0,-1}
+    };
+
+    for (int i = 0; i < 6; ++i)
+        neighbors[i] = findChunk(chunkPos + offsets[i]);
+
+
+
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    auto built = builder.buildChunkMesh(chunk, neighbors, chunkPos, atlas, enableAO, enableShadows);
+
+    auto end = std::chrono::high_resolution_clock::now();
+
+    std::chrono::duration<double, std::micro> elapsed = end - start;
+
+    std::cout << "Chunk meshed in : " << elapsed.count() << " microseconds" << '\n';
 
     uploadChunkMesh(chunkPos, built.vertices, built.indices);
 
@@ -986,7 +1024,9 @@ void ChunkManager::requestChunkRebuild(const glm::ivec3& pos) {
 
 
 void ChunkManager::buildChunkMeshWorker(glm::ivec3 pos) {
+    std::thread{
 
+    };
 }
 
 
@@ -1101,18 +1141,35 @@ void ChunkManager::rebuildRegion(const glm::ivec3& regionPos)
     for (auto& [chunkPos, oldMesh] : oldRegion.chunks) {
         Chunk& chunk = chunkMap.at(chunkPos);
 
-        auto built = builder.buildChunkMesh(
-            chunk,
-            chunkPos,
-            atlas,
-            [&](const glm::ivec3& worldPos) -> BlockID {
-                return getBlockGlobal(worldPos.x, worldPos.y, worldPos.z);
-            },
-            enableAO,
-            enableShadows
-        );
+
+        auto findChunk = [&](const glm::ivec3& pos) -> const Chunk* {
+            auto it = chunkMap.find(pos);
+            return (it != chunkMap.end()) ? &it->second : nullptr;
+            };
+
+        const Chunk* neighbors[6] = {};
+
+        constexpr glm::ivec3 offsets[6] = {
+            {1,0,0},{-1,0,0},
+            {0,1,0},{0,-1,0},
+            {0,0,1},{0,0,-1}
+        };
+
+        for (int i = 0; i < 6; ++i)
+            neighbors[i] = findChunk(chunkPos + offsets[i]);
 
 
+
+
+        auto start = std::chrono::high_resolution_clock::now();
+
+        auto built = builder.buildChunkMesh(chunk, neighbors, chunkPos, atlas, enableAO, enableShadows);
+
+        auto end = std::chrono::high_resolution_clock::now();
+
+
+
+        std::chrono::duration<double, std::micro> elapsed = end - start;
 
         ChunkMesh mesh = newGpu->createChunkMesh(built.vertices, built.indices);
         if (!mesh.valid) {

@@ -33,11 +33,12 @@
 
 
 
-inline uint32_t quantizePos5(float v, float chunkSize) {
-    float t = v / chunkSize;                 // 0..1
-    t = std::fminf(std::fmaxf(t, 0.0f), 1.0f);
-    // map to 0..31 using floor (stable)
-    return static_cast<uint32_t>(std::floor(t * 31.0f)) & 0x1Fu;
+inline uint32_t quantizePos5(float v) {
+    // assumes v in [0, 16], which your code guarantees
+    int iv = int(v * (31.0f / 16.0f) + 0.00001f);
+    if (iv < 0) iv = 0;
+    if (iv > 31) iv = 31;
+    return uint32_t(iv);
 }
 
 
@@ -46,66 +47,45 @@ inline uint32_t quantizePos5(float v, float chunkSize) {
 
 
 
+
+
+inline uint32_t clampToCorner(float v) {
+    uint32_t iv = uint32_t(v);
+#ifndef NDEBUG
+    assert(iv <= 16);
+#endif
+    return iv & 0x1Fu;
+}
 
 
 
 inline VoxelVertex packVoxelVertex(
-    const glm::vec3& posLocal, // local pos in [0, chunkSize]
-    float chunkSize,           // e.g. 16.0f
-    uint8_t face,              // 0..5
-    uint8_t corner,            // 0..3
-    uint8_t matId,             // 0..63
-    float ao_f,                // 0..1
-    float sun_f               // 0..1
-
+    const glm::vec3& posLocal,
+    uint8_t face,
+    uint8_t corner,
+    uint8_t matId,
+    uint8_t ao,     // 0..15
+    uint8_t sun     // 0..15
 ) {
-    // Fast clamp-to-int in range [0 .. chunkSize]
-    auto clampToCorner = [&](float v) -> uint32_t {
-        if (v <= 0.0f) return 0u;
-        if (v >= chunkSize) return static_cast<uint32_t>(chunkSize);
-        uint32_t iv = static_cast<uint32_t>(v + 0.5f);
-        if (iv > static_cast<uint32_t>(chunkSize)) iv = static_cast<uint32_t>(chunkSize);
-        return iv & 0x1Fu;
-        };
+    uint32_t qx = uint32_t(posLocal.x) & 0x1Fu;
+    uint32_t qy = uint32_t(posLocal.y) & 0x1Fu;
+    uint32_t qz = uint32_t(posLocal.z) & 0x1Fu;
 
-    uint32_t qx = clampToCorner(posLocal.x);
-    uint32_t qy = clampToCorner(posLocal.y);
-    uint32_t qz = clampToCorner(posLocal.z);
-
-    uint32_t face_u = face & 0x7u;
-    uint32_t corner_u = corner & 0x3u;
-    uint32_t mat_u = matId & 0xFFu;
-
-    auto to4bit = [](float f) -> uint32_t {
-        if (f <= 0.0f) return 0u;
-        if (f >= 1.0f) return 15u;
-        uint32_t v = static_cast<uint32_t>(f * 15.0f + 0.5f);
-        return (v > 15u) ? 15u : v;
-        };
-
-    uint32_t ao_u = to4bit(ao_f);
-    uint32_t sun_u = to4bit(sun_f);
-
-    // ----- LOW 32 bits (unchanged) -----
     uint32_t low =
-        (qx & 0x1Fu)
-        | ((qy & 0x1Fu) << 5)
-        | ((qz & 0x1Fu) << 10)
-        | ((face_u & 0x7u) << 15)
-        | ((corner_u & 0x3u) << 18)
-        | ((ao_u & 0xFu) << 26);
-
-    // ----- HIGH 32 bits -----
-    // bits 0–7   : matId
-    // bits 8–11  : sun
-    // bits 12–31 : unused
+        qx
+        | (qy << 5)
+        | (qz << 10)
+        | ((face & 0x7u) << 15)
+        | ((corner & 0x3u) << 18)
+        | ((ao & 0xFu) << 26);
 
     uint32_t high =
-        (mat_u << 0)
-        | (sun_u << 8);
+        (uint32_t(matId) << 0)
+        | (uint32_t(sun & 0xFu) << 8);
 
-    return VoxelVertex{ low, high };
+    return { low, high };
 }
+
 
 
 
@@ -118,106 +98,118 @@ inline VoxelVertex packVoxelVertex(
 
 
 BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
-    const Chunk& chunk,
+    const Chunk& center,
+    const Chunk* neighbors[6],
     const glm::ivec3& chunkPos,
     const TextureAtlas& atlas,
-    BlockGetter getBlock,
     bool enableAO,
-    bool enableShadows)
+    bool enableShadows
+)
 {
+    constexpr int CS = CHUNK_SIZE; // 16
+
     std::vector<VoxelVertex> vertices;
     std::vector<unsigned short> indices;
+    vertices.reserve(4096);
+    indices.reserve(6144);
+
     unsigned short indexOffset = 0;
 
     // ------------------------------------------------------------
-    // Lighting (padded, Lighting owns buffer sizes)
+    // Lighting
     // ------------------------------------------------------------
-    Lighting lighting(CHUNK_SIZE);
+    Lighting lighting(CS);
     std::vector<float> cornerSun;
     std::vector<uint8_t> cornerAO;
 
-
     if (enableShadows) {
-        lighting.prepareChunkSunlight(chunk, chunkPos, getBlock, cornerSun, 1.0f);
+        lighting.prepareChunkSunlight(center, chunkPos, neighbors, cornerSun, 1.0f);
+    }
+    if (enableAO) {
+        lighting.prepareChunkAO(center, chunkPos, neighbors, cornerAO);
     }
 
-    if (enableAO) { 
-        lighting.prepareChunkAO(chunkPos, getBlock, cornerAO);
-    }
-
-    const float chunkSizeF = float(CHUNK_SIZE);
+    const float chunkSizeF = float(CS);
 
     // ------------------------------------------------------------
-    // Greedy meshing
+    // Greedy mask
     // ------------------------------------------------------------
-    std::vector<GreedyCell> mask(CHUNK_SIZE * CHUNK_SIZE);
+    std::vector<GreedyCell> mask(CS * CS);
 
+    // ------------------------------------------------------------
+    // Axis sweeps
+    // ------------------------------------------------------------
     for (int d = 0; d < 3; ++d) {
-        int u = (d + 1) % 3;
-        int v = (d + 2) % 3;
 
-        glm::ivec3 eU(0), eV(0);
-        eU[u] = 1;
-        eV[v] = 1;
+        const int u = (d + 1) % 3;
+        const int v = (d + 2) % 3;
+
+        // Axis basis vectors (flattened)
+        int dux = 0, duy = 0, duz = 0;
+        int dvx = 0, dvy = 0, dvz = 0;
+        int dx = 0, dy = 0, dz = 0;
+
+        switch (d) {
+        case 0: dx = 1; break;
+        case 1: dy = 1; break;
+        case 2: dz = 1; break;
+        }
+
+        switch (u) {
+        case 0: dux = 1; break;
+        case 1: duy = 1; break;
+        case 2: duz = 1; break;
+        }
+
+        switch (v) {
+        case 0: dvx = 1; break;
+        case 1: dvy = 1; break;
+        case 2: dvz = 1; break;
+        }
 
         // Sweep planes
-        for (int s = 0; s <= CHUNK_SIZE; ++s) {
-            std::fill(mask.begin(), mask.end(), GreedyCell{});
+        for (int s = 0; s <= CS; ++s) {
+
+            // Clear mask
+            for (int i = 0; i < CS * CS; ++i)
+                mask[i] = GreedyCell{};
+
 
             // --------------------------------------------------
             // Build mask
             // --------------------------------------------------
-            for (int j = 0; j < CHUNK_SIZE; ++j) {
-                for (int i = 0; i < CHUNK_SIZE; ++i) {
+            for (int j = 0; j < CS; ++j) {
+                for (int i = 0; i < CS; ++i) {
 
-                    glm::ivec3 pa(0), pb(0);
-                    pa[u] = i; pa[v] = j; pa[d] = s - 1;
-                    pb[u] = i; pb[v] = j; pb[d] = s;
+                    // pa = (i, j, s-1) projected on axes
+                    int pax = i * dux + j * dvx + (s - 1) * dx;
+                    int pay = i * duy + j * dvy + (s - 1) * dy;
+                    int paz = i * duz + j * dvz + (s - 1) * dz;
 
+                    // pb = (i, j, s)
+                    int pbx = i * dux + j * dvx + s * dx;
+                    int pby = i * duy + j * dvy + s * dy;
+                    int pbz = i * duz + j * dvz + s * dz;
 
-                    bool paOutside =
-                        pa.x < 0 || pa.y < 0 || pa.z < 0 ||
-                        pa.x >= CHUNK_SIZE || pa.y >= CHUNK_SIZE || pa.z >= CHUNK_SIZE;
+                    BlockID a = getBlockSafe(pax, pay, paz, center, neighbors);
+                    BlockID b = getBlockSafe(pbx, pby, pbz, center, neighbors);
 
-                    bool pbOutside =
-                        pb.x < 0 || pb.y < 0 || pb.z < 0 ||
-                        pb.x >= CHUNK_SIZE || pb.y >= CHUNK_SIZE || pb.z >= CHUNK_SIZE;
-
-
-
-
-
-
-                    glm::ivec3 wa = chunkPos * CHUNK_SIZE + pa;
-                    glm::ivec3 wb = chunkPos * CHUNK_SIZE + pb;
-
-                    BlockID a = getBlock(wa);
-                    BlockID b = getBlock(wb);
-
-
-
-                    // If both are solid or both are air → no face
+                    // Same solidity → no face
                     if ((a != BlockID::Air) == (b != BlockID::Air))
                         continue;
 
-
-
-
-                    GreedyCell& c = mask[j * CHUNK_SIZE + i];
+                    GreedyCell& c = mask[j * CS + i];
                     c.valid = true;
                     c.sign = (a != BlockID::Air) ? +1 : -1;
-
-
-
                     c.block = (a != BlockID::Air) ? a : b;
 
-                    // Face index
+                    // Face index (identical logic)
                     int face =
                         (d == 0) ? (c.sign > 0 ? 0 : 1) :
                         (d == 1) ? (c.sign > 0 ? 2 : 3) :
                         (c.sign > 0 ? 4 : 5);
 
-                    // Material ID
+                    // Material ID (unchanged behavior)
                     auto tex = getTexCoordsForFace(c.block, face, atlas);
                     glm::vec2 tl = tex[0];
                     glm::vec2 br = tex[2];
@@ -229,91 +221,80 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
                     int ty = int(std::round(tl.y / tileH));
                     c.matId = uint8_t(ty * gridX + tx);
 
-                    // AO / Sunlight
+                    // AO / Sun
                     if (enableAO || enableShadows) {
 
-
-                        // Pick the correct solid voxel based on sign so lighting is sampled from
-                        // the same side of the plane that produced the geometry.
-                        glm::ivec3 solid;
-                        if (c.sign > 0) {
-                            // 'a' (pa) was solid → face is on the +normal side of pa (plane at pa + 1)
-                            solid = pa;
-                            solid[d] += 1;
-                        }
-                        else {
-                            // 'b' (pb) was solid → face is on the -normal side of pb (plane at pb)
-                            solid = pb;
-                            // no +1 offset here
-                        }
+                        int sx = (c.sign > 0) ? pax + dx : pbx;
+                        int sy = (c.sign > 0) ? pay + dy : pby;
+                        int sz = (c.sign > 0) ? paz + dz : pbz;
 
 
-                        glm::ivec3 du_i = eU;
-                        glm::ivec3 dv_i = eV;
 
-                        // These corners now belong unambiguously to the solid voxel face
-                        glm::ivec3 corners[4] = {
-                            solid,
-                            solid + du_i,
-                            solid + du_i + dv_i,
-                            solid + dv_i
-                        };
+                        int cx0 = sx;
+                        int cy0 = sy;
+                        int cz0 = sz;
 
+                        int cx1 = sx + dux;
+                        int cy1 = sy + duy;
+                        int cz1 = sz + duz;
 
-         
+                        int cx2 = cx1 + dvx;
+                        int cy2 = cy1 + dvy;
+                        int cz2 = cz1 + dvz;
+
+                        int cx3 = sx + dvx;
+                        int cy3 = sy + dvy;
+                        int cz3 = sz + dvz;
+
+                        int cix[4] = { cx0, cx1, cx2, cx3 };
+                        int ciy[4] = { cy0, cy1, cy2, cy3 };
+                        int ciz[4] = { cz0, cz1, cz2, cz3 };
+
                         for (int k = 0; k < 4; ++k) {
-                            if (enableAO) {
-                                int ci = lighting.cornerIndexPadded(
-                                    corners[k].x,
-                                    corners[k].y,
-                                    corners[k].z);
-                                c.ao[k] = cornerAO[ci]; 
-                            }
-
-                            if (enableShadows) {
-                                int ci = lighting.cornerIndexPadded(
-                                    corners[k].x,
-                                    corners[k].y,
-                                    corners[k].z);
+                            int ci = lighting.cornerIndexPadded(cix[k], ciy[k], ciz[k]);
+                            if (enableAO)
+                                c.ao[k] = cornerAO[ci];
+                            if (enableShadows)
                                 c.sun[k] = uint8_t(cornerSun[ci] * 15.f + 0.5f);
-                            }
                         }
 
                     }
-
-
                 }
             }
 
             // --------------------------------------------------
             // Greedy merge + emit
             // --------------------------------------------------
-            for (int j = 0; j < CHUNK_SIZE; ++j) {
-                for (int i = 0; i < CHUNK_SIZE; ) {
+            for (int j = 0; j < CS; ++j) {
+                for (int i = 0; i < CS; ) {
 
-                    GreedyCell& c = mask[j * CHUNK_SIZE + i];
+                    GreedyCell& c = mask[j * CS + i];
                     if (!c.valid) { ++i; continue; }
 
                     int w = 1;
-                    while (i + w < CHUNK_SIZE) {
-                        auto& r = mask[j * CHUNK_SIZE + (i + w)];
+                    while (i + w < CS) {
+                        GreedyCell& r = mask[j * CS + (i + w)];
                         if (!r.valid || r.sign != c.sign ||
                             r.block != c.block || r.matId != c.matId ||
-                            memcmp(r.ao, c.ao, 4) != 0 ||
-                            memcmp(r.sun, c.sun, 4) != 0)
+                            r.ao[0] != c.ao[0] || r.ao[1] != c.ao[1] ||
+                            r.ao[2] != c.ao[2] || r.ao[3] != c.ao[3] ||
+                            r.sun[0] != c.sun[0] || r.sun[1] != c.sun[1] ||
+                            r.sun[2] != c.sun[2] || r.sun[3] != c.sun[3])
                             break;
                         ++w;
                     }
 
                     int h = 1;
                     bool stop = false;
-                    while (j + h < CHUNK_SIZE && !stop) {
+                    while (j + h < CS && !stop) {
                         for (int k = 0; k < w; ++k) {
-                            auto& r = mask[(j + h) * CHUNK_SIZE + (i + k)];
+                            GreedyCell& r = mask[(j + h) * CS + (i + k)];
                             if (!r.valid || r.sign != c.sign ||
                                 r.block != c.block || r.matId != c.matId ||
-                                memcmp(r.ao, c.ao, 4) != 0 ||
-                                memcmp(r.sun, c.sun, 4) != 0) {
+                                r.ao[0] != c.ao[0] || r.ao[1] != c.ao[1] ||
+                                r.ao[2] != c.ao[2] || r.ao[3] != c.ao[3] ||
+                                r.sun[0] != c.sun[0] || r.sun[1] != c.sun[1] ||
+                                r.sun[2] != c.sun[2] || r.sun[3] != c.sun[3]) {
                                 stop = true;
                                 break;
                             }
@@ -321,46 +302,39 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
                         if (!stop) ++h;
                     }
 
-                    glm::ivec3 origin(0);
-                    origin[u] = i;
-                    origin[v] = j;
-                    origin[d] = s;
+                    // Emit quad (same math, flattened)
+                    float ox = float(i * dux + j * dvx + s * dx);
+                    float oy = float(i * duy + j * dvy + s * dy);
+                    float oz = float(i * duz + j * dvz + s * dz);
 
-                    glm::vec3 du = glm::vec3(eU) * float(w);
-                    glm::vec3 dv = glm::vec3(eV) * float(h);
+                    glm::vec3 du = glm::vec3(dux, duy, duz) * float(w);
+                    glm::vec3 dv = glm::vec3(dvx, dvy, dvz) * float(h);
 
-                    glm::vec3 v[4];
-                    v[0] = glm::vec3(origin);          // (0,0)
-                    v[1] = v[0] + du;                  // (1,0)
-                    v[2] = v[1] + dv;                  // (1,1)
-                    v[3] = v[0] + dv;                  // (0,1)
-
+                    glm::vec3 vtx[4] = {
+                        {ox, oy, oz},
+                        {ox + du.x, oy + du.y, oz + du.z},
+                        {ox + du.x + dv.x, oy + du.y + dv.y, oz + du.z + dv.z},
+                        {ox + dv.x, oy + dv.y, oz + dv.z}
+                    };
 
                     int face =
                         (d == 0) ? (c.sign > 0 ? 0 : 1) :
                         (d == 1) ? (c.sign > 0 ? 2 : 3) :
                         (c.sign > 0 ? 4 : 5);
 
-
-
                     for (int k = 0; k < 4; ++k) {
                         uint8_t uvCorner = uvRemap[face][k];
-
                         vertices.push_back(packVoxelVertex(
-                            v[k],
-                            chunkSizeF,
+                            vtx[k],
                             face,
                             uvCorner,
                             c.matId,
-                            c.ao[k] / 15.f,
-                            c.sun[k] / 15.f
+                            c.ao[k],
+                            c.sun[k]
                         ));
-
                     }
 
-
                     if (c.sign > 0) {
-                        // normal winding
                         indices.push_back(indexOffset + 0);
                         indices.push_back(indexOffset + 1);
                         indices.push_back(indexOffset + 2);
@@ -369,7 +343,6 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
                         indices.push_back(indexOffset + 3);
                     }
                     else {
-                        // flipped winding
                         indices.push_back(indexOffset + 0);
                         indices.push_back(indexOffset + 2);
                         indices.push_back(indexOffset + 1);
@@ -380,10 +353,9 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
 
                     indexOffset += 4;
 
-
                     for (int yy = 0; yy < h; ++yy)
                         for (int xx = 0; xx < w; ++xx)
-                            mask[(j + yy) * CHUNK_SIZE + (i + xx)].valid = false;
+                            mask[(j + yy) * CS + (i + xx)].valid = false;
 
                     i += w;
                 }
@@ -392,7 +364,7 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
     }
 
     return { std::move(vertices), std::move(indices) };
-
 }
+
 
 

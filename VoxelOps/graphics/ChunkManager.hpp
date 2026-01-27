@@ -24,7 +24,7 @@
 #include <random>
 #include <thread>
 #include <unordered_map>
-
+#include <chrono>
 
 //--IN CHUNKS--
 constexpr int WORLD_MIN_X = -20; 
@@ -178,10 +178,10 @@ private:
     std::unordered_map<glm::ivec3, Region, IVec3Hash> regions;
 
 
-    //std::unordered_map<glm::ivec3, Chunk, IVec3Hash> chunkMap;
     std::unordered_map<glm::ivec3, Chunk, IVec3Hash> chunkMap;
 
-    std::unordered_map<glm::ivec3, ChunkMesh, IVec3Hash> chunkMeshes;
+    std::unordered_map<glm::ivec3, ChunkMesh, IVec3Hash> chunkMeshes; //deprecated
+
 
      
     // Convert chunk position to region position
