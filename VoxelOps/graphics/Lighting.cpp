@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <cmath>
 
-
 #include "../voxels/Voxel.hpp"
 
 
@@ -13,30 +12,18 @@ Lighting::Lighting(int chunkSize_)
 }
 
 
-// In Lighting.hpp
-static constexpr float SUN_FALLOFF_TABLE[5] = {
-    1.0f,       // 0 blockers
-    0.85f,      // 1 blocker
-    0.7225f,    // 2 blockers
-    0.614125f,  // 3 blockers
-    0.52200625f // 4 blockers
-};
 
 
 
 
 
 
- 
 
-// ------------------------------------------------------------
-// Prepare padded chunk sunlight
-// ------------------------------------------------------------
 void Lighting::prepareChunkSunlight(
     const Chunk& chunk,
     const glm::ivec3& chunkPos,
     const Chunk* neighbors[6],
-    std::vector<float>& sunlightBuffer,
+    std::vector<uint8_t>& sunlightBuffer,
     float sunFalloff // how quickly light dims below occluders
 ) const
 {
@@ -51,19 +38,14 @@ void Lighting::prepareChunkSunlight(
 
             // Check sky access for this column
             for (int y = chunkSize + 2; y < chunkSize + 64; ++y) {
-                int sx = std::clamp(x, -1, chunkSize);
-                int sz = std::clamp(z, -1, chunkSize);
+                int wx = x;
+                int wz = z;
 
-                if ((sx < 0 || sx >= chunkSize) &&
-                    (sz < 0 || sz >= chunkSize))
-                {
-                    continue;
-                }
-
-                if (isSolidSafe(sx, y, sz, chunk, neighbors)) {
+                if (isSolidSafe(x, y, z, chunk, neighbors)) {
                     light = 0.0f;
                     break;
                 }
+
 
             }
 
@@ -98,14 +80,12 @@ void Lighting::prepareChunkSunlight(
                     }
                 }
 
-                // Quantize for cross-chunk consistency
-                sunlightBuffer[cornerIndexPadded(x, y, z)] = std::round(cornerLight * 15.0f) / 15.0f;
+                uint8_t level = uint8_t(std::round(cornerLight * 15.0f));
+                sunlightBuffer[cornerIndexPadded(x, y, z)] = level;
             }
         }
     }
 }
-
-
 
 
 

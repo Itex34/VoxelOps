@@ -5,46 +5,6 @@
 
 
 
-// returns 1 → sun visible, 0 → fully occluded
-[[nodiscard]] static float sunAtCorner(
-    const std::function<BlockID(const glm::ivec3&)>& getBlockWorld,
-    const glm::ivec3& cornerWorld,   // integer world position of the corner
-    float sunFalloff)                // 1.0 = hard shadow, <1 softer
-{
-    constexpr int WORLD_TOP_Y = 320;          // your build height
-    constexpr int WORLD_BOTTOM_Y = -64;       // your min height
-
-    int hit = 0;
-    for (int y = cornerWorld.y + 1; y <= WORLD_TOP_Y; ++y)   // march upward
-    {
-        if (getBlockWorld({ cornerWorld.x, y, cornerWorld.z }) != BlockID::Air)
-        {
-            ++hit;
-            if (sunFalloff >= 1.0f) return 0.0f;   // first solid → full shadow
-        }
-    }
-    if (hit == 0) return 1.0f;                     // reached open sky
-    return std::pow(sunFalloff, static_cast<float>(hit));
-}
-
-
-
-
-
-
-
-inline uint32_t quantizePos5(float v) {
-    // assumes v in [0, 16], which your code guarantees
-    int iv = int(v * (31.0f / 16.0f) + 0.00001f);
-    if (iv < 0) iv = 0;
-    if (iv > 31) iv = 31;
-    return uint32_t(iv);
-}
-
-
-
-
-
 
 
 
@@ -60,7 +20,7 @@ inline uint32_t clampToCorner(float v) {
 
 
 inline VoxelVertex packVoxelVertex(
-    const glm::vec3& posLocal,
+    const glm::vec3& posLocal,  
     uint8_t face,
     uint8_t corner,
     uint8_t matId,
@@ -77,7 +37,7 @@ inline VoxelVertex packVoxelVertex(
         | (qz << 10)
         | ((face & 0x7u) << 15)
         | ((corner & 0x3u) << 18)
-        | ((ao & 0xFu) << 26);
+        | ((ao & 0xFu) << 26); 
 
     uint32_t high =
         (uint32_t(matId) << 0)
@@ -106,7 +66,6 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
     bool enableShadows
 )
 {
-    constexpr int CS = CHUNK_SIZE; // 16
 
     std::vector<VoxelVertex> vertices;
     std::vector<unsigned short> indices;
@@ -115,11 +74,8 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
 
     unsigned short indexOffset = 0;
 
-    // ------------------------------------------------------------
-    // Lighting
-    // ------------------------------------------------------------
-    Lighting lighting(CS);
-    std::vector<float> cornerSun;
+    Lighting lighting(CHUNK_SIZE);
+    std::vector<uint8_t> cornerSun;
     std::vector<uint8_t> cornerAO;
 
     if (enableShadows) {
@@ -129,16 +85,11 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
         lighting.prepareChunkAO(center, chunkPos, neighbors, cornerAO);
     }
 
-    const float chunkSizeF = float(CS);
+    const float chunkSizeF = float(CHUNK_SIZE);
 
-    // ------------------------------------------------------------
-    // Greedy mask
-    // ------------------------------------------------------------
-    std::vector<GreedyCell> mask(CS * CS);
 
-    // ------------------------------------------------------------
-    // Axis sweeps
-    // ------------------------------------------------------------
+    std::vector<GreedyCell> mask(CHUNK_SIZE * CHUNK_SIZE);
+
     for (int d = 0; d < 3; ++d) {
 
         const int u = (d + 1) % 3;
@@ -167,19 +118,16 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
         case 2: dvz = 1; break;
         }
 
-        // Sweep planes
-        for (int s = 0; s <= CS; ++s) {
+        // sweep planes
+        for (int s = 0; s <= CHUNK_SIZE; ++s) {
 
-            // Clear mask
-            for (int i = 0; i < CS * CS; ++i)
+            // clear mask
+            for (int i = 0; i < CHUNK_SIZE * CHUNK_SIZE; ++i)
                 mask[i] = GreedyCell{};
 
-
-            // --------------------------------------------------
-            // Build mask
-            // --------------------------------------------------
-            for (int j = 0; j < CS; ++j) {
-                for (int i = 0; i < CS; ++i) {
+            // build mask
+            for (int j = 0; j < CHUNK_SIZE; ++j) {
+                for (int i = 0; i < CHUNK_SIZE; ++i) {
 
                     // pa = (i, j, s-1) projected on axes
                     int pax = i * dux + j * dvx + (s - 1) * dx;
@@ -194,22 +142,21 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
                     BlockID a = getBlockSafe(pax, pay, paz, center, neighbors);
                     BlockID b = getBlockSafe(pbx, pby, pbz, center, neighbors);
 
-                    // Same solidity → no face
                     if ((a != BlockID::Air) == (b != BlockID::Air))
                         continue;
 
-                    GreedyCell& c = mask[j * CS + i];
+                    GreedyCell& c = mask[j * CHUNK_SIZE + i];
                     c.valid = true;
+
+
                     c.sign = (a != BlockID::Air) ? +1 : -1;
                     c.block = (a != BlockID::Air) ? a : b;
 
-                    // Face index (identical logic)
                     int face =
                         (d == 0) ? (c.sign > 0 ? 0 : 1) :
                         (d == 1) ? (c.sign > 0 ? 2 : 3) :
                         (c.sign > 0 ? 4 : 5);
 
-                    // Material ID (unchanged behavior)
                     auto tex = getTexCoordsForFace(c.block, face, atlas);
                     glm::vec2 tl = tex[0];
                     glm::vec2 br = tex[2];
@@ -255,25 +202,23 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
                             if (enableAO)
                                 c.ao[k] = cornerAO[ci];
                             if (enableShadows)
-                                c.sun[k] = uint8_t(cornerSun[ci] * 15.f + 0.5f);
+                                c.sun[k] = cornerSun[ci];
                         }
 
                     }
                 }
             }
 
-            // --------------------------------------------------
-            // Greedy merge + emit
-            // --------------------------------------------------
-            for (int j = 0; j < CS; ++j) {
-                for (int i = 0; i < CS; ) {
 
-                    GreedyCell& c = mask[j * CS + i];
+            for (int j = 0; j < CHUNK_SIZE; ++j) {
+                for (int i = 0; i < CHUNK_SIZE; ) {
+
+                    GreedyCell& c = mask[j * CHUNK_SIZE + i];
                     if (!c.valid) { ++i; continue; }
 
                     int w = 1;
-                    while (i + w < CS) {
-                        GreedyCell& r = mask[j * CS + (i + w)];
+                    while (i + w < CHUNK_SIZE) {
+                        GreedyCell& r = mask[j * CHUNK_SIZE + (i + w)];
                         if (!r.valid || r.sign != c.sign ||
                             r.block != c.block || r.matId != c.matId ||
                             r.ao[0] != c.ao[0] || r.ao[1] != c.ao[1] ||
@@ -286,9 +231,9 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
 
                     int h = 1;
                     bool stop = false;
-                    while (j + h < CS && !stop) {
+                    while (j + h < CHUNK_SIZE && !stop) {
                         for (int k = 0; k < w; ++k) {
-                            GreedyCell& r = mask[(j + h) * CS + (i + k)];
+                            GreedyCell& r = mask[(j + h) * CHUNK_SIZE + (i + k)];
                             if (!r.valid || r.sign != c.sign ||
                                 r.block != c.block || r.matId != c.matId ||
                                 r.ao[0] != c.ao[0] || r.ao[1] != c.ao[1] ||
@@ -302,7 +247,6 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
                         if (!stop) ++h;
                     }
 
-                    // Emit quad (same math, flattened)
                     float ox = float(i * dux + j * dvx + s * dx);
                     float oy = float(i * duy + j * dvy + s * dy);
                     float oz = float(i * duz + j * dvz + s * dz);
@@ -356,14 +300,14 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
 
                     for (int yy = 0; yy < h; ++yy)
                         for (int xx = 0; xx < w; ++xx)
-                            mask[(j + yy) * CS + (i + xx)].valid = false;
+                            mask[(j + yy) * CHUNK_SIZE + (i + xx)].valid = false;
 
                     i += w;
                 }
             }
         }
     }
-
+        
     return { std::move(vertices), std::move(indices) };
 }
 

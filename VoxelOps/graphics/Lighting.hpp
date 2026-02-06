@@ -10,6 +10,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "../voxels/Chunk.hpp"
+#include "../voxels/ChunkColumn.hpp"
 
 
 
@@ -38,7 +39,7 @@ public:
         const Chunk& chunk,
         const glm::ivec3& chunkPos,
         const Chunk* neighbors[6],
-        std::vector<float>& sunlightBuffer,
+        std::vector<uint8_t>& sunlightBuffer,
         float sunFalloff // how quickly light dims below occluders
     ) const;
 
@@ -59,6 +60,14 @@ private:
     static constexpr float AO_TABLE[4] = { 1.00f, 0.85f, 0.65f, 0.53f };
     static const glm::ivec3 CANONICAL_CORNER_OFF[3];
 
+
+    static constexpr float SUN_FALLOFF_TABLE[5] = {
+        1.0f,       // 0 blockers
+        0.85f,      // 1 blocker
+        0.7225f,    // 2 blockers
+        0.614125f,  // 3 blockers
+        0.52200625f // 4 blockers
+    };
 
     inline BlockID getBlockWithNeighbors(const glm::ivec3& pos, const Chunk& chunk, const Chunk* neighbors[6]) const noexcept
     {
@@ -112,8 +121,7 @@ private:
         const Chunk* neighbors[6]
     ) const noexcept
     {
-        // Hard clamp Y: lighting does not support vertical neighbors beyond ±1 chunk
-        if (y < -1 || y > CHUNK_SIZE)
+        if (y < -1 || y > CHUNK_SIZE * 2)
             return false;
 
         int oob =

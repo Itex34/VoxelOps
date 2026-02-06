@@ -30,7 +30,7 @@ public:
 
     // Unchecked accessor for internal use when coords are guaranteed valid
     BlockID getBlockUnchecked(int x, int y, int z) const noexcept;
-
+     
     // Safe setter; updates nonAirCount and dirty only when value actually changes
     void setBlock(int x, int y, int z, BlockID id);
 

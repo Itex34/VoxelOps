@@ -1126,7 +1126,7 @@ void ChunkManager::removeChunkMesh(const glm::ivec3& chunkPos) {
 
 void ChunkManager::rebuildRegion(const glm::ivec3& regionPos)
 {
-    auto it = regions.find(regionPos);
+    auto it = regions.find(regionPos); 
     if (it == regions.end()) return;
 
     Region& oldRegion = it->second;
@@ -1143,7 +1143,7 @@ void ChunkManager::rebuildRegion(const glm::ivec3& regionPos)
 
 
         auto findChunk = [&](const glm::ivec3& pos) -> const Chunk* {
-            auto it = chunkMap.find(pos);
+            auto it = chunkMap.find(pos); 
             return (it != chunkMap.end()) ? &it->second : nullptr;
             };
 

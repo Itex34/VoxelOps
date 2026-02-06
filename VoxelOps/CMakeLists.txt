@@ -36,6 +36,7 @@ add_executable(VoxelOps
     "gun/Gun.cpp"
     "misc/ThreadPool.cpp" 
     "graphics/RegionMeshBuffer.cpp"
+    "voxels/ChunkColumn.cpp"
 )
 
 find_package(glfw3 CONFIG REQUIRED)
