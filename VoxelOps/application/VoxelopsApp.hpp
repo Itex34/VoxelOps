@@ -1,6 +1,8 @@
+#pragma once
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
+#include "../physics/Physics.hpp"
 #include "../graphics/Renderer.hpp"
 #include "../graphics/Model.hpp"
 #include "../graphics/Shader.hpp"
@@ -13,8 +15,17 @@
 #include "../graphics/TextureAtlas.hpp"
 #include "../graphics/ChunkManager.hpp"
 
+
 #include <sstream>
 #include <optional>
+
+
+class Camera;
+class Player;
+class InputCallbacks;
+class Shader;
+class Physics;
+class ChunkManager;
 
 
 class App {
@@ -36,11 +47,11 @@ private:
 
 
 
-	std::optional<Camera> debugCamera;
-	std::optional<Player> player;
-	std::optional<InputCallbacks> inputCallbacks;
-	std::optional<Shader> shader;
-	std::optional<Shader> dbgShader;
+	Camera debugCamera;
+	Player player;
+	InputCallbacks inputCallbacks;
+	Shader shader;
+	Shader dbgShader;
 
 	Physics physics;
 	ChunkManager chunkManager;

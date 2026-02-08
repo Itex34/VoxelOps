@@ -84,11 +84,7 @@ void Gun::fire(const glm::vec3& rayOrigin, const glm::vec3& rayDirection) {
     std::cout << "Fired. Endpoint: (" << hitPoint.x << ", " << hitPoint.y << ", " << hitPoint.z << ")\n";
 }
 
-void Gun::render(const glm::vec3& position, const glm::quat& rotation, const glm::vec3& scale, Shader& shader) const {
-    if (gunModel) {
-        gunModel->draw(position, rotation, scale, shader);
-    }
-}
+
 
 void Gun::reload() noexcept {
     if (isReloading || currentAmmo >= maxAmmo) {

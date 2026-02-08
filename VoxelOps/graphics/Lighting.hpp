@@ -27,15 +27,15 @@ public:
 
 
 
-    void prepareChunkAO(
-		const Chunk& chunk,
+    inline void prepareChunkAO(
+        const Chunk& chunk,
         const glm::ivec3& chunkPos,
         const Chunk* neighbors[6],
         std::vector<uint8_t>& aoBuffer
     ) const;
 
 
-    void prepareChunkSunlight(
+    inline void prepareChunkSunlight(
         const Chunk& chunk,
         const glm::ivec3& chunkPos,
         const Chunk* neighbors[6],

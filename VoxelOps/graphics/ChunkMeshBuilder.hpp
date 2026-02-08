@@ -124,7 +124,7 @@ private:
     ) noexcept
     {
         // Hard reject unsupported vertical access
-        if (y < -1 || y > CHUNK_SIZE)
+        if (y < -1 || y > CHUNK_SIZE * 2)
             return BlockID::Air;
 
         int oob =
@@ -140,12 +140,6 @@ private:
 
         return BlockID::Air;
     }
-
-
-
-
-
-
 
 
 

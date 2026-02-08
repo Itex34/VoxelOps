@@ -30,7 +30,7 @@ public:
 
     // Unchecked accessor for internal use when coords are guaranteed valid
     BlockID getBlockUnchecked(int x, int y, int z) const noexcept;
-     
+
     // Safe setter; updates nonAirCount and dirty only when value actually changes
     void setBlock(int x, int y, int z, BlockID id);
 
@@ -50,6 +50,11 @@ public:
     static inline constexpr bool inBounds(int x, int y, int z) noexcept {
         return (unsigned)x < CHUNK_SIZE && (unsigned)y < CHUNK_SIZE && (unsigned)z < CHUNK_SIZE;
     }
+
+
+    int8_t lowestPotentialOccludersYvalue[16][16];// [+x -> -x][+z -> -z]
+
+    int8_t sunLitBlocksYvalue[16][16];// [+x -> -x][+z -> -z]
 private:
     std::array<BlockID, CHUNK_VOLUME> blocks;
     uint16_t nonAirCount = 0; // max 4096 (16^3) -> fits uint16_t
@@ -57,5 +62,7 @@ private:
     static inline constexpr int idx(int x, int y, int z) noexcept {
         return x + CHUNK_SIZE * (y + CHUNK_SIZE * z);
     }
+
+
 
 };

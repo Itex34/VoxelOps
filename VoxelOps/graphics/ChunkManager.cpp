@@ -1126,7 +1126,7 @@ void ChunkManager::removeChunkMesh(const glm::ivec3& chunkPos) {
 
 void ChunkManager::rebuildRegion(const glm::ivec3& regionPos)
 {
-    auto it = regions.find(regionPos); 
+    auto it = regions.find(regionPos);
     if (it == regions.end()) return;
 
     Region& oldRegion = it->second;
@@ -1143,7 +1143,7 @@ void ChunkManager::rebuildRegion(const glm::ivec3& regionPos)
 
 
         auto findChunk = [&](const glm::ivec3& pos) -> const Chunk* {
-            auto it = chunkMap.find(pos); 
+            auto it = chunkMap.find(pos);
             return (it != chunkMap.end()) ? &it->second : nullptr;
             };
 
@@ -1204,4 +1204,69 @@ void RegionMeshBuffer::orphanBuffers()
         nullptr,
         GL_DYNAMIC_DRAW
     );
+}
+
+
+
+void ChunkManager::computeLowestPotentialOccluders(const glm::ivec3& chunkPos, const Chunk& chunk) {
+
+
+    //chunk.lowestPotentialOccludersYvalue //fill this array
+}
+
+
+void ChunkManager::computeHeightMap(const glm::ivec3& columnPos, const ChunkColumn& col) {
+    
+    //get chunks with blocks facing +Y facing air (chunks with potentially sunlit blocks)
+
+
+    //for each of those potentially sunlit blocks, check 
+
+   
+    for (int x = 0; x < 16; x++) {
+        for (int z = 0; z < 16; z++) {
+            col.sunLitBlocksYvalue[x][z];
+        }
+    }
+
+}
+
+
+
+
+
+ChunkColumn& ChunkManager::getOrCreateColumn(int colX, int colZ) {
+    glm::ivec2 pos(colX, colZ);
+
+    auto it = chunkColumns.find(pos);
+
+    if (it != chunkColumns.end()) {
+        return it->second;
+    }
+
+    ChunkColumn& newCol = chunkColumns[pos];
+
+
+    newCol.chunkX = colX;
+    newCol.chunkZ = colZ;
+
+
+    for (int x = 0; x < 16; ++x) {
+        for (int z = 0; z < 16; ++z) {
+            newCol.sunLitBlocksYvalue[x][z] = -128;
+        }
+    }
+
+
+    return newCol;
+}
+
+
+
+int16_t ChunkManager::scanDown(int x, int startY, int z, ChunkColumn col) {
+    for (int y = startY; y >= WORLD_MIN_Y; --y) {
+
+    }
+    
+    return 0;
 }

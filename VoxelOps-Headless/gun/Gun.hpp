@@ -1,6 +1,5 @@
 #pragma once
 
-#include "../graphics/Model.hpp"
 #include "../physics/RayManager.hpp"
 
 #include <glm/glm.hpp>
@@ -34,7 +33,6 @@ public:
     void fire(const glm::vec3& rayOrigin, const glm::vec3& rayDirection);
 
     // Render the gun model relative to given transform
-    void render(const glm::vec3& position, const glm::quat& rotation, const glm::vec3& scale, Shader& shader) const;
 
     // Begin reload (if not already). Non-blocking: update handles the timer.
     void reload() noexcept;
@@ -54,7 +52,7 @@ public:
     static constexpr float maxShootDistance = 10000.0f;
 
 private:
-    std::unique_ptr<Model> gunModel;
+
 
     // settings
     float reloadTime;     // seconds

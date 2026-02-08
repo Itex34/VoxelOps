@@ -5,6 +5,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp> 
 #include "../voxels/Chunk.hpp"
+#include "../voxels/ChunkColumn.hpp"
+
 #include "ChunkMeshBuilder.hpp"
 #include "Frustum.hpp"
 #include "Camera.hpp"
@@ -76,6 +78,18 @@ struct IVec3Hash {
         uint64_t y = static_cast<uint32_t>(v.y);
         uint64_t z = static_cast<uint32_t>(v.z);
         uint64_t h = (x * 73856093u) ^ (y * 19349663u) ^ (z * 83492791u);
+        return static_cast<std::size_t>(h);
+    }
+};
+
+
+struct IVec2Hash {
+    std::size_t operator()(glm::ivec2 const& v) const noexcept {
+        // mix the three 32-bit ints into a 64-bit value then reduce to size_t
+        // using large primes for simple hashing (good enough for chunk coords)
+        uint64_t x = static_cast<uint32_t>(v.x);
+        uint64_t y = static_cast<uint32_t>(v.y);
+        uint64_t h = (x * 73856093u) ^ (y * 19349663u);
         return static_cast<std::size_t>(h);
     }
 };
@@ -180,8 +194,13 @@ private:
 
     std::unordered_map<glm::ivec3, Chunk, IVec3Hash> chunkMap;
 
+
     std::unordered_map<glm::ivec3, ChunkMesh, IVec3Hash> chunkMeshes; //deprecated
 
+
+
+
+    std::unordered_map<glm::ivec2, ChunkColumn, IVec2Hash> chunkColumns;
 
      
     // Convert chunk position to region position
@@ -226,7 +245,18 @@ private:
     BlockID getBlockSafe(Chunk& currentChunk, const glm::ivec3& pos);
 
 
-    
+
+
+    void computeLowestPotentialOccluders(const glm::ivec3& chunkPos, const Chunk& chunk);
+
+    void computeHeightMap(const glm::ivec3& columnPos, const ChunkColumn& col);
+
+    int16_t scanDown(int x, int startY, int z, ChunkColumn col);
+
+    ChunkColumn& getOrCreateColumn(int colX, int colZ);
+
+
+
     ChunkMeshBuilder builder;
     std::array<bool, 6> getVisibleChunkFaces(const glm::ivec3& pos) const;
 

@@ -19,7 +19,7 @@ Lighting::Lighting(int chunkSize_)
 
 
 
-void Lighting::prepareChunkSunlight(
+inline void Lighting::prepareChunkSunlight(
     const Chunk& chunk,
     const glm::ivec3& chunkPos,
     const Chunk* neighbors[6],
@@ -97,7 +97,7 @@ void Lighting::prepareChunkSunlight(
 
 
 
-void Lighting::prepareChunkAO(
+inline void Lighting::prepareChunkAO(
     const Chunk& chunk,
     const glm::ivec3& chunkPos,
     const Chunk* neighbors[6],
@@ -106,9 +106,9 @@ void Lighting::prepareChunkAO(
 {
     const int total = paddedSize * paddedSize * paddedSize;
     aoBuffer.assign(total, 15); // Default to full brightness
-    
+
     glm::ivec3 base = chunkPos * chunkSize;
-    
+
     // For each corner position in padded space
     for (int z = -1; z <= chunkSize + 1; ++z) {
         for (int y = -1; y <= chunkSize + 1; ++y) {

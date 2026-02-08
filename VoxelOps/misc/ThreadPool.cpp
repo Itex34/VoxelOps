@@ -1,7 +1,7 @@
 #include "ThreadPool.hpp"
 
 ThreadPool::ThreadPool(size_t threadCount) {
-    if (threadCount == 0) threadCount = 1;
+    if (threadCount <= 0) threadCount = 1;
 
     for (size_t i = 0; i < threadCount; i++) {
         workers.emplace_back([this] { workerLoop(); });

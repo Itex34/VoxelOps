@@ -20,7 +20,7 @@ inline uint32_t clampToCorner(float v) {
 
 
 inline VoxelVertex packVoxelVertex(
-    const glm::vec3& posLocal,  
+    const glm::vec3& posLocal,
     uint8_t face,
     uint8_t corner,
     uint8_t matId,
@@ -37,7 +37,7 @@ inline VoxelVertex packVoxelVertex(
         | (qz << 10)
         | ((face & 0x7u) << 15)
         | ((corner & 0x3u) << 18)
-        | ((ao & 0xFu) << 26); 
+        | ((ao & 0xFu) << 26);
 
     uint32_t high =
         (uint32_t(matId) << 0)
@@ -158,14 +158,21 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
                         (c.sign > 0 ? 4 : 5);
 
                     auto tex = getTexCoordsForFace(c.block, face, atlas);
-                    glm::vec2 tl = tex[0];
-                    glm::vec2 br = tex[2];
 
-                    float tileW = br.x - tl.x;
-                    float tileH = br.y - tl.y;
+                    float tlX = tex[0].x;
+                    float tlY = tex[0].y;
+
+                    float brX = tex[2].x;
+                    float brY = tex[2].y;
+
+
+                    float tileW = brX - tlX;
+                    float tileH = brY - tlY;
+
                     int gridX = int(std::round(1.0f / tileW));
-                    int tx = int(std::round(tl.x / tileW));
-                    int ty = int(std::round(tl.y / tileH));
+                    int tx = int(std::round(tlX / tileW));
+                    int ty = int(std::round(tlY / tileH));
+
                     c.matId = uint8_t(ty * gridX + tx);
 
                     // AO / Sun
@@ -219,13 +226,15 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
                     int w = 1;
                     while (i + w < CHUNK_SIZE) {
                         GreedyCell& r = mask[j * CHUNK_SIZE + (i + w)];
+
                         if (!r.valid || r.sign != c.sign ||
                             r.block != c.block || r.matId != c.matId ||
                             r.ao[0] != c.ao[0] || r.ao[1] != c.ao[1] ||
                             r.ao[2] != c.ao[2] || r.ao[3] != c.ao[3] ||
                             r.sun[0] != c.sun[0] || r.sun[1] != c.sun[1] ||
-                            r.sun[2] != c.sun[2] || r.sun[3] != c.sun[3])
+                            r.sun[2] != c.sun[2] || r.sun[3] != c.sun[3]) {
                             break;
+                        }
                         ++w;
                     }
 
@@ -244,21 +253,21 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
                                 break;
                             }
                         }
-                        if (!stop) ++h;
+                        if(!stop) ++h;
                     }
 
                     float ox = float(i * dux + j * dvx + s * dx);
                     float oy = float(i * duy + j * dvy + s * dy);
                     float oz = float(i * duz + j * dvz + s * dz);
 
-                    glm::vec3 du = glm::vec3(dux, duy, duz) * float(w);
-                    glm::vec3 dv = glm::vec3(dvx, dvy, dvz) * float(h);
+                    //glm::vec3 du = glm::vec3(dux, duy, duz) * float(w);
+                    //glm::vec3 dv = glm::vec3(dvx, dvy, dvz) * float(h);
 
                     glm::vec3 vtx[4] = {
                         {ox, oy, oz},
-                        {ox + du.x, oy + du.y, oz + du.z},
-                        {ox + du.x + dv.x, oy + du.y + dv.y, oz + du.z + dv.z},
-                        {ox + dv.x, oy + dv.y, oz + dv.z}
+                        {ox + dux * float(w), oy + duy * float(w), oz + duz * float(w)},
+                        {ox + dux * float(w) + dvx * float(h), oy + duy * float(w) + dvy * float(h), oz + duz * float(w) + dvz * float(h)},
+                        {ox + dvx * float(h), oy + dvy * float(h), oz + dvz * float(h)}
                     };
 
                     int face =
@@ -307,7 +316,7 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
             }
         }
     }
-        
+
     return { std::move(vertices), std::move(indices) };
 }
 
