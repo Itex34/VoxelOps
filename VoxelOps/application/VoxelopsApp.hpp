@@ -2,18 +2,7 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
-#include "../physics/Physics.hpp"
-#include "../graphics/Renderer.hpp"
-#include "../graphics/Model.hpp"
-#include "../graphics/Shader.hpp"
-#include "../graphics/Camera.hpp"
-#include "../graphics/ChunkMeshBuilder.hpp"
-#include "../graphics/Frustum.hpp"
-#include "../player/Player.hpp"
-#include "../input/InputCallbacks.hpp"
-#include "../data/GameData.hpp"
-#include "../graphics/TextureAtlas.hpp"
-#include "../graphics/ChunkManager.hpp"
+
 
 
 #include <sstream>
@@ -47,16 +36,14 @@ private:
 
 
 
-	Camera debugCamera;
-	Player player;
-	InputCallbacks inputCallbacks;
-	Shader shader;
-	Shader dbgShader;
-
-	Physics physics;
-	ChunkManager chunkManager;
-	//TextureAtlas atlas;
-	Frustum frustum;
+	//Camera debugCamera;
+	//Player player;
+	//InputCallbacks inputCallbacks;
+	//Shader shader;
+	//Shader dbgShader;
+	//Physics physics;
+	//ChunkManager chunkManager;
+	//Frustum frustum;
 
 
 

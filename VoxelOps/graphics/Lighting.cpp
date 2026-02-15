@@ -19,69 +19,32 @@ Lighting::Lighting(int chunkSize_)
 
 
 
-inline void Lighting::prepareChunkSunlight(
+void Lighting::prepareChunkSunlight(
     const Chunk& chunk,
     const glm::ivec3& chunkPos,
     const Chunk* neighbors[6],
     std::vector<uint8_t>& sunlightBuffer,
-    float sunFalloff // how quickly light dims below occluders
-) const
+    float sunFalloff 
+)
 {
-    const int total = paddedSize * paddedSize * paddedSize;
-    sunlightBuffer.assign(total, 1.0f);
-
-    glm::ivec3 base = chunkPos * chunkSize;
+    int paddedSize = chunkSize + 3;
+    sunlightBuffer.assign(paddedSize * paddedSize * paddedSize, 0);
 
     for (int z = -1; z <= chunkSize + 1; ++z) {
         for (int x = -1; x <= chunkSize + 1; ++x) {
-            float light = 1.0f;
+            uint8_t light = 15;
 
-            // Check sky access for this column
-            for (int y = chunkSize + 2; y < chunkSize + 64; ++y) {
-                int wx = x;
-                int wz = z;
-
-                if (isSolidSafe(x, y, z, chunk, neighbors)) {
-                    light = 0.0f;
-                    break;
-                }
-
-
-            }
-
-            // Propagate downward with deterministic accumulation
             for (int y = chunkSize + 1; y >= -1; --y) {
-                // Store light for THIS corner
-                float cornerLight = light;
+                bool blocked = false;
+                for (int ox = 0; ox <= 1; ++ox)
+                    for (int oz = 0; oz <= 1; ++oz)
+                        blocked |= isSolidSafePadded(x + ox - 1, y, z + oz - 1, chunk, neighbors);
 
-                // Count blockers at this level (affecting corners BELOW)
-                int blockers = 0;
-                for (int ox = 0; ox <= 1; ++ox) {
-                    for (int oz = 0; oz <= 1; ++oz) {
-                        int bx = x - (1 - ox);
-                        int bz = z - (1 - oz);
-
-                        if (isSolidSafe(bx, y, bz, chunk, neighbors))
-                            ++blockers;
-
-                    }
+                if (blocked) {
+                    if (light > 2) light -= 2; else light = 0;
                 }
 
-                // Update light for NEXT iteration (lower Y)
-                if (blockers > 0) {
-                    if (sunFalloff >= 1.0f) {
-                        light = 0.0f;
-                    }
-                    else {
-                        // Deterministic: reduce by fixed amount per blocker
-                        int lightLevel = int(light * 15.0f + 0.5f);
-                        lightLevel = std::max(0, lightLevel - blockers * 2); // 2/15 per blocker
-                        light = float(lightLevel) / 15.0f;
-                    }
-                }
-
-                uint8_t level = uint8_t(std::round(cornerLight * 15.0f));
-                sunlightBuffer[cornerIndexPadded(x, y, z)] = level;
+                sunlightBuffer[cornerIndexPadded(x, y, z)] = light;
             }
         }
     }
@@ -96,46 +59,97 @@ inline void Lighting::prepareChunkSunlight(
 
 
 
-
-inline void Lighting::prepareChunkAO(
+void Lighting::prepareChunkAO(
     const Chunk& chunk,
     const glm::ivec3& chunkPos,
     const Chunk* neighbors[6],
     std::vector<uint8_t>& aoBuffer
-) const
+) 
 {
-    const int total = paddedSize * paddedSize * paddedSize;
-    aoBuffer.assign(total, 15); // Default to full brightness
+    int paddedSize = chunkSize + 3;
+    aoBuffer.assign(paddedSize * paddedSize * paddedSize, 15); // full light
 
-    glm::ivec3 base = chunkPos * chunkSize;
-
-    // For each corner position in padded space
     for (int z = -1; z <= chunkSize + 1; ++z) {
         for (int y = -1; y <= chunkSize + 1; ++y) {
             for (int x = -1; x <= chunkSize + 1; ++x) {
-                glm::ivec3 local(x, y, z);
-
-                bool sx = isSolidSafe(x - 1, y, z, chunk, neighbors);
-                bool sy = isSolidSafe(x, y - 1, z, chunk, neighbors);
-                bool sz = isSolidSafe(x, y, z - 1, chunk, neighbors);
-
-                // Diagonal only if both sides exist
-                bool sxy = (sx && sy) && isSolidSafe(x - 1, y - 1, z, chunk, neighbors);
-                bool sxz = (sx && sz) && isSolidSafe(x - 1, y, z - 1, chunk, neighbors);
-                bool syz = (sy && sz) && isSolidSafe(x, y - 1, z - 1, chunk, neighbors);
 
                 int occlusion = 0;
-                occlusion += sx;
-                occlusion += sy;
-                occlusion += sz;
-                occlusion += sxy;
-                occlusion += sxz;
-                occlusion += syz;
+
+                bool sx = isSolidSafePadded(x - 1, y, z, chunk, neighbors);
+                bool sy = isSolidSafePadded(x, y - 1, z, chunk, neighbors);
+                bool sz = isSolidSafePadded(x, y, z - 1, chunk, neighbors);
+
+                bool sxy = sx && sy && isSolidSafePadded(x - 1, y - 1, z, chunk, neighbors);
+                bool sxz = sx && sz && isSolidSafePadded(x - 1, y, z - 1, chunk, neighbors);
+                bool syz = sy && sz && isSolidSafePadded(x, y - 1, z - 1, chunk, neighbors);
+
+                occlusion = sx + sy + sz + sxy + sxz + syz;
 
                 uint8_t ao = uint8_t(std::max(0, 15 - occlusion * 2));
                 aoBuffer[cornerIndexPadded(x, y, z)] = ao;
-
             }
         }
+    }
+}
+
+ 
+
+
+// lighting helper: compute corner indices for a face in the exact order that the mesh emits vtx[0..3].
+void Lighting::faceCornerIndicesForCell(
+    int sx, int sy, int sz,   // sampling cell base (see notes below)
+    int face,                 // 0..5 (same enum as your mesher)
+    int outIdx[4]             // returns 4 corner indices in BL, BR, TR, TL order
+) const
+{
+    auto idx = [&](int X, int Y, int Z) { return cornerIndexPadded(X, Y, Z); };
+
+    switch (face)
+    {
+    case 0: // +X
+        // BL, BR, TR, TL  (match your vtx layout)
+        outIdx[0] = idx(sx + 1, sy, sz);
+        outIdx[1] = idx(sx + 1, sy, sz + 1);
+        outIdx[2] = idx(sx + 1, sy + 1, sz + 1);
+        outIdx[3] = idx(sx + 1, sy + 1, sz);
+        break;
+
+    case 1: // -X
+        outIdx[0] = idx(sx, sy, sz + 1);
+        outIdx[1] = idx(sx, sy, sz);
+        outIdx[2] = idx(sx, sy + 1, sz);
+        outIdx[3] = idx(sx, sy + 1, sz + 1);
+        break;
+
+    case 2: // +Y
+        outIdx[0] = idx(sx, sy + 1, sz);
+        outIdx[1] = idx(sx + 1, sy + 1, sz);
+        outIdx[2] = idx(sx + 1, sy + 1, sz + 1);
+        outIdx[3] = idx(sx, sy + 1, sz + 1);
+        break;
+
+    case 3: // -Y
+        outIdx[0] = idx(sx, sy, sz + 1);
+        outIdx[1] = idx(sx + 1, sy, sz + 1);
+        outIdx[2] = idx(sx + 1, sy, sz);
+        outIdx[3] = idx(sx, sy, sz);
+        break;
+
+    case 4: // +Z
+        outIdx[0] = idx(sx, sy, sz + 1);
+        outIdx[1] = idx(sx + 1, sy, sz + 1);
+        outIdx[2] = idx(sx + 1, sy + 1, sz + 1);
+        outIdx[3] = idx(sx, sy + 1, sz + 1);
+        break;
+
+    case 5: // -Z
+        outIdx[0] = idx(sx + 1, sy, sz);
+        outIdx[1] = idx(sx, sy, sz);
+        outIdx[2] = idx(sx, sy + 1, sz);
+        outIdx[3] = idx(sx + 1, sy + 1, sz);
+        break;
+
+    default:
+        outIdx[0] = outIdx[1] = outIdx[2] = outIdx[3] = 0;
     }
 }

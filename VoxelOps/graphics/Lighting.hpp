@@ -27,20 +27,27 @@ public:
 
 
 
-    inline void prepareChunkAO(
+    void prepareChunkAO(
         const Chunk& chunk,
         const glm::ivec3& chunkPos,
         const Chunk* neighbors[6],
         std::vector<uint8_t>& aoBuffer
-    ) const;
+    );
 
 
-    inline void prepareChunkSunlight(
+    void prepareChunkSunlight(
         const Chunk& chunk,
         const glm::ivec3& chunkPos,
         const Chunk* neighbors[6],
         std::vector<uint8_t>& sunlightBuffer,
         float sunFalloff // how quickly light dims below occluders
+    ) ;
+
+
+    void faceCornerIndicesForCell(
+        int sx, int sy, int sz,   // sampling cell base (see notes below)
+        int face,                 // 0..5 (same enum as your mesher)
+        int outIdx[4]             // returns 4 corner indices in BL, BR, TR, TL order
     ) const;
 
 
@@ -115,25 +122,25 @@ private:
 
 
 
-    inline bool isSolidSafe(
-        int x, int y, int z,
-        const Chunk& chunk,
-        const Chunk* neighbors[6]
-    ) const noexcept
+    inline bool isSolidSafePadded(int x, int y, int z,
+        const Chunk& center,
+        const Chunk* neighbors[6])
     {
-        if (y < -1 || y > CHUNK_SIZE * 2)
-            return false;
+        if (x >= 0 && x < CHUNK_SIZE &&
+            y >= 0 && y < CHUNK_SIZE &&
+            z >= 0 && z < CHUNK_SIZE)
+            return center.getBlock(x, y, z) != BlockID::Air;
 
-        int oob =
-            (x < 0 || x >= CHUNK_SIZE) +
-            (y < 0 || y >= CHUNK_SIZE) +
-            (z < 0 || z >= CHUNK_SIZE);
+        if (x < 0 && neighbors[1]) return neighbors[1]->getBlock(x + CHUNK_SIZE, y, z) != BlockID::Air;
+        if (x >= CHUNK_SIZE && neighbors[0]) return neighbors[0]->getBlock(x - CHUNK_SIZE, y, z) != BlockID::Air;
+        if (y < 0 && neighbors[3]) return neighbors[3]->getBlock(x, y + CHUNK_SIZE, z) != BlockID::Air;
+        if (y >= CHUNK_SIZE && neighbors[2]) return neighbors[2]->getBlock(x, y - CHUNK_SIZE, z) != BlockID::Air;
+        if (z < 0 && neighbors[5]) return neighbors[5]->getBlock(x, y, z + CHUNK_SIZE) != BlockID::Air;
+        if (z >= CHUNK_SIZE && neighbors[4]) return neighbors[4]->getBlock(x, y, z - CHUNK_SIZE) != BlockID::Air;
 
-        if (oob > 1)
-            return false;
-
-        return getBlockWithNeighbors({ x, y, z }, chunk, neighbors) != BlockID::Air;
+        return false;
     }
+
 
 
 

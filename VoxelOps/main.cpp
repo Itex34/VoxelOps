@@ -71,7 +71,6 @@ int main(int argc, char** argv) {
     }
     glfwMakeContextCurrent(window);
     gladLoadGLLoader((GLADloadproc)glfwGetProcAddress);
-
     glfwSwapInterval(0);
 
     printf("OpenGL version: %s\n", glGetString(GL_VERSION));
@@ -94,9 +93,8 @@ int main(int argc, char** argv) {
 
 
 
-    Player player(glm::vec3(0.0f, 60.0f, 0.0f), chunkManager, "C:/Users/julie/source/repos/VoxelOps/Models/sniper.fbx");
+    Player player(glm::vec3(0.0f, 60.0f, 0.0f), chunkManager, "C:/Users/Sophie/source/repos/VoxelOps/Models/sniper.fbx");
 
-    Physics physics;
     InputCallbacks inputCallbacks(player);
 
     RayManager rayManager;
@@ -431,7 +429,7 @@ int main(int argc, char** argv) {
         glm::vec3 ambientColor = glm::vec3(0.3f, 0.3f, 0.3f);
 
 
-        player.render(projection, lightDir, lightColor, ambientColor);
+        //player.render(projection, lightDir, lightColor, ambientColor);
 
 
         glActiveTexture(GL_TEXTURE0);

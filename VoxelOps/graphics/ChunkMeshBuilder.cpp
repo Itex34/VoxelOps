@@ -68,7 +68,7 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
 {
 
     std::vector<VoxelVertex> vertices;
-    std::vector<unsigned short> indices;
+    std::vector<uint16_t> indices;
     vertices.reserve(4096);
     indices.reserve(6144);
 
@@ -175,12 +175,16 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
 
                     c.matId = uint8_t(ty * gridX + tx);
 
+
+
+
+
                     // AO / Sun
                     if (enableAO || enableShadows) {
 
-                        int sx = (c.sign > 0) ? pax + dx : pbx;
-                        int sy = (c.sign > 0) ? pay + dy : pby;
-                        int sz = (c.sign > 0) ? paz + dz : pbz;
+                        int sx = i * dux + j * dvx + (c.sign > 0 ? (s - 1) : s) * dx;
+                        int sy = i * duy + j * dvy + (c.sign > 0 ? (s - 1) : s) * dy;
+                        int sz = i * duz + j * dvz + (c.sign > 0 ? (s - 1) : s) * dz;
 
 
 
@@ -212,6 +216,22 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
                                 c.sun[k] = cornerSun[ci];
                         }
 
+                        uint32_t key = 0;
+
+                        if (enableAO)
+                            key |= (c.ao[0] << 0) |
+                            (c.ao[1] << 4) |
+                            (c.ao[2] << 8) |
+                            (c.ao[3] << 12);
+
+                        if (enableShadows)
+                            key |= (c.sun[0] << 16) |
+                            (c.sun[1] << 20) |
+                            (c.sun[2] << 24) |
+                            (c.sun[3] << 28);
+
+                        c.lightKey = key;
+
                     }
                 }
             }
@@ -229,10 +249,7 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
 
                         if (!r.valid || r.sign != c.sign ||
                             r.block != c.block || r.matId != c.matId ||
-                            r.ao[0] != c.ao[0] || r.ao[1] != c.ao[1] ||
-                            r.ao[2] != c.ao[2] || r.ao[3] != c.ao[3] ||
-                            r.sun[0] != c.sun[0] || r.sun[1] != c.sun[1] ||
-                            r.sun[2] != c.sun[2] || r.sun[3] != c.sun[3]) {
+                            r.lightKey != c.lightKey) {
                             break;
                         }
                         ++w;
@@ -245,10 +262,7 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
                             GreedyCell& r = mask[(j + h) * CHUNK_SIZE + (i + k)];
                             if (!r.valid || r.sign != c.sign ||
                                 r.block != c.block || r.matId != c.matId ||
-                                r.ao[0] != c.ao[0] || r.ao[1] != c.ao[1] ||
-                                r.ao[2] != c.ao[2] || r.ao[3] != c.ao[3] ||
-                                r.sun[0] != c.sun[0] || r.sun[1] != c.sun[1] ||
-                                r.sun[2] != c.sun[2] || r.sun[3] != c.sun[3]) {
+                                r.lightKey != c.lightKey) {
                                 stop = true;
                                 break;
                             }
@@ -260,8 +274,6 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
                     float oy = float(i * duy + j * dvy + s * dy);
                     float oz = float(i * duz + j * dvz + s * dz);
 
-                    //glm::vec3 du = glm::vec3(dux, duy, duz) * float(w);
-                    //glm::vec3 dv = glm::vec3(dvx, dvy, dvz) * float(h);
 
                     glm::vec3 vtx[4] = {
                         {ox, oy, oz},
@@ -275,17 +287,67 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
                         (d == 1) ? (c.sign > 0 ? 2 : 3) :
                         (c.sign > 0 ? 4 : 5);
 
+                    uint8_t quadAO[4] = { 0,0,0,0 };
+                    uint8_t quadSun[4] = { 0,0,0,0 };
+
+                    if (enableAO || enableShadows)
+                    {
+                        int sx = int(ox);
+                        int sy = int(oy);
+                        int sz = int(oz);
+
+                        if (c.sign > 0) {
+                            sx -= dx;
+                            sy -= dy;
+                            sz -= dz;
+                        }
+
+                        // corners of FINAL GREEDY QUAD
+                        int cx[4] = {
+                            sx,
+                            sx + dux * w,
+                            sx + dux * w + dvx * h,
+                            sx + dvx * h
+                        };
+
+                        int cy[4] = {
+                            sy,
+                            sy + duy * w,
+                            sy + duy * w + dvy * h,
+                            sy + dvy * h
+                        };
+
+                        int cz[4] = {
+                            sz,
+                            sz + duz * w,
+                            sz + duz * w + dvz * h,
+                            sz + dvz * h
+                        };
+
+                        for (int k = 0; k < 4; ++k)
+                        {
+                            int ci = lighting.cornerIndexPadded(cx[k], cy[k], cz[k]);
+
+                            if (enableAO)      quadAO[k] = cornerAO[ci];
+                            if (enableShadows) quadSun[k] = cornerSun[ci];
+                        }
+                    }
+                    
+
                     for (int k = 0; k < 4; ++k) {
                         uint8_t uvCorner = uvRemap[face][k];
+
                         vertices.push_back(packVoxelVertex(
                             vtx[k],
                             face,
                             uvCorner,
                             c.matId,
-                            c.ao[k],
-                            c.sun[k]
+                            quadAO[k],
+                            quadSun[k]
                         ));
                     }
+
+
 
                     if (c.sign > 0) {
                         indices.push_back(indexOffset + 0);
