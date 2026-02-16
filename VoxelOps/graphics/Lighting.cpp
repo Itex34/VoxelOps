@@ -1,6 +1,7 @@
 #include "Lighting.hpp"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "../voxels/Voxel.hpp"
 
@@ -24,16 +25,44 @@ void Lighting::prepareChunkSunlight(
     const glm::ivec3& chunkPos,
     const Chunk* neighbors[6],
     std::vector<uint8_t>& sunlightBuffer,
-    float sunFalloff 
+    float sunFalloff,
+    const TopOccluderGetter& getTopOccluderY
 )
 {
     int paddedSize = chunkSize + 3;
     sunlightBuffer.assign(paddedSize * paddedSize * paddedSize, 0);
 
+    if (getTopOccluderY) {
+        const int chunkWorldMinX = chunkPos.x * CHUNK_SIZE;
+        const int chunkWorldMinY = chunkPos.y * CHUNK_SIZE;
+        const int chunkWorldMinZ = chunkPos.z * CHUNK_SIZE;
+
+        for (int z = -1; z <= chunkSize + 1; ++z) {
+            for (int x = -1; x <= chunkSize + 1; ++x) {
+                const int worldX = chunkWorldMinX + x;
+                const int worldZ = chunkWorldMinZ + z;
+
+                int topOccluderY = std::numeric_limits<int>::min();
+                for (int ox = 0; ox <= 1; ++ox) {
+                    for (int oz = 0; oz <= 1; ++oz) {
+                        topOccluderY = std::max(topOccluderY, getTopOccluderY(worldX + ox - 1, worldZ + oz - 1));
+                    }
+                }
+
+                for (int y = chunkSize + 1; y >= -1; --y) {
+                    const int worldY = chunkWorldMinY + y;
+                    const int blockedLayers = (worldY <= topOccluderY) ? (topOccluderY - worldY + 1) : 0;
+                    const int light = std::max(0, 15 - blockedLayers * 2);
+                    sunlightBuffer[cornerIndexPadded(x, y, z)] = uint8_t(light);
+                }
+            }
+        }
+        return;
+    }
+
     for (int z = -1; z <= chunkSize + 1; ++z) {
         for (int x = -1; x <= chunkSize + 1; ++x) {
             uint8_t light = 15;
-
             for (int y = chunkSize + 1; y >= -1; --y) {
                 bool blocked = false;
                 for (int ox = 0; ox <= 1; ++ox)
@@ -41,9 +70,8 @@ void Lighting::prepareChunkSunlight(
                         blocked |= isSolidSafePadded(x + ox - 1, y, z + oz - 1, chunk, neighbors);
 
                 if (blocked) {
-                    if (light > 2) light -= 2; else light = 0;
+                    light = (light > 2) ? uint8_t(light - 2) : uint8_t(0);
                 }
-
                 sunlightBuffer[cornerIndexPadded(x, y, z)] = light;
             }
         }

@@ -18,6 +18,7 @@ static constexpr int PAD = 1;
 
 
 using BlockGetter = std::function<BlockID(const glm::ivec3&)>;
+using TopOccluderGetter = std::function<int(int, int)>;
 
 class Lighting {
 public:
@@ -40,7 +41,8 @@ public:
         const glm::ivec3& chunkPos,
         const Chunk* neighbors[6],
         std::vector<uint8_t>& sunlightBuffer,
-        float sunFalloff // how quickly light dims below occluders
+        float sunFalloff, // how quickly light dims below occluders
+        const TopOccluderGetter& getTopOccluderY = TopOccluderGetter{}
     ) ;
 
 

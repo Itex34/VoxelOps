@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
     }
     glfwMakeContextCurrent(window);
     gladLoadGLLoader((GLADloadproc)glfwGetProcAddress);
-    glfwSwapInterval(0);
+    //glfwSwapInterval(0);
 
     printf("OpenGL version: %s\n", glGetString(GL_VERSION));
     printf("GLSL version: %s\n", glGetString(GL_SHADING_LANGUAGE_VERSION));

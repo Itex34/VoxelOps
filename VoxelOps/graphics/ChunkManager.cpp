@@ -153,6 +153,7 @@ void ChunkManager::generateChunkAt(const glm::ivec3& pos) {
 
     //  Store chunk 
     chunk.dirty = true;
+    rebuildColumnSunCache(pos.x, pos.z);
 }
 
 
@@ -262,9 +263,6 @@ void ChunkManager::renderChunks(
     const glm::ivec3 playerChunkPos =
         worldToChunkPos(glm::ivec3(player.getPosition()));
 
-    /* ============================
-       One-time atlas setup
-       ============================ */
 
     if (!m_tileInfoInitialized) {
 
@@ -286,9 +284,6 @@ void ChunkManager::renderChunks(
         m_tileInfoInitialized = true;
     }
 
-    /* ============================
-       Rendering
-       ============================ */
 
     const int maxDistSq = maxRenderDistance * maxRenderDistance;
 
@@ -441,14 +436,17 @@ void ChunkManager::updateDirtyChunks() {
 
         auto start = std::chrono::high_resolution_clock::now();
 
-        auto built = builder.buildChunkMesh(chunk, neighbors, pos, atlas, enableAO, enableShadows);
+        auto built = builder.buildChunkMesh(
+            chunk, neighbors, pos, atlas, enableAO, enableShadows,
+            [this](int wx, int wz) { return this->getColumnTopOccluderY(wx, wz); }
+        );
 
         auto end = std::chrono::high_resolution_clock::now();
 
         std::chrono::duration<double, std::micro> elapsed = end - start;
 
 
-        std::cout << "Chunk meshed in : " << elapsed.count() << " microseconds" << '\n';
+        //std::cout << "Chunk meshed in : " << elapsed.count() << " microseconds" << '\n';
 
 
         uploadChunkMesh(pos, built.vertices, built.indices);
@@ -483,6 +481,7 @@ void ChunkManager::updateChunks(const glm::ivec3& playerWorldPos, int renderDist
 
 
     std::vector<glm::ivec3> toErase;
+    std::unordered_set<glm::ivec2, IVec2Hash> columnsToRefresh;
     std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> desired;
 
     glm::ivec3 playerChunk = worldToChunkPos(playerWorldPos);
@@ -508,8 +507,13 @@ void ChunkManager::updateChunks(const glm::ivec3& playerWorldPos, int renderDist
     }
 
     for (auto& pos : toErase) {
+        columnsToRefresh.insert(glm::ivec2(pos.x, pos.z));
         chunkMap.erase(pos);
         chunkMeshes.erase(pos); // frees GPU buffers
+    }
+
+    for (const auto& c : columnsToRefresh) {
+        rebuildColumnSunCache(c.x, c.y);
     }
 
     // --- Load missing chunks ---
@@ -584,6 +588,7 @@ void ChunkManager::generateTerrainChunkAt(const glm::ivec3& pos) {
 
     // Insert the terrain-only chunk into chunkMap so neighbors can see it later
     chunk.dirty = true;
+    rebuildColumnSunCache(pos.x, pos.z);
 }
 
 
@@ -648,7 +653,10 @@ void ChunkManager::setBlockInWorld(const glm::ivec3& worldPos, BlockID blockID) 
     if (it == chunkMap.end()) return;
 
     Chunk& chunk = it->second;
+    BlockID oldId = chunk.getBlock(localPos.x, localPos.y, localPos.z);
+    if (oldId == blockID) return;
     chunk.setBlock(localPos.x, localPos.y, localPos.z, blockID);
+    updateColumnSunCacheForBlockChange(worldPos.x, worldPos.y, worldPos.z, oldId, blockID);
     chunk.dirty = true;
 
     // mark neighbors if we touched an edge
@@ -688,7 +696,10 @@ void ChunkManager::setBlockGlobal(int worldX, int worldY, int worldZ, BlockID id
 
     auto it = chunkMap.find(chunkPos);
     if (it != chunkMap.end()) {
+        BlockID oldId = it->second.getBlock(localPos.x, localPos.y, localPos.z);
+        if (oldId == id) return;
         it->second.setBlock(localPos.x, localPos.y, localPos.z, id);
+        updateColumnSunCacheForBlockChange(worldX, worldY, worldZ, oldId, id);
         it->second.dirty = true;
     }
 }
@@ -717,7 +728,11 @@ void ChunkManager::setBlockSafe(Chunk& currentChunk, const glm::ivec3& pos, Bloc
     if (pos.x >= 0 && pos.x < CHUNK_SIZE &&
         pos.y >= 0 && pos.y < CHUNK_SIZE &&
         pos.z >= 0 && pos.z < CHUNK_SIZE) {
+        BlockID oldId = currentChunk.getBlock(pos.x, pos.y, pos.z);
+        if (oldId == id) return;
         currentChunk.setBlock(pos.x, pos.y, pos.z, id);
+        const glm::ivec3 worldPos = currentChunk.getWorldPosition() + pos;
+        updateColumnSunCacheForBlockChange(worldPos.x, worldPos.y, worldPos.z, oldId, id);
     }
     else {
         // Convert local pos to world pos, then use global function
@@ -792,7 +807,8 @@ void ChunkManager::playerBreakBlockAt(const glm::ivec3& blockCoords) {
 
     auto it = chunkMap.find(chunkPos);
     if (it != chunkMap.end()) {
-        it->second.removeBlock(localPos.x, localPos.y, localPos.z);
+        BlockID oldId = it->second.removeBlock(localPos.x, localPos.y, localPos.z);
+        updateColumnSunCacheForBlockChange(blockCoords.x, blockCoords.y, blockCoords.z, oldId, BlockID::Air);
     }
 
     updateDirtyChunkAt(chunkPos);
@@ -990,13 +1006,16 @@ void ChunkManager::updateDirtyChunkAt(const glm::ivec3& chunkPos) {
 
     auto start = std::chrono::high_resolution_clock::now();
 
-    auto built = builder.buildChunkMesh(chunk, neighbors, chunkPos, atlas, enableAO, enableShadows);
+    auto built = builder.buildChunkMesh(
+        chunk, neighbors, chunkPos, atlas, enableAO, enableShadows,
+        [this](int wx, int wz) { return this->getColumnTopOccluderY(wx, wz); }
+    );
 
     auto end = std::chrono::high_resolution_clock::now();
 
     std::chrono::duration<double, std::micro> elapsed = end - start;
 
-    std::cout << "Chunk meshed in : " << elapsed.count() << " microseconds" << '\n';
+    //std::cout << "Chunk meshed in : " << elapsed.count() << " microseconds" << '\n';
 
     uploadChunkMesh(chunkPos, built.vertices, built.indices);
 
@@ -1081,8 +1100,16 @@ void ChunkManager::uploadChunkMesh(
     ChunkMesh mesh = region.gpu->createChunkMesh(vertices, indices);
 
     if (mesh.status == ChunkMeshStatus::OutOfMemory) {
-        // rebuild region once
-        rebuildRegion(chunkToRegionPos(chunkPos));
+        // Rebuild with enough headroom for the incoming mesh.
+        const bool rebuilt = rebuildRegion(
+            chunkToRegionPos(chunkPos),
+            vertices.size(),
+            indices.size()
+        );
+        if (!rebuilt) {
+            std::cerr << "[FATAL] Region rebuild failed permanently\n";
+            return;
+        }
 
         mesh = region.gpu->createChunkMesh(vertices, indices);
         if (!mesh.valid) {
@@ -1124,23 +1151,27 @@ void ChunkManager::removeChunkMesh(const glm::ivec3& chunkPos) {
 
 
 
-void ChunkManager::rebuildRegion(const glm::ivec3& regionPos)
+bool ChunkManager::rebuildRegion(const glm::ivec3& regionPos, size_t reserveVertices, size_t reserveIndices)
 {
     auto it = regions.find(regionPos);
-    if (it == regions.end()) return;
+    if (it == regions.end()) return false;
 
     Region& oldRegion = it->second;
 
-    auto newGpu = std::make_unique<RegionMeshBuffer>(
-        REGION_VERTEX_BYTES,
-        REGION_INDEX_BYTES
-    );
+    struct BuiltChunkData {
+        glm::ivec3 chunkPos;
+        std::vector<VoxelVertex> vertices;
+        std::vector<uint16_t> indices;
+    };
 
-    std::unordered_map<glm::ivec3, ChunkMesh, IVec3Hash> newMeshes;
+    std::vector<BuiltChunkData> rebuiltData;
+    rebuiltData.reserve(oldRegion.chunks.size());
 
-    for (auto& [chunkPos, oldMesh] : oldRegion.chunks) {
+    size_t requiredVertices = reserveVertices;
+    size_t requiredIndices = reserveIndices;
+
+    for (const auto& [chunkPos, oldMesh] : oldRegion.chunks) {
         Chunk& chunk = chunkMap.at(chunkPos);
-
 
         auto findChunk = [&](const glm::ivec3& pos) -> const Chunk* {
             auto it = chunkMap.find(pos);
@@ -1148,7 +1179,6 @@ void ChunkManager::rebuildRegion(const glm::ivec3& regionPos)
             };
 
         const Chunk* neighbors[6] = {};
-
         constexpr glm::ivec3 offsets[6] = {
             {1,0,0},{-1,0,0},
             {0,1,0},{0,-1,0},
@@ -1158,30 +1188,58 @@ void ChunkManager::rebuildRegion(const glm::ivec3& regionPos)
         for (int i = 0; i < 6; ++i)
             neighbors[i] = findChunk(chunkPos + offsets[i]);
 
+        auto built = builder.buildChunkMesh(
+            chunk, neighbors, chunkPos, atlas, enableAO, enableShadows,
+            [this](int wx, int wz) { return this->getColumnTopOccluderY(wx, wz); }
+        );
 
-
-
-        auto start = std::chrono::high_resolution_clock::now();
-
-        auto built = builder.buildChunkMesh(chunk, neighbors, chunkPos, atlas, enableAO, enableShadows);
-
-        auto end = std::chrono::high_resolution_clock::now();
-
-
-
-        std::chrono::duration<double, std::micro> elapsed = end - start;
-
-        ChunkMesh mesh = newGpu->createChunkMesh(built.vertices, built.indices);
-        if (!mesh.valid) {
-            std::cerr << "[FATAL] Region rebuild failed\n";
-            return;
-        }
-
-        newMeshes.emplace(chunkPos, mesh);
+        requiredVertices += built.vertices.size();
+        requiredIndices += built.indices.size();
+        rebuiltData.push_back({ chunkPos, std::move(built.vertices), std::move(built.indices) });
     }
 
+    size_t newVertexBytes = oldRegion.vertexBytes;
+    size_t newIndexBytes = oldRegion.indexBytes;
+
+    auto vertexCapacityFromBytes = [](size_t bytes) -> size_t {
+        return bytes / sizeof(VoxelVertex);
+    };
+    auto indexCapacityFromBytes = [](size_t bytes) -> size_t {
+        return bytes / sizeof(uint16_t);
+    };
+
+    while (vertexCapacityFromBytes(newVertexBytes) < requiredVertices) {
+        newVertexBytes *= 2;
+    }
+    while (indexCapacityFromBytes(newIndexBytes) < requiredIndices) {
+        newIndexBytes *= 2;
+    }
+
+    if (newVertexBytes != oldRegion.vertexBytes || newIndexBytes != oldRegion.indexBytes) {
+        std::cout
+            << "[ChunkManager] Growing region (" << regionPos.x << "," << regionPos.y << "," << regionPos.z << ") "
+            << "VBO " << oldRegion.vertexBytes << " -> " << newVertexBytes << " bytes, "
+            << "EBO " << oldRegion.indexBytes << " -> " << newIndexBytes << " bytes\n";
+    }
+
+    auto newGpu = std::make_unique<RegionMeshBuffer>(newVertexBytes, newIndexBytes);
+    std::unordered_map<glm::ivec3, ChunkMesh, IVec3Hash> newMeshes;
+    newMeshes.reserve(rebuiltData.size());
+
+    for (auto& entry : rebuiltData) {
+        ChunkMesh mesh = newGpu->createChunkMesh(entry.vertices, entry.indices);
+        if (!mesh.valid) {
+            std::cerr << "[FATAL] Region rebuild failed\n";
+            return false;
+        }
+        newMeshes.emplace(entry.chunkPos, mesh);
+    }
+
+    oldRegion.vertexBytes = newVertexBytes;
+    oldRegion.indexBytes = newIndexBytes;
     oldRegion.gpu = std::move(newGpu);
     oldRegion.chunks = std::move(newMeshes);
+    return true;
 }
 
 
@@ -1259,6 +1317,72 @@ ChunkColumn& ChunkManager::getOrCreateColumn(int colX, int colZ) {
 
 
     return newCol;
+}
+
+int ChunkManager::getColumnTopOccluderY(int worldX, int worldZ) const {
+    const int colX = floorDiv(worldX, CHUNK_SIZE);
+    const int colZ = floorDiv(worldZ, CHUNK_SIZE);
+    const int lx = mod(worldX, CHUNK_SIZE);
+    const int lz = mod(worldZ, CHUNK_SIZE);
+
+    auto it = chunkColumns.find(glm::ivec2(colX, colZ));
+    if (it == chunkColumns.end()) {
+        return WORLD_MIN_Y - 1;
+    }
+    return int(it->second.sunLitBlocksYvalue[lx][lz]);
+}
+
+void ChunkManager::rebuildColumnSunCache(int colChunkX, int colChunkZ) {
+    ChunkColumn& col = getOrCreateColumn(colChunkX, colChunkZ);
+
+    for (int lx = 0; lx < CHUNK_SIZE; ++lx) {
+        for (int lz = 0; lz < CHUNK_SIZE; ++lz) {
+            const int worldX = colChunkX * CHUNK_SIZE + lx;
+            const int worldZ = colChunkZ * CHUNK_SIZE + lz;
+
+            int top = WORLD_MIN_Y - 1;
+            for (int y = WORLD_MAX_Y; y >= WORLD_MIN_Y; --y) {
+                if (getBlockGlobal(worldX, y, worldZ) != BlockID::Air) {
+                    top = y;
+                    break;
+                }
+            }
+
+            col.sunLitBlocksYvalue[lx][lz] = int8_t(top);
+        }
+    }
+}
+
+void ChunkManager::updateColumnSunCacheForBlockChange(int worldX, int worldY, int worldZ, BlockID oldId, BlockID newId) {
+    const int colX = floorDiv(worldX, CHUNK_SIZE);
+    const int colZ = floorDiv(worldZ, CHUNK_SIZE);
+    const int lx = mod(worldX, CHUNK_SIZE);
+    const int lz = mod(worldZ, CHUNK_SIZE);
+
+    ChunkColumn& col = getOrCreateColumn(colX, colZ);
+    int topValue = int(col.sunLitBlocksYvalue[lx][lz]);
+
+    if (newId != BlockID::Air) {
+        if (worldY > topValue) {
+            col.sunLitBlocksYvalue[lx][lz] = int8_t(worldY);
+        }
+        return;
+    }
+
+    if (oldId == BlockID::Air) {
+        return;
+    }
+
+    if (worldY == topValue) {
+        int newTop = WORLD_MIN_Y - 1;
+        for (int y = worldY - 1; y >= WORLD_MIN_Y; --y) {
+            if (getBlockGlobal(worldX, y, worldZ) != BlockID::Air) {
+                newTop = y;
+                break;
+            }
+        }
+        col.sunLitBlocksYvalue[lx][lz] = int8_t(newTop);
+    }
 }
 
 

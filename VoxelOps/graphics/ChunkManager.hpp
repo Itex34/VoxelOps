@@ -101,10 +101,14 @@ struct Region {
     glm::ivec3 regionPos;
     std::unique_ptr<RegionMeshBuffer> gpu;
     std::unordered_map<glm::ivec3, ChunkMesh, IVec3Hash> chunks;
+    size_t vertexBytes = REGION_VERTEX_BYTES;
+    size_t indexBytes = REGION_INDEX_BYTES;
 
     Region() = default;
     Region(glm::ivec3 pos, size_t vertexBytes, size_t indexBytes)
         : regionPos(pos)
+        , vertexBytes(vertexBytes)
+        , indexBytes(indexBytes)
         , gpu(std::make_unique<RegionMeshBuffer>(vertexBytes, indexBytes))
     {
     }
@@ -215,7 +219,7 @@ private:
     // Get or create region for a chunk
     Region& getOrCreateRegion(const glm::ivec3& chunkPos);
 
-	void rebuildRegion(const glm::ivec3& regionPos);
+	bool rebuildRegion(const glm::ivec3& regionPos, size_t reserveVertices = 0, size_t reserveIndices = 0);
 
     // Upload mesh to appropriate region
     void uploadChunkMesh(const glm::ivec3& chunkPos,
@@ -250,6 +254,9 @@ private:
     void computeLowestPotentialOccluders(const glm::ivec3& chunkPos, const Chunk& chunk);
 
     void computeHeightMap(const glm::ivec3& columnPos, const ChunkColumn& col);
+    void rebuildColumnSunCache(int colChunkX, int colChunkZ);
+    void updateColumnSunCacheForBlockChange(int worldX, int worldY, int worldZ, BlockID oldId, BlockID newId);
+    int getColumnTopOccluderY(int worldX, int worldZ) const;
 
     int16_t scanDown(int x, int startY, int z, ChunkColumn col);
 

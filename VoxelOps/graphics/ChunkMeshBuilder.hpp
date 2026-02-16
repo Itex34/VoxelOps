@@ -39,9 +39,9 @@ struct GreedyCell {
 	int sign = 0; // +1 or -1
 	BlockID block = BlockID::Air;
 	uint8_t matId = 0;
-    uint8_t ao[4] = { 15,15,15,15 };
-    uint8_t sun[4] = { 15,15,15,15 };
-    uint32_t lightKey;
+    uint8_t ao[4] = { 0,0,0,0 };
+    uint8_t sun[4] = { 0,0,0,0 };
+    uint32_t lightKey = 0;
 };
 
 struct BuiltChunkMesh {
@@ -74,7 +74,8 @@ public:
 
 
 
-	using BlockGetter = std::function<BlockID(const glm::ivec3& worldPos)>; //deprecated
+using BlockGetter = std::function<BlockID(const glm::ivec3& worldPos)>; //deprecated
+    using SunTopGetter = std::function<int(int, int)>;
 
     BuiltChunkMesh buildChunkMesh(
         const Chunk& center,
@@ -82,7 +83,8 @@ public:
         const glm::ivec3& chunkPos,
         const TextureAtlas& atlas,
         bool enableAO,
-        bool enableShadows
+        bool enableShadows,
+        const SunTopGetter& getSunTopY = SunTopGetter{}
     );
 
 

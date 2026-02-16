@@ -63,7 +63,8 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
     const glm::ivec3& chunkPos,
     const TextureAtlas& atlas,
     bool enableAO,
-    bool enableShadows
+    bool enableShadows,
+    const SunTopGetter& getSunTopY
 )
 {
 
@@ -79,7 +80,7 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
     std::vector<uint8_t> cornerAO;
 
     if (enableShadows) {
-        lighting.prepareChunkSunlight(center, chunkPos, neighbors, cornerSun, 1.0f);
+        lighting.prepareChunkSunlight(center, chunkPos, neighbors, cornerSun, 1.0f, getSunTopY);
     }
     if (enableAO) {
         lighting.prepareChunkAO(center, chunkPos, neighbors, cornerAO);
@@ -145,6 +146,18 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
                     if ((a != BlockID::Air) == (b != BlockID::Air))
                         continue;
 
+                    // Ownership rule: only emit faces for solids that belong to the center chunk.
+                    // Without this, two adjacent chunks can both emit the same border face.
+                    const bool solidIsA = (a != BlockID::Air);
+                    const int solidX = solidIsA ? pax : pbx;
+                    const int solidY = solidIsA ? pay : pby;
+                    const int solidZ = solidIsA ? paz : pbz;
+                    if (solidX < 0 || solidX >= CHUNK_SIZE ||
+                        solidY < 0 || solidY >= CHUNK_SIZE ||
+                        solidZ < 0 || solidZ >= CHUNK_SIZE) {
+                        continue;
+                    }
+
                     GreedyCell& c = mask[j * CHUNK_SIZE + i];
                     c.valid = true;
 
@@ -182,9 +195,10 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
                     // AO / Sun
                     if (enableAO || enableShadows) {
 
-                        int sx = i * dux + j * dvx + (c.sign > 0 ? (s - 1) : s) * dx;
-                        int sy = i * duy + j * dvy + (c.sign > 0 ? (s - 1) : s) * dy;
-                        int sz = i * duz + j * dvz + (c.sign > 0 ? (s - 1) : s) * dz;
+
+                        int sx = (c.sign > 0) ? pax + dx : pbx;
+                        int sy = (c.sign > 0) ? pay + dy : pby;
+                        int sz = (c.sign > 0) ? paz + dz : pbz;
 
 
 
@@ -216,19 +230,21 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
                                 c.sun[k] = cornerSun[ci];
                         }
 
-                        uint32_t key = 0;
+                        uint32_t key = 0u;
 
-                        if (enableAO)
-                            key |= (c.ao[0] << 0) |
-                            (c.ao[1] << 4) |
-                            (c.ao[2] << 8) |
-                            (c.ao[3] << 12);
+                        if (enableAO) {
+                            key |= (uint32_t(c.ao[0] & 0xFu) << 0);
+                            key |= (uint32_t(c.ao[1] & 0xFu) << 4);
+                            key |= (uint32_t(c.ao[2] & 0xFu) << 8);
+                            key |= (uint32_t(c.ao[3] & 0xFu) << 12);
+                        }
 
-                        if (enableShadows)
-                            key |= (c.sun[0] << 16) |
-                            (c.sun[1] << 20) |
-                            (c.sun[2] << 24) |
-                            (c.sun[3] << 28);
+                        if (enableShadows) {
+                            key |= (uint32_t(c.sun[0] & 0xFu) << 16);
+                            key |= (uint32_t(c.sun[1] & 0xFu) << 20);
+                            key |= (uint32_t(c.sun[2] & 0xFu) << 24);
+                            key |= (uint32_t(c.sun[3] & 0xFu) << 28);
+                        }
 
                         c.lightKey = key;
 
@@ -287,54 +303,8 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
                         (d == 1) ? (c.sign > 0 ? 2 : 3) :
                         (c.sign > 0 ? 4 : 5);
 
-                    uint8_t quadAO[4] = { 0,0,0,0 };
-                    uint8_t quadSun[4] = { 0,0,0,0 };
-
-                    if (enableAO || enableShadows)
+                    for (int k = 0; k < 4; ++k)
                     {
-                        int sx = int(ox);
-                        int sy = int(oy);
-                        int sz = int(oz);
-
-                        if (c.sign > 0) {
-                            sx -= dx;
-                            sy -= dy;
-                            sz -= dz;
-                        }
-
-                        // corners of FINAL GREEDY QUAD
-                        int cx[4] = {
-                            sx,
-                            sx + dux * w,
-                            sx + dux * w + dvx * h,
-                            sx + dvx * h
-                        };
-
-                        int cy[4] = {
-                            sy,
-                            sy + duy * w,
-                            sy + duy * w + dvy * h,
-                            sy + dvy * h
-                        };
-
-                        int cz[4] = {
-                            sz,
-                            sz + duz * w,
-                            sz + duz * w + dvz * h,
-                            sz + dvz * h
-                        };
-
-                        for (int k = 0; k < 4; ++k)
-                        {
-                            int ci = lighting.cornerIndexPadded(cx[k], cy[k], cz[k]);
-
-                            if (enableAO)      quadAO[k] = cornerAO[ci];
-                            if (enableShadows) quadSun[k] = cornerSun[ci];
-                        }
-                    }
-                    
-
-                    for (int k = 0; k < 4; ++k) {
                         uint8_t uvCorner = uvRemap[face][k];
 
                         vertices.push_back(packVoxelVertex(
@@ -342,10 +312,11 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
                             face,
                             uvCorner,
                             c.matId,
-                            quadAO[k],
-                            quadSun[k]
+                            enableAO ? c.ao[k] : 0,
+                            enableShadows ? c.sun[k] : 0
                         ));
                     }
+
 
 
 
