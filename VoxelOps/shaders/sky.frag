@@ -21,39 +21,6 @@ uniform float uGamma;      // 2.2
 uniform float uGroundY;    // y coordinate of ground plane (default 0.0)
 uniform int uDebugMode;    // 0 = final, 1 = rayleigh-only, 2 = mie-only, 3 = ambient-only
 
-const float PI = 3.14159265359;
-const vec3 lambda_um = vec3(0.68, 0.55, 0.44);
-
-// helpers
-vec3 spectralRayleigh() { return 1.0 / pow(lambda_um, vec3(4.0)); }
-
-// Slightly stronger base Rayleigh (helps blue zenith)
-vec3 betaRayleigh(float scale) {
-    float base = 1.0e-5; // was 6.5e-6 -> bumped
-    return spectralRayleigh() * (base * scale);
-}
-
-// Leave Mie base small but scaleable
-vec3 betaMie(float turb, float scale) {
-    float base = 8.0e-7 * clamp(turb, 1.0, 10.0) * scale; // slightly reduced base
-    return vec3(base);
-}
-
-float phaseRayleigh(float cosTheta) {
-    return (3.0 / (16.0 * PI)) * (1.0 + cosTheta*cosTheta);
-}
-float phaseMie(float cosTheta, float g) {
-    float g2 = g*g;
-    float denom = pow(1.0 + g2 - 2.0*g*cosTheta, 1.5);
-    return (1.0 - g2) / (4.0 * PI * max(1e-6, denom));
-}
-
-// secant optical depth approx (flat ground uses viewDir.y as cosZen)
-float opticDepth(float camH, float scaleH, float cosZen) {
-    cosZen = max(cosZen, 0.01);
-    return exp(-camH / scaleH) / cosZen;
-}
-
 // compact filmic (Uncharted2-ish)
 vec3 filmic(vec3 x) {
     const float A = 0.15, B = 0.50, C = 0.10, D = 0.20, E = 0.02, F = 0.30, W = 11.2;
@@ -68,101 +35,69 @@ void main() {
     vec4 view = uInvProj * clip; view /= view.w;
     vec3 viewDir = normalize((uInvView * vec4(view.xyz, 0.0)).xyz);
 
-    // sun
+    // Sun and upness
     vec3 sun = normalize(uSunDir);
-    float cosVS = clamp(dot(viewDir, sun), -1.0, 1.0);
-    float gammaAngle = acos(cosVS);
+    float cosVS = clamp(dot(viewDir, sun), 0.0, 1.0);
+    float up = clamp(viewDir.y * 0.5 + 0.5, 0.0, 1.0);
 
-    // camera height above ground
-    float camH = max(uCameraPos.y - uGroundY, 0.0);
+    // Bright summer palette
+    vec3 zenith = vec3(0.18, 0.52, 0.98);
+    vec3 midSky = vec3(0.40, 0.72, 1.00);
+    vec3 horizon = vec3(0.82, 0.93, 1.00);
+    vec3 groundBounce = vec3(0.98, 0.90, 0.72);
 
-    // in flat model horizon is at viewDir.y == 0
-    float normalizedUp = clamp(viewDir.y, 0.0, 1.0); // 0 at horizon, 1 at zenith
+    float t1 = smoothstep(0.0, 0.45, up);
+    float t2 = smoothstep(0.45, 1.0, up);
+    vec3 gradLow = mix(horizon, midSky, t1);
+    vec3 gradHigh = mix(midSky, zenith, t2);
+    vec3 skyBase = mix(gradLow, gradHigh, t2);
 
-    // scattering coefficients (attenuate a bit with height)
-    vec3 Br = betaRayleigh(max(0.001, uRayleighScale)) * exp(-camH / 8000.0);
-    vec3 Bm = betaMie(uTurbidity, max(0.0001, uMieScale)) * exp(-camH / 1200.0);
+    // Turbidity drives hazy horizon blend
+    float haze = clamp((uTurbidity - 1.0) / 5.0, 0.0, 1.0);
+    float horizonBand = pow(1.0 - up, 1.9);
+    skyBase = mix(skyBase, mix(horizon, vec3(0.90, 0.95, 1.0), 0.65), horizonBand * (0.35 + 0.45 * haze));
 
-    // optical depth scalars using viewDir.y as cosZen (flat ground)
-    float cosZen = max(viewDir.y, 0.01);
-    float odR = 8000.0 * opticDepth(camH, 8000.0, cosZen);
-    float odM = 1200.0 * opticDepth(camH, 1200.0, cosZen);
+    // Warm bounce near the lower hemisphere
+    float belowHorizon = smoothstep(0.0, 0.35, 1.0 - up);
+    skyBase = mix(skyBase, groundBounce, 0.09 * belowHorizon);
 
-    vec3 Tr = exp(-Br * odR);
-    vec3 Tm = exp(-Bm * odM);
+    // Sun disk + halo
+    float disk = smoothstep(0.99980, 0.99993, cosVS);
+    float haloNear = pow(cosVS, 96.0);
+    float haloWide = pow(cosVS, 10.0);
+    vec3 sunCore = vec3(1.00, 0.98, 0.90) * (0.90 * disk + 0.28 * haloNear);
+    vec3 sunGlow = vec3(1.00, 0.92, 0.72) * (0.18 * haloWide);
+    vec3 sunCol = (sunCore + sunGlow) * uSunRadiance;
 
-    // single scattering (approx)
-    float pr = phaseRayleigh(cosVS);
-    float pm = phaseMie(cosVS, clamp(uMieG, 0.0, 0.99));
-    vec3 tau_view = Br * odR + Bm * odM;
-    vec3 invTau = 1.0 / max(tau_view, vec3(1e-6));
+    // Slight sun-direction brightening for clear midday look
+    float sunForward = pow(cosVS, 4.0);
+    vec3 directionalLift = vec3(0.10, 0.09, 0.07) * sunForward * uSunRadiance;
 
-    // transmittance from sun approximated using sun.y as cosZen_sun
-    float cosZenSun = max(sun.y, 0.01);
-    vec3 Tr_sun = exp(-Br * (8000.0 * opticDepth(camH, 8000.0, cosZenSun)));
-    vec3 Tm_sun = exp(-Bm * (1200.0 * opticDepth(camH, 1200.0, cosZenSun)));
+    vec3 sky = skyBase + sunCol + directionalLift;
 
-    vec3 singleR = (Br * pr) * ((vec3(1.0) - exp(-tau_view)) * invTau) * (Tr_sun * Tm_sun) * uSunRadiance;
-    vec3 singleM = (Bm * pm) * ((vec3(1.0) - exp(-tau_view)) * invTau) * (Tr_sun * Tm_sun) * uSunRadiance;
-    vec3 singleScattered = singleR + singleM;
-
-    // cheap multi-scatter/ambient fill (crucial for blue zenith)
-    float zenFactor = pow(normalizedUp, 0.55); // slightly stronger zenith weighting (was 0.6)
-    // Boost Rayleigh ambient for blue zenith; reduce Mie ambient which causes gray wash
-    vec3 ambientRay = Br * (vec3(1.0) - Tr) * uSunRadiance * (1.15 + 1.05 * zenFactor); // was 0.9 + 0.6*
-    vec3 ambientMie = Bm * (vec3(1.0) - Tm) * uSunRadiance * (0.12 + 0.45 * (1.0 - normalizedUp)); // was stronger
-    vec3 ambient = ambientRay + ambientMie;
-
-    // combine
-    vec3 sky = singleScattered + ambient;
-
-    // sun disk + halo (conservative)
-    const float sunAngularRadius = 0.004675;
-    float sunDisk = 1.0 - smoothstep(sunAngularRadius * 0.96, sunAngularRadius * 1.04, gammaAngle);
-    float circumSigma = sunAngularRadius * (1.0 + 0.55 * clamp(uTurbidity - 1.0, 0.0, 5.0));
-    float circum = exp(- (gammaAngle * gammaAngle) / (2.0 * circumSigma * circumSigma));
-    float sunMult = 8.5; // stronger sun disk/halo (was 4.0)
-    float sunAbove = step(0.0, sun.y); // sun visible if above flat horizon
-    vec3 sunCol = vec3(1.0, 0.98, 0.92) * uSunRadiance * sunMult * (0.92*sunDisk + 0.35*circum) * sunAbove;
-    sky += sunCol;
-
-    // horizon warm tint (use normalizedUp so it blends at horizon)
-    float horizonFactor = pow(clamp(1.0 - normalizedUp, 0.0, 1.0), 2.0); // slightly softer exponent
-    vec3 horizonTint = vec3(1.0, 0.78, 0.48) * (0.12 + 0.88 * clamp((uTurbidity - 1.0) / 5.0, 0.0, 1.0));
-    // stronger mix near horizon
-    sky = mix(sky, horizonTint * uSunRadiance * 0.35, horizonFactor); // was 0.10 -> 0.35
-
-    // debug modes (unchanged)
+    // debug modes
     if (uDebugMode == 1) {
-        vec3 outc = singleR;
-        vec3 mapped = filmic(outc * max(1e-4, uExposure));
+        vec3 mapped = filmic(skyBase * max(1e-4, uExposure));
         mapped = pow(clamp(mapped, 0.0, 1.0), vec3(1.0 / max(uGamma, 0.1)));
         FragColor = vec4(mapped, 1.0); return;
     } else if (uDebugMode == 2) {
-        vec3 outc = singleM;
-        vec3 mapped = filmic(outc * max(1e-4, uExposure));
+        vec3 mapped = filmic(sunCol * max(1e-4, uExposure));
         mapped = pow(clamp(mapped, 0.0, 1.0), vec3(1.0 / max(uGamma, 0.1)));
         FragColor = vec4(mapped, 1.0); return;
     } else if (uDebugMode == 3) {
-        vec3 mapped = filmic(ambient * max(1e-4, uExposure));
+        vec3 mapped = filmic(directionalLift * max(1e-4, uExposure));
         mapped = pow(clamp(mapped, 0.0, 1.0), vec3(1.0 / max(uGamma, 0.1)));
         FragColor = vec4(mapped, 1.0); return;
     }
 
-    // minor saturation preserve (avoid extrapolation weirdness by clamping factor)
+    // mild saturation boost
     float L = dot(sky, vec3(0.2126, 0.7152, 0.0722));
-    // clamp lerp factor to [0,1] by using an explicit small boost instead of >1 mix
-    sky = mix(vec3(L), sky, clamp(1.02, 0.0, 1.0)); // small saturation boost
+    sky = mix(vec3(L), sky, 1.10);
+    sky = clamp(sky, vec3(0.0), vec3(20.0));
 
-    // clamp to safe range
-    sky = clamp(sky, vec3(0.0), vec3(12.0)); // allow slightly larger range before filmic
-
-    // tonemap + gamma
     vec3 mapped = filmic(sky * max(1e-4, uExposure));
     mapped = pow(clamp(mapped, 0.0, 1.0), vec3(1.0 / max(uGamma, 0.1)));
-
-    // tiny final lift
-    mapped = mix(mapped, mapped * vec3(1.01, 1.00, 0.995), 0.004);
+    mapped = clamp(mapped * vec3(1.03, 1.02, 1.00), 0.0, 1.0);
 
     FragColor = vec4(mapped, 1.0);
 }

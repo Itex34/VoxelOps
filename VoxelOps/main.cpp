@@ -352,7 +352,7 @@ int main(int argc, char** argv) {
         skyShader.setMat4("uInvView", invView);
 
         // --- sun / atmosphere ---
-        glm::vec3 sunDir = glm::normalize(glm::vec3(1.0f, 1.0f, 0.15f));
+        glm::vec3 sunDir = glm::normalize(glm::vec3(0.15f, 0.98f, 0.10f));
 
         float groundOffset = 0.0f; // terrain height if you have it
         glm::vec3 camPos = player.getCamera().position; // your camera pos vec3
@@ -370,19 +370,19 @@ int main(int argc, char** argv) {
 
             skyShader.setFloat("uGroundOffset", groundOffset);
 
-            skyShader.setFloat("uSunIntensity", 1.1f); // if shader expects this name
-            skyShader.setFloat("uSunRadiance", 1.1f);  // if shader expects this name
+            skyShader.setFloat("uSunIntensity", 2.0f); // if shader expects this name
+            skyShader.setFloat("uSunRadiance", 2.0f);  // if shader expects this name
 
             // Atmosphere parameters (cover both "-Strength" and "-Scale" variants)
-            skyShader.setFloat("uTurbidity", 0.1f);
-            skyShader.setFloat("uMieG", 0.76f);
-            skyShader.setFloat("uRayleighStrength", 2.0f);
-            skyShader.setFloat("uRayleighScale", 2.0f); // duplicate-friendly
-            skyShader.setFloat("uMieStrength", 0.01f);
-            skyShader.setFloat("uMieScale", 0.01f);     // duplicate-friendly
+            skyShader.setFloat("uTurbidity", 1.45f);
+            skyShader.setFloat("uMieG", 0.78f);
+            skyShader.setFloat("uRayleighStrength", 1.6f);
+            skyShader.setFloat("uRayleighScale", 1.6f); // duplicate-friendly
+            skyShader.setFloat("uMieStrength", 0.025f);
+            skyShader.setFloat("uMieScale", 0.025f);     // duplicate-friendly
 
             // Tone & gamma
-            skyShader.setFloat("uExposure", 0.45f);
+            skyShader.setFloat("uExposure", 0.78f);
             skyShader.setFloat("uGamma", 2.2f);
 
             // Horizon / zenith helpers (different names across shaders)
