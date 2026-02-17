@@ -142,12 +142,12 @@ struct ChunkRange {
 
 
 class Player;
+class WorldGen;
+class ChunkRenderSystem;
 
 class ChunkManager{
 public:
     ChunkManager(Renderer& renderer_);
-    void generateInitialChunks(int radiusChunks);
-    void generateInitialChunks_TwoPass(int radiusChunks);
 
     void renderChunks(
         Shader& shader,
@@ -192,6 +192,8 @@ public:
 
     void debugMemoryEstimate();
 private:
+    friend class WorldGen;
+    friend class ChunkRenderSystem;
 
     std::unordered_map<glm::ivec3, Region, IVec3Hash> regions;
 
@@ -219,7 +221,7 @@ private:
     // Get or create region for a chunk
     Region& getOrCreateRegion(const glm::ivec3& chunkPos);
 
-	bool rebuildRegion(const glm::ivec3& regionPos, size_t reserveVertices = 0, size_t reserveIndices = 0);
+    bool rebuildRegion(const glm::ivec3& regionPos, size_t reserveVertices = 0, size_t reserveIndices = 0);
 
     // Upload mesh to appropriate region
     void uploadChunkMesh(const glm::ivec3& chunkPos,
@@ -233,15 +235,11 @@ private:
     
     void appendChunkMesh();
 
-    void generateChunkAt(const glm::ivec3& pos);
-
-    void generateTerrainChunkAt(const glm::ivec3& pos);
 
     void markChunkDirty(const glm::ivec3& pos);
     void requestChunkRebuild(const glm::ivec3& pos);
     void buildChunkMeshWorker(glm::ivec3 pos);
 
-    void placeTree(Chunk& chunk, const glm::ivec3& basePos, std::mt19937& gen);
     bool inBounds(const glm::ivec3& pos) const;
 
 
@@ -255,6 +253,7 @@ private:
 
     void computeHeightMap(const glm::ivec3& columnPos, const ChunkColumn& col);
     void rebuildColumnSunCache(int colChunkX, int colChunkZ);
+    void rebuildSunlightAffectedColumnChunks(int colChunkX, int colChunkZ, int oldTopY, int newTopY);
     void updateColumnSunCacheForBlockChange(int worldX, int worldY, int worldZ, BlockID oldId, BlockID newId);
     int getColumnTopOccluderY(int worldX, int worldZ) const;
 
@@ -275,6 +274,8 @@ private:
 
     glm::vec4 m_tileInfo[256]; 
     bool m_tileInfoInitialized = false;
+
+    bool suppressSunlightAffectedRebuilds = false;
 
 
 

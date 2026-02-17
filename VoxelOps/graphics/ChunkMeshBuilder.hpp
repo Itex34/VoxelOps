@@ -5,6 +5,7 @@
 #include "../graphics/TextureAtlas.hpp"
 #include "Renderer.hpp"
 #include <array>
+#include <cstdint>
 
 
 
@@ -35,41 +36,58 @@ static
 
 
 struct GreedyCell {
-	bool valid = false;
-	int sign = 0; // +1 or -1
-	BlockID block = BlockID::Air;
-	uint8_t matId = 0;
+    uint16_t gen = 0;
+    int sign = 0; // +1 or -1
+    BlockID block = BlockID::Air;
+    uint8_t matId = 0;
+    int16_t sx = 0;
+    int16_t sy = 0;
+    int16_t sz = 0;
     uint8_t ao[4] = { 0,0,0,0 };
     uint8_t sun[4] = { 0,0,0,0 };
     uint32_t lightKey = 0;
+    uint64_t mergeKey = 0;
 };
 
 struct BuiltChunkMesh {
-	std::vector<VoxelVertex> vertices;
-	std::vector<uint16_t> indices;
+    std::vector<VoxelVertex> vertices;
+    std::vector<uint16_t> indices;
+};
+
+struct MeshBuildProfileSnapshot {
+    uint64_t chunksMeshed = 0;
+    uint64_t totalUs = 0;
+    uint64_t blockGridUs = 0;
+    uint64_t solidCacheUs = 0;
+    uint64_t sunlightPrepUs = 0;
+    uint64_t aoPrepUs = 0;
+    uint64_t maskTransitionUs = 0;
+    uint64_t maskLightingUs = 0;
+    uint64_t maskBuildUs = 0;
+    uint64_t greedyEmitUs = 0;
 };
 
 
 class ChunkMeshBuilder {
 public:
-	Mesh buildFullChunkMesh(const Chunk& chunk, const TextureAtlas& atlas);
-	Mesh buildPartialChunkMesh(
-		const Chunk& chunk,
-		const TextureAtlas& atlas,
-		std::array<bool, 6> visibleFaces/* 0 : +X, 1 : -X, 2 : +Z, 3 : -Z, 4 : +Y, 5 : -Y */
-	); //build mesh for a chunk with only some faces visible, 
-	   //for example when visibleFaces is [false, false, false, false] it will only build the top 
-	   //and bottom faces of the chunk
+    Mesh buildFullChunkMesh(const Chunk& chunk, const TextureAtlas& atlas);
+    Mesh buildPartialChunkMesh(
+        const Chunk& chunk,
+        const TextureAtlas& atlas,
+        std::array<bool, 6> visibleFaces/* 0 : +X, 1 : -X, 2 : +Z, 3 : -Z, 4 : +Y, 5 : -Y */
+    ); //build mesh for a chunk with only some faces visible, 
+       //for example when visibleFaces is [false, false, false, false] it will only build the top 
+       //and bottom faces of the chunk
 
 
 
 
 
-	Mesh buildPartialChunkMeshGreedy(
-		const Chunk& chunk,
-		const TextureAtlas& atlas,
-		std::array<bool, 6> visibleFaces 
-	);
+    Mesh buildPartialChunkMeshGreedy(
+        const Chunk& chunk,
+        const TextureAtlas& atlas,
+        std::array<bool, 6> visibleFaces 
+    );
 
 
 
@@ -87,13 +105,16 @@ using BlockGetter = std::function<BlockID(const glm::ivec3& worldPos)>; //deprec
         const SunTopGetter& getSunTopY = SunTopGetter{}
     );
 
+    static MeshBuildProfileSnapshot getProfileSnapshot();
+    static void resetProfileSnapshot();
 
 
-	Mesh buildGreedyMesh(const Chunk& chunk,
-		const glm::ivec3& chunkPos,
-		const TextureAtlas& atlas,
-		BlockGetter getBlock
-	);
+
+    Mesh buildGreedyMesh(const Chunk& chunk,
+        const glm::ivec3& chunkPos,
+        const TextureAtlas& atlas,
+        BlockGetter getBlock
+    );
 
 private:
     std::unordered_map<QuadKey, uint16_t, QuadKeyHash> quadEmitMap;

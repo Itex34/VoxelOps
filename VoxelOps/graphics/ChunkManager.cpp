@@ -3,15 +3,24 @@
 #include <psapi.h>
 
 
-static size_t getProcessMemoryMB() {
+struct ProcessMemoryStatsMB {
+    size_t privateMB = 0;
+    size_t workingSetMB = 0;
+};
+
+static ProcessMemoryStatsMB getProcessMemoryMB() {
+    ProcessMemoryStatsMB stats;
     PROCESS_MEMORY_COUNTERS_EX pmc;
     if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc))) {
-        return (size_t)(pmc.PrivateUsage / (1024 * 1024));
+        stats.privateMB = size_t(pmc.PrivateUsage / (1024 * 1024));
+        stats.workingSetMB = size_t(pmc.WorkingSetSize / (1024 * 1024));
     }
-    return 0;
+    return stats;
 }
 
 #include "ChunkManager.hpp"
+#include "WorldGen.hpp"
+#include "ChunkRenderSystem.hpp"
 
 
 #include "../player/Player.hpp"
@@ -54,6 +63,7 @@ ChunkManager::ChunkManager(Renderer& renderer_) : renderer(renderer_){
 
     std::srand(static_cast<unsigned int>(std::time(nullptr)));
     noise.SetSeed(std::rand());
+    ChunkMeshBuilder::resetProfileSnapshot();
 
 
     
@@ -62,197 +72,6 @@ ChunkManager::ChunkManager(Renderer& renderer_) : renderer(renderer_){
     //chunkMap.clear();
 }
 
-void ChunkManager::generateInitialChunks(int radiusChunks) {
-    // Determine chunk Y range (in chunk coordinates)
-    int minChunkY = WORLD_MIN_Y / CHUNK_SIZE;
-    int maxChunkY = WORLD_MAX_Y / CHUNK_SIZE;
-
-    for (int x = -radiusChunks; x <= radiusChunks; ++x) {
-        for (int z = -radiusChunks; z <= radiusChunks; ++z) {
-            for (int y = minChunkY; y <= maxChunkY; ++y) {
-                glm::ivec3 pos = glm::ivec3(x, y, z);
-                generateChunkAt(pos);
-            }
-        }
-    }
-    updateDirtyChunks();
-}
-
-void ChunkManager::generateChunkAt(const glm::ivec3& pos) {
-    auto [it, inserted] = chunkMap.try_emplace(pos, pos); // forwards `pos` to Chunk::Chunk(pos)
-    Chunk& chunk = it->second;
-
-    std::random_device rd;
-    std::mt19937 gen(rd());
-
-    // ===== Terrain generation =====
-    for (int z = 0; z < CHUNK_SIZE; ++z) {
-        for (int x = 0; x < CHUNK_SIZE; ++x) {
-            int worldX = pos.x * CHUNK_SIZE + x;
-            int worldZ = pos.z * CHUNK_SIZE + z;
-
-            // fractal noise
-            float n = 0.0f;
-            float frequency = 1.01f;
-            float amplitude = 0.8f;
-            float persistence = 0.5f;
-            int octaves = 6;
-            float maxAmplitude = 0.0f;
-
-            for (int i = 0; i < octaves; i++) {
-                n += noise.GetNoise(worldX * frequency, worldZ * frequency) * amplitude;
-                maxAmplitude += amplitude;
-                frequency *= 2.0f;
-                amplitude *= persistence;
-            }
-            n /= maxAmplitude;
-
-            int height = WORLD_MIN_Y + static_cast<int>((n + 1.0f) * 0.5f * (WORLD_MAX_Y - WORLD_MIN_Y));
-
-            for (int y = 0; y < CHUNK_SIZE; ++y) {
-                int worldY = pos.y * CHUNK_SIZE + y;
-
-                if (worldY == WORLD_MIN_Y) {
-                    chunk.setBlock(x, y, z, BlockID::Bedrock);
-                }
-                else if (worldY < height - 2) {
-                    chunk.setBlock(x, y, z, BlockID::Stone);
-                }
-                else if (worldY < height - 1) {
-                    chunk.setBlock(x, y, z, BlockID::Dirt);
-                }
-                else if (worldY < height) {
-                    chunk.setBlock(x, y, z, BlockID::Grass);
-                }
-                else {
-                    chunk.setBlock(x, y, z, BlockID::Air);
-                }
-            }
-        }
-    }
-
-    // ===== Tree placement (second pass) =====
-    std::uniform_real_distribution<> chance(0.0, 1.0);
-    for (int z = 0; z < CHUNK_SIZE; ++z) {
-        for (int x = 0; x < CHUNK_SIZE; ++x) {
-            // find the topmost block at (x, z)
-            int topY = -1;
-            for (int y = CHUNK_SIZE - 1; y >= 0; --y) {
-                if (chunk.getBlock(x, y, z) == BlockID::Grass) {
-                    topY = y;
-                    break;
-                }
-            }
-
-            // if grass found, maybe spawn tree
-            if (topY != -1 && chance(gen) < 0.003) { // ~0.3% chance per column
-                placeTree(chunk, glm::ivec3(x, topY - 4, z), gen);
-            }
-        }
-    }
-
-    //  Store chunk 
-    chunk.dirty = true;
-    rebuildColumnSunCache(pos.x, pos.z);
-}
-
-
-void ChunkManager::placeTree(Chunk& chunk, const glm::ivec3& basePos, std::mt19937& gen) {
-    std::uniform_int_distribution<> trunkHeightDist(10, 14);
-    int trunkHeight = trunkHeightDist(gen); 
-
-    // Trunk footprint relative offsets (2x2) - basePos is the minimum corner
-    glm::ivec3 trunkOffsets[4] = {
-        glm::ivec3(0, 0, 0),
-        glm::ivec3(1, 0, 0),
-        glm::ivec3(0, 0, 1),
-        glm::ivec3(1, 0, 1)
-    };
-
-    // ===== Place 2x2 trunk =====
-    for (int i = 0; i < trunkHeight; ++i) {
-        int y = basePos.y + i;
-        for (int t = 0; t < 4; ++t) {
-            glm::ivec3 pos(basePos.x + trunkOffsets[t].x, y, basePos.z + trunkOffsets[t].z);
-            setBlockSafe(chunk, pos, BlockID::Log);
-        }
-    }
-
-    // top of trunk (highest y coordinate used as crown base)
-    int topY = basePos.y + trunkHeight - 1;
-
-    // Crown parameters (disk-shaped)
-    int crownBaseYOffset = 0;    // start at the same y as trunk top so leaves touch trunk
-    int crownThickness = 2;      // 2 vertical layers (flat-ish disk)
-    int crownRadius = 4;         // radius of the disk
-    int topCapYOffset = crownBaseYOffset + crownThickness; // small cap above disk
-
-    // RNG helpers
-    std::uniform_real_distribution<float> holeChance(0.0f, 1.0f);
-    std::uniform_real_distribution<float> strayChance(0.0f, 1.0f);
-
-    // ===== Build the main disk: layered thin disk with inner density and sparser edges =====
-    // We start from dy = crownBaseYOffset (now 0) so leaves meet the trunk top.
-    for (int dy = crownBaseYOffset; dy < crownBaseYOffset + crownThickness; ++dy) {
-        int layerY = topY + dy;
-        for (int dx = -crownRadius; dx <= crownRadius; ++dx) {
-            for (int dz = -crownRadius; dz <= crownRadius; ++dz) {
-                float dist = std::sqrt(float(dx * dx + dz * dz));
-                if (dist <= crownRadius + 0.25f) {
-                    // radial falloff: center dense, edges sparser
-                    float edgeFactor = (dist / float(crownRadius)); // 0 center -> 1 edge
-                    float skipProb = glm::smoothstep(0.7f, 1.0f, edgeFactor) * 0.65f;
-                    // lower layer should be a bit more solid so we reduce skipProb there
-                    if (dy == crownBaseYOffset) skipProb *= 0.55f;
-
-                    if (holeChance(gen) < skipProb) continue;
-
-                    // center the disk over the 2x2 trunk footprint by using basePos as min corner.
-                    // This keeps leaves adjacent to trunk blocks.
-                    glm::ivec3 leafPos(basePos.x + dx, layerY, basePos.z + dz);
-                    if (getBlockSafe(chunk, leafPos) == BlockID::Air) {
-                        setBlockSafe(chunk, leafPos, BlockID::Leaves);
-                    }
-                }
-            }
-        }
-    }
-
-    // ===== Slight taper above the disk for a rounded top =====
-    int taperRadius = glm::max(1, crownRadius - 2);
-    int taperY = topY + topCapYOffset;
-    for (int dx = -taperRadius; dx <= taperRadius; ++dx) {
-        for (int dz = -taperRadius; dz <= taperRadius; ++dz) {
-            float dist = std::sqrt(float(dx * dx + dz * dz));
-            if (dist <= taperRadius + 0.25f) {
-                glm::ivec3 leafPos(basePos.x + dx, taperY, basePos.z + dz);
-                if (getBlockSafe(chunk, leafPos) == BlockID::Air) {
-                    // make outer edge a little sparser
-                    if (dist > (taperRadius - 0.5f) && holeChance(gen) < 0.25f) continue;
-                    setBlockSafe(chunk, leafPos, BlockID::Leaves);
-                }
-            }
-        }
-    }
- 
-
-
-    // ===== Ensure trunk overwrites any leaves inside footprint (keeps trunk clean) =====
-    for (int i = 0; i < trunkHeight; ++i) {
-        int y = basePos.y + i;
-        for (int t = 0; t < 4; ++t) {
-            glm::ivec3 pos(basePos.x + trunkOffsets[t].x, y, basePos.z + trunkOffsets[t].z);
-            if (getBlockSafe(chunk, pos) != BlockID::Log) {
-                setBlockSafe(chunk, pos, BlockID::Log);
-            }
-        }
-    }
-}
-
-
-
-
-
 void ChunkManager::renderChunks(
     Shader& shader,
     Frustum& frustum,
@@ -260,75 +79,7 @@ void ChunkManager::renderChunks(
     int maxRenderDistance
 )
 {
-    const glm::ivec3 playerChunkPos =
-        worldToChunkPos(glm::ivec3(player.getPosition()));
-
-
-    if (!m_tileInfoInitialized) {
-
-        for (size_t i = 0; i < 256; ++i)
-            m_tileInfo[i] = glm::vec4(0, 0, 1, 1);
-
-        for (const auto& [name, tilePos] : atlas.tileMap) {
-            int tileX = tilePos.x;
-            int tileY = tilePos.y;
-            int index = tileY * TEXTURE_ATLAS_SIZE + tileX;
-
-            auto [min, max] = atlas.getUVRect(name);
-            m_tileInfo[index] = glm::vec4(min, max - min);
-        }
-
-        shader.setVec4v("u_tileInfo", 256, m_tileInfo);
-        shader.setFloat("u_chunkSize", float(CHUNK_SIZE));
-
-        m_tileInfoInitialized = true;
-    }
-
-
-    const int maxDistSq = maxRenderDistance * maxRenderDistance;
-
-    for (auto& [regionPos, region] : regions)
-    {
-        // ---- REGION FRUSTUM CULLING (GOES HERE)
-        glm::vec3 regionMin =
-            glm::vec3(regionPos * REGION_SIZE * CHUNK_SIZE);
-
-        glm::vec3 regionMax =
-            regionMin + glm::vec3(REGION_SIZE * CHUNK_SIZE);
-
-        if (!frustum.isBoxVisible(regionMin, regionMax))
-            continue;
-
-        RegionMeshBuffer& gpu = *region.gpu;
-
-        // ---- CHUNK LOOP
-        for (const auto& [chunkPos, mesh] : region.chunks)
-        {
-            if (!mesh.valid)
-                continue;
-
-            // ---- distance culling (per-chunk)
-            glm::ivec3 d = chunkPos - playerChunkPos;
-            if (d.x * d.x + d.y * d.y + d.z * d.z > maxDistSq)
-                continue;
-
-            // ---- chunk frustum culling (optional but fine)
-            glm::vec3 min = glm::vec3(chunkPos * CHUNK_SIZE);
-            glm::vec3 max = min + glm::vec3(CHUNK_SIZE);
-
-            if (!frustum.isBoxVisible(min, max))
-                continue;
-
-            // ---- model matrix
-            glm::mat4 model(1.0f);
-            model[3] = glm::vec4(min, 1.0f);
-            shader.setMat4("model", model);
-
-            // ---- draw
-            gpu.drawChunkMesh(mesh);
-        }
-    }
-
+    ChunkRenderSystem::renderChunks(*this, shader, frustum, player, maxRenderDistance);
 }
 
 
@@ -341,27 +92,7 @@ void ChunkManager::renderChunks(
 
 
 void ChunkManager::renderChunkBorders(glm::mat4& view, glm::mat4& projection) {
-    // Draw the wireframe for debugging (at Y = 0)
-    debugShader->use();
-    debugShader->setMat4("projection", projection);
-    debugShader->setMat4("view", view);
-    debugShader->setVec3("color", glm::vec3(0.0f, 1.0f, 0.0f));
-
-    glBindVertexArray(wireVAO);
-
-    for (int z = WORLD_MIN_Z; z <= WORLD_MAX_Z; ++z) {
-        for (int x = WORLD_MIN_X; x <= WORLD_MAX_X; ++x) {
-            glm::ivec3 pos(x, 0, z);
-            if (!inBounds(pos)) continue;
-            glm::vec3 worldPos = glm::vec3(pos.x * CHUNK_SIZE, 0.0f, pos.z * CHUNK_SIZE);
-            glm::vec3 scale = glm::vec3(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SIZE);
-
-            glm::mat4 model = glm::translate(glm::mat4(1.0f), worldPos);
-            model = glm::scale(model, scale);
-            debugShader->setMat4("model", model);
-            glDrawArrays(GL_LINES, 0, 24);
-        }
-    }
+    ChunkRenderSystem::renderChunkBorders(*this, view, projection);
 }
 
 std::array<bool, 6> ChunkManager::getVisibleChunkFaces(const glm::ivec3& pos) const {
@@ -453,21 +184,7 @@ void ChunkManager::updateDirtyChunks() {
 
         chunk.dirty = false;
 
-        // Mark neighbors dirty
-        static const glm::ivec3 dirs[6] = {
-            { 1, 0, 0}, {-1, 0, 0},
-            { 0, 1, 0}, { 0,-1, 0},
-            { 0, 0, 1}, { 0, 0,-1}
-        };
-
-        for (auto d : dirs) {
-            glm::ivec3 nPos = pos + d;
-            if (inBounds(nPos)) {
-                auto nit = chunkMap.find(nPos);
-                if (nit != chunkMap.end())
-                    nit->second.dirty = true;
-            }
-        }
+        // Do not re-dirty neighbors here; callers should explicitly mark affected chunks.
     }
 }
 
@@ -519,7 +236,7 @@ void ChunkManager::updateChunks(const glm::ivec3& playerWorldPos, int renderDist
     // --- Load missing chunks ---
     for (auto& pos : desired) {
         if (chunkMap.find(pos) == chunkMap.end()) {
-            generateChunkAt(pos); // generates and marks it dirty
+            WorldGen::generateChunkAt(*this, pos); // generates and marks it dirty
 
             // also mark neighbors dirty, so shared faces get rebuilt
             static const glm::ivec3 dirs[6] = {
@@ -532,114 +249,6 @@ void ChunkManager::updateChunks(const glm::ivec3& playerWorldPos, int renderDist
             }
         }
     }
-}
-
-
-// generate only the terrain for a single chunk and insert it into chunkMap 
-void ChunkManager::generateTerrainChunkAt(const glm::ivec3& pos) {
-    auto [it, inserted] = chunkMap.try_emplace(pos, pos); // forwards `pos` to Chunk::Chunk(pos)
-    Chunk& chunk = it->second;
-
-    // Per-chunk RNG is optional here; keep noise deterministic by seed (noise already seeded)
-    for (int z = 0; z < CHUNK_SIZE; ++z) {
-        for (int x = 0; x < CHUNK_SIZE; ++x) {
-            int worldX = pos.x * CHUNK_SIZE + x;
-            int worldZ = pos.z * CHUNK_SIZE + z;
-
-            // fractal noise
-            float n = 0.0f;
-            float frequency = 1.0f;
-            float amplitude = 1.9f;
-            float persistence = 0.5f;
-            int octaves = 6;
-            float maxAmplitude = 0.0f;
-
-            for (int i = 0; i < octaves; i++) {
-                n += noise.GetNoise(worldX * frequency, worldZ * frequency) * amplitude;
-                maxAmplitude += amplitude;
-                frequency *= 2.0f;
-                amplitude *= persistence;
-            }
-            if (maxAmplitude > 0.0f) n /= maxAmplitude;
-
-            int height = WORLD_MIN_Y + static_cast<int>((n + 1.0f) * 0.5f * (WORLD_MAX_Y - WORLD_MIN_Y));
-
-            for (int y = 0; y < CHUNK_SIZE; ++y) {
-                int worldY = pos.y * CHUNK_SIZE + y;
-
-                if (worldY == WORLD_MIN_Y) {
-                    chunk.setBlock(x, y, z, BlockID::Bedrock);
-                }
-                else if (worldY < height - 2) {
-                    chunk.setBlock(x, y, z, BlockID::Stone);
-                }
-                else if (worldY < height - 1) {
-                    chunk.setBlock(x, y, z, BlockID::Dirt);
-                }
-                else if (worldY < height) {
-                    chunk.setBlock(x, y, z, BlockID::Grass);
-                }
-                else {
-                    chunk.setBlock(x, y, z, BlockID::Air);
-                }
-            }
-        }
-    }
-
-    // Insert the terrain-only chunk into chunkMap so neighbors can see it later
-    chunk.dirty = true;
-    rebuildColumnSunCache(pos.x, pos.z);
-}
-
-
-void ChunkManager::generateInitialChunks_TwoPass(int radiusChunks) {
-    // convert world min/max to chunk-space (use floor for negatives)
-    int minChunkY = static_cast<int>(std::floor(float(WORLD_MIN_Y) / CHUNK_SIZE));
-    int maxChunkY = static_cast<int>(std::floor(float(WORLD_MAX_Y) / CHUNK_SIZE));
-    int minChunkX = static_cast<int>(std::floor(float(WORLD_MIN_X) / CHUNK_SIZE));
-    int maxChunkX = static_cast<int>(std::floor(float(WORLD_MAX_X) / CHUNK_SIZE));
-    int minChunkZ = static_cast<int>(std::floor(float(WORLD_MIN_Z) / CHUNK_SIZE));
-    int maxChunkZ = static_cast<int>(std::floor(float(WORLD_MAX_Z) / CHUNK_SIZE));
-
-    // PASS 1: generate terrain for whole region and insert into chunkMap
-    for (int x = -radiusChunks; x <= radiusChunks; ++x) {
-        for (int z = -radiusChunks; z <= radiusChunks; ++z) {
-            for (int y = minChunkY; y <= maxChunkY; ++y) {
-                glm::ivec3 pos(x, y, z);
-                generateTerrainChunkAt(pos);
-            }
-        }
-    }
-
-    // PASS 2: decoration (trees) — now all chunks in region exist in chunkMap
-    // Use deterministic per-chunk RNG so decoration is stable across runs (optional)
-    for (auto& [pos, chunkRef] : chunkMap) {
-        // Create RNG seeded by chunk position for deterministic decoration
-        uint32_t seed = static_cast<uint32_t>((pos.x * 73856093u) ^ (pos.y * 19349663u) ^ (pos.z * 83492791u));
-        std::mt19937 gen(seed);
-        std::uniform_real_distribution<> chance(0.0, 1.0);
-
-        for (int z = 0; z < CHUNK_SIZE; ++z) {
-            for (int x = 0; x < CHUNK_SIZE; ++x) {
-                // find topmost grass in this column (local coords)
-                int topY = -1;
-                for (int y = CHUNK_SIZE - 1; y >= 0; --y) {
-                    if (chunkRef.getBlock(x, y, z) == BlockID::Grass) {
-                        topY = y;
-                        break;
-                    }
-                }
-
-                if (topY != -1 && chance(gen) < 0.02) { // ~2% chance
-                    placeTree(chunkRef, glm::ivec3(x, topY + 1, z), gen);
-                    chunkRef.dirty = true; // mark chunk dirty so mesh will rebuild
-                }
-            }
-        }
-    }
-
-    // Rebuild meshes for dirty chunks
-    updateDirtyChunks();
 }
 
 
@@ -759,8 +368,11 @@ void ChunkManager::debugMemoryEstimate()
 {
     std::cout << "---- MEMORY ESTIMATE ----\n";
 
-    std::cout << "Process resident memory (MB): "
-        << getProcessMemoryMB() << "\n";
+    const ProcessMemoryStatsMB mem = getProcessMemoryMB();
+    std::cout << "Process private bytes (MB): "
+        << mem.privateMB << "\n";
+    std::cout << "Process working set (MB): "
+        << mem.workingSetMB << "\n";
 
     std::cout << "sizeof(Chunk): "
         << sizeof(Chunk) << " bytes\n";
@@ -776,6 +388,33 @@ void ChunkManager::debugMemoryEstimate()
 
     std::cout << "chunkMeshes.size(): "
         << chunkMeshes.size() << "\n";
+
+    const MeshBuildProfileSnapshot p = ChunkMeshBuilder::getProfileSnapshot();
+    if (p.chunksMeshed > 0 && p.totalUs > 0) {
+        const double invChunks = 1.0 / double(p.chunksMeshed);
+        const double avgTotal = double(p.totalUs) * invChunks;
+        const auto pct = [&](uint64_t us) { return (100.0 * double(us)) / double(p.totalUs); };
+        const uint64_t profiledUs =
+            p.blockGridUs +
+            p.solidCacheUs +
+            p.sunlightPrepUs +
+            p.aoPrepUs +
+            p.maskTransitionUs +
+            p.maskLightingUs +
+            p.greedyEmitUs;
+        const uint64_t otherUs = (p.totalUs > profiledUs) ? (p.totalUs - profiledUs) : 0;
+        std::cout << "Mesher profile (" << p.chunksMeshed << " chunks):\n";
+        std::cout << "  avg total: " << avgTotal << " us/chunk\n";
+        std::cout << "  block grid: " << (double(p.blockGridUs) * invChunks) << " us (" << pct(p.blockGridUs) << "%)\n";
+        std::cout << "  solid cache: " << (double(p.solidCacheUs) * invChunks) << " us (" << pct(p.solidCacheUs) << "%)\n";
+        std::cout << "  sunlight prep: " << (double(p.sunlightPrepUs) * invChunks) << " us (" << pct(p.sunlightPrepUs) << "%)\n";
+        std::cout << "  AO prep: " << (double(p.aoPrepUs) * invChunks) << " us (" << pct(p.aoPrepUs) << "%)\n";
+        std::cout << "  mask transitions: " << (double(p.maskTransitionUs) * invChunks) << " us (" << pct(p.maskTransitionUs) << "%)\n";
+        std::cout << "  mask lighting: " << (double(p.maskLightingUs) * invChunks) << " us (" << pct(p.maskLightingUs) << "%)\n";
+        std::cout << "  mask build: " << (double(p.maskBuildUs) * invChunks) << " us (" << pct(p.maskBuildUs) << "%)\n";
+        std::cout << "  greedy emit: " << (double(p.greedyEmitUs) * invChunks) << " us (" << pct(p.greedyEmitUs) << "%)\n";
+        std::cout << "  other/unprofiled: " << (double(otherUs) * invChunks) << " us (" << pct(otherUs) << "%)\n";
+    }
 
     //// GPU stats
     //auto gpu = renderer.getGpuMeshStats();
@@ -804,12 +443,18 @@ void ChunkManager::debugMemoryEstimate()
 void ChunkManager::playerBreakBlockAt(const glm::ivec3& blockCoords) {
     glm::ivec3 chunkPos = worldToChunkPos(blockCoords);
     glm::ivec3 localPos = worldToLocalPos(blockCoords);
+    bool changed = false;
 
     auto it = chunkMap.find(chunkPos);
     if (it != chunkMap.end()) {
         BlockID oldId = it->second.removeBlock(localPos.x, localPos.y, localPos.z);
-        updateColumnSunCacheForBlockChange(blockCoords.x, blockCoords.y, blockCoords.z, oldId, BlockID::Air);
+        if (oldId != BlockID::Air) {
+            updateColumnSunCacheForBlockChange(blockCoords.x, blockCoords.y, blockCoords.z, oldId, BlockID::Air);
+            changed = true;
+        }
     }
+
+    if (!changed) return;
 
     updateDirtyChunkAt(chunkPos);
 
@@ -837,144 +482,37 @@ void ChunkManager::playerBreakBlockAt(const glm::ivec3& blockCoords) {
 }
 
 void ChunkManager::playerPlaceBlockAt(glm::ivec3 blockCoords, int faceNormal, BlockID blockType) {
-    glm::ivec3 chunkPos = worldToChunkPos(blockCoords);
-    glm::ivec3 localPos = worldToLocalPos(blockCoords);
+    (void)faceNormal;
+    std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> chunksToRebuild;
 
+    const auto queueChunkAndEdgeNeighbors = [&](const glm::ivec3& worldPos) {
+        const glm::ivec3 chunkPos = worldToChunkPos(worldPos);
+        const glm::ivec3 localPos = worldToLocalPos(worldPos);
 
-    //wall
-    for (int x = 0; x < 3; x++) {
-        for (int y = 0; y < 3; y++) {
-            setBlockGlobal(blockCoords.x + x, blockCoords.y + y, blockCoords.z, blockType);
-        }
-    }
-
-    updateDirtyChunkAt(chunkPos);
-
-
-    /*
-    // order matches isEdgeBlock: { x==0, x==15, y==0, y==15, z==0, z==15 }
-    const std::array<glm::ivec3, 6> neighborOffsets = {
-        glm::ivec3(-1,  0,  0), // x==0 -> neighbor x-1
-        glm::ivec3(+1,  0,  0), // x==15 -> neighbor x+1
-        glm::ivec3(0, -1,  0), // y==0 -> y-1
-        glm::ivec3(0, +1,  0), // y==15 -> y+1
-        glm::ivec3(0,  0, -1), // z==0 -> z-1
-        glm::ivec3(0,  0, +1)  // z==15 -> z+1
+        chunksToRebuild.insert(chunkPos);
+        if (localPos.x == 0) chunksToRebuild.insert(chunkPos + glm::ivec3(-1, 0, 0));
+        if (localPos.x == CHUNK_SIZE - 1) chunksToRebuild.insert(chunkPos + glm::ivec3(1, 0, 0));
+        if (localPos.y == 0) chunksToRebuild.insert(chunkPos + glm::ivec3(0, -1, 0));
+        if (localPos.y == CHUNK_SIZE - 1) chunksToRebuild.insert(chunkPos + glm::ivec3(0, 1, 0));
+        if (localPos.z == 0) chunksToRebuild.insert(chunkPos + glm::ivec3(0, 0, -1));
+        if (localPos.z == CHUNK_SIZE - 1) chunksToRebuild.insert(chunkPos + glm::ivec3(0, 0, 1));
     };
 
-    auto edges = isEdgeBlock(localPos);
-    for (size_t i = 0; i < edges.size(); ++i) {
-        if (!edges[i]) continue;
-        glm::ivec3 neighborChunk = chunkPos + neighborOffsets[i];
-
-        if (chunkMap.find(neighborChunk) != chunkMap.end()) {
-            updateDirtyChunkAt(neighborChunk);
+    // Place a 3x3 wall and only queue rebuilds for actually changed blocks.
+    for (int x = 0; x < 3; ++x) {
+        for (int y = 0; y < 3; ++y) {
+            const glm::ivec3 worldPos(blockCoords.x + x, blockCoords.y + y, blockCoords.z);
+            if (getBlockGlobal(worldPos.x, worldPos.y, worldPos.z) == blockType) {
+                continue;
+            }
+            setBlockGlobal(worldPos.x, worldPos.y, worldPos.z, blockType);
+            queueChunkAndEdgeNeighbors(worldPos);
         }
     }
 
-    if (isCornerBlock(localPos)[0]) {
-        updateDirtyChunkAt(chunkPos + glm::ivec3(-1, -1, 0));
+    for (const auto& pos : chunksToRebuild) {
+        updateDirtyChunkAt(pos);
     }
-
-    if (isCornerBlock(localPos)[1]) {
-        updateDirtyChunkAt(chunkPos + glm::ivec3(+1, +1, 0));
-    }
-
-    if (isCornerBlock(localPos)[2]) {
-        updateDirtyChunkAt(chunkPos + glm::ivec3(0, -1, -1));
-    }
-
-    if (isCornerBlock(localPos)[3]) {
-        updateDirtyChunkAt(chunkPos + glm::ivec3(0, +1, +1));
-    }
-
-
-
-
-
-    if (isCornerBlock(localPos)[4]) {
-        updateDirtyChunkAt(chunkPos + glm::ivec3(-1, +1, 0));
-    }
-
-    if (isCornerBlock(localPos)[5]) {
-        updateDirtyChunkAt(chunkPos + glm::ivec3(+1, -1, 0));
-    }
-
-    if (isCornerBlock(localPos)[6]) {
-        updateDirtyChunkAt(chunkPos + glm::ivec3(0, -1, +1));
-    }
-
-    if (isCornerBlock(localPos)[7]) {
-        updateDirtyChunkAt(chunkPos + glm::ivec3(0, +1, -1));
-    }
-
-    */
-
-
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(-1, +1, +1));
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(+1, -1, -1));
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(+1, -1, +1));
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(-1, +1, -1));
-
-
-
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(+1, +1, +1));
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(-1, -1, -1));
-
-
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(-1, +1, 0));
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(+1, -1, 0));
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(+1, -1, 0));
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(-1, +1, 0));
-
-
-
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(-1, 0, +1));
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(+1, 0, -1));
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(+1, 0, +1));
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(-1, 0, -1));
-
-
-
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(0, +1, +1));
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(0, -1, -1));
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(0, -1, +1));
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(0, +1, -1));
-
-
-
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(0, 0, +1));
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(0, 0, -1));
-    
-    updateDirtyChunkAt(chunkPos + glm::ivec3(+1, 0, 0));
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(-1, 0, 0));
-
-
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(0, +1, 0));
-
-    updateDirtyChunkAt(chunkPos + glm::ivec3(0, -1, 0));
 }
 
 
@@ -1360,11 +898,34 @@ void ChunkManager::updateColumnSunCacheForBlockChange(int worldX, int worldY, in
     const int lz = mod(worldZ, CHUNK_SIZE);
 
     ChunkColumn& col = getOrCreateColumn(colX, colZ);
-    int topValue = int(col.sunLitBlocksYvalue[lx][lz]);
+    const int oldTop = int(col.sunLitBlocksYvalue[lx][lz]);
+    int newTop = oldTop;
+    const auto rebuildAffectedColumns = [&](int oldTopY, int newTopY) {
+        rebuildSunlightAffectedColumnChunks(colX, colZ, oldTopY, newTopY);
+
+        const bool minX = (lx == 0);
+        const bool maxX = (lx == CHUNK_SIZE - 1);
+        const bool minZ = (lz == 0);
+        const bool maxZ = (lz == CHUNK_SIZE - 1);
+
+        if (minX) rebuildSunlightAffectedColumnChunks(colX - 1, colZ, oldTopY, newTopY);
+        if (maxX) rebuildSunlightAffectedColumnChunks(colX + 1, colZ, oldTopY, newTopY);
+        if (minZ) rebuildSunlightAffectedColumnChunks(colX, colZ - 1, oldTopY, newTopY);
+        if (maxZ) rebuildSunlightAffectedColumnChunks(colX, colZ + 1, oldTopY, newTopY);
+
+        if (minX && minZ) rebuildSunlightAffectedColumnChunks(colX - 1, colZ - 1, oldTopY, newTopY);
+        if (minX && maxZ) rebuildSunlightAffectedColumnChunks(colX - 1, colZ + 1, oldTopY, newTopY);
+        if (maxX && minZ) rebuildSunlightAffectedColumnChunks(colX + 1, colZ - 1, oldTopY, newTopY);
+        if (maxX && maxZ) rebuildSunlightAffectedColumnChunks(colX + 1, colZ + 1, oldTopY, newTopY);
+    };
 
     if (newId != BlockID::Air) {
-        if (worldY > topValue) {
-            col.sunLitBlocksYvalue[lx][lz] = int8_t(worldY);
+        if (worldY > oldTop) {
+            newTop = worldY;
+            col.sunLitBlocksYvalue[lx][lz] = int8_t(newTop);
+            if (!suppressSunlightAffectedRebuilds) {
+                rebuildAffectedColumns(oldTop, newTop);
+            }
         }
         return;
     }
@@ -1373,8 +934,8 @@ void ChunkManager::updateColumnSunCacheForBlockChange(int worldX, int worldY, in
         return;
     }
 
-    if (worldY == topValue) {
-        int newTop = WORLD_MIN_Y - 1;
+    if (worldY == oldTop) {
+        newTop = WORLD_MIN_Y - 1;
         for (int y = worldY - 1; y >= WORLD_MIN_Y; --y) {
             if (getBlockGlobal(worldX, y, worldZ) != BlockID::Air) {
                 newTop = y;
@@ -1382,6 +943,23 @@ void ChunkManager::updateColumnSunCacheForBlockChange(int worldX, int worldY, in
             }
         }
         col.sunLitBlocksYvalue[lx][lz] = int8_t(newTop);
+        if (!suppressSunlightAffectedRebuilds) {
+            rebuildAffectedColumns(oldTop, newTop);
+        }
+    }
+}
+
+void ChunkManager::rebuildSunlightAffectedColumnChunks(int colChunkX, int colChunkZ, int oldTopY, int newTopY) {
+    if (oldTopY == newTopY) {
+        return;
+    }
+
+    const int minChunkY = floorDiv(WORLD_MIN_Y, CHUNK_SIZE);
+    const int maxAffectedY = (oldTopY > newTopY) ? oldTopY : newTopY;
+    const int maxChunkY = floorDiv(maxAffectedY, CHUNK_SIZE);
+
+    for (int chunkY = minChunkY; chunkY <= maxChunkY; ++chunkY) {
+        updateDirtyChunkAt(glm::ivec3(colChunkX, chunkY, colChunkZ));
     }
 }
 

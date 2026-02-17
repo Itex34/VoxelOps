@@ -12,6 +12,8 @@
 #include "data/GameData.hpp"
 #include "graphics/TextureAtlas.hpp"
 #include "graphics/ChunkManager.hpp"
+#include "graphics/WorldGen.hpp"
+
 #include "physics/RayManager.hpp"
 #include "physics/Raycast.hpp"
 #include "network/ClientNetwork.hpp"
@@ -88,7 +90,7 @@ int main(int argc, char** argv) {
     chunkManager.enableShadows = true;
 
 
-    chunkManager.generateInitialChunks_TwoPass(WORLD_MAX_X);
+    WorldGen::generateInitialChunksTwoPass(chunkManager, WORLD_MAX_X);
     chunkManager.debugMemoryEstimate();
 
 

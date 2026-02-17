@@ -5,6 +5,7 @@
 #include <functional>
 #include <cmath>  
 #include <algorithm>
+#include <cstdint>
 
 #include <glm/vec3.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -24,15 +25,24 @@ class Lighting {
 public:
     Lighting(int chunkSize = CHUNK_SIZE);
 
+    static constexpr int kPaddedSize = CHUNK_SIZE + 3;
+    static constexpr int kPaddedVolume = kPaddedSize * kPaddedSize * kPaddedSize;
+    static constexpr int kSolidPad = 2;
+    static constexpr int kSolidSize = CHUNK_SIZE + 4;
+    static constexpr int kSolidVolume = kSolidSize * kSolidSize * kSolidSize;
 
-
-
+    void buildSolidPadded(
+        const Chunk& chunk,
+        const Chunk* neighbors[6],
+        uint8_t* solidPadded
+    );
 
     void prepareChunkAO(
         const Chunk& chunk,
         const glm::ivec3& chunkPos,
         const Chunk* neighbors[6],
-        std::vector<uint8_t>& aoBuffer
+        uint8_t* aoBuffer,
+        const uint8_t* solidPadded = nullptr
     );
 
 
@@ -40,9 +50,10 @@ public:
         const Chunk& chunk,
         const glm::ivec3& chunkPos,
         const Chunk* neighbors[6],
-        std::vector<uint8_t>& sunlightBuffer,
+        uint8_t* sunlightBuffer,
         float sunFalloff, // how quickly light dims below occluders
-        const TopOccluderGetter& getTopOccluderY = TopOccluderGetter{}
+        const TopOccluderGetter& getTopOccluderY = TopOccluderGetter{},
+        const uint8_t* solidPadded = nullptr
     ) ;
 
 
@@ -128,17 +139,48 @@ private:
         const Chunk& center,
         const Chunk* neighbors[6])
     {
-        if (x >= 0 && x < CHUNK_SIZE &&
-            y >= 0 && y < CHUNK_SIZE &&
-            z >= 0 && z < CHUNK_SIZE)
-            return center.getBlock(x, y, z) != BlockID::Air;
+        // AO/sun taps may sample beyond one-axis neighborhood (e.g. corners at -2).
+        // In those cases, treat as air instead of attempting unchecked access.
+        if (y < -1 || y > CHUNK_SIZE) {
+            return false;
+        }
 
-        if (x < 0 && neighbors[1]) return neighbors[1]->getBlock(x + CHUNK_SIZE, y, z) != BlockID::Air;
-        if (x >= CHUNK_SIZE && neighbors[0]) return neighbors[0]->getBlock(x - CHUNK_SIZE, y, z) != BlockID::Air;
-        if (y < 0 && neighbors[3]) return neighbors[3]->getBlock(x, y + CHUNK_SIZE, z) != BlockID::Air;
-        if (y >= CHUNK_SIZE && neighbors[2]) return neighbors[2]->getBlock(x, y - CHUNK_SIZE, z) != BlockID::Air;
-        if (z < 0 && neighbors[5]) return neighbors[5]->getBlock(x, y, z + CHUNK_SIZE) != BlockID::Air;
-        if (z >= CHUNK_SIZE && neighbors[4]) return neighbors[4]->getBlock(x, y, z - CHUNK_SIZE) != BlockID::Air;
+        const int oob =
+            (x < 0 || x >= CHUNK_SIZE) +
+            (y < 0 || y >= CHUNK_SIZE) +
+            (z < 0 || z >= CHUNK_SIZE);
+
+        if (oob == 0) {
+            return center.getBlockUnchecked(x, y, z) != BlockID::Air;
+        }
+        if (oob > 1) {
+            return false;
+        }
+
+        if (x < 0) {
+            const Chunk* n = neighbors[1];
+            return n ? (n->getBlockUnchecked(x + CHUNK_SIZE, y, z) != BlockID::Air) : false;
+        }
+        if (x >= CHUNK_SIZE) {
+            const Chunk* n = neighbors[0];
+            return n ? (n->getBlockUnchecked(x - CHUNK_SIZE, y, z) != BlockID::Air) : false;
+        }
+        if (y < 0) {
+            const Chunk* n = neighbors[3];
+            return n ? (n->getBlockUnchecked(x, y + CHUNK_SIZE, z) != BlockID::Air) : false;
+        }
+        if (y >= CHUNK_SIZE) {
+            const Chunk* n = neighbors[2];
+            return n ? (n->getBlockUnchecked(x, y - CHUNK_SIZE, z) != BlockID::Air) : false;
+        }
+        if (z < 0) {
+            const Chunk* n = neighbors[5];
+            return n ? (n->getBlockUnchecked(x, y, z + CHUNK_SIZE) != BlockID::Air) : false;
+        }
+        if (z >= CHUNK_SIZE) {
+            const Chunk* n = neighbors[4];
+            return n ? (n->getBlockUnchecked(x, y, z - CHUNK_SIZE) != BlockID::Air) : false;
+        }
 
         return false;
     }

@@ -26,6 +26,7 @@ add_executable(VoxelOps
     "data/GameData.cpp" 
     "graphics/Frustum.hpp"
     "graphics/ChunkManager.cpp"
+    "graphics/ChunkRenderSystem.cpp"
     "graphics/TextureAtlas.cpp" 
     "physics/Raycast.cpp" 
     "physics/RayManager.cpp"
@@ -37,6 +38,7 @@ add_executable(VoxelOps
     "misc/ThreadPool.cpp" 
     "graphics/RegionMeshBuffer.cpp"
     "voxels/ChunkColumn.cpp"
+    "graphics/WorldGen.cpp"
 )
 
 find_package(glfw3 CONFIG REQUIRED)
