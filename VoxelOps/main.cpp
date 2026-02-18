@@ -13,6 +13,7 @@
 #include "graphics/TextureAtlas.hpp"
 #include "graphics/ChunkManager.hpp"
 #include "graphics/WorldGen.hpp"
+#include "graphics/Sky.hpp"
 
 #include "physics/RayManager.hpp"
 #include "physics/Raycast.hpp"
@@ -60,19 +61,31 @@ static void updateFPSCounter(GLFWwindow* window) {
 int main(int argc, char** argv) {
     if (!glfwInit()) return -1;
 
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+    auto createWindowForVersion = [](int major, int minor) -> GLFWwindow* {
+        glfwDefaultWindowHints();
+        glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, major);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, minor);
+        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+        return glfwCreateWindow(GameData::screenWidth, GameData::screenHeight, "Voxel Ops", nullptr, nullptr);
+    };
 
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-    GLFWwindow* window = glfwCreateWindow(GameData::screenWidth, GameData::screenHeight, "Voxel Ops", nullptr, nullptr);
+    GLFWwindow* window = createWindowForVersion(4, 3);
+    if (!window) {
+        std::cerr << "OpenGL 4.3 context creation failed, retrying with OpenGL 3.3.\n";
+        window = createWindowForVersion(3, 3);
+    }
     if (!window) {
         glfwTerminate();
         return -1;
     }
     glfwMakeContextCurrent(window);
-    gladLoadGLLoader((GLADloadproc)glfwGetProcAddress);
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+        std::cerr << "Failed to initialize GLAD.\n";
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        return -1;
+    }
     //glfwSwapInterval(0);
 
     printf("OpenGL version: %s\n", glGetString(GL_VERSION));
@@ -132,9 +145,19 @@ int main(int argc, char** argv) {
         "../../../../VoxelOps/shaders/debugFrag.frag"
     );
 
+    glm::vec3 skySunDir = glm::normalize(glm::vec3(1.0f, 1.0f, 0.0f));
+    Sky sky;
+    const bool skyReady = sky.initialize(skySunDir);
+    if (!skyReady) {
+        std::cerr << "Failed to initialize sky backend.\n";
+        return -1;
+    }
+    std::cout << "Sky backend: " << (sky.isAdvancedBackend() ? "Advanced43" : "Simple33") << "\n";
+
     Shader skyShader(
         "../../../../VoxelOps/shaders/sky.vert",
-        "../../../../VoxelOps/shaders/sky.frag"
+        sky.fragmentShaderPath(),
+        sky.atmosphereShader()
     );
 
 
@@ -192,6 +215,26 @@ int main(int argc, char** argv) {
         glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
         glBindVertexArray(0);
     }
+
+    GLuint skyDepthTex = 0;
+    int skyDepthTexWidth = 0;
+    int skyDepthTexHeight = 0;
+    glGenTextures(1, &skyDepthTex);
+    auto ensureSkyDepthTexture = [&]() {
+        if (skyDepthTexWidth == GameData::screenWidth && skyDepthTexHeight == GameData::screenHeight) {
+            return;
+        }
+        skyDepthTexWidth = GameData::screenWidth;
+        skyDepthTexHeight = GameData::screenHeight;
+        glBindTexture(GL_TEXTURE_2D, skyDepthTex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, skyDepthTexWidth, skyDepthTexHeight, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    };
+    ensureSkyDepthTexture();
 
     static const glm::vec3 ndcCorners[8] = {
         {-1, -1, -1}, {1, -1, -1}, {-1, 1, -1}, {1, 1, -1}, // near
@@ -338,82 +381,52 @@ int main(int argc, char** argv) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glm::mat4 skyProjection = glm::perspective(glm::radians(GameData::FOV), (float)GameData::screenWidth / (float)GameData::screenHeight, 0.1f, 100000.0f);
         glm::mat4 skyView = activeCamera.getViewMatrix();
+        glm::mat4 invSkyProj = glm::inverse(skyProjection);
+        glm::mat4 invSkyView = glm::inverse(skyView);
+        glm::mat4 invSkyViewProj = glm::inverse(skyProjection * skyView);
 
-        // --- draw sky (fullscreen triangle) ---
-        glDepthMask(GL_FALSE);          // don't write depth
-        glDisable(GL_DEPTH_TEST);
-        glDisable(GL_CULL_FACE); // optional: ensures sky always draws (you can keep depth test on if you prefer)
-        skyShader.use();
-
-        // inverse matrices for ray reconstruction
-        glm::mat4 invProj = glm::inverse(skyProjection);
-        glm::mat4 invView = glm::inverse(skyView);
-        skyShader.setMat4("uInvProj", invProj);
-        skyShader.setMat4("uInvView", invView);
-
-        // --- sun / atmosphere ---
-        glm::vec3 sunDir = glm::normalize(glm::vec3(0.15f, 0.98f, 0.10f));
-
-        float groundOffset = 0.0f; // terrain height if you have it
-        glm::vec3 camPos = player.getCamera().position; // your camera pos vec3
-
-
-
-        skyShader.setVec3("uCameraPos", camPos);
-
-
-
-
-        if(!setSkyUniforms)
-        {
-            skyShader.setVec3("uSunDir", sunDir);
-
-            skyShader.setFloat("uGroundOffset", groundOffset);
-
-            skyShader.setFloat("uSunIntensity", 2.0f); // if shader expects this name
-            skyShader.setFloat("uSunRadiance", 2.0f);  // if shader expects this name
-
-            // Atmosphere parameters (cover both "-Strength" and "-Scale" variants)
-            skyShader.setFloat("uTurbidity", 1.45f);
-            skyShader.setFloat("uMieG", 0.78f);
-            skyShader.setFloat("uRayleighStrength", 1.6f);
-            skyShader.setFloat("uRayleighScale", 1.6f); // duplicate-friendly
-            skyShader.setFloat("uMieStrength", 0.025f);
-            skyShader.setFloat("uMieScale", 0.025f);     // duplicate-friendly
-
-            // Tone & gamma
-            skyShader.setFloat("uExposure", 0.78f);
-            skyShader.setFloat("uGamma", 2.2f);
-
-            // Horizon / zenith helpers (different names across shaders)
-            skyShader.setFloat("uZenithBoost", 0.0f);
-            skyShader.setFloat("uHorizonBoost", 0.01f); // small aesthetic boost near horizon
-
-            // Flat-ground shader has uGroundY sometimes
-            skyShader.setFloat("uGroundY", groundOffset);
-
-            // Flat-ground shader has uGroundY sometimes
-            skyShader.setFloat("uGroundY", groundOffset);
-
-            // Debug / mode switches (safe defaults)
-            skyShader.setInt("uDebugMode", 0);
-
-
-            setSkyUniforms = true;
+        if (sky.isAdvancedBackend()) {
+            sky.prepareAdvancedLuts(invSkyProj, invSkyView, activeCamera.position, skySunDir);
         }
 
+        if (!sky.isAdvancedBackend()) {
+            // --- draw sky (fullscreen triangle) ---
+            glDepthMask(GL_FALSE);
+            glDisable(GL_DEPTH_TEST);
+            glDisable(GL_CULL_FACE);
+            skyShader.use();
+            sky.bindForSkyPass(skyShader.ID, 3, 4, 5, 6);
 
+            // inverse matrices for ray reconstruction
+            skyShader.setMat4("uInvProj", invSkyProj);
+            skyShader.setMat4("uInvView", invSkyView);
+            skyShader.setMat4("uInvViewProj", invSkyViewProj);
 
+            glm::vec3 sunDir = skySunDir;
+            glm::vec3 camPos = activeCamera.position;
 
+            skyShader.setVec3("uCameraPos", camPos);
+            skyShader.setVec3("uSunDir", sunDir);
+            skyShader.setVec3("uSunIlluminance", glm::vec3(1.0f));
+            skyShader.setBool("uUseDepth", false);
 
-        // draw fullscreen triangle
-        glBindVertexArray(skyVAO);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
-        glBindVertexArray(0);
+            if(!setSkyUniforms)
+            {
+                skyShader.setVec3("uEarthCenter", sky.earthCenter());
+                skyShader.setVec2("uSunSize", sky.sunSize());
+                skyShader.setFloat("uLengthUnitInMeters", sky.lengthUnitInMeters());
+                skyShader.setFloat("uExposure", 1.0f);
+                setSkyUniforms = true;
+            }
 
-        //glEnable(GL_CULL_FACE);
-        glEnable(GL_DEPTH_TEST);
-        glDepthMask(GL_TRUE);
+            glBindVertexArray(skyVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+            glBindVertexArray(0);
+
+            glEnable(GL_CULL_FACE);
+            glEnable(GL_DEPTH_TEST);
+            glDepthMask(GL_TRUE);
+        }
 
 
         glm::mat4 projection = glm::perspective(glm::radians(GameData::FOV), (float)GameData::screenWidth / (float)GameData::screenHeight, 0.1f, 100000.0f);
@@ -425,8 +438,8 @@ int main(int argc, char** argv) {
         frustum.extractPlanes(playerCamViewProjection);
 
 
-        glm::vec3 lightDir = glm::normalize(glm::vec3(1.0f, 0.5f, 0.0f));
-        glm::vec3 lightColor = glm::vec3(1.0f, 0.97f, 0.94f); // mild warm sun
+        glm::vec3 lightDir = skySunDir;
+        glm::vec3 lightColor = glm::vec3(1.0f, 0.98f, 0.96f); // mild warm sun
 
         glm::vec3 ambientColor = glm::vec3(0.3f, 0.3f, 0.3f);
 
@@ -453,12 +466,12 @@ int main(int argc, char** argv) {
             if (chunkManager.enableAO) {
 
 
-                // hemisphere — gentler blue, less influence
-                chunkShader.setVec3("skyColorTop", glm::vec3(0.66f, 0.78f, 0.92f));
-                chunkShader.setVec3("skyColorBottom", glm::vec3(0.96f, 0.92f, 0.84f));
+                // hemisphere - gentler blue, less influence
+                chunkShader.setVec3("skyColorTop", glm::vec3(0.58f, 0.73f, 0.95f));
+                chunkShader.setVec3("skyColorBottom", glm::vec3(0.86f, 0.91f, 0.98f));
 
                 // strengths
-                chunkShader.setFloat("ambientStrength", 0.80f);   // lower ambient so textures show through
+                chunkShader.setFloat("ambientStrength", 0.89f);   // lower ambient so textures show through
                 chunkShader.setFloat("diffuseStrength", 0.85f);   // slightly stronger direct light
                 chunkShader.setFloat("minAmbient", 0.01f);        // allow darker crevices without flat grey
 
@@ -467,7 +480,7 @@ int main(int argc, char** argv) {
                 chunkShader.setFloat("hemiTint", 0.5f);    // almost no hue tint from hemisphere
                 chunkShader.setFloat("contrast", 1.0f);    // very gentle
                 chunkShader.setFloat("satBoost", 1.17f);
-                chunkShader.setVec3("warmth", glm::vec3(1.04f, 1.00f, 0.95f));
+                chunkShader.setVec3("warmth", glm::vec3(1.03f, 1.00f, 0.97f));
 
                 chunkShader.setFloat("aoPow", 0.8f);
                 chunkShader.setFloat("aoMin", 0.6f);
@@ -492,6 +505,47 @@ int main(int argc, char** argv) {
         glPolygonMode(GL_FRONT_AND_BACK, toggleWireframe ? GL_LINE : GL_FILL); 
 
         chunkManager.renderChunks(chunkShader, frustum, player, player.renderDistance);
+
+        if (sky.isAdvancedBackend()) {
+            ensureSkyDepthTexture();
+            glBindTexture(GL_TEXTURE_2D, skyDepthTex);
+            glCopyTexSubImage2D(
+                GL_TEXTURE_2D, 0, 0, 0, 0, 0, GameData::screenWidth, GameData::screenHeight);
+            glBindTexture(GL_TEXTURE_2D, 0);
+
+            glDepthMask(GL_FALSE);
+            glDisable(GL_DEPTH_TEST);
+            glDisable(GL_CULL_FACE);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+
+            skyShader.use();
+            sky.bindForSkyPass(skyShader.ID, 3, 4, 5, 6);
+            skyShader.setMat4("uInvProj", invSkyProj);
+            skyShader.setMat4("uInvView", invSkyView);
+            skyShader.setMat4("uInvViewProj", invSkyViewProj);
+            skyShader.setVec3("uCameraPos", activeCamera.position);
+            skyShader.setVec3("uEarthCenter", sky.earthCenter());
+            skyShader.setVec3("uSunDir", skySunDir);
+            skyShader.setVec3("uSunIlluminance", glm::vec3(1.0f));
+            skyShader.setFloat("uLengthUnitInMeters", sky.lengthUnitInMeters());
+            skyShader.setBool("uUseDepth", true);
+            skyShader.setInt("uDepthTexture", 2);
+
+            glActiveTexture(GL_TEXTURE2);
+            glBindTexture(GL_TEXTURE_2D, skyDepthTex);
+            sky.bindAdvancedCompositeTextures(skyShader.ID, 8, 9, 10);
+
+            glBindVertexArray(skyVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+            glBindVertexArray(0);
+
+            glBindTexture(GL_TEXTURE_2D, 0);
+            glDisable(GL_BLEND);
+            glEnable(GL_CULL_FACE);
+            glEnable(GL_DEPTH_TEST);
+            glDepthMask(GL_TRUE);
+        }
         
 
         glm::ivec3 currentChunk = chunkManager.worldToChunkPos(player.getPosition());

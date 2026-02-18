@@ -29,8 +29,8 @@ RayResult RayManager::rayHasBlockIntersectSingle(const Ray& ray, const ChunkMana
             tDelta[i] = std::abs(1.0f / rayDir[i]);
         }
         else {
-            tMax[i] = FLT_MAX;
-            tDelta[i] = FLT_MAX;
+            tMax[i] = std::numeric_limits<float>::max();
+            tDelta[i] = std::numeric_limits<float>::max();
         }
     }
 

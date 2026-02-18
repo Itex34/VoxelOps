@@ -3,9 +3,7 @@
 #include <glm/glm.hpp>
 #include <vector>
 
-// ============================================================================
-//  ENUM: HitRegion
-// ============================================================================
+
 // Represents the type of body region hit (used for damage multipliers, etc.)
 enum class HitRegion {
     Head,

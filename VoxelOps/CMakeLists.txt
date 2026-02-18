@@ -39,6 +39,8 @@ add_executable(VoxelOps
     "graphics/RegionMeshBuffer.cpp"
     "voxels/ChunkColumn.cpp"
     "graphics/WorldGen.cpp"
+    "graphics/Sky.cpp"
+    "../third_party/precomputed_atmospheric_scattering/atmosphere/model.cc"
 )
 
 find_package(glfw3 CONFIG REQUIRED)
@@ -60,6 +62,7 @@ target_link_libraries(VoxelOps PRIVATE Shared)
 
 target_include_directories(VoxelOps PRIVATE ${Stb_INCLUDE_DIR})
 target_include_directories(VoxelOps PRIVATE ../Shared)
+target_include_directories(VoxelOps PRIVATE ../third_party/precomputed_atmospheric_scattering)
 
 
 # include the headers!

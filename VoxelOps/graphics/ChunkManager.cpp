@@ -95,28 +95,7 @@ void ChunkManager::renderChunkBorders(glm::mat4& view, glm::mat4& projection) {
     ChunkRenderSystem::renderChunkBorders(*this, view, projection);
 }
 
-std::array<bool, 6> ChunkManager::getVisibleChunkFaces(const glm::ivec3& pos) const {
-    std::array<bool, 6> visibleFaces = { false, false, false, false, false, false }; // +X, -X, +Y, -Y, +Z, -Z
 
-    const std::array<glm::ivec3, 6> directions = {
-        glm::ivec3(1, 0, 0),  // +X
-        glm::ivec3(-1, 0, 0), // -X
-        glm::ivec3(0, 1, 0),  // +Y
-        glm::ivec3(0, -1, 0), // -Y
-        glm::ivec3(0, 0, 1),  // +Z
-        glm::ivec3(0, 0, -1)  // -Z
-    };
-
-    for (int i = 0; i < 6; ++i) {
-        glm::ivec3 neighborPos = pos + directions[i];
-        auto it = chunkMap.find(neighborPos);
-        if (!inBounds(neighborPos) || it == chunkMap.end() || it->second.isCompletelyAir()) {
-            visibleFaces[i] = true;
-        }
-    }
-
-    return visibleFaces;
-}
 
 void ChunkManager::markChunkDirty(const glm::ivec3& pos) {
     if (!inBounds(pos)) return;

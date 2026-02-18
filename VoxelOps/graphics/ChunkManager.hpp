@@ -264,7 +264,6 @@ private:
 
 
     ChunkMeshBuilder builder;
-    std::array<bool, 6> getVisibleChunkFaces(const glm::ivec3& pos) const;
 
     GLuint wireVAO, wireVBO;
 

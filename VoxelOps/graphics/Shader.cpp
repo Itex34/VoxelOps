@@ -4,7 +4,7 @@
 #include <iostream>
 #include <glm/gtc/type_ptr.hpp>
 
-Shader::Shader(const char* vertexPath, const char* fragmentPath) {
+Shader::Shader(const char* vertexPath, const char* fragmentPath, unsigned int extraFragmentShader) {
     std::string vertexCode = loadFile(vertexPath);
     std::string fragmentCode = loadFile(fragmentPath);
     const char* vShaderCode = vertexCode.c_str();
@@ -23,11 +23,17 @@ Shader::Shader(const char* vertexPath, const char* fragmentPath) {
     ID = glCreateProgram();
     glAttachShader(ID, vertex);
     glAttachShader(ID, fragment);
+    if (extraFragmentShader != 0) {
+        glAttachShader(ID, extraFragmentShader);
+    }
     glLinkProgram(ID);
     checkCompileErrors(ID, "PROGRAM");
 
     glDeleteShader(vertex);
     glDeleteShader(fragment);
+    if (extraFragmentShader != 0) {
+        glDetachShader(ID, extraFragmentShader);
+    }
 }
 
 void Shader::use() const {
