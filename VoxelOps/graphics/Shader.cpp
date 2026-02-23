@@ -40,32 +40,43 @@ void Shader::use() const {
     glUseProgram(ID);
 }
 
+GLint Shader::getUniformLocation(const std::string& name) const {
+    auto it = m_uniformLocationCache.find(name);
+    if (it != m_uniformLocationCache.end()) {
+        return it->second;
+    }
+
+    const GLint location = glGetUniformLocation(ID, name.c_str());
+    m_uniformLocationCache.emplace(name, location);
+    return location;
+}
+
 void Shader::setBool(const std::string& name, bool value) const {
-    glUniform1i(glGetUniformLocation(ID, name.c_str()), (int)value);
+    glUniform1i(getUniformLocation(name), (int)value);
 }
 void Shader::setInt(const std::string& name, int value) const {
-    glUniform1i(glGetUniformLocation(ID, name.c_str()), value);
+    glUniform1i(getUniformLocation(name), value);
 }
 void Shader::setFloat(const std::string& name, float value) const {
-    glUniform1f(glGetUniformLocation(ID, name.c_str()), value);
+    glUniform1f(getUniformLocation(name), value);
 }
 void Shader::setMat4(const std::string& name, const glm::mat4& mat) const {
-    glUniformMatrix4fv(glGetUniformLocation(ID, name.c_str()), 1, GL_FALSE, &mat[0][0]);
+    glUniformMatrix4fv(getUniformLocation(name), 1, GL_FALSE, &mat[0][0]);
 }
 void Shader::setMat3(const std::string& name, const glm::mat3& mat) const {
-    glUniformMatrix3fv(glGetUniformLocation(ID, name.c_str()), 1, GL_FALSE, &mat[0][0]);
+    glUniformMatrix3fv(getUniformLocation(name), 1, GL_FALSE, &mat[0][0]);
 }
 
 void Shader::setVec4v(const std::string& name, GLsizei count, const glm::vec4* v) const {
-    glUniform4fv(glGetUniformLocation(ID, name.c_str()), count, glm::value_ptr(v[0]));
+    glUniform4fv(getUniformLocation(name), count, glm::value_ptr(v[0]));
 }
 
 void Shader::setVec3(const std::string& name, const glm::vec3& value) const {
-    glUniform3fv(glGetUniformLocation(ID, name.c_str()), 1, &value[0]);
+    glUniform3fv(getUniformLocation(name), 1, &value[0]);
 }
 
 void Shader::setVec2(const std::string& name, const glm::vec2& value) const {
-    glUniform2fv(glGetUniformLocation(ID, name.c_str()), 1, &value[0]);
+    glUniform2fv(getUniformLocation(name), 1, &value[0]);
 }
 
 std::string Shader::loadFile(const char* path) {

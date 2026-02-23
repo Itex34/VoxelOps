@@ -2,6 +2,7 @@
 #define SHADER_HPP
 
 #include <string>
+#include <unordered_map>
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 
@@ -23,8 +24,12 @@ public:
 	void setVec2(const std::string& name, const glm::vec2& value) const;
 
 private:
+    GLint getUniformLocation(const std::string& name) const;
+
     std::string loadFile(const char* path);
     void checkCompileErrors(unsigned int shader, const std::string& type);
+
+    mutable std::unordered_map<std::string, GLint> m_uniformLocationCache;
 };
 
 #endif

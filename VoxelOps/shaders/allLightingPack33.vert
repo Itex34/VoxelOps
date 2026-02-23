@@ -1,12 +1,7 @@
-#version 430
+#version 330 core
 // Packed attributes
 layout(location = 0) in uint inLow;
 layout(location = 1) in uint inHigh;
-
-// SSBO with chunk model matrices (4 vec4 per chunk)
-layout(std430, binding = 0) buffer Models {
-    vec4 models[];
-};
 
 // Uniforms
 uniform float u_chunkSize;

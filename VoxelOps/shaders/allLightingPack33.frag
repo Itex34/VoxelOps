@@ -1,4 +1,4 @@
-#version 430
+#version 330 core
 
 in vec3 Position;
 in vec2 TexCoordBlocks;

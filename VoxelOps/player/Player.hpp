@@ -94,12 +94,8 @@ public:
 
 
 
-
-
-
-    // Public gameplay tunables
     float currentFov;
-    int8_t renderDistance = 100;
+    int8_t renderDistance = 12;
     bool flyMode = true;
     int8_t maxReach = 8; //blocks
 

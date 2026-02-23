@@ -91,7 +91,7 @@ void WorldGen::generateChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
         }
     }
 
-    chunk.dirty = true;
+    cm.markChunkDirty(pos);
     cm.rebuildColumnSunCache(pos.x, pos.z);
     cm.suppressSunlightAffectedRebuilds = prevSuppress;
 }
@@ -219,7 +219,7 @@ void WorldGen::generateTerrainChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
         }
     }
 
-    chunk.dirty = true;
+    cm.markChunkDirty(pos);
     cm.rebuildColumnSunCache(pos.x, pos.z);
 }
 
@@ -254,7 +254,7 @@ void WorldGen::generateInitialChunksTwoPass(ChunkManager& cm, int radiusChunks) 
 
                 if (topY != -1 && chance(gen) < 0.02) {
                     placeTree(cm, chunkRef, glm::ivec3(x, topY + 1, z), gen);
-                    chunkRef.dirty = true;
+                    cm.markChunkDirty(pos);
                 }
             }
         }

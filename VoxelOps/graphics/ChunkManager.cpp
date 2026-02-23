@@ -100,70 +100,25 @@ void ChunkManager::renderChunkBorders(glm::mat4& view, glm::mat4& projection) {
 void ChunkManager::markChunkDirty(const glm::ivec3& pos) {
     if (!inBounds(pos)) return;
     auto it = chunkMap.find(pos);
-    if (it != chunkMap.end()) it->second.dirty = true;
+    if (it == chunkMap.end()) return;
+
+    it->second.dirty = true;
+    if (m_dirtyChunkPending.insert(pos).second) {
+        m_dirtyChunkQueue.push_back(pos);
+    }
 }
 
 void ChunkManager::updateDirtyChunks() {
-    std::vector<glm::ivec3> toUpdate;
+    while (!m_dirtyChunkQueue.empty()) {
+        const glm::ivec3 pos = m_dirtyChunkQueue.front();
+        m_dirtyChunkQueue.pop_front();
+        m_dirtyChunkPending.erase(pos);
 
-    // 1. Collect dirty chunks
-    for (int y = WORLD_MIN_Y; y <= WORLD_MAX_Y; ++y) {
-        for (int z = WORLD_MIN_Z; z <= WORLD_MAX_Z; ++z) {
-            for (int x = WORLD_MIN_X; x <= WORLD_MAX_X; ++x) {
-                glm::ivec3 pos(x, y, z);
-                auto it = chunkMap.find(pos);
-                if (it != chunkMap.end() && it->second.dirty)
-                    toUpdate.push_back(pos);
-            }
-        }
-    }
-
-    // 2. Rebuild dirty chunks
-    for (auto& pos : toUpdate) {
         auto it = chunkMap.find(pos);
         if (it == chunkMap.end()) continue;
+        if (!it->second.dirty) continue;
 
-        Chunk& chunk = it->second;
-
-        auto findChunk = [&](const glm::ivec3& pos) -> const Chunk* {
-            auto it = chunkMap.find(pos);
-            return (it != chunkMap.end()) ? &it->second : nullptr;
-            };
-
-        const Chunk* neighbors[6] = {};
-
-        constexpr glm::ivec3 offsets[6] = {
-            {1,0,0},{-1,0,0},
-            {0,1,0},{0,-1,0},
-            {0,0,1},{0,0,-1}
-        };
-
-        for (int i = 0; i < 6; ++i)
-            neighbors[i] = findChunk(pos + offsets[i]);
-
-
-
-
-        auto start = std::chrono::high_resolution_clock::now();
-
-        auto built = builder.buildChunkMesh(
-            chunk, neighbors, pos, atlas, enableAO, enableShadows,
-            [this](int wx, int wz) { return this->getColumnTopOccluderY(wx, wz); }
-        );
-
-        auto end = std::chrono::high_resolution_clock::now();
-
-        std::chrono::duration<double, std::micro> elapsed = end - start;
-
-
-        //std::cout << "Chunk meshed in : " << elapsed.count() << " microseconds" << '\n';
-
-
-        uploadChunkMesh(pos, built.vertices, built.indices);
-
-        chunk.dirty = false;
-
-        // Do not re-dirty neighbors here; callers should explicitly mark affected chunks.
+        updateDirtyChunkAt(pos);
     }
 }
 
@@ -195,7 +150,6 @@ void ChunkManager::updateChunks(const glm::ivec3& playerWorldPos, int renderDist
 
 
 
-    // --- Unload chunks too far away ---
     for (auto& [pos, chunk] : chunkMap) {
         if (desired.find(pos) == desired.end()) {
             toErase.push_back(pos);
@@ -205,19 +159,18 @@ void ChunkManager::updateChunks(const glm::ivec3& playerWorldPos, int renderDist
     for (auto& pos : toErase) {
         columnsToRefresh.insert(glm::ivec2(pos.x, pos.z));
         chunkMap.erase(pos);
-        chunkMeshes.erase(pos); // frees GPU buffers
+        chunkMeshes.erase(pos);
+        m_dirtyChunkPending.erase(pos);
     }
 
     for (const auto& c : columnsToRefresh) {
         rebuildColumnSunCache(c.x, c.y);
     }
 
-    // --- Load missing chunks ---
     for (auto& pos : desired) {
         if (chunkMap.find(pos) == chunkMap.end()) {
-            WorldGen::generateChunkAt(*this, pos); // generates and marks it dirty
+            WorldGen::generateChunkAt(*this, pos);
 
-            // also mark neighbors dirty, so shared faces get rebuilt
             static const glm::ivec3 dirs[6] = {
                 { 1, 0, 0}, {-1, 0, 0},
                 { 0, 1, 0}, { 0,-1, 0},
@@ -245,7 +198,7 @@ void ChunkManager::setBlockInWorld(const glm::ivec3& worldPos, BlockID blockID) 
     if (oldId == blockID) return;
     chunk.setBlock(localPos.x, localPos.y, localPos.z, blockID);
     updateColumnSunCacheForBlockChange(worldPos.x, worldPos.y, worldPos.z, oldId, blockID);
-    chunk.dirty = true;
+    markChunkDirty(chunkPos);
 
     // mark neighbors if we touched an edge
     if (localPos.x == 0) markChunkDirty(chunkPos + glm::ivec3(-1, 0, 0));
@@ -264,7 +217,6 @@ glm::ivec3 ChunkManager::worldToChunkPos(const glm::ivec3& worldPos) const {
 
 glm::ivec3 ChunkManager::worldToLocalPos(const glm::ivec3& worldPos) const {
     glm::ivec3 chunkPos = worldToChunkPos(worldPos);
-    // local = world - chunkOrigin
     glm::ivec3 local = worldPos - chunkPos * CHUNK_SIZE;
     return local;
 }
@@ -288,7 +240,7 @@ void ChunkManager::setBlockGlobal(int worldX, int worldY, int worldZ, BlockID id
         if (oldId == id) return;
         it->second.setBlock(localPos.x, localPos.y, localPos.z, id);
         updateColumnSunCacheForBlockChange(worldX, worldY, worldZ, oldId, id);
-        it->second.dirty = true;
+        markChunkDirty(chunkPos);
     }
 }
 
@@ -323,7 +275,6 @@ void ChunkManager::setBlockSafe(Chunk& currentChunk, const glm::ivec3& pos, Bloc
         updateColumnSunCacheForBlockChange(worldPos.x, worldPos.y, worldPos.z, oldId, id);
     }
     else {
-        // Convert local pos to world pos, then use global function
         glm::ivec3 worldPos = currentChunk.getWorldPosition() + pos;
         setBlockGlobal(worldPos.x, worldPos.y, worldPos.z, id);
     }
@@ -394,25 +345,6 @@ void ChunkManager::debugMemoryEstimate()
         std::cout << "  greedy emit: " << (double(p.greedyEmitUs) * invChunks) << " us (" << pct(p.greedyEmitUs) << "%)\n";
         std::cout << "  other/unprofiled: " << (double(otherUs) * invChunks) << " us (" << pct(otherUs) << "%)\n";
     }
-
-    //// GPU stats
-    //auto gpu = renderer.getGpuMeshStats();
-
-    //std::cout << "GPU vertices used: "
-    //    << gpu.usedVertexCount << " / "
-    //    << gpu.totalVertexCapacity << "\n";
-
-    //std::cout << "GPU indices used: "
-    //    << gpu.usedIndexCount << " / "
-    //    << gpu.totalIndexCapacity << "\n";
-
-    //std::cout << "largest free vertex block: "
-    //    << gpu.largestFreeVertexBlock << "\n";
-
-    //std::cout << "largest free index block: "
-    //    << gpu.largestFreeIndexBlock << "\n";
-
-    //std::cout << "-------------------------\n";
 }
 
 
@@ -783,28 +715,7 @@ void RegionMeshBuffer::orphanBuffers()
 
 
 
-void ChunkManager::computeLowestPotentialOccluders(const glm::ivec3& chunkPos, const Chunk& chunk) {
 
-
-    //chunk.lowestPotentialOccludersYvalue //fill this array
-}
-
-
-void ChunkManager::computeHeightMap(const glm::ivec3& columnPos, const ChunkColumn& col) {
-    
-    //get chunks with blocks facing +Y facing air (chunks with potentially sunlit blocks)
-
-
-    //for each of those potentially sunlit blocks, check 
-
-   
-    for (int x = 0; x < 16; x++) {
-        for (int z = 0; z < 16; z++) {
-            col.sunLitBlocksYvalue[x][z];
-        }
-    }
-
-}
 
 
 
@@ -944,10 +855,3 @@ void ChunkManager::rebuildSunlightAffectedColumnChunks(int colChunkX, int colChu
 
 
 
-int16_t ChunkManager::scanDown(int x, int startY, int z, ChunkColumn col) {
-    for (int y = startY; y >= WORLD_MIN_Y; --y) {
-
-    }
-    
-    return 0;
-}

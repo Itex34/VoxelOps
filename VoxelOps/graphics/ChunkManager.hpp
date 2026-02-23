@@ -25,7 +25,9 @@
 #include <optional>
 #include <random>
 #include <thread>
+#include <deque>
 #include <unordered_map>
+#include <unordered_set>
 #include <chrono>
 
 //--IN CHUNKS--
@@ -203,6 +205,9 @@ private:
 
     std::unordered_map<glm::ivec3, ChunkMesh, IVec3Hash> chunkMeshes; //deprecated
 
+    std::deque<glm::ivec3> m_dirtyChunkQueue;
+    std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> m_dirtyChunkPending;
+
 
 
 
@@ -248,16 +253,11 @@ private:
 
 
 
-
-    void computeLowestPotentialOccluders(const glm::ivec3& chunkPos, const Chunk& chunk);
-
-    void computeHeightMap(const glm::ivec3& columnPos, const ChunkColumn& col);
     void rebuildColumnSunCache(int colChunkX, int colChunkZ);
     void rebuildSunlightAffectedColumnChunks(int colChunkX, int colChunkZ, int oldTopY, int newTopY);
     void updateColumnSunCacheForBlockChange(int worldX, int worldY, int worldZ, BlockID oldId, BlockID newId);
     int getColumnTopOccluderY(int worldX, int worldZ) const;
 
-    int16_t scanDown(int x, int startY, int z, ChunkColumn col);
 
     ChunkColumn& getOrCreateColumn(int colX, int colZ);
 

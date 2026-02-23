@@ -1,4 +1,5 @@
 #pragma once
+#include <glad/glad.h>
 #include <glm/glm.hpp>
 
 class ChunkManager;
@@ -21,4 +22,16 @@ public:
         glm::mat4& view,
         glm::mat4& projection
     );
+};
+
+
+
+
+
+struct DrawElementsIndirectCommand {
+    GLuint  count;
+    GLuint  instanceCount;
+    GLuint  firstIndex;
+    GLuint  baseVertex;
+    GLuint  baseInstance;
 };

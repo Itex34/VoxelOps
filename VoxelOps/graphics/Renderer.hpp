@@ -5,7 +5,7 @@
 
 #include "Model.hpp"
 #include "Mesh.hpp"
-
+#include "Backend.hpp"
 
 constexpr int FACE_VERTICES = 6; // two triangles
 constexpr int FACE_INDICES = 6; // two triangles
@@ -53,6 +53,27 @@ struct GpuMeshStats {
 
 struct BufferRange;
 struct ChunkMesh;
+class Shader;
+class ChunkManager;
+class Frustum;
+class Player;
+class Camera;
+
+struct RenderFrameParams {
+	Shader& skyShader;
+	Shader& chunkShader;
+	Shader& debugShader;
+	ChunkManager& chunkManager;
+	Frustum& frustum;
+	Player& player;
+	const Camera& activeCamera;
+	glm::vec3 skySunDir;
+	GLuint skyVAO = 0;
+	bool toggleWireframe = false;
+	bool toggleChunkBorders = false;
+	bool toggleDebugFrustum = false;
+	bool* chunkUniformsInitialized = nullptr;
+};
 
 
 class Renderer {
@@ -60,22 +81,19 @@ public:
 	Renderer() = default;
 
 	GLuint loadTexture(const char* path);
+	const Backend& getBackend() const noexcept;
+	GraphicsBackend getActiveBackend() const noexcept;
+	std::string_view getActiveBackendName() const noexcept;
+	bool isMDIUsable() const noexcept;
 
 	void beginFrame();
 	void endFrame();
+	void renderFrame(RenderFrameParams& params);
 
 	void drawMesh(const ChunkMesh& mesh);
 
 private:
-	// Renderer does NOT own VAOs anymore
+	Backend m_ActiveBackend;
 };
 
 
-
-struct DrawElementsIndirectCommand {
-	GLuint  count;
-	GLuint  instanceCount;
-	GLuint  firstIndex;
-	GLuint  baseVertex;
-	GLuint  baseInstance;
-};
