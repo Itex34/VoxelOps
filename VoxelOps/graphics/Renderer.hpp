@@ -58,17 +58,16 @@ class ChunkManager;
 class Frustum;
 class Player;
 class Camera;
+class Sky;
 
 struct RenderFrameParams {
-	Shader& skyShader;
 	Shader& chunkShader;
 	Shader& debugShader;
 	ChunkManager& chunkManager;
 	Frustum& frustum;
 	Player& player;
 	const Camera& activeCamera;
-	glm::vec3 skySunDir;
-	GLuint skyVAO = 0;
+	Sky& sky;
 	bool toggleWireframe = false;
 	bool toggleChunkBorders = false;
 	bool toggleDebugFrustum = false;
@@ -89,8 +88,6 @@ public:
 	void beginFrame();
 	void endFrame();
 	void renderFrame(RenderFrameParams& params);
-
-	void drawMesh(const ChunkMesh& mesh);
 
 private:
 	Backend m_ActiveBackend;

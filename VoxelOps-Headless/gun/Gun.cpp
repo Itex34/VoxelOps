@@ -1,7 +1,6 @@
 #include "Gun.hpp"
 
 #include <iostream>
-#include <stdexcept>
 
 // Constructor
 Gun::Gun(float inFireInterval, float inReloadTime) noexcept :
@@ -96,16 +95,9 @@ void Gun::reload() noexcept {
 }
 
 bool Gun::loadModel(const std::string& path) {
-    try {
-        auto m = std::make_unique<Model>(path);
-        gunModel = std::move(m);
-        return true;
-    }
-    catch (const std::exception& e) {
-        std::cerr << "Failed to load model '" << path << "': " << e.what() << "\n";
-        gunModel.reset();
-        return false;
-    }
+    (void)path;
+    // Headless server does not load/render weapon models.
+    return true;
 }
 
 void Gun::tryFireIfReady(const glm::vec3& rayOrigin, const glm::vec3& rayDirection) {

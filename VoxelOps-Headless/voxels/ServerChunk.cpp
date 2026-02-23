@@ -247,7 +247,15 @@ bool ServerChunk::deserializeCompressed(const std::vector<uint8_t>& blob) {
     {
         std::unique_lock<std::shared_mutex> lk(m_mutex);
         position = glm::ivec3(cx, cy, cz);
-        loadRawVoxelBytes(decompressed.data(), decompressed.size());
+        const size_t rawSize = CHUNK_VOLUME * sizeof(BlockID);
+        std::memcpy(m_blocks.data(), decompressed.data(), rawSize);
+        uint16_t count = 0;
+        for (size_t i = 0; i < CHUNK_VOLUME; ++i) {
+            if (m_blocks[i] != static_cast<BlockID>(0)) {
+                ++count;
+            }
+        }
+        m_nonAirCount = count;
         m_version.store(version, std::memory_order_release);
         m_dirty.store(false, std::memory_order_relaxed);
         // note: we do not populate editLog from serialization; editLog is for runtime edits. clear it.

@@ -25,6 +25,37 @@ static ProcessMemoryStatsMB getProcessMemoryMB() {
 
 #include "../player/Player.hpp"
 #include <glm/gtc/type_ptr.hpp>
+#include <cstring>
+
+namespace {
+bool readI32LE(const std::vector<uint8_t>& data, size_t& offset, int32_t& out)
+{
+    if (offset + 4 > data.size()) {
+        return false;
+    }
+    uint32_t u = static_cast<uint32_t>(data[offset]) |
+        (static_cast<uint32_t>(data[offset + 1]) << 8) |
+        (static_cast<uint32_t>(data[offset + 2]) << 16) |
+        (static_cast<uint32_t>(data[offset + 3]) << 24);
+    out = static_cast<int32_t>(u);
+    offset += 4;
+    return true;
+}
+
+bool readI64LE(const std::vector<uint8_t>& data, size_t& offset, int64_t& out)
+{
+    if (offset + 8 > data.size()) {
+        return false;
+    }
+    uint64_t u = 0;
+    for (int i = 0; i < 8; ++i) {
+        u |= static_cast<uint64_t>(data[offset + i]) << (8 * i);
+    }
+    out = static_cast<int64_t>(u);
+    offset += 8;
+    return true;
+}
+}
 
 //positions only cube used for wireframe debug
 float cubeVertices[] = {
@@ -179,6 +210,142 @@ void ChunkManager::updateChunks(const glm::ivec3& playerWorldPos, int renderDist
             for (auto d : dirs) {
                 markChunkDirty(pos + d);
             }
+        }
+    }
+}
+
+void ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
+    const std::vector<uint8_t>& payload = packet.payload;
+
+    // payload format mirrors ServerChunk::serializeCompressed():
+    // [cx:i32][cy:i32][cz:i32][version:i64][flags:u8][dataSize:i32][voxel bytes...]
+    size_t offset = 0;
+    int32_t payloadX = 0;
+    int32_t payloadY = 0;
+    int32_t payloadZ = 0;
+    int64_t version = 0;
+    int32_t dataSize = 0;
+
+    if (!readI32LE(payload, offset, payloadX)) return;
+    if (!readI32LE(payload, offset, payloadY)) return;
+    if (!readI32LE(payload, offset, payloadZ)) return;
+    if (!readI64LE(payload, offset, version)) return;
+    (void)version;
+    if (offset + 1 > payload.size()) return;
+    const uint8_t flags = payload[offset++];
+    (void)flags;
+    if (!readI32LE(payload, offset, dataSize)) return;
+    if (dataSize < 0) return;
+    if (offset + static_cast<size_t>(dataSize) > payload.size()) return;
+
+    const size_t rawBlockBytes = CHUNK_VOLUME * sizeof(BlockID);
+    if (static_cast<size_t>(dataSize) < rawBlockBytes) return;
+
+    glm::ivec3 chunkPos(packet.chunkX, packet.chunkY, packet.chunkZ);
+    if (payloadX != packet.chunkX || payloadY != packet.chunkY || payloadZ != packet.chunkZ) {
+        chunkPos = glm::ivec3(payloadX, payloadY, payloadZ);
+    }
+
+    removeChunkMesh(chunkPos);
+    chunkMap.erase(chunkPos);
+    auto [chunkIt, inserted] = chunkMap.try_emplace(chunkPos, chunkPos);
+    (void)inserted;
+
+    Chunk& chunk = chunkIt->second;
+    const uint8_t* raw = payload.data() + offset;
+    for (int z = 0; z < CHUNK_SIZE; ++z) {
+        for (int y = 0; y < CHUNK_SIZE; ++y) {
+            for (int x = 0; x < CHUNK_SIZE; ++x) {
+                const size_t i = static_cast<size_t>(x + CHUNK_SIZE * (y + CHUNK_SIZE * z));
+                const BlockID id = static_cast<BlockID>(raw[i]);
+                if (id != BlockID::Air) {
+                    chunk.setBlock(x, y, z, id);
+                }
+            }
+        }
+    }
+
+    rebuildColumnSunCache(chunkPos.x, chunkPos.z);
+    updateDirtyChunkAt(chunkPos);
+
+    static const glm::ivec3 dirs[6] = {
+        { 1, 0, 0 }, { -1, 0, 0 },
+        { 0, 1, 0 }, { 0, -1, 0 },
+        { 0, 0, 1 }, { 0, 0, -1 }
+    };
+    for (const glm::ivec3& d : dirs) {
+        const glm::ivec3 n = chunkPos + d;
+        if (chunkMap.find(n) != chunkMap.end()) {
+            updateDirtyChunkAt(n);
+        }
+    }
+}
+
+void ChunkManager::applyNetworkChunkDelta(const ChunkDelta& packet) {
+    const glm::ivec3 chunkPos(packet.chunkX, packet.chunkY, packet.chunkZ);
+    auto it = chunkMap.find(chunkPos);
+    if (it == chunkMap.end()) return;
+
+    Chunk& chunk = it->second;
+    std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> rebuildSet;
+    rebuildSet.insert(chunkPos);
+
+    for (const ChunkDeltaOp& op : packet.edits) {
+        if (!Chunk::inBounds(static_cast<int>(op.x), static_cast<int>(op.y), static_cast<int>(op.z))) {
+            continue;
+        }
+
+        const BlockID newId = static_cast<BlockID>(op.blockId);
+        const BlockID oldId = chunk.getBlock(static_cast<int>(op.x), static_cast<int>(op.y), static_cast<int>(op.z));
+        if (oldId == newId) {
+            continue;
+        }
+
+        chunk.setBlock(static_cast<int>(op.x), static_cast<int>(op.y), static_cast<int>(op.z), newId);
+
+        const glm::ivec3 worldPos = chunk.getWorldPosition() + glm::ivec3(
+            static_cast<int>(op.x),
+            static_cast<int>(op.y),
+            static_cast<int>(op.z)
+        );
+        updateColumnSunCacheForBlockChange(worldPos.x, worldPos.y, worldPos.z, oldId, newId);
+
+        if (op.x == 0) rebuildSet.insert(chunkPos + glm::ivec3(-1, 0, 0));
+        if (op.x == CHUNK_SIZE - 1) rebuildSet.insert(chunkPos + glm::ivec3(1, 0, 0));
+        if (op.y == 0) rebuildSet.insert(chunkPos + glm::ivec3(0, -1, 0));
+        if (op.y == CHUNK_SIZE - 1) rebuildSet.insert(chunkPos + glm::ivec3(0, 1, 0));
+        if (op.z == 0) rebuildSet.insert(chunkPos + glm::ivec3(0, 0, -1));
+        if (op.z == CHUNK_SIZE - 1) rebuildSet.insert(chunkPos + glm::ivec3(0, 0, 1));
+    }
+
+    for (const glm::ivec3& pos : rebuildSet) {
+        if (chunkMap.find(pos) != chunkMap.end()) {
+            updateDirtyChunkAt(pos);
+        }
+    }
+}
+
+void ChunkManager::applyNetworkChunkUnload(const ChunkUnload& packet) {
+    const glm::ivec3 chunkPos(packet.chunkX, packet.chunkY, packet.chunkZ);
+    auto it = chunkMap.find(chunkPos);
+    if (it == chunkMap.end()) {
+        return;
+    }
+
+    chunkMap.erase(it);
+    removeChunkMesh(chunkPos);
+    m_dirtyChunkPending.erase(chunkPos);
+    rebuildColumnSunCache(chunkPos.x, chunkPos.z);
+
+    static const glm::ivec3 dirs[6] = {
+        { 1, 0, 0 }, { -1, 0, 0 },
+        { 0, 1, 0 }, { 0, -1, 0 },
+        { 0, 0, 1 }, { 0, 0, -1 }
+    };
+    for (const glm::ivec3& d : dirs) {
+        const glm::ivec3 n = chunkPos + d;
+        if (chunkMap.find(n) != chunkMap.end()) {
+            updateDirtyChunkAt(n);
         }
     }
 }

@@ -53,6 +53,18 @@ bool PlayerManager::touchHeartbeat(PlayerID id) {
     return true;
 }
 
+bool PlayerManager::applyAuthoritativeState(PlayerID id, const glm::vec3& position, const glm::vec3& velocity) {
+    std::lock_guard<std::mutex> lock(mtx);
+    auto it = playersById.find(id);
+    if (it == playersById.end()) return false;
+
+    it->second.position = position;
+    it->second.velocity = velocity;
+    it->second.onGround = (position.y <= 0.0f);
+    it->second.lastHeartbeat = Clock::now();
+    return true;
+}
+
 void PlayerManager::update(double deltaSeconds) {
     // 1) Simulate physics for each player
     std::vector<PlayerID> toRemove;
@@ -79,12 +91,6 @@ void PlayerManager::update(double deltaSeconds) {
         }
     }
 
-    // 2) Snapshot accumulation
-    snapshotAccumulator += deltaSeconds;
-    if (snapshotAccumulator >= snapshotInterval) {
-        snapshotAccumulator = 0.0;
-        broadcastSnapshots();
-    }
 }
 
 void PlayerManager::simulatePhysicsFor(ServerPlayer& p, double dt) {
@@ -151,13 +157,20 @@ void PlayerManager::sendBytes(const std::shared_ptr<ConnectionHandle>& conn, con
 }
 
 void PlayerManager::broadcastSnapshots() {
-    std::lock_guard<std::mutex> lock(mtx);
-    for (auto& kv : playersById) {
-        PlayerID id = kv.first;
-        auto conn = kv.second.conn;
-        // build per-recipient (could be optimized to reuse buffer for similar recipients)
+    std::vector<std::pair<PlayerID, std::shared_ptr<ConnectionHandle>>> recipients;
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        recipients.reserve(playersById.size());
+        for (const auto& kv : playersById) {
+            recipients.emplace_back(kv.first, kv.second.conn);
+        }
+    }
+
+    for (const auto& [id, conn] : recipients) {
         auto buf = buildSnapshotFor(id);
-        if (!buf.empty() && conn) sendBytes(conn, buf);
+        if (!buf.empty() && conn) {
+            sendBytes(conn, buf);
+        }
     }
 }
 

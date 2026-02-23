@@ -8,10 +8,16 @@ enum class PacketType : uint8_t {
     ConnectResponse = 2,  // server -> client (1 byte okFlag)
     ClientConnect = 3,  // server broadcast: new client joined (username)
     ClientDisconnect = 4,  // server broadcast: client left (username)
-    // leave a gap for future short-lived messages
+
     PlayerSnapshot = 9,
     PlayerPosition = 10,  // client -> server: seq + px,py,pz,vx,vy,vz
 
     ShootRequest = 11,      // client -> server: request to fire
-    ShootResult = 12       // server -> client: authoritative shot result
+    ShootResult = 12,       // server -> client: authoritative shot result
+
+    ChunkRequest = 20,      // client -> server: request/refresh chunk interest area
+    ChunkData = 21,         // server -> client: full chunk payload (serialized/compressed bytes)
+    ChunkDelta = 22,        // server -> client: block edits for a chunk
+    ChunkUnload = 23,       // server -> client: unload one chunk
+    ChunkAck = 24           // client -> server: ack chunk packet reception
 };

@@ -97,6 +97,27 @@ bool ClientNetwork::SendPosition(uint32_t seq, const glm::vec3& pos, const glm::
     return (r == k_EResultOK);
 }
 
+bool ClientNetwork::SendChunkRequest(const glm::ivec3& centerChunk, uint16_t viewDistance)
+{
+    if (m_conn == k_HSteamNetConnection_Invalid) return false;
+
+    ChunkRequest request;
+    request.chunkX = centerChunk.x;
+    request.chunkY = centerChunk.y;
+    request.chunkZ = centerChunk.z;
+    request.viewDistance = viewDistance;
+
+    std::vector<uint8_t> out = request.serialize();
+    EResult r = SteamNetworkingSockets()->SendMessageToConnection(
+        m_conn,
+        out.data(),
+        (uint32_t)out.size(),
+        k_nSteamNetworkingSend_Reliable,
+        nullptr
+    );
+    return (r == k_EResultOK);
+}
+
 void ClientNetwork::Poll() {
     if (!m_started.load()) return;
 
@@ -126,6 +147,13 @@ void ClientNetwork::Shutdown() {
         m_started = false;
     }
     m_registered = false;
+
+    {
+        std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+        m_chunkDataQueue.clear();
+        m_chunkDeltaQueue.clear();
+        m_chunkUnloadQueue.clear();
+    }
 }
 
 // --- helpers ---
@@ -172,6 +200,81 @@ void ClientNetwork::OnMessage(const uint8_t* data, uint32_t size) {
             std::string s(reinterpret_cast<const char*>(data + 1), size - 1);
             std::cout << "[server msg] " << s << "\n";
         }
+        return;
+    }
+
+    if (static_cast<PacketType>(t) == PacketType::ChunkData) {
+        std::vector<uint8_t> buf(data, data + size);
+        auto opt = ChunkData::deserialize(buf);
+        if (!opt.has_value()) {
+            std::cerr << "[net] malformed ChunkData\n";
+            return;
+        }
+
+        ChunkData packet = std::move(*opt);
+        {
+            std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+            m_chunkDataQueue.push_back(packet);
+        }
+
+        ChunkAck ack;
+        ack.ackedType = static_cast<uint8_t>(PacketType::ChunkData);
+        ack.chunkX = packet.chunkX;
+        ack.chunkY = packet.chunkY;
+        ack.chunkZ = packet.chunkZ;
+        ack.version = packet.version;
+        const std::vector<uint8_t> ackBuf = ack.serialize();
+        SteamNetworkingSockets()->SendMessageToConnection(m_conn, ackBuf.data(), (uint32_t)ackBuf.size(), k_nSteamNetworkingSend_Reliable, nullptr);
+        return;
+    }
+
+    if (static_cast<PacketType>(t) == PacketType::ChunkDelta) {
+        std::vector<uint8_t> buf(data, data + size);
+        auto opt = ChunkDelta::deserialize(buf);
+        if (!opt.has_value()) {
+            std::cerr << "[net] malformed ChunkDelta\n";
+            return;
+        }
+
+        ChunkDelta packet = std::move(*opt);
+        {
+            std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+            m_chunkDeltaQueue.push_back(packet);
+        }
+
+        ChunkAck ack;
+        ack.ackedType = static_cast<uint8_t>(PacketType::ChunkDelta);
+        ack.chunkX = packet.chunkX;
+        ack.chunkY = packet.chunkY;
+        ack.chunkZ = packet.chunkZ;
+        ack.version = packet.resultingVersion;
+        const std::vector<uint8_t> ackBuf = ack.serialize();
+        SteamNetworkingSockets()->SendMessageToConnection(m_conn, ackBuf.data(), (uint32_t)ackBuf.size(), k_nSteamNetworkingSend_Reliable, nullptr);
+        return;
+    }
+
+    if (static_cast<PacketType>(t) == PacketType::ChunkUnload) {
+        std::vector<uint8_t> buf(data, data + size);
+        auto opt = ChunkUnload::deserialize(buf);
+        if (!opt.has_value()) {
+            std::cerr << "[net] malformed ChunkUnload\n";
+            return;
+        }
+
+        ChunkUnload packet = std::move(*opt);
+        {
+            std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+            m_chunkUnloadQueue.push_back(packet);
+        }
+
+        ChunkAck ack;
+        ack.ackedType = static_cast<uint8_t>(PacketType::ChunkUnload);
+        ack.chunkX = packet.chunkX;
+        ack.chunkY = packet.chunkY;
+        ack.chunkZ = packet.chunkZ;
+        ack.version = 0;
+        const std::vector<uint8_t> ackBuf = ack.serialize();
+        SteamNetworkingSockets()->SendMessageToConnection(m_conn, ackBuf.data(), (uint32_t)ackBuf.size(), k_nSteamNetworkingSend_Reliable, nullptr);
         return;
     }
 
@@ -234,5 +337,38 @@ bool ClientNetwork::SendShootRequest(uint32_t clientShotId, uint32_t clientTick,
     // Use reliable for simplicity (authoritative events); you can switch to unreliable if you add retries
     EResult r = SteamNetworkingSockets()->SendMessageToConnection(m_conn, buf.data(), (uint32_t)buf.size(), k_nSteamNetworkingSend_Reliable, nullptr);
     return (r == k_EResultOK);
+}
+
+bool ClientNetwork::PopChunkData(ChunkData& out)
+{
+    std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+    if (m_chunkDataQueue.empty()) {
+        return false;
+    }
+    out = std::move(m_chunkDataQueue.front());
+    m_chunkDataQueue.pop_front();
+    return true;
+}
+
+bool ClientNetwork::PopChunkDelta(ChunkDelta& out)
+{
+    std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+    if (m_chunkDeltaQueue.empty()) {
+        return false;
+    }
+    out = std::move(m_chunkDeltaQueue.front());
+    m_chunkDeltaQueue.pop_front();
+    return true;
+}
+
+bool ClientNetwork::PopChunkUnload(ChunkUnload& out)
+{
+    std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+    if (m_chunkUnloadQueue.empty()) {
+        return false;
+    }
+    out = std::move(m_chunkUnloadQueue.front());
+    m_chunkUnloadQueue.pop_front();
+    return true;
 }
 

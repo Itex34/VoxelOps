@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
 project(VoxelOps-Headless CXX)
 
@@ -15,69 +15,39 @@ add_executable(VoxelOps-Headless
     "voxels/Voxel.cpp"
     "voxels/ServerChunk.cpp" 
     
-    "physics/Physics.cpp" 
     "player/ServerPlayer.cpp"
-    "input/InputCallbacks.cpp"
-    "data/GameData.hpp"
-    "data/GameData.cpp" 
     "graphics/ChunkManager.cpp"
-    "graphics/Camera.cpp"
+    "graphics/WorldGen.cpp"
      
     "physics/Raycast.cpp" 
-    
-    "application/VoxelopsApp.cpp"
     
     "network/ServerNetwork.cpp"
     "network/ChunkStore.cpp"  
     "physics/RayManager.cpp" 
     "player/Hitbox.cpp" 
     "gun/Gun.cpp"
-    "player/PlayerManager.cpp "
+    "player/PlayerManager.cpp"
     
 )
 
-find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
-find_package(assimp CONFIG REQUIRED)
-find_package(glad CONFIG REQUIRED)
-find_package(unofficial-joltphysics CONFIG REQUIRED)
 find_package(GameNetworkingSockets CONFIG REQUIRED)
 
 
-target_link_libraries(VoxelOps PRIVATE glfw)
-target_link_libraries(VoxelOps PRIVATE glm::glm)
-target_link_libraries(VoxelOps PRIVATE assimp::assimp)
-target_link_libraries(VoxelOps PRIVATE glad::glad)
-target_link_libraries(VoxelOps PRIVATE unofficial::joltphysics::Jolt)
-target_link_libraries(VoxelOps PRIVATE GameNetworkingSockets::shared GameNetworkingSockets::static GameNetworkingSockets::GameNetworkingSockets GameNetworkingSockets::GameNetworkingSockets_s)
-
-
-target_include_directories(VoxelOps-Headless PRIVATE ${Stb_INCLUDE_DIR})
-
-target_compile_definitions(VoxelOps-Headless
-    PRIVATE
-        $<$<CONFIG:Debug>:JPH_PROFILE_ENABLED=0>
-        $<$<CONFIG:Release>:JPH_DISABLE_PROFILING>
-)
-
-target_compile_definitions(VoxelOps-Headless
-    PRIVATE
-    $<$<CONFIG:Debug>:JPH_DEBUG_RENDERER>
-)
+target_link_libraries(VoxelOps-Headless PRIVATE glm::glm)
+target_link_libraries(VoxelOps-Headless PRIVATE GameNetworkingSockets::shared GameNetworkingSockets::static GameNetworkingSockets::GameNetworkingSockets GameNetworkingSockets::GameNetworkingSockets_s)
+target_link_libraries(VoxelOps-Headless PRIVATE Shared)
 
 
 
-set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT "VoxelOps")
-set_property(TARGET VoxelOps PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
-set_property(TARGET VoxelOps PROPERTY INTERPROCEDURAL_OPTIMIZATION_DISTRIBUTION TRUE)
+set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT "VoxelOps-Headless")
+set_property(TARGET VoxelOps-Headless PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+set_property(TARGET VoxelOps-Headless PROPERTY INTERPROCEDURAL_OPTIMIZATION_DISTRIBUTION TRUE)
 
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release;Distribution" CACHE STRING "" FORCE)
 
 if(MSVC)
-    target_compile_options(VoxelOps PRIVATE /GR- /EHs-)
+    target_compile_options(VoxelOps-Headless PRIVATE /GR- /EHsc)
 else()
-    target_compile_options(VoxelOps PRIVATE -fno-rtti -fno-exceptions)
+    target_compile_options(VoxelOps-Headless PRIVATE -frtti -fexceptions)
 endif()
-
-message(STATUS "Jolt include dir: ${Jolt_INCLUDE_DIRS}")
-message(STATUS "Jolt libraries: ${Jolt_LIBRARIES}")

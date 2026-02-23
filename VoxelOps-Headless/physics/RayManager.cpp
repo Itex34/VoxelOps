@@ -1,5 +1,8 @@
 #include "RayManager.hpp"
 
+#include <algorithm>
+#include <cfloat>
+
 RayManager::RayManager() {
 
 }
@@ -42,15 +45,10 @@ RayResult RayManager::rayHasBlockIntersectSingle(const Ray& ray, const ChunkMana
         // Get the chunk this block belongs to
         glm::ivec3 chunkCoords = chunkManager.worldToChunkPos(currentBlock);
 
-        if (chunkManager.getChunks().contains(chunkCoords)) {
-            const Chunk& chunk = chunkManager.getChunks().at(chunkCoords);
-
-            glm::ivec3 blockInChunk = currentBlock - chunk.getWorldPosition();
-
-            if (chunk.inBounds(blockInChunk.x, blockInChunk.y, blockInChunk.z)) {
-
-
-                BlockID block = chunk.getBlockUnchecked(blockInChunk.x, blockInChunk.y, blockInChunk.z);
+        if (const ServerChunk* chunk = chunkManager.getChunkIfExists(chunkCoords)) {
+            const glm::ivec3 blockInChunk = currentBlock - chunk->getWorldPosition();
+            if (ServerChunk::inBounds(blockInChunk.x, blockInChunk.y, blockInChunk.z)) {
+                BlockID block = chunk->getBlockUnchecked(blockInChunk.x, blockInChunk.y, blockInChunk.z);
                 if (block != BlockID::Air) {
                     result.hit = true;
                     result.hitBlockWorld = currentBlock;
@@ -94,19 +92,19 @@ RayResult RayManager::rayHasBlockIntersectSingle(const Ray& ray, const ChunkMana
 
 
 RayResult RayManager::rayHasBlockIntersectSinglePrecise(const Ray& ray, const ChunkManager& chunkManager, float maxDistance) {
-
-
-
-
+    return rayHasBlockIntersectSingle(ray, chunkManager, maxDistance);
 }
 
 
 
 RayResult RayManager::rayHasBlockIntersectBatch(std::list<Ray>& rays) {
-	RayResult result;
+	RayResult result{};
+	result.hit = false;
+	result.distance = 0.0f;
 	for (auto& ray : rays) {
-		return result;
+		(void)ray;
 	}
+	return result;
 }
 
 

@@ -10,6 +10,8 @@
 #include <string>
 #include <cstdint>
 #include <atomic>
+#include <deque>
+#include <mutex>
 #include <glm/vec3.hpp>
 
 
@@ -37,6 +39,7 @@ public:
 
     // Send a PlayerPosition packet (seq is a local sequence number; pos/vel in world units).
     bool SendPosition(uint32_t seq, const glm::vec3& pos, const glm::vec3& vel);
+    bool SendChunkRequest(const glm::ivec3& centerChunk, uint16_t viewDistance);
 
     // Poll for incoming messages and run callbacks. Call this regularly (e.g. every 50-100 ms).
     // This will internally RunCallbacks() and ReceiveMessagesOnConnection() to process messages.
@@ -52,6 +55,10 @@ public:
     bool SendShootRequest(uint32_t clientShotId, uint32_t clientTick, uint16_t weaponId,
         const glm::vec3& pos, const glm::vec3& dir,
         uint32_t seed = 0, uint8_t inputFlags = 0);
+
+    bool PopChunkData(ChunkData& out);
+    bool PopChunkDelta(ChunkDelta& out);
+    bool PopChunkUnload(ChunkUnload& out);
 private:
     HSteamNetConnection m_conn = k_HSteamNetConnection_Invalid;
     std::atomic<bool> m_started{ false };
@@ -68,4 +75,9 @@ private:
 
     // small internal: store last connect response state
     bool m_registered = false;
+
+    std::mutex m_chunkQueueMutex;
+    std::deque<ChunkData> m_chunkDataQueue;
+    std::deque<ChunkDelta> m_chunkDeltaQueue;
+    std::deque<ChunkUnload> m_chunkUnloadQueue;
 };

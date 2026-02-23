@@ -2,6 +2,9 @@
 
 
 
+#include <glm/vec3.hpp>
+#include <cmath>
+
 
 using namespace std;
 
@@ -24,12 +27,24 @@ ServerNetwork::ServerNetwork()
 ServerNetwork::~ServerNetwork()
 {
     Stop();
+    ShutdownNetworking();
     // cleanup pointer
     if (s_instance == this) s_instance = nullptr;
 }
 
 bool ServerNetwork::Start(uint16_t port)
 {
+    if (m_started.load(std::memory_order_acquire)) {
+        std::cerr << "ServerNetwork already started\n";
+        return false;
+    }
+
+    m_quit.store(false, std::memory_order_release);
+    {
+        std::lock_guard<std::mutex> shutdownLock(m_shutdownMutex);
+        m_shutdownComplete = false;
+    }
+
     // install SIGINT handler
     std::signal(SIGINT, GlobalSignalHandler);
 
@@ -78,28 +93,50 @@ bool ServerNetwork::Start(uint16_t port)
         std::cout << "Server listening on UDP port " << port << " (Ctrl+C to quit)\n";
     }
 
+    m_started.store(true, std::memory_order_release);
     return true;
 }
 
 void ServerNetwork::Run()
 {
+    if (!m_started.load(std::memory_order_acquire)) {
+        std::cerr << "ServerNetwork::Run called before Start\n";
+        return;
+    }
     MainLoop();
+    ShutdownNetworking();
 }
 
 void ServerNetwork::Stop()
 {
-    m_quit = true;
+    m_quit.store(true, std::memory_order_release);
+}
 
-    // Save history
+void ServerNetwork::ShutdownNetworking()
+{
+    std::lock_guard<std::mutex> shutdownLock(m_shutdownMutex);
+    if (m_shutdownComplete) {
+        return;
+    }
+    m_shutdownComplete = true;
+
     SaveHistoryToFile();
 
-    // Close all connections and cleanup
+    std::vector<std::pair<HSteamNetConnection, ClientSession>> sessions;
     {
         std::lock_guard<std::mutex> lk(m_mutex);
-        for (auto& kv : m_clients) {
-            SteamNetworkingSockets()->CloseConnection(kv.first, 0, "server shutting down", false);
+        sessions.reserve(m_clients.size());
+        for (const auto& kv : m_clients) {
+            sessions.push_back(kv);
         }
         m_clients.clear();
+    }
+
+    for (const auto& [conn, session] : sessions) {
+        if (session.playerId != 0) {
+            m_playerManager.removePlayer(session.playerId);
+        }
+        SteamNetworkingSockets()->CloseConnection(conn, 0, "server shutting down", false);
     }
 
     if (m_listenSock != k_HSteamListenSocket_Invalid) {
@@ -112,7 +149,9 @@ void ServerNetwork::Stop()
         m_pollGroup = k_HSteamNetPollGroup_Invalid;
     }
 
-    GameNetworkingSockets_Kill();
+    if (m_started.exchange(false, std::memory_order_acq_rel)) {
+        GameNetworkingSockets_Kill();
+    }
 
     std::cout << "Server stopped\n";
 }
@@ -128,9 +167,189 @@ static float ReadFloatLE(const uint8_t* ptr) {
     return f;
 }
 
+uint16_t ServerNetwork::ClampViewDistance(uint16_t requested)
+{
+    constexpr uint16_t kMin = 2;
+    constexpr uint16_t kMax = 16;
+    return std::clamp(requested, kMin, kMax);
+}
+
+bool ServerNetwork::SendChunkData(HSteamNetConnection conn, const ChunkCoord& coord)
+{
+    ServerChunk* chunk = m_chunkManager.loadOrGenerateChunk(glm::ivec3(coord.x, coord.y, coord.z));
+    if (!chunk) {
+        return false;
+    }
+
+    ChunkData packet;
+    packet.chunkX = coord.x;
+    packet.chunkY = coord.y;
+    packet.chunkZ = coord.z;
+    packet.version = static_cast<uint64_t>(std::max<int64_t>(0, chunk->version()));
+    packet.flags = 0;
+    packet.payload = chunk->serializeCompressed();
+
+    const std::vector<uint8_t> bytes = packet.serialize();
+    const EResult result = SteamNetworkingSockets()->SendMessageToConnection(
+        conn,
+        bytes.data(),
+        static_cast<uint32_t>(bytes.size()),
+        k_nSteamNetworkingSend_Reliable,
+        nullptr
+    );
+    return result == k_EResultOK;
+}
+
+bool ServerNetwork::SendChunkUnload(HSteamNetConnection conn, const ChunkCoord& coord)
+{
+    ChunkUnload packet;
+    packet.chunkX = coord.x;
+    packet.chunkY = coord.y;
+    packet.chunkZ = coord.z;
+
+    const std::vector<uint8_t> bytes = packet.serialize();
+    const EResult result = SteamNetworkingSockets()->SendMessageToConnection(
+        conn,
+        bytes.data(),
+        static_cast<uint32_t>(bytes.size()),
+        k_nSteamNetworkingSend_Reliable,
+        nullptr
+    );
+    return result == k_EResultOK;
+}
+
+void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, const glm::ivec3& centerChunk, uint16_t viewDistance)
+{
+    const uint16_t clampedViewDistance = ClampViewDistance(viewDistance);
+
+    std::unordered_set<ChunkCoord, ChunkCoordHash> desired;
+    const int minChunkY = WORLD_MIN_Y / CHUNK_SIZE;
+    const int maxChunkY = WORLD_MAX_Y / CHUNK_SIZE;
+    const int radius = static_cast<int>(clampedViewDistance);
+    desired.reserve(static_cast<size_t>((radius * 2 + 1) * (radius * 2 + 1) * (maxChunkY - minChunkY + 1)));
+
+    for (int x = centerChunk.x - radius; x <= centerChunk.x + radius; ++x) {
+        for (int z = centerChunk.z - radius; z <= centerChunk.z + radius; ++z) {
+            for (int y = minChunkY; y <= maxChunkY; ++y) {
+                glm::ivec3 pos(x, y, z);
+                if (!m_chunkManager.inBounds(pos)) {
+                    continue;
+                }
+                desired.insert(ChunkCoord{ x, y, z });
+            }
+        }
+    }
+
+    std::unordered_set<ChunkCoord, ChunkCoordHash> currentlyStreamed;
+    {
+        std::lock_guard<std::mutex> lk(m_mutex);
+        auto it = m_clients.find(conn);
+        if (it == m_clients.end()) {
+            return;
+        }
+
+        it->second.interestCenterChunk = centerChunk;
+        it->second.viewDistance = clampedViewDistance;
+        it->second.hasChunkInterest = true;
+        currentlyStreamed = it->second.streamedChunks;
+    }
+
+    std::vector<ChunkCoord> toLoad;
+    toLoad.reserve(desired.size());
+    for (const ChunkCoord& c : desired) {
+        if (currentlyStreamed.find(c) == currentlyStreamed.end()) {
+            toLoad.push_back(c);
+        }
+    }
+
+    const bool isInitialSync = currentlyStreamed.empty();
+    std::sort(toLoad.begin(), toLoad.end(), [&](const ChunkCoord& a, const ChunkCoord& b) {
+        if (isInitialSync) {
+            const int adx = a.x - centerChunk.x;
+            const int adz = a.z - centerChunk.z;
+            const int bdx = b.x - centerChunk.x;
+            const int bdz = b.z - centerChunk.z;
+            const int aHorizDist2 = adx * adx + adz * adz;
+            const int bHorizDist2 = bdx * bdx + bdz * bdz;
+            if (aHorizDist2 != bHorizDist2) {
+                return aHorizDist2 < bHorizDist2;
+            }
+
+            const bool aUnderOrSame = (a.y <= centerChunk.y);
+            const bool bUnderOrSame = (b.y <= centerChunk.y);
+            if (aUnderOrSame != bUnderOrSame) {
+                return aUnderOrSame;
+            }
+
+            const int aVertAbs = std::abs(a.y - centerChunk.y);
+            const int bVertAbs = std::abs(b.y - centerChunk.y);
+            if (aVertAbs != bVertAbs) {
+                return aVertAbs < bVertAbs;
+            }
+        }
+
+        const int aHoriz = std::abs(a.x - centerChunk.x) + std::abs(a.z - centerChunk.z);
+        const int bHoriz = std::abs(b.x - centerChunk.x) + std::abs(b.z - centerChunk.z);
+        if (aHoriz != bHoriz) {
+            return aHoriz < bHoriz;
+        }
+
+        const int aVert = std::abs(a.y - centerChunk.y);
+        const int bVert = std::abs(b.y - centerChunk.y);
+        if (aVert != bVert) {
+            return aVert < bVert;
+        }
+
+        if (a.x != b.x) return a.x < b.x;
+        if (a.y != b.y) return a.y < b.y;
+        return a.z < b.z;
+    });
+
+    std::vector<ChunkCoord> toUnload;
+    toUnload.reserve(currentlyStreamed.size());
+    for (const ChunkCoord& c : currentlyStreamed) {
+        if (desired.find(c) == desired.end()) {
+            toUnload.push_back(c);
+        }
+    }
+
+    for (const ChunkCoord& c : toLoad) {
+        if (!SendChunkData(conn, c)) {
+            continue;
+        }
+
+        std::lock_guard<std::mutex> lk(m_mutex);
+        auto it = m_clients.find(conn);
+        if (it != m_clients.end()) {
+            it->second.streamedChunks.insert(c);
+        }
+    }
+
+    for (const ChunkCoord& c : toUnload) {
+        if (!SendChunkUnload(conn, c)) {
+            continue;
+        }
+
+        std::lock_guard<std::mutex> lk(m_mutex);
+        auto it = m_clients.find(conn);
+        if (it != m_clients.end()) {
+            it->second.streamedChunks.erase(c);
+        }
+    }
+}
+
 void ServerNetwork::MainLoop()
 {
+    auto lastFrameTime = std::chrono::steady_clock::now();
+    auto lastSnapshotTime = lastFrameTime;
+    constexpr auto snapshotInterval = std::chrono::milliseconds(100);
+
     while (!m_quit) {
+        const auto frameNow = std::chrono::steady_clock::now();
+        const double deltaSeconds = std::chrono::duration<double>(frameNow - lastFrameTime).count();
+        lastFrameTime = frameNow;
+        m_playerManager.update(deltaSeconds);
+
         SteamNetworkingSockets()->RunCallbacks();
 
         // Receive messages on poll group (any connection assigned to it)
@@ -152,10 +371,36 @@ void ServerNetwork::MainLoop()
                 {
                     std::lock_guard<std::mutex> lk(m_mutex);
                     for (auto& kv : m_clients) {
-                        if (!kv.second.empty() && kv.second == username) { ok = false; break; }
+                        if (kv.first != incoming && !kv.second.username.empty() && kv.second.username == username) {
+                            ok = false;
+                            break;
+                        }
                     }
-                    if (ok) m_clients[incoming] = username;
                 }
+
+                PlayerID playerId = 0;
+                if (ok) {
+                    auto connHandle = std::make_shared<ConnectionHandle>();
+                    connHandle->socketFd = static_cast<int>(incoming);
+                    playerId = m_playerManager.onPlayerConnect(connHandle, glm::vec3(0.0f, 60.0f, 0.0f));
+
+                    bool attached = false;
+                    {
+                        std::lock_guard<std::mutex> lk(m_mutex);
+                        auto it = m_clients.find(incoming);
+                        if (it != m_clients.end()) {
+                            it->second.username = username;
+                            it->second.playerId = playerId;
+                            attached = true;
+                        }
+                    }
+                    if (!attached) {
+                        m_playerManager.removePlayer(playerId);
+                        playerId = 0;
+                        ok = false;
+                    }
+                }
+
                 char resp[2] = { static_cast<char>(PacketType::ConnectResponse), ok ? 1 : 0 };
                 SteamNetworkingSockets()->SendMessageToConnection(incoming, resp, sizeof(resp), k_nSteamNetworkingSend_Reliable, nullptr);
                 if (ok) {
@@ -172,12 +417,19 @@ void ServerNetwork::MainLoop()
             else if (static_cast<PacketType>(t) == PacketType::Message) {
                 std::string msg = ReadStringFromPacket(data, cb, 1);
                 std::string username;
+                PlayerID playerId = 0;
                 {
                     std::lock_guard<std::mutex> lk(m_mutex);
                     auto it = m_clients.find(incoming);
-                    if (it != m_clients.end()) username = it->second;
+                    if (it != m_clients.end()) {
+                        username = it->second.username;
+                        playerId = it->second.playerId;
+                    }
                 }
                 if (!username.empty()) {
+                    if (playerId != 0) {
+                        m_playerManager.touchHeartbeat(playerId);
+                    }
                     m_messageHistory.emplace_back(username, msg);
                     std::string out;
                     out.push_back(static_cast<char>(PacketType::Message));
@@ -208,21 +460,67 @@ void ServerNetwork::MainLoop()
                     float vz = ReadFloatLE(bytes + off); off += 4;
 
                     std::string username;
+                    PlayerID playerId = 0;
+                    uint16_t viewDistance = 8;
                     {
                         std::lock_guard<std::mutex> lk(m_mutex);
                         auto it = m_clients.find(incoming);
-                        if (it != m_clients.end()) username = it->second;
+                        if (it != m_clients.end()) {
+                            username = it->second.username;
+                            playerId = it->second.playerId;
+                            viewDistance = it->second.viewDistance;
+                        }
                     }
-                    if (!username.empty()) {
+                    if (!username.empty() && playerId != 0) {
+                        m_playerManager.applyAuthoritativeState(
+                            playerId,
+                            glm::vec3(px, py, pz),
+                            glm::vec3(vx, vy, vz)
+                        );
                         std::cout << "[pos] user = " << username
                             << " seq = " << seq
                             << " pos = (" << px << "," << py << "," << pz << ")"
                             << " vel = (" << vx << "," << vy << "," << vz << ")\n";
+
+                        const glm::ivec3 centerChunk = m_chunkManager.worldToChunkPos(
+                            glm::ivec3(
+                                static_cast<int>(std::floor(px)),
+                                static_cast<int>(std::floor(py)),
+                                static_cast<int>(std::floor(pz))
+                            )
+                        );
+                        UpdateChunkStreamingForClient(incoming, centerChunk, viewDistance);
                     }
                     else {
                         std::cout << "[pos] unregistered conn = " << incoming << " seq = " << seq << "\n";
                     }
                 }
+            }
+            else if (static_cast<PacketType>(t) == PacketType::ChunkRequest) {
+                std::vector<uint8_t> buf(reinterpret_cast<const uint8_t*>(data), reinterpret_cast<const uint8_t*>(data) + cb);
+                const auto req = ChunkRequest::deserialize(buf);
+                if (!req.has_value()) {
+                    std::cout << "[recv] malformed ChunkRequest (size=" << cb << ")\n";
+                    pMsg->Release();
+                    continue;
+                }
+
+                bool registered = false;
+                {
+                    std::lock_guard<std::mutex> lk(m_mutex);
+                    auto it = m_clients.find(incoming);
+                    registered = (it != m_clients.end() && !it->second.username.empty() && it->second.playerId != 0);
+                }
+                if (!registered) {
+                    pMsg->Release();
+                    continue;
+                }
+
+                const glm::ivec3 centerChunk(req->chunkX, req->chunkY, req->chunkZ);
+                UpdateChunkStreamingForClient(incoming, centerChunk, req->viewDistance);
+            }
+            else if (static_cast<PacketType>(t) == PacketType::ChunkAck) {
+                // ACKs are optional in this stage; we accept and ignore.
             }
             else if (static_cast<PacketType>(t) == PacketType::ShootRequest) {
                 // copy incoming bytes into vector for deserialization
@@ -236,16 +534,23 @@ void ServerNetwork::MainLoop()
                 ShootRequest req = *optReq;
 
                 std::string username;
+                PlayerID playerId = 0;
                 {
                     std::lock_guard<std::mutex> lk(m_mutex);
                     auto it = m_clients.find(incoming);
-                    if (it != m_clients.end()) username = it->second;
+                    if (it != m_clients.end()) {
+                        username = it->second.username;
+                        playerId = it->second.playerId;
+                    }
                 }
 
                 if (username.empty()) {
                     std::cout << "[recv] ShootRequest from unregistered conn = " << incoming << "\n";
                     pMsg->Release();
                     continue;
+                }
+                if (playerId != 0) {
+                    m_playerManager.touchHeartbeat(playerId);
                 }
 
                 // Example server-side logic: validate shot, check ammo, do hit detection
@@ -276,26 +581,94 @@ void ServerNetwork::MainLoop()
         }
 
         // Optional: extra safeguard - check connection states for any connections left (callback already handles most)
+        std::vector<std::pair<HSteamNetConnection, ClientSession>> staleConnections;
         {
             std::lock_guard<std::mutex> lk(m_mutex);
             for (auto it = m_clients.begin(); it != m_clients.end();) {
                 HSteamNetConnection conn = it->first;
                 SteamNetConnectionInfo_t info;
-                if (SteamNetworkingSockets()->GetConnectionInfo(conn, &info)) {
-                    if (info.m_eState == k_ESteamNetworkingConnectionState_ClosedByPeer ||
-                        info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally) {
-                        std::string username = it->second;
-                        std::cout << "[cleanup] remove conn=" << conn << " user=" << username << "\n";
-                        std::string out;
-                        out.push_back(static_cast<char>(PacketType::ClientDisconnect));
-                        out += username;
-                        BroadcastRaw(out.data(), (uint32_t)out.size(), conn);
-                        SteamNetworkingSockets()->CloseConnection(conn, 0, "server cleanup", false);
-                        it = m_clients.erase(it);
-                        continue;
-                    }
+                if (SteamNetworkingSockets()->GetConnectionInfo(conn, &info) &&
+                    (info.m_eState == k_ESteamNetworkingConnectionState_ClosedByPeer ||
+                        info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally)) {
+                    staleConnections.emplace_back(conn, it->second);
+                    it = m_clients.erase(it);
+                    continue;
                 }
                 ++it;
+            }
+        }
+        for (const auto& [conn, session] : staleConnections) {
+            std::cout << "[cleanup] remove conn=" << conn << " user=" << session.username << "\n";
+            if (session.playerId != 0) {
+                m_playerManager.removePlayer(session.playerId);
+            }
+            if (!session.username.empty()) {
+                std::string out;
+                out.push_back(static_cast<char>(PacketType::ClientDisconnect));
+                out += session.username;
+                BroadcastRaw(out.data(), static_cast<uint32_t>(out.size()), conn);
+            }
+            SteamNetworkingSockets()->CloseConnection(conn, 0, "server cleanup", false);
+        }
+
+        const auto snapshotNow = std::chrono::steady_clock::now();
+        if (snapshotNow - lastSnapshotTime >= snapshotInterval) {
+            lastSnapshotTime = snapshotNow;
+
+            std::vector<std::pair<HSteamNetConnection, PlayerID>> recipients;
+            {
+                std::lock_guard<std::mutex> lk(m_mutex);
+                recipients.reserve(m_clients.size());
+                for (const auto& [conn, session] : m_clients) {
+                    if (session.playerId != 0) {
+                        recipients.emplace_back(conn, session.playerId);
+                    }
+                }
+            }
+
+            std::vector<HSteamNetConnection> staleRecipients;
+            for (const auto& [conn, playerId] : recipients) {
+                std::vector<uint8_t> snapshot = m_playerManager.buildSnapshotFor(playerId);
+                if (snapshot.empty()) {
+                    staleRecipients.push_back(conn);
+                    continue;
+                }
+
+                std::vector<uint8_t> packet;
+                packet.reserve(1 + snapshot.size());
+                packet.push_back(static_cast<uint8_t>(PacketType::PlayerSnapshot));
+                packet.insert(packet.end(), snapshot.begin(), snapshot.end());
+                SteamNetworkingSockets()->SendMessageToConnection(
+                    conn,
+                    packet.data(),
+                    static_cast<uint32_t>(packet.size()),
+                    k_nSteamNetworkingSend_Reliable,
+                    nullptr
+                );
+            }
+
+            if (!staleRecipients.empty()) {
+                std::vector<std::pair<HSteamNetConnection, ClientSession>> removedSessions;
+                {
+                    std::lock_guard<std::mutex> lk(m_mutex);
+                    for (HSteamNetConnection conn : staleRecipients) {
+                        auto it = m_clients.find(conn);
+                    if (it != m_clients.end()) {
+                        removedSessions.emplace_back(it->first, it->second);
+                            m_clients.erase(it);
+                        }
+                    }
+                }
+
+                for (const auto& [conn, session] : removedSessions) {
+                    if (!session.username.empty()) {
+                        std::string out;
+                        out.push_back(static_cast<char>(PacketType::ClientDisconnect));
+                        out += session.username;
+                        BroadcastRaw(out.data(), static_cast<uint32_t>(out.size()), conn);
+                    }
+                    SteamNetworkingSockets()->CloseConnection(conn, 0, "server player timeout", false);
+                }
             }
         }
 
@@ -358,7 +731,7 @@ void ServerNetwork::OnConnectionStatusChanged(SteamNetConnectionStatusChangedCal
 
         {
             std::lock_guard<std::mutex> lk(m_mutex);
-            m_clients.emplace(hConn, std::string()); // username empty until client sends ConnectRequest
+            m_clients.emplace(hConn, ClientSession{}); // username empty until client sends ConnectRequest
         }
         std::cout << "[callback] accepted conn=" << hConn << "\n";
         return;
@@ -367,19 +740,22 @@ void ServerNetwork::OnConnectionStatusChanged(SteamNetConnectionStatusChangedCal
     if (info.m_eState == k_ESteamNetworkingConnectionState_ClosedByPeer ||
         info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally) {
         // Remove and notify
-        std::string username;
+        ClientSession session{};
         {
             std::lock_guard<std::mutex> lk(m_mutex);
             auto it = m_clients.find(hConn);
             if (it != m_clients.end()) {
-                username = it->second;
+                session = it->second;
                 m_clients.erase(it);
             }
         }
-        if (!username.empty()) {
+        if (session.playerId != 0) {
+            m_playerManager.removePlayer(session.playerId);
+        }
+        if (!session.username.empty()) {
             std::string out;
             out.push_back(static_cast<char>(PacketType::ClientDisconnect));
-            out += username;
+            out += session.username;
             BroadcastRaw(out.data(), (uint32_t)out.size(), hConn);
         }
         std::cout << "[callback] conn closed/failed: conn=" << hConn << " reason=" << info.m_eState << "\n";

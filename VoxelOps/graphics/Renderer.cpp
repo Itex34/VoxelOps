@@ -6,10 +6,10 @@
 #include "Shader.hpp"
 #include "ChunkManager.hpp"
 #include "Frustum.hpp"
+#include "Sky.hpp"
 #include "../player/Player.hpp"
 #include "../data/GameData.hpp"
 
-#include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 GLuint Renderer::loadTexture(const char* path) {
@@ -110,25 +110,7 @@ void Renderer::renderFrame(RenderFrameParams& params)
         100000.0f
     );
     glm::mat4 view = params.activeCamera.getViewMatrix();
-
-    const glm::mat4 invSkyProj = glm::inverse(projection);
-    const glm::mat4 invSkyView = glm::inverse(view);
-
-    // Sky pass
-    glDepthMask(GL_FALSE);
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    params.skyShader.use();
-    params.skyShader.setMat4("uInvProj", invSkyProj);
-    params.skyShader.setMat4("uInvView", invSkyView);
-    params.skyShader.setVec3("uSunDir", params.skySunDir);
-    params.skyShader.setFloat("uExposure", 1.0f);
-    glBindVertexArray(params.skyVAO);
-    glDrawArrays(GL_TRIANGLES, 0, 3);
-    glBindVertexArray(0);
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
-    glDepthMask(GL_TRUE);
+    params.sky.render(projection, view);
 
     // World pass
     const glm::mat4 playerCamView = params.player.getCamera().getViewMatrix();
@@ -136,7 +118,7 @@ void Renderer::renderFrame(RenderFrameParams& params)
     const glm::mat4 playerCamViewProjection = projection * playerCamView;
     params.frustum.extractPlanes(playerCamViewProjection);
 
-    const glm::vec3 lightDir = params.skySunDir;
+    const glm::vec3 lightDir = params.sky.getSunDir();
     const glm::vec3 lightColor = glm::vec3(1.0f, 0.98f, 0.96f);
 
     glActiveTexture(GL_TEXTURE0);
@@ -204,8 +186,4 @@ void Renderer::renderFrame(RenderFrameParams& params)
     }
 }
 
-void Renderer::drawMesh(const ChunkMesh& mesh)
-{
-    // Intentionally empty: draw call is owned by RegionMeshBuffer
-    // Renderer should NOT know which VAO to bind
-}
+

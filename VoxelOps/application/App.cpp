@@ -9,7 +9,7 @@
 #include "../graphics/Frustum.hpp"
 #include "../graphics/Renderer.hpp"
 #include "../graphics/Shader.hpp"
-#include "../graphics/WorldGen.hpp"
+#include "../graphics/Sky.hpp"
 #include "../input/InputCallbacks.hpp"
 #include "../network/ClientNetwork.hpp"
 #include "../physics/RayManager.hpp"
@@ -20,6 +20,8 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cmath>
+#include <algorithm>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -42,14 +44,10 @@ struct App::Runtime {
 
     std::unique_ptr<Shader> chunkShader;
     std::unique_ptr<Shader> dbgShader;
-    std::unique_ptr<Shader> skyShader;
+    Sky sky;
 
     Frustum frustum;
     Camera debugCamera{ glm::vec3(0.0f, 100.0f, 0.0f) };
-    glm::vec3 skySunDir = glm::normalize(glm::vec3(1.0f, 0.01f, 0.0f));
-
-    GLuint skyVAO = 0;
-    GLuint skyVBO = 0;
 
     bool supportsGL43Shaders = false;
     bool chunkUniformsInitialized = false;
@@ -165,9 +163,6 @@ void App::initGameplay(Runtime& runtime) {
     runtime.chunkManager = std::make_unique<ChunkManager>(runtime.renderer);
     configureBackendPolicy(runtime);
 
-    WorldGen::generateInitialChunksTwoPass(*runtime.chunkManager, WORLD_MAX_X);
-    runtime.chunkManager->debugMemoryEstimate();
-
     runtime.player = std::make_unique<Player>(
         glm::vec3(0.0f, 60.0f, 0.0f),
         *runtime.chunkManager,
@@ -211,7 +206,7 @@ void App::initRenderResources(Runtime& runtime) {
         "../../../../VoxelOps/shaders/debugVert.vert",
         "../../../../VoxelOps/shaders/debugFrag.frag"
     );
-    runtime.skyShader = std::make_unique<Shader>(
+    runtime.sky.initialize(
         "../../../../VoxelOps/shaders/sky.vert",
         "../../../../VoxelOps/shaders/sky_simple.frag"
     );
@@ -221,20 +216,6 @@ void App::initRenderResources(Runtime& runtime) {
     glCullFace(GL_BACK);
     glFrontFace(GL_CCW);
 
-    const float skyVerts[] = {
-        -1.0f, -1.0f,
-         3.0f, -1.0f,
-        -1.0f,  3.0f
-    };
-
-    glGenVertexArrays(1, &runtime.skyVAO);
-    glGenBuffers(1, &runtime.skyVBO);
-    glBindVertexArray(runtime.skyVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, runtime.skyVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(skyVerts), skyVerts, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
-    glBindVertexArray(0);
 }
 
 void App::initNetworking(Runtime& runtime) {
@@ -336,12 +317,36 @@ void App::processWorldInteraction(Runtime& runtime) {
 void App::processNetworking(Runtime& runtime) {
     runtime.clientNet.Poll();
 
+    ChunkData chunkData;
+    while (runtime.clientNet.PopChunkData(chunkData)) {
+        runtime.chunkManager->applyNetworkChunkData(chunkData);
+    }
+
+    ChunkDelta chunkDelta;
+    while (runtime.clientNet.PopChunkDelta(chunkDelta)) {
+        runtime.chunkManager->applyNetworkChunkDelta(chunkDelta);
+    }
+
+    ChunkUnload chunkUnload;
+    while (runtime.clientNet.PopChunkUnload(chunkUnload)) {
+        runtime.chunkManager->applyNetworkChunkUnload(chunkUnload);
+    }
+
     const double now = glfwGetTime();
     if (now - runtime.lastNetSendTime >= Runtime::NetSendInterval) {
         runtime.lastNetSendTime = now;
         const glm::vec3 pos = runtime.player->getPosition();
         const glm::vec3 vel(0.0f);
         (void)runtime.clientNet.SendPosition(runtime.netSeq++, pos, vel);
+
+        const glm::ivec3 worldPos(
+            static_cast<int>(std::floor(pos.x)),
+            static_cast<int>(std::floor(pos.y)),
+            static_cast<int>(std::floor(pos.z))
+        );
+        const glm::ivec3 centerChunk = runtime.chunkManager->worldToChunkPos(worldPos);
+        const uint16_t viewDistance = static_cast<uint16_t>(std::max<int>(2, runtime.player->renderDistance));
+        (void)runtime.clientNet.SendChunkRequest(centerChunk, viewDistance);
     }
 }
 
@@ -355,15 +360,13 @@ void App::processFrame(Runtime& runtime) {
     runtime.player->update(m_Window, GameData::deltaTime);
 
     RenderFrameParams frameParams{
-        .skyShader = *runtime.skyShader,
         .chunkShader = *runtime.chunkShader,
         .debugShader = *runtime.dbgShader,
         .chunkManager = *runtime.chunkManager,
         .frustum = runtime.frustum,
         .player = *runtime.player,
         .activeCamera = activeCamera,
-        .skySunDir = runtime.skySunDir,
-        .skyVAO = runtime.skyVAO,
+        .sky = runtime.sky,
         .toggleWireframe = m_ToggleWireframe,
         .toggleChunkBorders = m_ToggleChunkBorders,
         .toggleDebugFrustum = m_ToggleDebugFrustum,
@@ -382,14 +385,7 @@ void App::processFrame(Runtime& runtime) {
 void App::shutdown(Runtime& runtime) {
     runtime.clientNet.Shutdown();
 
-    if (runtime.skyVAO != 0) {
-        glDeleteVertexArrays(1, &runtime.skyVAO);
-        runtime.skyVAO = 0;
-    }
-    if (runtime.skyVBO != 0) {
-        glDeleteBuffers(1, &runtime.skyVBO);
-        runtime.skyVBO = 0;
-    }
+    runtime.sky.shutdown();
 
     if (m_Window) {
         glfwDestroyWindow(m_Window);

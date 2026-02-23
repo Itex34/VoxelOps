@@ -5,7 +5,6 @@
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
-#include <random>
 #include <mutex>
 #include <optional>
 #include <cstdint>
@@ -37,6 +36,8 @@ struct IVec3Eq {
         return a.x == b.x && a.y == b.y && a.z == b.z;
     }
 };
+
+class WorldGen;
 
 class ChunkManager {
 public:
@@ -89,7 +90,7 @@ public:
 
     // Synchronous helper: find chunk or generate it (generates off-map and inserts under lock).
     // Returns pointer to chunk in the map (never nullptr if pos in-bounds and generation succeeded).
-    // Note: generation may be expensive — consider calling generateChunkAt asynchronously instead.
+    // Note: generation may be expensive - consider calling generateChunkAt asynchronously instead.
     ServerChunk* loadOrGenerateChunk(const glm::ivec3& chunkPos);
 
     // World settings / toggles
@@ -97,8 +98,7 @@ public:
     bool enableShadows = false;
 
 private:
-    // decoration helper
-    void placeTree(ServerChunk& chunk, const glm::ivec3& basePos, std::mt19937& gen);
+    friend class WorldGen;
 
     FastNoiseLite noise;
     uint64_t worldSeed = 1337u;
@@ -119,3 +119,4 @@ private:
         return r;
     }
 };
+

@@ -55,3 +55,64 @@ struct PlayerSnapshot{
     float pitch;
     uint8_t onGround;
 };
+
+struct ChunkRequest {
+    int32_t chunkX = 0;
+    int32_t chunkY = 0;
+    int32_t chunkZ = 0;
+    uint16_t viewDistance = 0;
+
+    std::vector<uint8_t> serialize() const;
+    static std::optional<ChunkRequest> deserialize(const std::vector<uint8_t>& buf);
+};
+
+struct ChunkData {
+    int32_t chunkX = 0;
+    int32_t chunkY = 0;
+    int32_t chunkZ = 0;
+    uint64_t version = 0;
+    uint8_t flags = 0; // bit0: compressed
+    std::vector<uint8_t> payload;
+
+    std::vector<uint8_t> serialize() const;
+    static std::optional<ChunkData> deserialize(const std::vector<uint8_t>& buf);
+};
+
+struct ChunkDeltaOp {
+    uint8_t x = 0;
+    uint8_t y = 0;
+    uint8_t z = 0;
+    uint8_t blockId = 0;
+};
+
+struct ChunkDelta {
+    int32_t chunkX = 0;
+    int32_t chunkY = 0;
+    int32_t chunkZ = 0;
+    uint64_t resultingVersion = 0;
+    std::vector<ChunkDeltaOp> edits;
+
+    std::vector<uint8_t> serialize() const;
+    static std::optional<ChunkDelta> deserialize(const std::vector<uint8_t>& buf);
+};
+
+struct ChunkUnload {
+    int32_t chunkX = 0;
+    int32_t chunkY = 0;
+    int32_t chunkZ = 0;
+
+    std::vector<uint8_t> serialize() const;
+    static std::optional<ChunkUnload> deserialize(const std::vector<uint8_t>& buf);
+};
+
+struct ChunkAck {
+    uint8_t ackedType = 0;
+    uint32_t sequence = 0;
+    int32_t chunkX = 0;
+    int32_t chunkY = 0;
+    int32_t chunkZ = 0;
+    uint64_t version = 0;
+
+    std::vector<uint8_t> serialize() const;
+    static std::optional<ChunkAck> deserialize(const std::vector<uint8_t>& buf);
+};

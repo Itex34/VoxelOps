@@ -1,7 +1,7 @@
-﻿#include "ChunkManager.hpp"
+#include "ChunkManager.hpp"
+#include "WorldGen.hpp"
 #include <iostream>
 #include <cmath>
-#include <random>
 #include <algorithm>
 
 ChunkManager::ChunkManager(uint64_t seed) : worldSeed(seed) {
@@ -12,242 +12,19 @@ ChunkManager::ChunkManager(uint64_t seed) : worldSeed(seed) {
 }
 
 void ChunkManager::generateInitialChunks(int numChunks) {
-    int minChunkY = WORLD_MIN_Y / CHUNK_SIZE;
-    int maxChunkY = WORLD_MAX_Y / CHUNK_SIZE;
-
-    for (int x = -numChunks; x <= numChunks; ++x)
-        for (int z = -numChunks; z <= numChunks; ++z)
-            for (int y = minChunkY; y <= maxChunkY; ++y)
-                generateChunkAt(glm::ivec3(x, y, z));
-
-    updateDirtyChunks();
+    WorldGen::generateInitialChunks(*this, numChunks);
 }
 
 void ChunkManager::generateInitialChunks_TwoPass(int radiusChunks) {
-    int minChunkY = WORLD_MIN_Y / CHUNK_SIZE;
-    int maxChunkY = WORLD_MAX_Y / CHUNK_SIZE;
-
-    // PASS 1: terrain-only (fast)
-    for (int x = -radiusChunks; x <= radiusChunks; ++x)
-        for (int z = -radiusChunks; z <= radiusChunks; ++z)
-            for (int y = minChunkY; y <= maxChunkY; ++y)
-                generateTerrainChunkAt(glm::ivec3(x, y, z));
-
-    // PASS 2: decoration (trees etc.)
-    // Use a snapshot of the chunk pointers so we don't hold mapMutex while decorating.
-    auto snap = snapshotChunkMap();
-    for (auto& [pos, chunkPtr] : snap) {
-        if (!chunkPtr) continue;
-        // deterministic RNG per chunk so decoration is repeatable
-        uint32_t seed = static_cast<uint32_t>((pos.x * 73856093u) ^ (pos.y * 19349663u) ^ (pos.z * 83492791u) ^ static_cast<uint32_t>(worldSeed));
-        std::mt19937 gen(seed);
-        std::uniform_real_distribution<> chance(0.0, 1.0);
-
-        bool anyDecoration = false;
-
-        for (int z = 0; z < CHUNK_SIZE; ++z) {
-            for (int x = 0; x < CHUNK_SIZE; ++x) {
-                int topY = -1;
-                for (int y = CHUNK_SIZE - 1; y >= 0; --y) {
-                    if (chunkPtr->getBlock(x, y, z) == BlockID::Grass) {
-                        topY = y;
-                        break;
-                    }
-                }
-                if (topY != -1 && chance(gen) < 0.02) {
-                    // placeTree will call setBlockSafe which may touch other chunks safely
-                    placeTree(*chunkPtr, glm::ivec3(x, topY + 1, z), gen);
-                    anyDecoration = true;
-                }
-            }
-        }
-
-        if (anyDecoration) {
-            // mark chunk dirty (thread-safe)
-            chunkPtr->markDirty();
-        }
-    }
-
-    updateDirtyChunks();
+    WorldGen::generateInitialChunksTwoPass(*this, radiusChunks);
 }
 
 void ChunkManager::generateChunkAt(const glm::ivec3& pos) {
-    if (!inBounds(pos)) return;
-
-    // create chunk off-map
-    auto chunk = std::make_unique<ServerChunk>(pos);
-
-    // ===== Terrain generation (noise + simple rules) =====
-    // We'll reuse logic similar to generateTerrainChunkAt but for full generation
-    for (int z = 0; z < CHUNK_SIZE; ++z) {
-        for (int x = 0; x < CHUNK_SIZE; ++x) {
-            int worldX = pos.x * CHUNK_SIZE + x;
-            int worldZ = pos.z * CHUNK_SIZE + z;
-
-            float n = 0.f;
-            float freq = 1.f;
-            float amp = 1.f;
-            float persistence = 0.5f;
-            int octaves = 6;
-            int maxYrange = WORLD_MAX_Y - WORLD_MIN_Y;
-            float maxAmp = 0.f;
-
-            for (int o = 0; o < octaves; ++o) {
-                n += noise.GetNoise(worldX * freq, worldZ * freq) * amp;
-                maxAmp += amp;
-                freq *= 2.f;
-                amp *= persistence;
-            }
-            n /= (maxAmp > 0.f ? maxAmp : 1.f);
-
-            int height = WORLD_MIN_Y + static_cast<int>((n + 1.f) * 0.5f * maxYrange);
-
-            for (int y = 0; y < CHUNK_SIZE; ++y) {
-                int worldY = pos.y * CHUNK_SIZE + y;
-                if (worldY == WORLD_MIN_Y) chunk->applyEdit(x, y, z, BlockID::Bedrock);
-                else if (worldY < height - 2) chunk->applyEdit(x, y, z, BlockID::Stone);
-                else if (worldY < height - 1) chunk->applyEdit(x, y, z, BlockID::Dirt);
-                else if (worldY < height) chunk->applyEdit(x, y, z, BlockID::Grass);
-                else chunk->applyEdit(x, y, z, BlockID::Air);
-            }
-        }
-    }
-
-    // ===== Decoration (small chance trees) =====
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<> chance(0.0, 1.0);
-    for (int z = 0; z < CHUNK_SIZE; ++z) {
-        for (int x = 0; x < CHUNK_SIZE; ++x) {
-            int topY = -1;
-            for (int y = CHUNK_SIZE - 1; y >= 0; --y)
-                if (chunk->getBlock(x, y, z) == BlockID::Grass) { topY = y; break; }
-
-            if (topY != -1 && chance(gen) < 0.003) {
-                placeTree(*chunk, glm::ivec3(x, topY + 1, z), gen);
-            }
-        }
-    }
-
-    // insert under lock
-    {
-        std::lock_guard<std::mutex> lk(mapMutex);
-        chunkMap[pos] = std::move(chunk);
-        chunkMap[pos]->markDirty();
-    }
+    WorldGen::generateChunkAt(*this, pos);
 }
 
 void ChunkManager::generateTerrainChunkAt(const glm::ivec3& pos) {
-    if (!inBounds(pos)) return;
-
-    auto chunk = std::make_unique<ServerChunk>(pos);
-
-    for (int z = 0; z < CHUNK_SIZE; ++z) {
-        for (int x = 0; x < CHUNK_SIZE; ++x) {
-            int worldX = pos.x * CHUNK_SIZE + x;
-            int worldZ = pos.z * CHUNK_SIZE + z;
-
-            float n = 0.f;
-            float freq = 1.f;
-            float amp = 1.9f;
-            float persistence = 0.5f;
-            int octaves = 6;
-            int maxYrange = WORLD_MAX_Y - WORLD_MIN_Y;
-            float maxAmp = 0.f;
-
-            for (int o = 0; o < octaves; ++o) {
-                n += noise.GetNoise(worldX * freq, worldZ * freq) * amp;
-                maxAmp += amp;
-                freq *= 2.f;
-                amp *= persistence;
-            }
-            n /= (maxAmp > 0.f ? maxAmp : 1.f);
-
-            int height = WORLD_MIN_Y + static_cast<int>((n + 1.f) * 0.5f * maxYrange);
-
-            for (int y = 0; y < CHUNK_SIZE; ++y) {
-                int worldY = pos.y * CHUNK_SIZE + y;
-                if (worldY == WORLD_MIN_Y) chunk->applyEdit(x, y, z, BlockID::Bedrock);
-                else if (worldY < height - 2) chunk->applyEdit(x, y, z, BlockID::Stone);
-                else if (worldY < height - 1) chunk->applyEdit(x, y, z, BlockID::Dirt);
-                else if (worldY < height) chunk->applyEdit(x, y, z, BlockID::Grass);
-                else chunk->applyEdit(x, y, z, BlockID::Air);
-            }
-        }
-    }
-
-    {
-        std::lock_guard<std::mutex> lk(mapMutex);
-        chunkMap[pos] = std::move(chunk);
-        chunkMap[pos]->markDirty();
-    }
-}
-
-void ChunkManager::placeTree(ServerChunk& chunk, const glm::ivec3& basePos, std::mt19937& gen) {
-    std::uniform_int_distribution<> trunkH(6, 10);
-    int trunkHeight = trunkH(gen);
-
-    glm::ivec3 trunkOffsets[4] = {
-        glm::ivec3(0,0,0), glm::ivec3(1,0,0),
-        glm::ivec3(0,0,1), glm::ivec3(1,0,1)
-    };
-
-    // trunk (use setBlockSafe so we handle chunk edges)
-    for (int i = 0; i < trunkHeight; ++i) {
-        int y = basePos.y + i;
-        for (int t = 0; t < 4; ++t) {
-            glm::ivec3 pos(basePos.x + trunkOffsets[t].x, y, basePos.z + trunkOffsets[t].z);
-            setBlockSafe(chunk, pos, BlockID::Log);
-        }
-    }
-
-    int topY = basePos.y + trunkHeight - 1;
-    int crownThickness = 2;
-    int crownRadius = 4;
-    std::uniform_real_distribution<float> holeChance(0.0f, 1.0f);
-
-    for (int dy = 0; dy < crownThickness; ++dy) {
-        int layerY = topY + dy;
-        for (int dx = -crownRadius; dx <= crownRadius; ++dx) {
-            for (int dz = -crownRadius; dz <= crownRadius; ++dz) {
-                float dist = std::sqrt(float(dx * dx + dz * dz));
-                if (dist <= crownRadius + 0.25f) {
-                    float edgeFactor = (dist / float(crownRadius));
-                    float skipProb = std::clamp((edgeFactor - 0.7f) / (1.0f - 0.7f), 0.0f, 1.0f) * 0.65f;
-                    if (dy == 0) skipProb *= 0.55f;
-                    if (holeChance(gen) < skipProb) continue;
-                    glm::ivec3 leafPos(basePos.x + dx, layerY, basePos.z + dz);
-                    if (getBlockSafe(chunk, leafPos) == BlockID::Air)
-                        setBlockSafe(chunk, leafPos, BlockID::Leaves);
-                }
-            }
-        }
-    }
-
-    // taper above
-    int taperRadius = std::max(1, crownRadius - 2);
-    int taperY = topY + crownThickness;
-    for (int dx = -taperRadius; dx <= taperRadius; ++dx) {
-        for (int dz = -taperRadius; dz <= taperRadius; ++dz) {
-            float dist = std::sqrt(float(dx * dx + dz * dz));
-            if (dist <= taperRadius + 0.25f) {
-                glm::ivec3 leafPos(basePos.x + dx, taperY, basePos.z + dz);
-                if (getBlockSafe(chunk, leafPos) == BlockID::Air) {
-                    if (dist > (taperRadius - 0.5f) && holeChance(gen) < 0.25f) continue;
-                    setBlockSafe(chunk, leafPos, BlockID::Leaves);
-                }
-            }
-        }
-    }
-
-    // ensure trunk blocks overwrite leaves
-    for (int i = 0; i < trunkHeight; ++i) {
-        int y = basePos.y + i;
-        for (int t = 0; t < 4; ++t) {
-            glm::ivec3 pos(basePos.x + trunkOffsets[t].x, y, basePos.z + trunkOffsets[t].z);
-            if (getBlockSafe(chunk, pos) != BlockID::Log) setBlockSafe(chunk, pos, BlockID::Log);
-        }
-    }
+    WorldGen::generateTerrainChunkAt(*this, pos);
 }
 
 void ChunkManager::updateDirtyChunks() {
@@ -326,13 +103,36 @@ void ChunkManager::setBlockInWorld(const glm::ivec3& worldPos, BlockID id) {
 }
 
 void ChunkManager::setBlockGlobal(int worldX, int worldY, int worldZ, BlockID id) {
-    setBlockInWorld(glm::ivec3(worldX, worldY, worldZ), id);
+    glm::ivec3 worldPos(worldX, worldY, worldZ);
+    glm::ivec3 chunkPos = worldToChunkPos(worldPos);
+    glm::ivec3 localPos = worldToLocalPos(worldPos);
+    if (!inBounds(chunkPos)) return;
+
+    ServerChunk* chunkPtr = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(mapMutex);
+        auto it = chunkMap.find(chunkPos);
+        if (it != chunkMap.end()) chunkPtr = it->second.get();
+    }
+
+    // For cross-chunk edits during generation (tree borders), materialize terrain if absent.
+    if (!chunkPtr) {
+        generateTerrainChunkAt(chunkPos);
+        std::lock_guard<std::mutex> lk(mapMutex);
+        auto it = chunkMap.find(chunkPos);
+        if (it != chunkMap.end()) chunkPtr = it->second.get();
+    }
+
+    if (!chunkPtr) return;
+    chunkPtr->applyEdit(localPos.x, localPos.y, localPos.z, id);
+    chunkPtr->markDirty();
 }
 
 BlockID ChunkManager::getBlockGlobal(int worldX, int worldY, int worldZ) {
     glm::ivec3 wp(worldX, worldY, worldZ);
     glm::ivec3 cp = worldToChunkPos(wp);
     glm::ivec3 lp = worldToLocalPos(wp);
+    if (!inBounds(cp)) return BlockID::Air;
 
     ServerChunk* chunkPtr = nullptr;
     {
@@ -340,6 +140,15 @@ BlockID ChunkManager::getBlockGlobal(int worldX, int worldY, int worldZ) {
         auto it = chunkMap.find(cp);
         if (it != chunkMap.end()) chunkPtr = it->second.get();
     }
+
+    // Mirror write path behavior so neighbor reads during border decoration see real terrain.
+    if (!chunkPtr) {
+        generateTerrainChunkAt(cp);
+        std::lock_guard<std::mutex> lk(mapMutex);
+        auto it = chunkMap.find(cp);
+        if (it != chunkMap.end()) chunkPtr = it->second.get();
+    }
+
     if (!chunkPtr) return BlockID::Air;
     return chunkPtr->getBlock(lp.x, lp.y, lp.z);
 }
@@ -437,21 +246,12 @@ ServerChunk* ChunkManager::loadOrGenerateChunk(const glm::ivec3& chunkPos) {
         if (it != chunkMap.end()) return it->second.get();
     }
 
-    // Not present: generate a chunk off-map (expensive work here)
-    auto newChunk = std::make_unique<ServerChunk>(chunkPos);
-    // fill the chunk (call your generation helper)
-    generateTerrainChunkAt(chunkPos); // or generateChunkAt's internals
+    // Not present: generate full chunk (terrain + trees) like WorldGen::generateChunkAt.
+    generateChunkAt(chunkPos);
 
-    // Insert under lock, but check again to avoid race with another inserter
     std::lock_guard<std::mutex> lk(mapMutex);
     auto it = chunkMap.find(chunkPos);
-    if (it == chunkMap.end()) {
-        chunkMap[chunkPos] = std::move(newChunk);
-        chunkMap[chunkPos]->markDirty();
-        return chunkMap[chunkPos].get();
-    }
-    else {
-        // another thread inserted meanwhile => discard ours and return theirs
-        return it->second.get();
-    }
+    return (it != chunkMap.end()) ? it->second.get() : nullptr;
 }
+
+

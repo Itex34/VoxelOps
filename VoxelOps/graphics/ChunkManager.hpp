@@ -21,6 +21,7 @@
 #include "../ExternLibs/tsl/robin_map.h"
 #include "../ExternLibs/robin-hood-hashing/robin_hood.h"
 #include "../misc/ThreadPool.hpp"
+#include "../../Shared/network/Packets.hpp"
 
 #include <optional>
 #include <random>
@@ -170,6 +171,9 @@ public:
 
     void playerPlaceBlockAt(glm::ivec3 blockCoords, int faceNormal, BlockID blockType);
     void playerBreakBlockAt(const glm::ivec3& blockCoords);
+    void applyNetworkChunkData(const ChunkData& packet);
+    void applyNetworkChunkDelta(const ChunkDelta& packet);
+    void applyNetworkChunkUnload(const ChunkUnload& packet);
 
     const std::unordered_map<glm::ivec3, Chunk, IVec3Hash>& getChunks() const {
         return chunkMap;

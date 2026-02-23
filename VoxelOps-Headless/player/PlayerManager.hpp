@@ -23,6 +23,7 @@ public:
 
     // Called by network code when a heartbeat or data arrives to update lastHeartbeat
     bool touchHeartbeat(PlayerID id);
+    bool applyAuthoritativeState(PlayerID id, const glm::vec3& position, const glm::vec3& velocity);
 
     // Main tick. deltaSeconds: time elapsed since last tick (use fixed timestep ideally).
     void update(double deltaSeconds);
@@ -54,6 +55,4 @@ private:
 
     // Config
     std::chrono::seconds heartbeatTimeout{ 30 };
-    double snapshotInterval = 0.1; // seconds (10 Hz snapshots)
-    double snapshotAccumulator = 0.0;
 };
