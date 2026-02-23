@@ -30,7 +30,7 @@ add_executable(VoxelOps
     "graphics/TextureAtlas.cpp" 
     "physics/Raycast.cpp" 
     "physics/RayManager.cpp"
-    "application/VoxelopsApp.cpp"
+    "application/App.cpp"
     "graphics/Lighting.cpp"
     "network/ClientNetwork.cpp"
     "player/Hitbox.cpp"    
@@ -39,9 +39,9 @@ add_executable(VoxelOps
     "graphics/RegionMeshBuffer.cpp"
     "voxels/ChunkColumn.cpp"
     "graphics/WorldGen.cpp"
-    "graphics/Sky.cpp"
-    "../third_party/precomputed_atmospheric_scattering/atmosphere/model.cc"
-)
+    "graphics/Backend.cpp"
+    "graphics/Sky.cpp" 
+    "graphics/PostProcessor.cpp")
 
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
