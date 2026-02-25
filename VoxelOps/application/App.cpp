@@ -22,6 +22,7 @@
 #include <cstdio>
 #include <cmath>
 #include <algorithm>
+#include <chrono>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -55,6 +56,11 @@ struct App::Runtime {
     uint32_t netSeq = 0;
     double lastNetSendTime = 0.0;
     static constexpr double NetSendInterval = 0.1; // 10 Hz
+    static constexpr size_t MaxChunkDataApplyPerFrame = 2;
+    static constexpr size_t MaxChunkDeltaApplyPerFrame = 32;
+    static constexpr size_t MaxChunkUnloadApplyPerFrame = 64;
+    static constexpr int64_t ChunkApplyBudgetUs = 4000;
+    double lastChunkCoverageLogTime = 0.0;
 
     double lastX = 0.0;
     double lastY = 0.0;
@@ -317,22 +323,105 @@ void App::processWorldInteraction(Runtime& runtime) {
 void App::processNetworking(Runtime& runtime) {
     runtime.clientNet.Poll();
 
+    const auto chunkApplyStart = std::chrono::steady_clock::now();
+    const auto withinChunkApplyBudget = [&]() -> bool {
+        const auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - chunkApplyStart
+        ).count();
+        return elapsedUs < Runtime::ChunkApplyBudgetUs;
+    };
+
     ChunkData chunkData;
-    while (runtime.clientNet.PopChunkData(chunkData)) {
+    size_t chunkDataApplied = 0;
+    while (
+        chunkDataApplied < Runtime::MaxChunkDataApplyPerFrame &&
+        withinChunkApplyBudget() &&
+        runtime.clientNet.PopChunkData(chunkData)
+    ) {
         runtime.chunkManager->applyNetworkChunkData(chunkData);
+        if (!runtime.clientNet.SendChunkDataAck(chunkData)) {
+            std::cerr
+                << "[chunk/ack] app failed to ACK applied chunk ("
+                << chunkData.chunkX << "," << chunkData.chunkY << "," << chunkData.chunkZ << ")\n";
+        }
+        ++chunkDataApplied;
     }
 
     ChunkDelta chunkDelta;
-    while (runtime.clientNet.PopChunkDelta(chunkDelta)) {
+    size_t chunkDeltaApplied = 0;
+    while (
+        chunkDeltaApplied < Runtime::MaxChunkDeltaApplyPerFrame &&
+        withinChunkApplyBudget() &&
+        runtime.clientNet.PopChunkDelta(chunkDelta)
+    ) {
         runtime.chunkManager->applyNetworkChunkDelta(chunkDelta);
+        ++chunkDeltaApplied;
     }
 
     ChunkUnload chunkUnload;
-    while (runtime.clientNet.PopChunkUnload(chunkUnload)) {
+    size_t chunkUnloadApplied = 0;
+    while (
+        chunkUnloadApplied < Runtime::MaxChunkUnloadApplyPerFrame &&
+        withinChunkApplyBudget() &&
+        runtime.clientNet.PopChunkUnload(chunkUnload)
+    ) {
         runtime.chunkManager->applyNetworkChunkUnload(chunkUnload);
+        ++chunkUnloadApplied;
     }
 
     const double now = glfwGetTime();
+    if (now - runtime.lastChunkCoverageLogTime >= 1.0) {
+        runtime.lastChunkCoverageLogTime = now;
+
+        const glm::vec3 pos = runtime.player->getPosition();
+        const glm::ivec3 worldPos(
+            static_cast<int>(std::floor(pos.x)),
+            static_cast<int>(std::floor(pos.y)),
+            static_cast<int>(std::floor(pos.z))
+        );
+        const glm::ivec3 centerChunk = runtime.chunkManager->worldToChunkPos(worldPos);
+        const int viewDistance = std::max<int>(2, runtime.player->renderDistance);
+        const int minChunkY = WORLD_MIN_Y / CHUNK_SIZE;
+        const int maxChunkY = WORLD_MAX_Y / CHUNK_SIZE;
+
+        const auto& chunks = runtime.chunkManager->getChunks();
+        size_t desired = 0;
+        size_t loaded = 0;
+        std::vector<glm::ivec3> missingSamples;
+        missingSamples.reserve(8);
+        for (int x = centerChunk.x - viewDistance; x <= centerChunk.x + viewDistance; ++x) {
+            for (int z = centerChunk.z - viewDistance; z <= centerChunk.z + viewDistance; ++z) {
+                for (int y = minChunkY; y <= maxChunkY; ++y) {
+                    const glm::ivec3 cp(x, y, z);
+                    if (!runtime.chunkManager->inBounds(cp)) continue;
+                    ++desired;
+                    if (chunks.find(cp) != chunks.end()) {
+                        ++loaded;
+                    }
+                    else if (missingSamples.size() < 8) {
+                        missingSamples.push_back(cp);
+                    }
+                }
+            }
+        }
+
+        std::cerr
+            << "[chunk/client] coverage center=("
+            << centerChunk.x << "," << centerChunk.y << "," << centerChunk.z << ")"
+            << " viewDist=" << viewDistance
+            << " desired=" << desired
+            << " loaded=" << loaded
+            << " missing=" << (desired - loaded) << "\n";
+
+        if (!missingSamples.empty()) {
+            std::cerr << "[chunk/client] missing samples:";
+            for (const glm::ivec3& cp : missingSamples) {
+                std::cerr << " (" << cp.x << "," << cp.y << "," << cp.z << ")";
+            }
+            std::cerr << "\n";
+        }
+    }
+
     if (now - runtime.lastNetSendTime >= Runtime::NetSendInterval) {
         runtime.lastNetSendTime = now;
         const glm::vec3 pos = runtime.player->getPosition();

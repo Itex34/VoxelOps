@@ -99,11 +99,15 @@ private:
         uint16_t viewDistance = 8;
         bool hasChunkInterest = false;
         std::unordered_set<ChunkCoord, ChunkCoordHash> streamedChunks;
+        // ChunkData packets sent but not yet ACKed by the client.
+        std::unordered_map<ChunkCoord, std::chrono::steady_clock::time_point, ChunkCoordHash> pendingChunkData;
+        // Payload hash (FNV-1a over ChunkData.payload) expected in ChunkAck.sequence.
+        std::unordered_map<ChunkCoord, uint32_t, ChunkCoordHash> pendingChunkDataPayloadHash;
     };
 
     static uint16_t ClampViewDistance(uint16_t requested);
     void UpdateChunkStreamingForClient(HSteamNetConnection conn, const glm::ivec3& centerChunk, uint16_t viewDistance);
-    bool SendChunkData(HSteamNetConnection conn, const ChunkCoord& coord);
+    bool SendChunkData(HSteamNetConnection conn, const ChunkCoord& coord, uint32_t* outPayloadHash = nullptr);
     bool SendChunkUnload(HSteamNetConnection conn, const ChunkCoord& coord);
 
     std::atomic<bool> m_quit;

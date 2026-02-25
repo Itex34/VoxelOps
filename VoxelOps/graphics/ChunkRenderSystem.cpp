@@ -2,6 +2,12 @@
 
 #include "ChunkManager.hpp"
 #include "../player/Player.hpp"
+#include <algorithm>
+#include <chrono>
+#include <cstdint>
+#include <cmath>
+#include <cstdlib>
+#include <iostream>
 
 void ChunkRenderSystem::renderChunks(
     ChunkManager& cm,
@@ -10,8 +16,13 @@ void ChunkRenderSystem::renderChunks(
     Player& player,
     int maxRenderDistance
 ) {
-    const glm::ivec3 playerChunkPos =
-        cm.worldToChunkPos(glm::ivec3(player.getPosition()));
+    const glm::vec3 playerPos = player.getPosition();
+    const glm::ivec3 playerBlockPos(
+        static_cast<int>(std::floor(playerPos.x)),
+        static_cast<int>(std::floor(playerPos.y)),
+        static_cast<int>(std::floor(playerPos.z))
+    );
+    const glm::ivec3 playerChunkPos = cm.worldToChunkPos(playerBlockPos);
 
     if (!cm.m_tileInfoInitialized) {
         for (size_t i = 0; i < 256; ++i) {
@@ -33,12 +44,18 @@ void ChunkRenderSystem::renderChunks(
         cm.m_tileInfoInitialized = true;
     }
 
-    const int maxDistSq = maxRenderDistance * maxRenderDistance;
+    size_t regionCount = 0;
+    size_t validMeshCount = 0;
+    size_t drawnCount = 0;
+    size_t distCullCount = 0;
+    size_t frustumCullCount = 0;
 
     for (auto& [regionPos, region] : cm.regions) {
+        ++regionCount;
         glm::vec3 regionMin = glm::vec3(regionPos * REGION_SIZE * CHUNK_SIZE);
         glm::vec3 regionMax = regionMin + glm::vec3(REGION_SIZE * CHUNK_SIZE);
         if (!frustum.isBoxVisible(regionMin, regionMax)) {
+            frustumCullCount += region.chunks.size();
             continue;
         }
 
@@ -47,15 +64,24 @@ void ChunkRenderSystem::renderChunks(
             if (!mesh.valid) {
                 continue;
             }
+            ++validMeshCount;
 
             glm::ivec3 d = chunkPos - playerChunkPos;
-            if (d.x * d.x + d.y * d.y + d.z * d.z > maxDistSq) {
+            // Client-side render culling uses radial distance in XZ.
+            const int64_t dist2 =
+                static_cast<int64_t>(d.x) * static_cast<int64_t>(d.x) +
+                static_cast<int64_t>(d.z) * static_cast<int64_t>(d.z);
+            const int64_t radius2 =
+                static_cast<int64_t>(maxRenderDistance) * static_cast<int64_t>(maxRenderDistance);
+            if (dist2 > radius2) {
+                ++distCullCount;
                 continue;
             }
 
             glm::vec3 min = glm::vec3(chunkPos * CHUNK_SIZE);
             glm::vec3 max = min + glm::vec3(CHUNK_SIZE);
             if (!frustum.isBoxVisible(min, max)) {
+                ++frustumCullCount;
                 continue;
             }
 
@@ -63,6 +89,7 @@ void ChunkRenderSystem::renderChunks(
             model[3] = glm::vec4(min, 1.0f);
             shader.setMat4("model", model);
             gpu.drawChunkMesh(mesh);
+            ++drawnCount;
         }
     }
 }

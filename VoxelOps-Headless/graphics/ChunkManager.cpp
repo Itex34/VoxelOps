@@ -46,8 +46,8 @@ void ChunkManager::updateChunks(const glm::ivec3& playerWorldPos, int renderDist
     glm::ivec3 playerChunk = worldToChunkPos(playerWorldPos);
     std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> desired;
 
-    int minY = WORLD_MIN_Y / CHUNK_SIZE;
-    int maxY = WORLD_MAX_Y / CHUNK_SIZE;
+    const int minY = floorDiv(WORLD_MIN_Y, CHUNK_SIZE);
+    const int maxY = floorDiv(WORLD_MAX_Y, CHUNK_SIZE);
 
     for (int x = playerChunk.x - renderDistance; x <= playerChunk.x + renderDistance; ++x)
         for (int z = playerChunk.z - renderDistance; z <= playerChunk.z + renderDistance; ++z)
@@ -60,7 +60,10 @@ void ChunkManager::updateChunks(const glm::ivec3& playerWorldPos, int renderDist
         std::lock_guard<std::mutex> lk(mapMutex);
         for (auto& [pos, chunk] : chunkMap)
             if (desired.find(pos) == desired.end()) toErase.push_back(pos);
-        for (auto& pos : toErase) chunkMap.erase(pos);
+        for (auto& pos : toErase) {
+            chunkMap.erase(pos);
+            decoratedChunks.erase(pos);
+        }
     }
 
     // load missing chunks (generate off-map then insert)
@@ -188,8 +191,10 @@ glm::ivec3 ChunkManager::worldToLocalPos(const glm::ivec3& wp) const {
 }
 
 bool ChunkManager::inBounds(const glm::ivec3& pos) const {
+    const int minChunkY = floorDiv(WORLD_MIN_Y, CHUNK_SIZE);
+    const int maxChunkY = floorDiv(WORLD_MAX_Y, CHUNK_SIZE);
     return pos.x >= WORLD_MIN_X && pos.x <= WORLD_MAX_X &&
-        pos.y >= WORLD_MIN_Y && pos.y <= WORLD_MAX_Y &&
+        pos.y >= minChunkY && pos.y <= maxChunkY &&
         pos.z >= WORLD_MIN_Z && pos.z <= WORLD_MAX_Z;
 }
 
@@ -239,14 +244,28 @@ ServerChunk* ChunkManager::getChunkIfExists(const glm::ivec3& chunkPos) const {
 ServerChunk* ChunkManager::loadOrGenerateChunk(const glm::ivec3& chunkPos) {
     if (!inBounds(chunkPos)) return nullptr;
 
+    bool needsDecoration = false;
     // quick path: check if present
     {
         std::lock_guard<std::mutex> lk(mapMutex);
         auto it = chunkMap.find(chunkPos);
-        if (it != chunkMap.end()) return it->second.get();
+        if (it != chunkMap.end()) {
+            needsDecoration = (decoratedChunks.find(chunkPos) == decoratedChunks.end());
+            if (!needsDecoration) {
+                return it->second.get();
+            }
+        }
     }
 
-    // Not present: generate full chunk (terrain + trees) like WorldGen::generateChunkAt.
+    // Upgrade terrain-only placeholders to decorated chunks when explicitly streamed.
+    if (needsDecoration) {
+        WorldGen::decorateChunkAt(*this, chunkPos);
+        std::lock_guard<std::mutex> lk(mapMutex);
+        auto it = chunkMap.find(chunkPos);
+        return (it != chunkMap.end()) ? it->second.get() : nullptr;
+    }
+
+    // Streamed chunks should include the same decoration behavior as client world generation.
     generateChunkAt(chunkPos);
 
     std::lock_guard<std::mutex> lk(mapMutex);

@@ -55,6 +55,16 @@ bool readI64LE(const std::vector<uint8_t>& data, size_t& offset, int64_t& out)
     offset += 8;
     return true;
 }
+
+uint32_t fnv1a32(const uint8_t* data, size_t size)
+{
+    uint32_t h = 2166136261u;
+    for (size_t i = 0; i < size; ++i) {
+        h ^= static_cast<uint32_t>(data[i]);
+        h *= 16777619u;
+    }
+    return h;
+}
 }
 
 //positions only cube used for wireframe debug
@@ -168,8 +178,8 @@ void ChunkManager::updateChunks(const glm::ivec3& playerWorldPos, int renderDist
 
     glm::ivec3 playerChunk = worldToChunkPos(playerWorldPos);
 
-    int minY = WORLD_MIN_Y / CHUNK_SIZE;
-    int maxY = WORLD_MAX_Y / CHUNK_SIZE;
+    const int minY = floorDiv(WORLD_MIN_Y, CHUNK_SIZE);
+    const int maxY = floorDiv(WORLD_MAX_Y, CHUNK_SIZE);
 
     for (int x = playerChunk.x - renderDistance; x <= playerChunk.x + renderDistance; ++x) {
         for (int z = playerChunk.z - renderDistance; z <= playerChunk.z + renderDistance; ++z) {
@@ -216,43 +226,84 @@ void ChunkManager::updateChunks(const glm::ivec3& playerWorldPos, int renderDist
 
 void ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
     const std::vector<uint8_t>& payload = packet.payload;
+    const uint32_t payloadHash = fnv1a32(payload.data(), payload.size());
+    const size_t rawBlockBytes = CHUNK_VOLUME * sizeof(BlockID);
+    const uint8_t* raw = nullptr;
+    glm::ivec3 chunkPos(packet.chunkX, packet.chunkY, packet.chunkZ);
 
     // payload format mirrors ServerChunk::serializeCompressed():
     // [cx:i32][cy:i32][cz:i32][version:i64][flags:u8][dataSize:i32][voxel bytes...]
-    size_t offset = 0;
-    int32_t payloadX = 0;
-    int32_t payloadY = 0;
-    int32_t payloadZ = 0;
-    int64_t version = 0;
-    int32_t dataSize = 0;
+    {
+        size_t offset = 0;
+        int32_t payloadX = 0;
+        int32_t payloadY = 0;
+        int32_t payloadZ = 0;
+        int64_t version = 0;
+        (void)version;
+        int32_t dataSize = 0;
 
-    if (!readI32LE(payload, offset, payloadX)) return;
-    if (!readI32LE(payload, offset, payloadY)) return;
-    if (!readI32LE(payload, offset, payloadZ)) return;
-    if (!readI64LE(payload, offset, version)) return;
-    (void)version;
-    if (offset + 1 > payload.size()) return;
-    const uint8_t flags = payload[offset++];
-    (void)flags;
-    if (!readI32LE(payload, offset, dataSize)) return;
-    if (dataSize < 0) return;
-    if (offset + static_cast<size_t>(dataSize) > payload.size()) return;
+        bool validWrappedPayload = true;
+        validWrappedPayload = validWrappedPayload && readI32LE(payload, offset, payloadX);
+        validWrappedPayload = validWrappedPayload && readI32LE(payload, offset, payloadY);
+        validWrappedPayload = validWrappedPayload && readI32LE(payload, offset, payloadZ);
+        validWrappedPayload = validWrappedPayload && readI64LE(payload, offset, version);
+        if (validWrappedPayload) {
+            if (offset + 1 > payload.size()) {
+                validWrappedPayload = false;
+            }
+            else {
+                const uint8_t flags = payload[offset++];
+                (void)flags;
+            }
+        }
+        validWrappedPayload = validWrappedPayload && readI32LE(payload, offset, dataSize);
+        if (validWrappedPayload) {
+            if (dataSize < 0) {
+                validWrappedPayload = false;
+            }
+            else {
+                const size_t size = static_cast<size_t>(dataSize);
+                if (offset + size > payload.size() || size < rawBlockBytes) {
+                    validWrappedPayload = false;
+                }
+            }
+        }
 
-    const size_t rawBlockBytes = CHUNK_VOLUME * sizeof(BlockID);
-    if (static_cast<size_t>(dataSize) < rawBlockBytes) return;
+        if (validWrappedPayload) {
+            chunkPos = glm::ivec3(payloadX, payloadY, payloadZ);
+            if (payloadX != packet.chunkX || payloadY != packet.chunkY || payloadZ != packet.chunkZ) {
+                std::cerr
+                    << "[chunk/apply] header mismatch packet=("
+                    << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ
+                    << ") payload=("
+                    << payloadX << "," << payloadY << "," << payloadZ << ")\n";
+            }
+            raw = payload.data() + offset;
+        }
+    }
 
-    glm::ivec3 chunkPos(packet.chunkX, packet.chunkY, packet.chunkZ);
-    if (payloadX != packet.chunkX || payloadY != packet.chunkY || payloadZ != packet.chunkZ) {
-        chunkPos = glm::ivec3(payloadX, payloadY, payloadZ);
+    if (!raw) {
+        // Backward compatibility for payloads that only contain raw voxels.
+        if (payload.size() < rawBlockBytes) {
+            std::cerr
+                << "[chunk/apply] invalid ChunkData payload size="
+                << payload.size() << " expectedAtLeast=" << rawBlockBytes
+                << " chunk=(" << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ << ")\n";
+            return;
+        }
+        std::cerr
+            << "[chunk/apply] using raw fallback payload for chunk=("
+            << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ << ")\n";
+        raw = payload.data();
     }
 
     removeChunkMesh(chunkPos);
     chunkMap.erase(chunkPos);
     auto [chunkIt, inserted] = chunkMap.try_emplace(chunkPos, chunkPos);
     (void)inserted;
-
+  
     Chunk& chunk = chunkIt->second;
-    const uint8_t* raw = payload.data() + offset;
+    size_t nonAirCount = 0;
     for (int z = 0; z < CHUNK_SIZE; ++z) {
         for (int y = 0; y < CHUNK_SIZE; ++y) {
             for (int x = 0; x < CHUNK_SIZE; ++x) {
@@ -260,9 +311,20 @@ void ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
                 const BlockID id = static_cast<BlockID>(raw[i]);
                 if (id != BlockID::Air) {
                     chunk.setBlock(x, y, z, id);
+                    ++nonAirCount;
                 }
             }
         }
+    }
+
+    const int minChunkY = WORLD_MIN_Y / CHUNK_SIZE;
+    if (chunkPos.y == minChunkY && nonAirCount < static_cast<size_t>(CHUNK_SIZE * CHUNK_SIZE)) {
+        std::cerr
+            << "[chunk/apply] suspicious low nonAir in bottom chunk chunk=("
+            << chunkPos.x << "," << chunkPos.y << "," << chunkPos.z << ")"
+            << " nonAir=" << nonAirCount
+            << " payloadHash=" << payloadHash
+            << " payloadBytes=" << payload.size() << "\n";
     }
 
     rebuildColumnSunCache(chunkPos.x, chunkPos.z);
@@ -284,7 +346,18 @@ void ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
 void ChunkManager::applyNetworkChunkDelta(const ChunkDelta& packet) {
     const glm::ivec3 chunkPos(packet.chunkX, packet.chunkY, packet.chunkZ);
     auto it = chunkMap.find(chunkPos);
-    if (it == chunkMap.end()) return;
+    if (it == chunkMap.end()) {
+        static uint64_t missingChunkDeltaCount = 0;
+        ++missingChunkDeltaCount;
+        if (missingChunkDeltaCount <= 20 || (missingChunkDeltaCount % 100) == 0) {
+            std::cerr
+                << "[chunk/delta] received delta for missing chunk=("
+                << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ
+                << ") edits=" << packet.edits.size()
+                << " count=" << missingChunkDeltaCount << "\n";
+        }
+        return;
+    }
 
     Chunk& chunk = it->second;
     std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> rebuildSet;
@@ -329,6 +402,14 @@ void ChunkManager::applyNetworkChunkUnload(const ChunkUnload& packet) {
     const glm::ivec3 chunkPos(packet.chunkX, packet.chunkY, packet.chunkZ);
     auto it = chunkMap.find(chunkPos);
     if (it == chunkMap.end()) {
+        static uint64_t missingChunkUnloadCount = 0;
+        ++missingChunkUnloadCount;
+        if (missingChunkUnloadCount <= 20 || (missingChunkUnloadCount % 100) == 0) {
+            std::cerr
+                << "[chunk/unload] unload for missing chunk=("
+                << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ
+                << ") count=" << missingChunkUnloadCount << "\n";
+        }
         return;
     }
 
@@ -389,8 +470,10 @@ glm::ivec3 ChunkManager::worldToLocalPos(const glm::ivec3& worldPos) const {
 }
 
 bool ChunkManager::inBounds(const glm::ivec3& pos) const {
+    const int minChunkY = floorDiv(WORLD_MIN_Y, CHUNK_SIZE);
+    const int maxChunkY = floorDiv(WORLD_MAX_Y, CHUNK_SIZE);
     return pos.x >= WORLD_MIN_X && pos.x <= WORLD_MAX_X &&
-        pos.y >= WORLD_MIN_Y && pos.y <= WORLD_MAX_Y &&
+        pos.y >= minChunkY && pos.y <= maxChunkY &&
         pos.z >= WORLD_MIN_Z && pos.z <= WORLD_MAX_Z;
 }
 

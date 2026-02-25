@@ -26,8 +26,6 @@ void InputCallbacks::processInput(GLFWwindow* window) {
 	GameData::deltaTime = currentFrame - GameData::lastFrame;
 	GameData::lastFrame = currentFrame;
 
-	player.update(window, GameData::deltaTime);
-
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
 		GameData::cursorEnabled = true;
 		glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);

@@ -1,5 +1,16 @@
 #include "ClientNetwork.hpp"
 
+namespace {
+uint32_t fnv1a32(const uint8_t* data, size_t size)
+{
+    uint32_t h = 2166136261u;
+    for (size_t i = 0; i < size; ++i) {
+        h ^= static_cast<uint32_t>(data[i]);
+        h *= 16777619u;
+    }
+    return h;
+}
+}
 
 ClientNetwork::ClientNetwork() = default;
 
@@ -118,6 +129,35 @@ bool ClientNetwork::SendChunkRequest(const glm::ivec3& centerChunk, uint16_t vie
     return (r == k_EResultOK);
 }
 
+bool ClientNetwork::SendChunkDataAck(const ChunkData& packet)
+{
+    if (m_conn == k_HSteamNetConnection_Invalid) return false;
+
+    ChunkAck ack;
+    ack.ackedType = static_cast<uint8_t>(PacketType::ChunkData);
+    ack.sequence = fnv1a32(packet.payload.data(), packet.payload.size());
+    ack.chunkX = packet.chunkX;
+    ack.chunkY = packet.chunkY;
+    ack.chunkZ = packet.chunkZ;
+    ack.version = packet.version;
+
+    const std::vector<uint8_t> ackBuf = ack.serialize();
+    const EResult r = SteamNetworkingSockets()->SendMessageToConnection(
+        m_conn,
+        ackBuf.data(),
+        static_cast<uint32_t>(ackBuf.size()),
+        k_nSteamNetworkingSend_Reliable,
+        nullptr
+    );
+    if (r != k_EResultOK) {
+        std::cerr
+            << "[chunk/ack] failed to send ChunkData ACK result=" << r
+            << " chunk=(" << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ << ")"
+            << " version=" << packet.version << "\n";
+    }
+    return (r == k_EResultOK);
+}
+
 void ClientNetwork::Poll() {
     if (!m_started.load()) return;
 
@@ -216,15 +256,6 @@ void ClientNetwork::OnMessage(const uint8_t* data, uint32_t size) {
             std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
             m_chunkDataQueue.push_back(packet);
         }
-
-        ChunkAck ack;
-        ack.ackedType = static_cast<uint8_t>(PacketType::ChunkData);
-        ack.chunkX = packet.chunkX;
-        ack.chunkY = packet.chunkY;
-        ack.chunkZ = packet.chunkZ;
-        ack.version = packet.version;
-        const std::vector<uint8_t> ackBuf = ack.serialize();
-        SteamNetworkingSockets()->SendMessageToConnection(m_conn, ackBuf.data(), (uint32_t)ackBuf.size(), k_nSteamNetworkingSend_Reliable, nullptr);
         return;
     }
 

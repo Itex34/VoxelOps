@@ -106,6 +106,8 @@ private:
     // protects chunkMap structure (only)
     mutable std::mutex mapMutex;
     std::unordered_map<glm::ivec3, std::unique_ptr<ServerChunk>, IVec3Hash, IVec3Eq> chunkMap;
+    // Tracks whether a chunk has had decoration pass applied at least once.
+    std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> decoratedChunks;
 
     static inline int floorDiv(int a, int b) {
         int q = a / b;

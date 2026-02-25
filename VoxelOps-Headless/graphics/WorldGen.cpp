@@ -7,6 +7,38 @@
 #include <cmath>
 #include <random>
 
+void WorldGen::applyClientDecorationPass(ChunkManager& cm, ServerChunk& chunk, const glm::ivec3& chunkPos) {
+    const uint32_t seed = static_cast<uint32_t>(
+        (chunkPos.x * 73856093u) ^
+        (chunkPos.y * 19349663u) ^
+        (chunkPos.z * 83492791u)
+    );
+    std::mt19937 gen(seed);
+    std::uniform_real_distribution<> chance(0.0, 1.0);
+
+    bool anyDecoration = false;
+    for (int z = 0; z < CHUNK_SIZE; ++z) {
+        for (int x = 0; x < CHUNK_SIZE; ++x) {
+            int topY = -1;
+            for (int y = CHUNK_SIZE - 1; y >= 0; --y) {
+                if (chunk.getBlock(x, y, z) == BlockID::Grass) {
+                    topY = y;
+                    break;
+                }
+            }
+
+            if (topY != -1 && chance(gen) < 0.02) {
+                placeTree(cm, chunk, glm::ivec3(x, topY + 1, z), gen);
+                anyDecoration = true;
+            }
+        }
+    }
+
+    if (anyDecoration) {
+        chunk.markDirty();
+    }
+}
+
 void WorldGen::generateInitialChunks(ChunkManager& cm, int radiusChunks) {
     int minChunkY = WORLD_MIN_Y / CHUNK_SIZE;
     int maxChunkY = WORLD_MAX_Y / CHUNK_SIZE;
@@ -35,37 +67,13 @@ void WorldGen::generateInitialChunksTwoPass(ChunkManager& cm, int radiusChunks) 
         }
     }
 
-    // PASS 2: decoration
+    // PASS 2: decoration (mirrors client WorldGen two-pass decoration behavior)
     auto snap = cm.snapshotChunkMap();
     for (auto& [pos, chunkPtr] : snap) {
         if (!chunkPtr) continue;
-
-        uint32_t seed = static_cast<uint32_t>((pos.x * 73856093u) ^ (pos.y * 19349663u) ^ (pos.z * 83492791u));
-        std::mt19937 gen(seed);
-        std::uniform_real_distribution<> chance(0.0, 1.0);
-
-        bool anyDecoration = false;
-
-        for (int z = 0; z < CHUNK_SIZE; ++z) {
-            for (int x = 0; x < CHUNK_SIZE; ++x) {
-                int topY = -1;
-                for (int y = CHUNK_SIZE - 1; y >= 0; --y) {
-                    if (chunkPtr->getBlock(x, y, z) == BlockID::Grass) {
-                        topY = y;
-                        break;
-                    }
-                }
-
-                if (topY != -1 && chance(gen) < 0.02) {
-                    placeTree(cm, *chunkPtr, glm::ivec3(x, topY + 1, z), gen);
-                    anyDecoration = true;
-                }
-            }
-        }
-
-        if (anyDecoration) {
-            chunkPtr->markDirty();
-        }
+        applyClientDecorationPass(cm, *chunkPtr, pos);
+        std::lock_guard<std::mutex> lk(cm.mapMutex);
+        cm.decoratedChunks.insert(pos);
     }
 
     cm.updateDirtyChunks();
@@ -110,29 +118,14 @@ void WorldGen::generateChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
         }
     }
 
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<> chance(0.0, 1.0);
-    for (int z = 0; z < CHUNK_SIZE; ++z) {
-        for (int x = 0; x < CHUNK_SIZE; ++x) {
-            int topY = -1;
-            for (int y = CHUNK_SIZE - 1; y >= 0; --y) {
-                if (chunk->getBlock(x, y, z) == BlockID::Grass) {
-                    topY = y;
-                    break;
-                }
-            }
-
-            if (topY != -1 && chance(gen) < 0.003) {
-                placeTree(cm, *chunk, glm::ivec3(x, topY - 4, z), gen);
-            }
-        }
-    }
+    // Reuse the client-style two-pass decoration rules for consistency with the client worldgen.
+    applyClientDecorationPass(cm, *chunk, pos);
 
     {
         std::lock_guard<std::mutex> lk(cm.mapMutex);
         cm.chunkMap[pos] = std::move(chunk);
         cm.chunkMap[pos]->markDirty();
+        cm.decoratedChunks.insert(pos);
     }
 }
 
@@ -179,7 +172,25 @@ void WorldGen::generateTerrainChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
         std::lock_guard<std::mutex> lk(cm.mapMutex);
         cm.chunkMap[pos] = std::move(chunk);
         cm.chunkMap[pos]->markDirty();
+        cm.decoratedChunks.erase(pos);
     }
+}
+
+void WorldGen::decorateChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
+    ServerChunk* chunkPtr = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(cm.mapMutex);
+        auto it = cm.chunkMap.find(pos);
+        if (it != cm.chunkMap.end()) {
+            chunkPtr = it->second.get();
+        }
+    }
+    if (!chunkPtr) return;
+
+    applyClientDecorationPass(cm, *chunkPtr, pos);
+
+    std::lock_guard<std::mutex> lk(cm.mapMutex);
+    cm.decoratedChunks.insert(pos);
 }
 
 void WorldGen::placeTree(ChunkManager& cm, ServerChunk& chunk, const glm::ivec3& basePos, std::mt19937& gen) {

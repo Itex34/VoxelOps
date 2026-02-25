@@ -113,10 +113,8 @@ void Renderer::renderFrame(RenderFrameParams& params)
     params.sky.render(projection, view);
 
     // World pass
-    const glm::mat4 playerCamView = params.player.getCamera().getViewMatrix();
     const glm::mat4 viewProjection = projection * view;
-    const glm::mat4 playerCamViewProjection = projection * playerCamView;
-    params.frustum.extractPlanes(playerCamViewProjection);
+    params.frustum.extractPlanes(viewProjection);
 
     const glm::vec3 lightDir = params.sky.getSunDir();
     const glm::vec3 lightColor = glm::vec3(1.0f, 0.98f, 0.96f);
@@ -178,7 +176,7 @@ void Renderer::renderFrame(RenderFrameParams& params)
     if (params.toggleDebugFrustum) {
         params.frustum.drawFrustumFaces(
             params.debugShader,
-            projection * params.player.getViewMatrix(),
+            projection * view,
             view,
             projection,
             params.toggleWireframe

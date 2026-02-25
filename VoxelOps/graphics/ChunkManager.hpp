@@ -197,6 +197,9 @@ public:
 
 
     void debugMemoryEstimate();
+
+    bool inBounds(const glm::ivec3& pos) const;
+
 private:
     friend class WorldGen;
     friend class ChunkRenderSystem;
@@ -249,7 +252,6 @@ private:
     void requestChunkRebuild(const glm::ivec3& pos);
     void buildChunkMeshWorker(glm::ivec3 pos);
 
-    bool inBounds(const glm::ivec3& pos) const;
 
 
     void setBlockSafe(Chunk& currentChunk, const glm::ivec3& pos, BlockID id);

@@ -10,6 +10,18 @@ using namespace std;
 
 ServerNetwork* ServerNetwork::s_instance = nullptr;
 
+namespace {
+uint32_t fnv1a32(const uint8_t* data, size_t size)
+{
+    uint32_t h = 2166136261u;
+    for (size_t i = 0; i < size; ++i) {
+        h ^= static_cast<uint32_t>(data[i]);
+        h *= 16777619u;
+    }
+    return h;
+}
+}
+
 // Free function signal handler for SIGINT
 static void GlobalSignalHandler(int) {
     if (ServerNetwork::s_instance) ServerNetwork::s_instance->Stop();
@@ -167,6 +179,15 @@ static float ReadFloatLE(const uint8_t* ptr) {
     return f;
 }
 
+static int FloorDiv(int a, int b) {
+    int q = a / b;
+    const int r = a % b;
+    if ((r != 0) && ((r > 0) != (b > 0))) {
+        --q;
+    }
+    return q;
+}
+
 uint16_t ServerNetwork::ClampViewDistance(uint16_t requested)
 {
     constexpr uint16_t kMin = 2;
@@ -174,10 +195,33 @@ uint16_t ServerNetwork::ClampViewDistance(uint16_t requested)
     return std::clamp(requested, kMin, kMax);
 }
 
-bool ServerNetwork::SendChunkData(HSteamNetConnection conn, const ChunkCoord& coord)
+bool ServerNetwork::SendChunkData(HSteamNetConnection conn, const ChunkCoord& coord, uint32_t* outPayloadHash)
 {
+    // Ensure local neighborhood decoration is materialized before serializing this chunk.
+    // Tree generation can spill across chunk borders; preloading neighbors avoids
+    // post-send mutations that would otherwise only appear after reconnect/resync.
+    constexpr int kDecorationNeighborRadiusXZ = 1;
+    constexpr int kDecorationNeighborRadiusY = 1;
+    for (int dx = -kDecorationNeighborRadiusXZ; dx <= kDecorationNeighborRadiusXZ; ++dx) {
+        for (int dz = -kDecorationNeighborRadiusXZ; dz <= kDecorationNeighborRadiusXZ; ++dz) {
+            for (int dy = -kDecorationNeighborRadiusY; dy <= kDecorationNeighborRadiusY; ++dy) {
+                if (dx == 0 && dy == 0 && dz == 0) {
+                    continue;
+                }
+                const glm::ivec3 npos(coord.x + dx, coord.y + dy, coord.z + dz);
+                if (!m_chunkManager.inBounds(npos)) {
+                    continue;
+                }
+                (void)m_chunkManager.loadOrGenerateChunk(npos);
+            }
+        }
+    }
+
     ServerChunk* chunk = m_chunkManager.loadOrGenerateChunk(glm::ivec3(coord.x, coord.y, coord.z));
     if (!chunk) {
+        std::cerr
+            << "[chunk/send] loadOrGenerateChunk failed for conn=" << conn
+            << " chunk=(" << coord.x << "," << coord.y << "," << coord.z << ")\n";
         return false;
     }
 
@@ -188,6 +232,9 @@ bool ServerNetwork::SendChunkData(HSteamNetConnection conn, const ChunkCoord& co
     packet.version = static_cast<uint64_t>(std::max<int64_t>(0, chunk->version()));
     packet.flags = 0;
     packet.payload = chunk->serializeCompressed();
+    if (outPayloadHash) {
+        *outPayloadHash = fnv1a32(packet.payload.data(), packet.payload.size());
+    }
 
     const std::vector<uint8_t> bytes = packet.serialize();
     const EResult result = SteamNetworkingSockets()->SendMessageToConnection(
@@ -197,6 +244,19 @@ bool ServerNetwork::SendChunkData(HSteamNetConnection conn, const ChunkCoord& co
         k_nSteamNetworkingSend_Reliable,
         nullptr
     );
+    if (result != k_EResultOK) {
+        SteamNetConnectionInfo_t info{};
+        const bool haveInfo = SteamNetworkingSockets()->GetConnectionInfo(conn, &info);
+        std::cerr
+            << "[chunk/send] SendMessageToConnection failed result=" << result
+            << " conn=" << conn
+            << " chunk=(" << coord.x << "," << coord.y << "," << coord.z << ")"
+            << " bytes=" << bytes.size();
+        if (haveInfo) {
+            std::cerr << " connState=" << info.m_eState;
+        }
+        std::cerr << "\n";
+    }
     return result == k_EResultOK;
 }
 
@@ -220,11 +280,15 @@ bool ServerNetwork::SendChunkUnload(HSteamNetConnection conn, const ChunkCoord& 
 
 void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, const glm::ivec3& centerChunk, uint16_t viewDistance)
 {
+    constexpr size_t kMaxChunkSendsPerUpdate = 24;
+    constexpr size_t kMaxPendingChunkData = 128;
+    constexpr auto kChunkRetryInterval = std::chrono::milliseconds(500);
     const uint16_t clampedViewDistance = ClampViewDistance(viewDistance);
+    const auto now = std::chrono::steady_clock::now();
 
     std::unordered_set<ChunkCoord, ChunkCoordHash> desired;
-    const int minChunkY = WORLD_MIN_Y / CHUNK_SIZE;
-    const int maxChunkY = WORLD_MAX_Y / CHUNK_SIZE;
+    const int minChunkY = FloorDiv(WORLD_MIN_Y, CHUNK_SIZE);
+    const int maxChunkY = FloorDiv(WORLD_MAX_Y, CHUNK_SIZE);
     const int radius = static_cast<int>(clampedViewDistance);
     desired.reserve(static_cast<size_t>((radius * 2 + 1) * (radius * 2 + 1) * (maxChunkY - minChunkY + 1)));
 
@@ -241,6 +305,7 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
     }
 
     std::unordered_set<ChunkCoord, ChunkCoordHash> currentlyStreamed;
+    std::unordered_map<ChunkCoord, std::chrono::steady_clock::time_point, ChunkCoordHash> pendingChunkData;
     {
         std::lock_guard<std::mutex> lk(m_mutex);
         auto it = m_clients.find(conn);
@@ -251,51 +316,65 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
         it->second.interestCenterChunk = centerChunk;
         it->second.viewDistance = clampedViewDistance;
         it->second.hasChunkInterest = true;
+
+        for (auto pIt = it->second.pendingChunkData.begin(); pIt != it->second.pendingChunkData.end();) {
+            if (desired.find(pIt->first) == desired.end()) {
+                it->second.pendingChunkDataPayloadHash.erase(pIt->first);
+                pIt = it->second.pendingChunkData.erase(pIt);
+            }
+            else {
+                ++pIt;
+            }
+        }
+
         currentlyStreamed = it->second.streamedChunks;
+        pendingChunkData = it->second.pendingChunkData;
     }
 
     std::vector<ChunkCoord> toLoad;
     toLoad.reserve(desired.size());
     for (const ChunkCoord& c : desired) {
-        if (currentlyStreamed.find(c) == currentlyStreamed.end()) {
-            toLoad.push_back(c);
+        if (currentlyStreamed.find(c) != currentlyStreamed.end()) {
+            continue;
         }
+
+        auto pendingIt = pendingChunkData.find(c);
+        if (pendingIt != pendingChunkData.end()) {
+            if ((now - pendingIt->second) < kChunkRetryInterval) {
+                continue;
+            }
+        }
+
+        toLoad.push_back(c);
     }
 
     const bool isInitialSync = currentlyStreamed.empty();
+    int verticalAnchorY = std::clamp(centerChunk.y, minChunkY, maxChunkY);
+    if (verticalAnchorY == maxChunkY && maxChunkY > minChunkY) {
+        // Top-most chunk layers are often sparse; bias one layer down to prioritize terrain.
+        --verticalAnchorY;
+    }
     std::sort(toLoad.begin(), toLoad.end(), [&](const ChunkCoord& a, const ChunkCoord& b) {
-        if (isInitialSync) {
-            const int adx = a.x - centerChunk.x;
-            const int adz = a.z - centerChunk.z;
-            const int bdx = b.x - centerChunk.x;
-            const int bdz = b.z - centerChunk.z;
-            const int aHorizDist2 = adx * adx + adz * adz;
-            const int bHorizDist2 = bdx * bdx + bdz * bdz;
-            if (aHorizDist2 != bHorizDist2) {
-                return aHorizDist2 < bHorizDist2;
-            }
+        const int adx = a.x - centerChunk.x;
+        const int adz = a.z - centerChunk.z;
+        const int bdx = b.x - centerChunk.x;
+        const int bdz = b.z - centerChunk.z;
+        const int aHorizDist2 = adx * adx + adz * adz;
+        const int bHorizDist2 = bdx * bdx + bdz * bdz;
+        if (aHorizDist2 != bHorizDist2) {
+            return aHorizDist2 < bHorizDist2;
+        }
 
-            const bool aUnderOrSame = (a.y <= centerChunk.y);
-            const bool bUnderOrSame = (b.y <= centerChunk.y);
+        if (isInitialSync) {
+            const bool aUnderOrSame = (a.y <= verticalAnchorY);
+            const bool bUnderOrSame = (b.y <= verticalAnchorY);
             if (aUnderOrSame != bUnderOrSame) {
                 return aUnderOrSame;
             }
-
-            const int aVertAbs = std::abs(a.y - centerChunk.y);
-            const int bVertAbs = std::abs(b.y - centerChunk.y);
-            if (aVertAbs != bVertAbs) {
-                return aVertAbs < bVertAbs;
-            }
         }
 
-        const int aHoriz = std::abs(a.x - centerChunk.x) + std::abs(a.z - centerChunk.z);
-        const int bHoriz = std::abs(b.x - centerChunk.x) + std::abs(b.z - centerChunk.z);
-        if (aHoriz != bHoriz) {
-            return aHoriz < bHoriz;
-        }
-
-        const int aVert = std::abs(a.y - centerChunk.y);
-        const int bVert = std::abs(b.y - centerChunk.y);
+        const int aVert = std::abs(a.y - verticalAnchorY);
+        const int bVert = std::abs(b.y - verticalAnchorY);
         if (aVert != bVert) {
             return aVert < bVert;
         }
@@ -313,16 +392,65 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
         }
     }
 
+    size_t pendingCount = pendingChunkData.size();
+    size_t sentThisUpdate = 0;
+    bool stoppedByPendingCap = false;
     for (const ChunkCoord& c : toLoad) {
-        if (!SendChunkData(conn, c)) {
+        const bool isRetry = pendingChunkData.find(c) != pendingChunkData.end();
+        if (sentThisUpdate >= kMaxChunkSendsPerUpdate) {
+            break;
+        }
+        if (!isRetry && pendingCount >= kMaxPendingChunkData) {
+            stoppedByPendingCap = true;
+            break;
+        }
+        uint32_t payloadHash = 0;
+        if (!SendChunkData(conn, c, &payloadHash)) {
+            // Do not stall the whole update on a single chunk failure.
+            // Leave it absent from streamedChunks so it can be retried on the next update.
             continue;
         }
 
         std::lock_guard<std::mutex> lk(m_mutex);
         auto it = m_clients.find(conn);
         if (it != m_clients.end()) {
-            it->second.streamedChunks.insert(c);
+            // Mark as pending until client ACK confirms receipt/parsing.
+            const bool wasPending = it->second.pendingChunkData.find(c) != it->second.pendingChunkData.end();
+            it->second.pendingChunkData[c] = now;
+            it->second.pendingChunkDataPayloadHash[c] = payloadHash;
+            if (!wasPending) {
+                ++pendingCount;
+            }
         }
+        ++sentThisUpdate;
+    }
+
+    static std::unordered_map<HSteamNetConnection, std::chrono::steady_clock::time_point> s_lastProgressLog;
+    auto& lastLog = s_lastProgressLog[conn];
+    if ((now - lastLog) >= std::chrono::seconds(1)) {
+        lastLog = now;
+        std::cerr
+            << "[chunk/stream] progress conn=" << conn
+            << " desired=" << desired.size()
+            << " streamed=" << currentlyStreamed.size()
+            << " pending=" << pendingCount
+            << " toLoad=" << toLoad.size()
+            << " sentNow=" << sentThisUpdate
+            << " pendingCapHit=" << (stoppedByPendingCap ? 1 : 0)
+            << " center=(" << centerChunk.x << "," << centerChunk.y << "," << centerChunk.z << ")"
+            << " viewDist=" << clampedViewDistance << "\n";
+    }
+
+    if (!toLoad.empty() && sentThisUpdate == 0) {
+        std::cerr
+            << "[chunk/stream] stalled load window conn=" << conn
+            << " desired=" << desired.size()
+            << " toLoad=" << toLoad.size()
+            << " streamed=" << currentlyStreamed.size()
+            << " pending=" << pendingCount
+            << " pendingCap=" << kMaxPendingChunkData
+            << " center=(" << centerChunk.x << "," << centerChunk.y << "," << centerChunk.z << ")"
+            << " viewDist=" << clampedViewDistance << "\n";
     }
 
     for (const ChunkCoord& c : toUnload) {
@@ -334,6 +462,8 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
         auto it = m_clients.find(conn);
         if (it != m_clients.end()) {
             it->second.streamedChunks.erase(c);
+            it->second.pendingChunkDataPayloadHash.erase(c);
+            it->second.pendingChunkData.erase(c);
         }
     }
 }
@@ -352,10 +482,10 @@ void ServerNetwork::MainLoop()
 
         SteamNetworkingSockets()->RunCallbacks();
 
-        // Receive messages on poll group (any connection assigned to it)
+        // Receive messages on poll group (any connection assigned to it).
+        // Drain all available messages each tick to avoid ACK/request backlogs.
         SteamNetworkingMessage_t* pMsg = nullptr;
-        int n = SteamNetworkingSockets()->ReceiveMessagesOnPollGroup(m_pollGroup, &pMsg, 1);
-        if (n > 0 && pMsg) {
+        while (SteamNetworkingSockets()->ReceiveMessagesOnPollGroup(m_pollGroup, &pMsg, 1) > 0 && pMsg) {
             HSteamNetConnection incoming = pMsg->m_conn;
             const void* data = pMsg->m_pData;
             uint32_t cb = pMsg->m_cbSize;
@@ -461,14 +591,12 @@ void ServerNetwork::MainLoop()
 
                     std::string username;
                     PlayerID playerId = 0;
-                    uint16_t viewDistance = 8;
                     {
                         std::lock_guard<std::mutex> lk(m_mutex);
                         auto it = m_clients.find(incoming);
                         if (it != m_clients.end()) {
                             username = it->second.username;
                             playerId = it->second.playerId;
-                            viewDistance = it->second.viewDistance;
                         }
                     }
                     if (!username.empty() && playerId != 0) {
@@ -482,14 +610,8 @@ void ServerNetwork::MainLoop()
                             << " pos = (" << px << "," << py << "," << pz << ")"
                             << " vel = (" << vx << "," << vy << "," << vz << ")\n";
 
-                        const glm::ivec3 centerChunk = m_chunkManager.worldToChunkPos(
-                            glm::ivec3(
-                                static_cast<int>(std::floor(px)),
-                                static_cast<int>(std::floor(py)),
-                                static_cast<int>(std::floor(pz))
-                            )
-                        );
-                        UpdateChunkStreamingForClient(incoming, centerChunk, viewDistance);
+                        // Chunk streaming is driven by explicit ChunkRequest packets.
+                        // Avoid double-driving streaming here to reduce burst pressure.
                     }
                     else {
                         std::cout << "[pos] unregistered conn = " << incoming << " seq = " << seq << "\n";
@@ -520,7 +642,47 @@ void ServerNetwork::MainLoop()
                 UpdateChunkStreamingForClient(incoming, centerChunk, req->viewDistance);
             }
             else if (static_cast<PacketType>(t) == PacketType::ChunkAck) {
-                // ACKs are optional in this stage; we accept and ignore.
+                std::vector<uint8_t> buf(reinterpret_cast<const uint8_t*>(data), reinterpret_cast<const uint8_t*>(data) + cb);
+                const auto ack = ChunkAck::deserialize(buf);
+                if (!ack.has_value()) {
+                    std::cerr << "[chunk/ack] malformed ChunkAck size=" << cb << " conn=" << incoming << "\n";
+                    pMsg->Release();
+                    continue;
+                }
+
+                if (ack->ackedType == static_cast<uint8_t>(PacketType::ChunkData)) {
+                    const ChunkCoord coord{ ack->chunkX, ack->chunkY, ack->chunkZ };
+                    std::lock_guard<std::mutex> lk(m_mutex);
+                    auto it = m_clients.find(incoming);
+                    if (it != m_clients.end()) {
+                        uint32_t expectedPayloadHash = 0;
+                        bool hadExpectedHash = false;
+                        auto expectedIt = it->second.pendingChunkDataPayloadHash.find(coord);
+                        if (expectedIt != it->second.pendingChunkDataPayloadHash.end()) {
+                            expectedPayloadHash = expectedIt->second;
+                            hadExpectedHash = true;
+                            it->second.pendingChunkDataPayloadHash.erase(expectedIt);
+                        }
+                        const bool wasPending = it->second.pendingChunkData.erase(coord) > 0;
+                        const bool wasStreamedAlready = it->second.streamedChunks.find(coord) != it->second.streamedChunks.end();
+                        it->second.streamedChunks.insert(coord);
+                        if (hadExpectedHash && ack->sequence != expectedPayloadHash) {
+                            std::cerr
+                                << "[chunk/ack] payload hash mismatch conn=" << incoming
+                                << " chunk=(" << coord.x << "," << coord.y << "," << coord.z << ")"
+                                << " expected=" << expectedPayloadHash
+                                << " got=" << ack->sequence
+                                << " version=" << ack->version << "\n";
+                        }
+                        if (!wasPending && !wasStreamedAlready) {
+                            std::cerr
+                                << "[chunk/ack] unexpected ChunkData ACK conn=" << incoming
+                                << " chunk=(" << coord.x << "," << coord.y << "," << coord.z << ")"
+                                << " seq=" << ack->sequence
+                                << " version=" << ack->version << "\n";
+                        }
+                    }
+                }
             }
             else if (static_cast<PacketType>(t) == PacketType::ShootRequest) {
                 // copy incoming bytes into vector for deserialization

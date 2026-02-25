@@ -40,6 +40,7 @@ public:
     // Send a PlayerPosition packet (seq is a local sequence number; pos/vel in world units).
     bool SendPosition(uint32_t seq, const glm::vec3& pos, const glm::vec3& vel);
     bool SendChunkRequest(const glm::ivec3& centerChunk, uint16_t viewDistance);
+    bool SendChunkDataAck(const ChunkData& packet);
 
     // Poll for incoming messages and run callbacks. Call this regularly (e.g. every 50-100 ms).
     // This will internally RunCallbacks() and ReceiveMessagesOnConnection() to process messages.
