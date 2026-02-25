@@ -226,14 +226,14 @@ void ChunkManager::updateChunks(const glm::ivec3& playerWorldPos, int renderDist
     }
 }
 
-void ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
+bool ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
     std::vector<uint8_t> decodedPayload;
     if (!DecompressChunkPayload(packet.flags, packet.payload, decodedPayload)) {
         std::cerr
             << "[chunk/apply] failed to decode payload flags=" << static_cast<int>(packet.flags)
             << " chunk=(" << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ << ")"
             << " payloadBytes=" << packet.payload.size() << "\n";
-        return;
+        return false;
     }
 
     const std::vector<uint8_t>& payload = decodedPayload;
@@ -289,7 +289,7 @@ void ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
                     << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ
                     << ") payload=("
                     << payloadX << "," << payloadY << "," << payloadZ << ")\n";
-                return;
+                return false;
             }
 
             if (payloadVersion < 0) {
@@ -297,7 +297,7 @@ void ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
                     << "[chunk/apply] invalid negative payload version chunk=("
                     << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ << ")"
                     << " version=" << payloadVersion << "\n";
-                return;
+                return false;
             }
             incomingVersion = static_cast<uint64_t>(payloadVersion);
             if (incomingVersion != packet.version) {
@@ -306,7 +306,7 @@ void ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
                     << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ << ")"
                     << " packetVersion=" << packet.version
                     << " payloadVersion=" << incomingVersion << "\n";
-                return;
+                return false;
             }
             raw = payload.data() + offset;
         }
@@ -319,7 +319,7 @@ void ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
                 << "[chunk/apply] invalid ChunkData payload size="
                 << payload.size() << " expected=" << rawBlockBytes
                 << " chunk=(" << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ << ")\n";
-            return;
+            return false;
         }
         std::cerr
             << "[chunk/apply] using raw fallback payload for chunk=("
@@ -339,7 +339,7 @@ void ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
                 << " knownVersion=" << knownVersionIt->second
                 << " count=" << staleChunkDataCount << "\n";
         }
-        return;
+        return true;
     }
 
     removeChunkMesh(chunkPos);
@@ -388,6 +388,7 @@ void ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
     }
 
     m_networkChunkVersions[chunkPos] = incomingVersion;
+    return true;
 }
 
 NetworkChunkDeltaApplyResult ChunkManager::applyNetworkChunkDelta(const ChunkDelta& packet) {

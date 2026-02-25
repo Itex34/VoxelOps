@@ -240,7 +240,7 @@ void App::initNetworking(Runtime& runtime) {
         return;
     }
 
-    runtime.clientNet.SendConnectRequest("player1");
+    runtime.clientNet.SendConnectRequest();
 }
 
 void App::updateDebugCamera(Runtime& runtime) {
@@ -356,8 +356,8 @@ void App::processNetworking(Runtime& runtime) {
         withinChunkApplyBudget() &&
         runtime.clientNet.PopChunkData(chunkData)
     ) {
-        runtime.chunkManager->applyNetworkChunkData(chunkData);
-        if (!runtime.clientNet.SendChunkDataAck(chunkData)) {
+        const bool accepted = runtime.chunkManager->applyNetworkChunkData(chunkData);
+        if (accepted && !runtime.clientNet.SendChunkDataAck(chunkData)) {
             std::cerr
                 << "[chunk/ack] app failed to ACK applied chunk ("
                 << chunkData.chunkX << "," << chunkData.chunkY << "," << chunkData.chunkZ << ")\n";

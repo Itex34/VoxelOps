@@ -108,6 +108,7 @@ private:
     };
 
     static uint16_t ClampViewDistance(uint16_t requested);
+    std::string AllocateAutoUsernameLocked(HSteamNetConnection incomingConn);
     void UpdateChunkStreamingForClient(HSteamNetConnection conn, const glm::ivec3& centerChunk, uint16_t viewDistance);
     bool SendChunkData(HSteamNetConnection conn, const ChunkCoord& coord, uint32_t* outPayloadHash = nullptr);
     bool SendChunkUnload(HSteamNetConnection conn, const ChunkCoord& coord);
@@ -160,6 +161,7 @@ private:
 
     HSteamNetPollGroup m_pollGroup;
     HSteamListenSocket m_listenSock;
+    uint32_t m_nextAutoUsername = 0;
 
     static constexpr size_t kMaxChunkPrepQueue = 2048;
     static constexpr size_t kMaxChunkSendQueuePerClient = 256;

@@ -73,18 +73,12 @@ bool ClientNetwork::ConnectTo(const char ip[16], uint16_t port) {
     return true;
 }
 
-bool ClientNetwork::SendConnectRequest(const std::string& username) {
+bool ClientNetwork::SendConnectRequest() {
     if (m_conn == k_HSteamNetConnection_Invalid) {
         std::cerr << "SendConnectRequest: no connection\n";
         return false;
     }
-    if (username.empty() || username.size() > 64) {
-        std::cerr << "SendConnectRequest: invalid username\n";
-        return false;
-    }
-    std::vector<uint8_t> out;
-    out.push_back(static_cast<uint8_t>(PacketType::ConnectRequest));
-    out.insert(out.end(), username.begin(), username.end());
+    std::vector<uint8_t> out{ static_cast<uint8_t>(PacketType::ConnectRequest) };
     EResult r = SteamNetworkingSockets()->SendMessageToConnection(m_conn, out.data(), (uint32_t)out.size(), k_nSteamNetworkingSend_Reliable, nullptr);
     if (r != k_EResultOK) {
         std::cerr << "SendConnectRequest: SendMessageToConnection failed: " << r << "\n";
@@ -104,7 +98,13 @@ bool ClientNetwork::SendPosition(uint32_t seq, const glm::vec3& pos, const glm::
     AppendFloatLE(out, vel.x);
     AppendFloatLE(out, vel.y);
     AppendFloatLE(out, vel.z);
-    EResult r = SteamNetworkingSockets()->SendMessageToConnection(m_conn, out.data(), (uint32_t)out.size(), k_nSteamNetworkingSend_Reliable, nullptr);
+    EResult r = SteamNetworkingSockets()->SendMessageToConnection(
+        m_conn,
+        out.data(),
+        (uint32_t)out.size(),
+        k_nSteamNetworkingSend_UnreliableNoDelay,
+        nullptr
+    );
     return (r == k_EResultOK);
 }
 

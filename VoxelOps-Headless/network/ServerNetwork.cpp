@@ -5,6 +5,8 @@
 
 #include <glm/vec3.hpp>
 #include <cmath>
+#include <iomanip>
+#include <sstream>
 
 
 using namespace std;
@@ -21,11 +23,6 @@ uint32_t fnv1a32(const uint8_t* data, size_t size)
     }
     return h;
 }
-}
-
-// Free function signal handler for SIGINT
-static void GlobalSignalHandler(int) {
-    if (ServerNetwork::s_instance) ServerNetwork::s_instance->Stop();
 }
 
 ServerNetwork::ServerNetwork()
@@ -57,9 +54,6 @@ bool ServerNetwork::Start(uint16_t port)
         std::lock_guard<std::mutex> shutdownLock(m_shutdownMutex);
         m_shutdownComplete = false;
     }
-
-    // install SIGINT handler
-    std::signal(SIGINT, GlobalSignalHandler);
 
     SteamNetworkingErrMsg err;
     if (!GameNetworkingSockets_Init(nullptr, err)) {
@@ -197,6 +191,35 @@ uint16_t ServerNetwork::ClampViewDistance(uint16_t requested)
     constexpr uint16_t kMin = 2;
     constexpr uint16_t kMax = 16;
     return std::clamp(requested, kMin, kMax);
+}
+
+std::string ServerNetwork::AllocateAutoUsernameLocked(HSteamNetConnection incomingConn)
+{
+    constexpr uint32_t kNameSpaceSize = 10000;
+    for (uint32_t attempt = 0; attempt < kNameSpaceSize; ++attempt) {
+        const uint32_t suffix = (m_nextAutoUsername + attempt) % kNameSpaceSize;
+        std::ostringstream oss;
+        oss << "player#" << std::setfill('0') << std::setw(4) << suffix;
+        const std::string candidate = oss.str();
+
+        bool taken = false;
+        for (const auto& [conn, session] : m_clients) {
+            if (conn == incomingConn || session.username.empty()) {
+                continue;
+            }
+            if (session.username == candidate) {
+                taken = true;
+                break;
+            }
+        }
+
+        if (!taken) {
+            m_nextAutoUsername = (suffix + 1) % kNameSpaceSize;
+            return candidate;
+        }
+    }
+
+    return {};
 }
 
 void ServerNetwork::StartChunkPipeline()
@@ -710,21 +733,13 @@ void ServerNetwork::MainLoop()
             uint8_t t = (cb >= 1) ? reinterpret_cast<const uint8_t*>(data)[0] : 0;
 
             if (static_cast<PacketType>(t) == PacketType::ConnectRequest) {
-                std::string username = ReadStringFromPacket(data, cb, 1);
-                bool ok = true;
-
-                if (username.empty() || username.size() > 64) ok = false;
-
-                // uniqueness
+                const std::string requestedUsername = ReadStringFromPacket(data, cb, 1);
+                std::string username;
                 {
                     std::lock_guard<std::mutex> lk(m_mutex);
-                    for (auto& kv : m_clients) {
-                        if (kv.first != incoming && !kv.second.username.empty() && kv.second.username == username) {
-                            ok = false;
-                            break;
-                        }
-                    }
+                    username = AllocateAutoUsernameLocked(incoming);
                 }
+                bool ok = !username.empty();
 
                 PlayerID playerId = 0;
                 if (ok) {
@@ -756,10 +771,15 @@ void ServerNetwork::MainLoop()
                     out.push_back(static_cast<char>(PacketType::ClientConnect));
                     out += username;
                     BroadcastRaw(out.data(), (uint32_t)out.size(), incoming);
-                    std::cout << "[register] conn=" << incoming << " username=" << username << "\n";
+                    std::cout
+                        << "[register] conn=" << incoming
+                        << " username=" << username
+                        << " requested=" << requestedUsername << "\n";
                 }
                 else {
-                    std::cout << "[register rejected] conn=" << incoming << " username=" << username << "\n";
+                    std::cout
+                        << "[register rejected] conn=" << incoming
+                        << " requested=" << requestedUsername << "\n";
                 }
             }
             else if (static_cast<PacketType>(t) == PacketType::Message) {
@@ -873,18 +893,24 @@ void ServerNetwork::MainLoop()
                     std::lock_guard<std::mutex> lk(m_mutex);
                     auto it = m_clients.find(incoming);
                     if (it != m_clients.end()) {
-                        uint32_t expectedPayloadHash = 0;
-                        bool hadExpectedHash = false;
+                        auto pendingIt = it->second.pendingChunkData.find(coord);
                         auto expectedIt = it->second.pendingChunkDataPayloadHash.find(coord);
-                        if (expectedIt != it->second.pendingChunkDataPayloadHash.end()) {
-                            expectedPayloadHash = expectedIt->second;
-                            hadExpectedHash = true;
-                            it->second.pendingChunkDataPayloadHash.erase(expectedIt);
-                        }
-                        const bool wasPending = it->second.pendingChunkData.erase(coord) > 0;
+                        const bool wasPending = (pendingIt != it->second.pendingChunkData.end());
                         const bool wasStreamedAlready = it->second.streamedChunks.find(coord) != it->second.streamedChunks.end();
-                        it->second.streamedChunks.insert(coord);
-                        if (hadExpectedHash && ack->sequence != expectedPayloadHash) {
+                        const bool hadExpectedHash = (expectedIt != it->second.pendingChunkDataPayloadHash.end());
+                        const uint32_t expectedPayloadHash = hadExpectedHash ? expectedIt->second : 0;
+                        const bool hashMatches = !hadExpectedHash || (ack->sequence == expectedPayloadHash);
+
+                        if (wasPending && hashMatches) {
+                            it->second.pendingChunkData.erase(pendingIt);
+                            if (hadExpectedHash) {
+                                it->second.pendingChunkDataPayloadHash.erase(expectedIt);
+                            }
+                            it->second.streamedChunks.insert(coord);
+                        }
+                        else if (wasPending && !hashMatches) {
+                            // Keep pending so the chunk is retried; bypass retry cooldown for quick resend.
+                            pendingIt->second = std::chrono::steady_clock::time_point::min();
                             std::cerr
                                 << "[chunk/ack] payload hash mismatch conn=" << incoming
                                 << " chunk=(" << coord.x << "," << coord.y << "," << coord.z << ")"
@@ -892,7 +918,7 @@ void ServerNetwork::MainLoop()
                                 << " got=" << ack->sequence
                                 << " version=" << ack->version << "\n";
                         }
-                        if (!wasPending && !wasStreamedAlready) {
+                        else if (!wasPending && !wasStreamedAlready) {
                             std::cerr
                                 << "[chunk/ack] unexpected ChunkData ACK conn=" << incoming
                                 << " chunk=(" << coord.x << "," << coord.y << "," << coord.z << ")"
@@ -1023,7 +1049,7 @@ void ServerNetwork::MainLoop()
                     conn,
                     packet.data(),
                     static_cast<uint32_t>(packet.size()),
-                    k_nSteamNetworkingSend_Reliable,
+                    k_nSteamNetworkingSend_UnreliableNoDelay,
                     nullptr
                 );
             }

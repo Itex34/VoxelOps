@@ -178,7 +178,7 @@ public:
 
     void playerPlaceBlockAt(glm::ivec3 blockCoords, int faceNormal, BlockID blockType);
     void playerBreakBlockAt(const glm::ivec3& blockCoords);
-    void applyNetworkChunkData(const ChunkData& packet);
+    bool applyNetworkChunkData(const ChunkData& packet);
     NetworkChunkDeltaApplyResult applyNetworkChunkDelta(const ChunkDelta& packet);
     void applyNetworkChunkUnload(const ChunkUnload& packet);
 

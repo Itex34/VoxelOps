@@ -40,8 +40,8 @@ public:
     // Connect to server at IPv4 address + port. Returns true if a connection attempt was started.
     bool ConnectTo(const char ip[16], uint16_t port);
 
-    // Send connect request with username. Must be called after ConnectTo (or immediately after ConnectTo).
-    bool SendConnectRequest(const std::string& username);
+    // Send connect request. Server assigns the canonical username.
+    bool SendConnectRequest();
 
     // Send a PlayerPosition packet (seq is a local sequence number; pos/vel in world units).
     bool SendPosition(uint32_t seq, const glm::vec3& pos, const glm::vec3& vel);
