@@ -105,6 +105,7 @@ bool ServerNetwork::Start(uint16_t port)
         std::cout << "Server listening on UDP port " << port << " (Ctrl+C to quit)\n";
     }
 
+    StartChunkPipeline();
     m_started.store(true, std::memory_order_release);
     return true;
 }
@@ -132,6 +133,7 @@ void ServerNetwork::ShutdownNetworking()
     }
     m_shutdownComplete = true;
 
+    StopChunkPipeline();
     SaveHistoryToFile();
 
     std::vector<std::pair<HSteamNetConnection, ClientSession>> sessions;
@@ -145,6 +147,7 @@ void ServerNetwork::ShutdownNetworking()
     }
 
     for (const auto& [conn, session] : sessions) {
+        ClearChunkPipelineForConnection(conn);
         if (session.playerId != 0) {
             m_playerManager.removePlayer(session.playerId);
         }
@@ -195,11 +198,41 @@ uint16_t ServerNetwork::ClampViewDistance(uint16_t requested)
     return std::clamp(requested, kMin, kMax);
 }
 
-bool ServerNetwork::SendChunkData(HSteamNetConnection conn, const ChunkCoord& coord, uint32_t* outPayloadHash)
+void ServerNetwork::StartChunkPipeline()
 {
-    // Ensure local neighborhood decoration is materialized before serializing this chunk.
-    // Tree generation can spill across chunk borders; preloading neighbors avoids
-    // post-send mutations that would otherwise only appear after reconnect/resync.
+    {
+        std::lock_guard<std::mutex> lk(m_chunkPipelineMutex);
+        m_chunkPrepQueue.clear();
+        m_chunkPrepQueued.clear();
+        m_chunkSendQueues.clear();
+        m_chunkSendQueued.clear();
+    }
+    m_chunkPrepQuit.store(false, std::memory_order_release);
+    if (!m_chunkPrepThread.joinable()) {
+        m_chunkPrepThread = std::thread([this]() { ChunkPrepWorkerLoop(); });
+    }
+}
+
+void ServerNetwork::StopChunkPipeline()
+{
+    m_chunkPrepQuit.store(true, std::memory_order_release);
+    m_chunkPrepCv.notify_all();
+    if (m_chunkPrepThread.joinable()) {
+        m_chunkPrepThread.join();
+    }
+    {
+        std::lock_guard<std::mutex> lk(m_chunkPipelineMutex);
+        m_chunkPrepQueue.clear();
+        m_chunkPrepQueued.clear();
+        m_chunkSendQueues.clear();
+        m_chunkSendQueued.clear();
+    }
+    m_chunkPrepQuit.store(false, std::memory_order_release);
+}
+
+bool ServerNetwork::PrepareChunkForStreaming(const ChunkCoord& coord)
+{
+    // Materialize neighborhood off the network thread so chunk sends stay lightweight.
     constexpr int kDecorationNeighborRadiusXZ = 1;
     constexpr int kDecorationNeighborRadiusY = 1;
     for (int dx = -kDecorationNeighborRadiusXZ; dx <= kDecorationNeighborRadiusXZ; ++dx) {
@@ -218,9 +251,182 @@ bool ServerNetwork::SendChunkData(HSteamNetConnection conn, const ChunkCoord& co
     }
 
     ServerChunk* chunk = m_chunkManager.loadOrGenerateChunk(glm::ivec3(coord.x, coord.y, coord.z));
+    return chunk != nullptr;
+}
+
+void ServerNetwork::ChunkPrepWorkerLoop()
+{
+    while (true) {
+        ChunkPrepTask task;
+        {
+            std::unique_lock<std::mutex> lk(m_chunkPipelineMutex);
+            m_chunkPrepCv.wait(lk, [this]() {
+                return m_chunkPrepQuit.load(std::memory_order_acquire) || !m_chunkPrepQueue.empty();
+            });
+            if (m_chunkPrepQuit.load(std::memory_order_acquire) && m_chunkPrepQueue.empty()) {
+                return;
+            }
+            task = m_chunkPrepQueue.front();
+            m_chunkPrepQueue.pop_front();
+        }
+
+        bool stillNeeded = false;
+        {
+            std::lock_guard<std::mutex> lk(m_mutex);
+            auto it = m_clients.find(task.conn);
+            if (it != m_clients.end()) {
+                stillNeeded = it->second.pendingChunkData.find(task.coord) != it->second.pendingChunkData.end();
+            }
+        }
+
+        const bool prepared = stillNeeded && PrepareChunkForStreaming(task.coord);
+        const ChunkPipelineKey key{ task.conn, task.coord };
+        {
+            std::lock_guard<std::mutex> lk(m_chunkPipelineMutex);
+            m_chunkPrepQueued.erase(key);
+            if (
+                prepared &&
+                !m_chunkPrepQuit.load(std::memory_order_acquire) &&
+                m_chunkSendQueued.find(key) == m_chunkSendQueued.end()
+            ) {
+                auto& sendQ = m_chunkSendQueues[task.conn];
+                if (sendQ.size() < kMaxChunkSendQueuePerClient) {
+                    sendQ.push_back(task.coord);
+                    m_chunkSendQueued.insert(key);
+                }
+            }
+        }
+    }
+}
+
+bool ServerNetwork::QueueChunkPreparation(HSteamNetConnection conn, const ChunkCoord& coord)
+{
+    const ChunkPipelineKey key{ conn, coord };
+    bool queued = false;
+    {
+        std::lock_guard<std::mutex> lk(m_chunkPipelineMutex);
+        if (m_chunkPrepQueued.find(key) != m_chunkPrepQueued.end() ||
+            m_chunkSendQueued.find(key) != m_chunkSendQueued.end()) {
+            return true;
+        }
+        if (m_chunkPrepQueue.size() >= kMaxChunkPrepQueue) {
+            return false;
+        }
+        m_chunkPrepQueue.push_back(ChunkPrepTask{ conn, coord });
+        m_chunkPrepQueued.insert(key);
+        queued = true;
+    }
+    if (queued) {
+        m_chunkPrepCv.notify_one();
+    }
+    return queued;
+}
+
+size_t ServerNetwork::FlushChunkSendQueueForClient(HSteamNetConnection conn, size_t maxSends)
+{
+    size_t sent = 0;
+    while (sent < maxSends) {
+        ChunkCoord coord{};
+        bool haveChunk = false;
+        {
+            std::lock_guard<std::mutex> lk(m_chunkPipelineMutex);
+            auto qIt = m_chunkSendQueues.find(conn);
+            if (qIt == m_chunkSendQueues.end() || qIt->second.empty()) {
+                break;
+            }
+            coord = qIt->second.front();
+            qIt->second.pop_front();
+            if (qIt->second.empty()) {
+                m_chunkSendQueues.erase(qIt);
+            }
+            m_chunkSendQueued.erase(ChunkPipelineKey{ conn, coord });
+            haveChunk = true;
+        }
+        if (!haveChunk) {
+            break;
+        }
+
+        bool stillPending = false;
+        {
+            std::lock_guard<std::mutex> lk(m_mutex);
+            auto it = m_clients.find(conn);
+            if (it != m_clients.end()) {
+                stillPending = it->second.pendingChunkData.find(coord) != it->second.pendingChunkData.end();
+            }
+        }
+        if (!stillPending) {
+            continue;
+        }
+
+        uint32_t payloadHash = 0;
+        if (!SendChunkData(conn, coord, &payloadHash)) {
+            continue;
+        }
+
+        const auto now = std::chrono::steady_clock::now();
+        {
+            std::lock_guard<std::mutex> lk(m_mutex);
+            auto it = m_clients.find(conn);
+            if (it != m_clients.end() && it->second.pendingChunkData.find(coord) != it->second.pendingChunkData.end()) {
+                it->second.pendingChunkData[coord] = now;
+                it->second.pendingChunkDataPayloadHash[coord] = payloadHash;
+            }
+        }
+        ++sent;
+    }
+    return sent;
+}
+
+size_t ServerNetwork::GetChunkSendQueueDepthForClient(HSteamNetConnection conn)
+{
+    std::lock_guard<std::mutex> lk(m_chunkPipelineMutex);
+    auto it = m_chunkSendQueues.find(conn);
+    if (it == m_chunkSendQueues.end()) {
+        return 0;
+    }
+    return it->second.size();
+}
+
+void ServerNetwork::ClearChunkPipelineForConnection(HSteamNetConnection conn)
+{
+    std::lock_guard<std::mutex> lk(m_chunkPipelineMutex);
+
+    m_chunkSendQueues.erase(conn);
+
+    for (auto it = m_chunkPrepQueue.begin(); it != m_chunkPrepQueue.end();) {
+        if (it->conn == conn) {
+            it = m_chunkPrepQueue.erase(it);
+        }
+        else {
+            ++it;
+        }
+    }
+
+    for (auto it = m_chunkPrepQueued.begin(); it != m_chunkPrepQueued.end();) {
+        if (it->conn == conn) {
+            it = m_chunkPrepQueued.erase(it);
+        }
+        else {
+            ++it;
+        }
+    }
+
+    for (auto it = m_chunkSendQueued.begin(); it != m_chunkSendQueued.end();) {
+        if (it->conn == conn) {
+            it = m_chunkSendQueued.erase(it);
+        }
+        else {
+            ++it;
+        }
+    }
+}
+
+bool ServerNetwork::SendChunkData(HSteamNetConnection conn, const ChunkCoord& coord, uint32_t* outPayloadHash)
+{
+    ServerChunk* chunk = m_chunkManager.getChunkIfExists(glm::ivec3(coord.x, coord.y, coord.z));
     if (!chunk) {
         std::cerr
-            << "[chunk/send] loadOrGenerateChunk failed for conn=" << conn
+            << "[chunk/send] chunk missing after prep for conn=" << conn
             << " chunk=(" << coord.x << "," << coord.y << "," << coord.z << ")\n";
         return false;
     }
@@ -393,37 +599,41 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
     }
 
     size_t pendingCount = pendingChunkData.size();
+    size_t queuedPrepThisUpdate = 0;
     size_t sentThisUpdate = 0;
     bool stoppedByPendingCap = false;
+    bool stoppedByPrepCap = false;
     for (const ChunkCoord& c : toLoad) {
         const bool isRetry = pendingChunkData.find(c) != pendingChunkData.end();
-        if (sentThisUpdate >= kMaxChunkSendsPerUpdate) {
+        if (queuedPrepThisUpdate >= kMaxChunkSendsPerUpdate) {
             break;
         }
         if (!isRetry && pendingCount >= kMaxPendingChunkData) {
             stoppedByPendingCap = true;
             break;
         }
-        uint32_t payloadHash = 0;
-        if (!SendChunkData(conn, c, &payloadHash)) {
-            // Do not stall the whole update on a single chunk failure.
-            // Leave it absent from streamedChunks so it can be retried on the next update.
-            continue;
+        if (!QueueChunkPreparation(conn, c)) {
+            stoppedByPrepCap = true;
+            break;
         }
 
-        std::lock_guard<std::mutex> lk(m_mutex);
-        auto it = m_clients.find(conn);
-        if (it != m_clients.end()) {
-            // Mark as pending until client ACK confirms receipt/parsing.
-            const bool wasPending = it->second.pendingChunkData.find(c) != it->second.pendingChunkData.end();
-            it->second.pendingChunkData[c] = now;
-            it->second.pendingChunkDataPayloadHash[c] = payloadHash;
-            if (!wasPending) {
-                ++pendingCount;
+        {
+            std::lock_guard<std::mutex> lk(m_mutex);
+            auto it = m_clients.find(conn);
+            if (it != m_clients.end()) {
+                // Mark as pending as soon as chunk work is queued to enforce backpressure.
+                const bool wasPending = it->second.pendingChunkData.find(c) != it->second.pendingChunkData.end();
+                it->second.pendingChunkData[c] = now;
+                if (!wasPending) {
+                    ++pendingCount;
+                }
             }
         }
-        ++sentThisUpdate;
+        ++queuedPrepThisUpdate;
     }
+
+    sentThisUpdate = FlushChunkSendQueueForClient(conn, kMaxChunkSendsPerUpdate);
+    const size_t sendQueueDepth = GetChunkSendQueueDepthForClient(conn);
 
     static std::unordered_map<HSteamNetConnection, std::chrono::steady_clock::time_point> s_lastProgressLog;
     auto& lastLog = s_lastProgressLog[conn];
@@ -435,13 +645,16 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
             << " streamed=" << currentlyStreamed.size()
             << " pending=" << pendingCount
             << " toLoad=" << toLoad.size()
+            << " queuedPrepNow=" << queuedPrepThisUpdate
             << " sentNow=" << sentThisUpdate
             << " pendingCapHit=" << (stoppedByPendingCap ? 1 : 0)
+            << " prepCapHit=" << (stoppedByPrepCap ? 1 : 0)
+            << " sendQueue=" << sendQueueDepth
             << " center=(" << centerChunk.x << "," << centerChunk.y << "," << centerChunk.z << ")"
             << " viewDist=" << clampedViewDistance << "\n";
     }
 
-    if (!toLoad.empty() && sentThisUpdate == 0) {
+    if (!toLoad.empty() && queuedPrepThisUpdate == 0 && sentThisUpdate == 0) {
         std::cerr
             << "[chunk/stream] stalled load window conn=" << conn
             << " desired=" << desired.size()
@@ -449,6 +662,8 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
             << " streamed=" << currentlyStreamed.size()
             << " pending=" << pendingCount
             << " pendingCap=" << kMaxPendingChunkData
+            << " prepQueueCap=" << kMaxChunkPrepQueue
+            << " sendQueue=" << sendQueueDepth
             << " center=(" << centerChunk.x << "," << centerChunk.y << "," << centerChunk.z << ")"
             << " viewDist=" << clampedViewDistance << "\n";
     }
@@ -761,6 +976,7 @@ void ServerNetwork::MainLoop()
         }
         for (const auto& [conn, session] : staleConnections) {
             std::cout << "[cleanup] remove conn=" << conn << " user=" << session.username << "\n";
+            ClearChunkPipelineForConnection(conn);
             if (session.playerId != 0) {
                 m_playerManager.removePlayer(session.playerId);
             }
@@ -823,6 +1039,7 @@ void ServerNetwork::MainLoop()
                 }
 
                 for (const auto& [conn, session] : removedSessions) {
+                    ClearChunkPipelineForConnection(conn);
                     if (!session.username.empty()) {
                         std::string out;
                         out.push_back(static_cast<char>(PacketType::ClientDisconnect));
@@ -914,6 +1131,7 @@ void ServerNetwork::OnConnectionStatusChanged(SteamNetConnectionStatusChangedCal
         if (session.playerId != 0) {
             m_playerManager.removePlayer(session.playerId);
         }
+        ClearChunkPipelineForConnection(hConn);
         if (!session.username.empty()) {
             std::string out;
             out.push_back(static_cast<char>(PacketType::ClientDisconnect));

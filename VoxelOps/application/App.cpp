@@ -372,6 +372,7 @@ void App::processNetworking(Runtime& runtime) {
     const double now = glfwGetTime();
     if (now - runtime.lastChunkCoverageLogTime >= 1.0) {
         runtime.lastChunkCoverageLogTime = now;
+        const ClientNetwork::ChunkQueueDepths queueDepths = runtime.clientNet.GetChunkQueueDepths();
 
         const glm::vec3 pos = runtime.player->getPosition();
         const glm::ivec3 worldPos(
@@ -411,7 +412,15 @@ void App::processNetworking(Runtime& runtime) {
             << " viewDist=" << viewDistance
             << " desired=" << desired
             << " loaded=" << loaded
-            << " missing=" << (desired - loaded) << "\n";
+            << " missing=" << (desired - loaded)
+            << " queue(data/delta/unload)=("
+            << queueDepths.chunkData << "/"
+            << queueDepths.chunkDelta << "/"
+            << queueDepths.chunkUnload << ")"
+            << " applied(data/delta/unload)=("
+            << chunkDataApplied << "/"
+            << chunkDeltaApplied << "/"
+            << chunkUnloadApplied << ")\n";
 
         if (!missingSamples.empty()) {
             std::cerr << "[chunk/client] missing samples:";

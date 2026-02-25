@@ -24,6 +24,12 @@
 
 class ClientNetwork {
 public:
+    struct ChunkQueueDepths {
+        size_t chunkData = 0;
+        size_t chunkDelta = 0;
+        size_t chunkUnload = 0;
+    };
+
     ClientNetwork();
     ~ClientNetwork();
 
@@ -60,6 +66,7 @@ public:
     bool PopChunkData(ChunkData& out);
     bool PopChunkDelta(ChunkDelta& out);
     bool PopChunkUnload(ChunkUnload& out);
+    ChunkQueueDepths GetChunkQueueDepths();
 private:
     HSteamNetConnection m_conn = k_HSteamNetConnection_Invalid;
     std::atomic<bool> m_started{ false };

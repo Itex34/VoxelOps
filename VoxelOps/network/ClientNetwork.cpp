@@ -403,3 +403,13 @@ bool ClientNetwork::PopChunkUnload(ChunkUnload& out)
     return true;
 }
 
+ClientNetwork::ChunkQueueDepths ClientNetwork::GetChunkQueueDepths()
+{
+    std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+    ChunkQueueDepths depths;
+    depths.chunkData = m_chunkDataQueue.size();
+    depths.chunkDelta = m_chunkDeltaQueue.size();
+    depths.chunkUnload = m_chunkUnloadQueue.size();
+    return depths;
+}
+

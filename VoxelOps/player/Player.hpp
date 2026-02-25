@@ -126,8 +126,8 @@ private:
     Camera camera;
 
     // Movement settings (tweakable)
-    float moveSpeed = 4.0f;
-    float runSpeed = 7.0f;
+    float moveSpeed = 8.0f;
+    float runSpeed = 14.0f;
     float jumpVelocity = 8.5f;
     float mouseSensitivity = 0.1f;
 
@@ -150,7 +150,7 @@ private:
     float stepStartY = 0.0f;
     float stepTargetY = 0.0f;
     float stepTimer = 0.0f;
-    float stepDuration = 0.20f;
+    float stepDuration = 0.10f;
 
     // Cached model matrix & hitboxes
     glm::mat4 m_modelMatrix{ 1.0f };

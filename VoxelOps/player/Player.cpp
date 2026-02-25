@@ -10,11 +10,11 @@
 #include <iostream>
 
 // Tweakables
-static constexpr float GRAVITY = -20.0f;
+static constexpr float GRAVITY = -40.0f;
 static constexpr float TERMINAL_VELOCITY = 50.0f;
-static constexpr float GROUND_ACCEL = 60.0f;
-static constexpr float AIR_ACCEL = 10.0f;
-static constexpr float GROUND_FRICTION = 10.0f;
+static constexpr float GROUND_ACCEL = 120.0f;
+static constexpr float AIR_ACCEL = 20.0f;
+static constexpr float GROUND_FRICTION = 20.0f;
 static constexpr float MAX_STEP_HEIGHT = 1.0f;
 static constexpr float EYE_HEIGHT = 2.44f;
 
@@ -301,7 +301,7 @@ void Player::update(GLFWwindow* window, double deltaTime) {
     float targetSpeed = (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) ? runSpeed : moveSpeed;
 
     float targetFov = (targetSpeed == runSpeed) ? runningFov * runningFovMultiplier : walkFov;
-    float fovSmoothSpeed = 10.0f;
+    float fovSmoothSpeed = 20.0f;
     currentFov += (targetFov - currentFov) * fovSmoothSpeed * dt;
 
     // [FLY MODE BEHAVIOUR]

@@ -5,8 +5,10 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <deque>
 #include <atomic>
 #include <mutex>
+#include <condition_variable>
 #include <iostream>
 #include <fstream>
 #include <algorithm>
@@ -109,6 +111,37 @@ private:
     void UpdateChunkStreamingForClient(HSteamNetConnection conn, const glm::ivec3& centerChunk, uint16_t viewDistance);
     bool SendChunkData(HSteamNetConnection conn, const ChunkCoord& coord, uint32_t* outPayloadHash = nullptr);
     bool SendChunkUnload(HSteamNetConnection conn, const ChunkCoord& coord);
+    bool PrepareChunkForStreaming(const ChunkCoord& coord);
+    bool QueueChunkPreparation(HSteamNetConnection conn, const ChunkCoord& coord);
+    size_t FlushChunkSendQueueForClient(HSteamNetConnection conn, size_t maxSends);
+    size_t GetChunkSendQueueDepthForClient(HSteamNetConnection conn);
+    void ClearChunkPipelineForConnection(HSteamNetConnection conn);
+    void StartChunkPipeline();
+    void StopChunkPipeline();
+    void ChunkPrepWorkerLoop();
+
+    struct ChunkPipelineKey {
+        HSteamNetConnection conn = k_HSteamNetConnection_Invalid;
+        ChunkCoord coord{};
+
+        bool operator==(const ChunkPipelineKey& other) const noexcept {
+            return conn == other.conn && coord == other.coord;
+        }
+    };
+
+    struct ChunkPipelineKeyHash {
+        std::size_t operator()(const ChunkPipelineKey& key) const noexcept {
+            ChunkCoordHash chunkHash;
+            const std::size_t h1 = std::hash<HSteamNetConnection>{}(key.conn);
+            const std::size_t h2 = chunkHash(key.coord);
+            return h1 ^ (h2 + 0x9e3779b9u + (h1 << 6) + (h1 >> 2));
+        }
+    };
+
+    struct ChunkPrepTask {
+        HSteamNetConnection conn = k_HSteamNetConnection_Invalid;
+        ChunkCoord coord{};
+    };
 
     std::atomic<bool> m_quit;
     std::atomic<bool> m_started{ false };
@@ -127,5 +160,16 @@ private:
 
     HSteamNetPollGroup m_pollGroup;
     HSteamListenSocket m_listenSock;
+
+    static constexpr size_t kMaxChunkPrepQueue = 2048;
+    static constexpr size_t kMaxChunkSendQueuePerClient = 256;
+    std::atomic<bool> m_chunkPrepQuit{ false };
+    std::thread m_chunkPrepThread;
+    std::mutex m_chunkPipelineMutex;
+    std::condition_variable m_chunkPrepCv;
+    std::deque<ChunkPrepTask> m_chunkPrepQueue;
+    std::unordered_set<ChunkPipelineKey, ChunkPipelineKeyHash> m_chunkPrepQueued;
+    std::unordered_map<HSteamNetConnection, std::deque<ChunkCoord>> m_chunkSendQueues;
+    std::unordered_set<ChunkPipelineKey, ChunkPipelineKeyHash> m_chunkSendQueued;
 
 };
