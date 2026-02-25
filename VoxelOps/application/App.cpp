@@ -26,6 +26,7 @@
 #include <iostream>
 #include <memory>
 #include <sstream>
+#include <unordered_map>
 
 namespace {
 struct CallbackContext {
@@ -322,6 +323,23 @@ void App::processWorldInteraction(Runtime& runtime) {
 
 void App::processNetworking(Runtime& runtime) {
     runtime.clientNet.Poll();
+    const uint16_t resyncViewDistance = 2;
+    constexpr double kChunkResyncCooldownSec = 0.25;
+    static std::unordered_map<glm::ivec3, double, IVec3Hash> s_chunkResyncCooldownUntil;
+
+    const auto requestChunkResync = [&](const glm::ivec3& chunkPos) {
+        const double nowSec = glfwGetTime();
+        auto it = s_chunkResyncCooldownUntil.find(chunkPos);
+        if (it != s_chunkResyncCooldownUntil.end() && nowSec < it->second) {
+            return;
+        }
+        s_chunkResyncCooldownUntil[chunkPos] = nowSec + kChunkResyncCooldownSec;
+        if (!runtime.clientNet.SendChunkRequest(chunkPos, resyncViewDistance)) {
+            std::cerr
+                << "[chunk/resync] failed to request full chunk ("
+                << chunkPos.x << "," << chunkPos.y << "," << chunkPos.z << ")\n";
+        }
+    };
 
     const auto chunkApplyStart = std::chrono::steady_clock::now();
     const auto withinChunkApplyBudget = [&]() -> bool {
@@ -354,7 +372,13 @@ void App::processNetworking(Runtime& runtime) {
         withinChunkApplyBudget() &&
         runtime.clientNet.PopChunkDelta(chunkDelta)
     ) {
-        runtime.chunkManager->applyNetworkChunkDelta(chunkDelta);
+        const NetworkChunkDeltaApplyResult deltaResult = runtime.chunkManager->applyNetworkChunkDelta(chunkDelta);
+        if (
+            deltaResult == NetworkChunkDeltaApplyResult::MissingBaseChunk ||
+            deltaResult == NetworkChunkDeltaApplyResult::VersionGap
+        ) {
+            requestChunkResync(glm::ivec3(chunkDelta.chunkX, chunkDelta.chunkY, chunkDelta.chunkZ));
+        }
         ++chunkDeltaApplied;
     }
 

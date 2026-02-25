@@ -22,6 +22,7 @@ add_executable(VoxelOps-Headless
     "physics/Raycast.cpp" 
     
     "network/ServerNetwork.cpp"
+    "network/CompressChunk.cpp"
     "network/ChunkStore.cpp"  
     "physics/RayManager.cpp" 
     "player/Hitbox.cpp" 
@@ -32,11 +33,12 @@ add_executable(VoxelOps-Headless
 
 find_package(glm CONFIG REQUIRED)
 find_package(GameNetworkingSockets CONFIG REQUIRED)
-
+find_package(lz4 CONFIG REQUIRED)
 
 target_link_libraries(VoxelOps-Headless PRIVATE glm::glm)
 target_link_libraries(VoxelOps-Headless PRIVATE GameNetworkingSockets::shared GameNetworkingSockets::static GameNetworkingSockets::GameNetworkingSockets GameNetworkingSockets::GameNetworkingSockets_s)
 target_link_libraries(VoxelOps-Headless PRIVATE Shared)
+target_link_libraries(VoxelOps-Headless PRIVATE lz4::lz4)
 
 
 

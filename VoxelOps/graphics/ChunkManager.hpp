@@ -148,6 +148,13 @@ class Player;
 class WorldGen;
 class ChunkRenderSystem;
 
+enum class NetworkChunkDeltaApplyResult {
+    Applied = 0,
+    MissingBaseChunk = 1,
+    StaleVersion = 2,
+    VersionGap = 3
+};
+
 class ChunkManager{
 public:
     ChunkManager(Renderer& renderer_);
@@ -172,7 +179,7 @@ public:
     void playerPlaceBlockAt(glm::ivec3 blockCoords, int faceNormal, BlockID blockType);
     void playerBreakBlockAt(const glm::ivec3& blockCoords);
     void applyNetworkChunkData(const ChunkData& packet);
-    void applyNetworkChunkDelta(const ChunkDelta& packet);
+    NetworkChunkDeltaApplyResult applyNetworkChunkDelta(const ChunkDelta& packet);
     void applyNetworkChunkUnload(const ChunkUnload& packet);
 
     const std::unordered_map<glm::ivec3, Chunk, IVec3Hash>& getChunks() const {
@@ -208,6 +215,7 @@ private:
 
 
     std::unordered_map<glm::ivec3, Chunk, IVec3Hash> chunkMap;
+    std::unordered_map<glm::ivec3, uint64_t, IVec3Hash> m_networkChunkVersions;
 
 
     std::unordered_map<glm::ivec3, ChunkMesh, IVec3Hash> chunkMeshes; //deprecated

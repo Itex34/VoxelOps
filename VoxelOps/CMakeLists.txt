@@ -33,6 +33,7 @@ add_executable(VoxelOps
     "application/App.cpp"
     "graphics/Lighting.cpp"
     "network/ClientNetwork.cpp"
+    "network/DecompressChunk.cpp"
     "player/Hitbox.cpp"    
     "gun/Gun.cpp"
     "misc/ThreadPool.cpp" 
@@ -49,7 +50,7 @@ find_package(assimp CONFIG REQUIRED)
 find_package(glad CONFIG REQUIRED)
 find_package(unofficial-joltphysics CONFIG REQUIRED)
 find_package(GameNetworkingSockets CONFIG REQUIRED)
-
+find_package(lz4 CONFIG REQUIRED)
 
 target_link_libraries(VoxelOps PRIVATE glfw)
 target_link_libraries(VoxelOps PRIVATE glm::glm)
@@ -58,6 +59,7 @@ target_link_libraries(VoxelOps PRIVATE glad::glad)
 target_link_libraries(VoxelOps PRIVATE unofficial::joltphysics::Jolt)
 target_link_libraries(VoxelOps PRIVATE GameNetworkingSockets::shared GameNetworkingSockets::static GameNetworkingSockets::GameNetworkingSockets GameNetworkingSockets::GameNetworkingSockets_s)
 target_link_libraries(VoxelOps PRIVATE Shared)
+target_link_libraries(VoxelOps PRIVATE lz4::lz4)
 
 
 target_include_directories(VoxelOps PRIVATE ${Stb_INCLUDE_DIR})

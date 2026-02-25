@@ -1,4 +1,5 @@
 #include "ServerNetwork.hpp"
+#include "CompressChunk.hpp"
 
 
 
@@ -436,8 +437,10 @@ bool ServerNetwork::SendChunkData(HSteamNetConnection conn, const ChunkCoord& co
     packet.chunkY = coord.y;
     packet.chunkZ = coord.z;
     packet.version = static_cast<uint64_t>(std::max<int64_t>(0, chunk->version()));
-    packet.flags = 0;
-    packet.payload = chunk->serializeCompressed();
+    const std::vector<uint8_t> rawPayload = chunk->serializeCompressed();
+    const CompressedChunkPayload compressedPayload = CompressChunkPayload(rawPayload);
+    packet.flags = compressedPayload.compressed ? 0x1u : 0u;
+    packet.payload = compressedPayload.payload;
     if (outPayloadHash) {
         *outPayloadHash = fnv1a32(packet.payload.data(), packet.payload.size());
     }
