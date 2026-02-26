@@ -11,7 +11,7 @@
 
 // Tweakables
 static constexpr float GRAVITY = -40.0f;
-static constexpr float TERMINAL_VELOCITY = 50.0f;
+static constexpr float TERMINAL_VELOCITY = 60.0f;
 static constexpr float GROUND_ACCEL = 120.0f;
 static constexpr float AIR_ACCEL = 20.0f;
 static constexpr float GROUND_FRICTION = 20.0f;
@@ -68,9 +68,7 @@ Player::Player(const glm::vec3& startPos, ChunkManager& inChunkManager, const st
     if (!playerShader) std::cerr << "Warning: playerShader not created\n";
 }
 
-// ------------------------------------------------------------------
-// Accessors - implemented here
-// ------------------------------------------------------------------
+
 const std::vector<Hitbox>& Player::getHitboxes() const noexcept {
     return m_hitboxes;
 }
@@ -96,10 +94,6 @@ void Player::updateModelMatrix() noexcept {
 
     m_modelMatrix = model;
 }
-
-// ------------------------------------------------------------------
-// collision query
-// ------------------------------------------------------------------
 bool Player::checkCollision(const glm::vec3& pos) const {
     if (flyMode) return false; // [FLY MODE] disables collisions
 

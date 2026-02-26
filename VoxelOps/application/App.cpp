@@ -386,7 +386,6 @@ void App::processNetworking(Runtime& runtime) {
     size_t chunkUnloadApplied = 0;
     while (
         chunkUnloadApplied < Runtime::MaxChunkUnloadApplyPerFrame &&
-        withinChunkApplyBudget() &&
         runtime.clientNet.PopChunkUnload(chunkUnload)
     ) {
         runtime.chunkManager->applyNetworkChunkUnload(chunkUnload);
@@ -406,6 +405,7 @@ void App::processNetworking(Runtime& runtime) {
         );
         const glm::ivec3 centerChunk = runtime.chunkManager->worldToChunkPos(worldPos);
         const int viewDistance = std::max<int>(2, runtime.player->renderDistance);
+        const int64_t radius2 = static_cast<int64_t>(viewDistance) * static_cast<int64_t>(viewDistance);
         const int minChunkY = WORLD_MIN_Y / CHUNK_SIZE;
         const int maxChunkY = WORLD_MAX_Y / CHUNK_SIZE;
 
@@ -415,7 +415,13 @@ void App::processNetworking(Runtime& runtime) {
         std::vector<glm::ivec3> missingSamples;
         missingSamples.reserve(8);
         for (int x = centerChunk.x - viewDistance; x <= centerChunk.x + viewDistance; ++x) {
+            const int64_t dx = static_cast<int64_t>(x - centerChunk.x);
+            const int64_t dx2 = dx * dx;
             for (int z = centerChunk.z - viewDistance; z <= centerChunk.z + viewDistance; ++z) {
+                const int64_t dz = static_cast<int64_t>(z - centerChunk.z);
+                if (dx2 + dz * dz > radius2) {
+                    continue;
+                }
                 for (int y = minChunkY; y <= maxChunkY; ++y) {
                     const glm::ivec3 cp(x, y, z);
                     if (!runtime.chunkManager->inBounds(cp)) continue;

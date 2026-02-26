@@ -37,8 +37,6 @@ int main() {
         serverNet.Run(); // blocking loop
         });
 
-    std::cout << "Server running on port " << port << ". Press Ctrl+C to stop.\n";
-
     // Simple periodic heartbeat broadcast (every second)
     const auto heartbeatInterval = 1s;
     auto lastHeartbeat = std::chrono::steady_clock::now();
@@ -63,7 +61,6 @@ int main() {
     serverNet.Stop();
     if (netThread.joinable())
         netThread.join();
-
-    std::cout << "Server stopped cleanly.\n";
+    std::cout << "Server stopped\n";
     return 0;
 }

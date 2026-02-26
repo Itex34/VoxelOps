@@ -95,7 +95,7 @@ public:
 
 
     float currentFov;
-    int8_t renderDistance = 100;
+    uint16_t renderDistance = 100;
     bool flyMode = true;
     int8_t maxReach = 8; //blocks
 
@@ -127,7 +127,7 @@ private:
 
     // Movement settings (tweakable)
     float moveSpeed = 8.0f;
-    float runSpeed = 14.0f;
+    float runSpeed = 500.0f;
     float jumpVelocity = 8.5f;
     float mouseSensitivity = 0.1f;
 

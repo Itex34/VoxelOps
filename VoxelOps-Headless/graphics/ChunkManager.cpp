@@ -2,6 +2,7 @@
 #include "WorldGen.hpp"
 #include <iostream>
 #include <cmath>
+#include <cstdint>
 #include <algorithm>
 
 ChunkManager::ChunkManager(uint64_t seed) : worldSeed(seed) {
@@ -45,14 +46,31 @@ void ChunkManager::updateDirtyChunks() {
 void ChunkManager::updateChunks(const glm::ivec3& playerWorldPos, int renderDistance) {
     glm::ivec3 playerChunk = worldToChunkPos(playerWorldPos);
     std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> desired;
+    const int64_t radius2 = static_cast<int64_t>(renderDistance) * static_cast<int64_t>(renderDistance);
 
     const int minY = floorDiv(WORLD_MIN_Y, CHUNK_SIZE);
     const int maxY = floorDiv(WORLD_MAX_Y, CHUNK_SIZE);
 
     for (int x = playerChunk.x - renderDistance; x <= playerChunk.x + renderDistance; ++x)
+    {
+        const int64_t dx = static_cast<int64_t>(x - playerChunk.x);
+        const int64_t dx2 = dx * dx;
         for (int z = playerChunk.z - renderDistance; z <= playerChunk.z + renderDistance; ++z)
+        {
+            const int64_t dz = static_cast<int64_t>(z - playerChunk.z);
+            if (dx2 + dz * dz > radius2) {
+                continue;
+            }
             for (int y = minY; y <= maxY; ++y)
-                desired.insert(glm::ivec3(x, y, z));
+            {
+                const glm::ivec3 pos(x, y, z);
+                if (!inBounds(pos)) {
+                    continue;
+                }
+                desired.insert(pos);
+            }
+        }
+    }
 
     // unload chunks not desired
     std::vector<glm::ivec3> toErase;

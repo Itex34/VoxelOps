@@ -5,6 +5,7 @@
 
 #include <glm/vec3.hpp>
 #include <cmath>
+#include <cstdint>
 #include <iomanip>
 #include <sstream>
 
@@ -162,8 +163,6 @@ void ServerNetwork::ShutdownNetworking()
     if (m_started.exchange(false, std::memory_order_acq_rel)) {
         GameNetworkingSockets_Kill();
     }
-
-    std::cout << "Server stopped\n";
 }
 
 // Little-endian readers used for compact binary packets
@@ -189,7 +188,17 @@ static int FloorDiv(int a, int b) {
 uint16_t ServerNetwork::ClampViewDistance(uint16_t requested)
 {
     constexpr uint16_t kMin = 2;
-    constexpr uint16_t kMax = 16;
+    const int spanX = WORLD_MAX_X - WORLD_MIN_X;
+    const int spanZ = WORLD_MAX_Z - WORLD_MIN_Z;
+    const int diagonalRadius = static_cast<int>(
+        std::ceil(std::sqrt(static_cast<double>(spanX * spanX + spanZ * spanZ)))
+    );
+    const uint16_t kMax = static_cast<uint16_t>(
+        std::max(
+            static_cast<int>(kMin),
+            diagonalRadius
+        )
+    );
     return std::clamp(requested, kMin, kMax);
 }
 
@@ -522,10 +531,17 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
     const int minChunkY = FloorDiv(WORLD_MIN_Y, CHUNK_SIZE);
     const int maxChunkY = FloorDiv(WORLD_MAX_Y, CHUNK_SIZE);
     const int radius = static_cast<int>(clampedViewDistance);
+    const int64_t radius2 = static_cast<int64_t>(radius) * static_cast<int64_t>(radius);
     desired.reserve(static_cast<size_t>((radius * 2 + 1) * (radius * 2 + 1) * (maxChunkY - minChunkY + 1)));
 
     for (int x = centerChunk.x - radius; x <= centerChunk.x + radius; ++x) {
+        const int64_t dx = static_cast<int64_t>(x - centerChunk.x);
+        const int64_t dx2 = dx * dx;
         for (int z = centerChunk.z - radius; z <= centerChunk.z + radius; ++z) {
+            const int64_t dz = static_cast<int64_t>(z - centerChunk.z);
+            if (dx2 + dz * dz > radius2) {
+                continue;
+            }
             for (int y = minChunkY; y <= maxChunkY; ++y) {
                 glm::ivec3 pos(x, y, z);
                 if (!m_chunkManager.inBounds(pos)) {
@@ -537,6 +553,7 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
     }
 
     std::unordered_set<ChunkCoord, ChunkCoordHash> currentlyStreamed;
+    std::unordered_set<ChunkCoord, ChunkCoordHash> pendingPossiblySent;
     std::unordered_map<ChunkCoord, std::chrono::steady_clock::time_point, ChunkCoordHash> pendingChunkData;
     {
         std::lock_guard<std::mutex> lk(m_mutex);
@@ -549,6 +566,12 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
         it->second.viewDistance = clampedViewDistance;
         it->second.hasChunkInterest = true;
 
+        currentlyStreamed = it->second.streamedChunks;
+        pendingPossiblySent.reserve(it->second.pendingChunkData.size());
+        for (const auto& entry : it->second.pendingChunkData) {
+            pendingPossiblySent.insert(entry.first);
+        }
+
         for (auto pIt = it->second.pendingChunkData.begin(); pIt != it->second.pendingChunkData.end();) {
             if (desired.find(pIt->first) == desired.end()) {
                 it->second.pendingChunkDataPayloadHash.erase(pIt->first);
@@ -559,7 +582,6 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
             }
         }
 
-        currentlyStreamed = it->second.streamedChunks;
         pendingChunkData = it->second.pendingChunkData;
     }
 
@@ -616,12 +638,22 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
         return a.z < b.z;
     });
 
-    std::vector<ChunkCoord> toUnload;
-    toUnload.reserve(currentlyStreamed.size());
+    std::unordered_set<ChunkCoord, ChunkCoordHash> toUnloadSet;
+    toUnloadSet.reserve(currentlyStreamed.size() + pendingPossiblySent.size());
     for (const ChunkCoord& c : currentlyStreamed) {
         if (desired.find(c) == desired.end()) {
-            toUnload.push_back(c);
+            toUnloadSet.insert(c);
         }
+    }
+    for (const ChunkCoord& c : pendingPossiblySent) {
+        if (desired.find(c) == desired.end()) {
+            toUnloadSet.insert(c);
+        }
+    }
+    std::vector<ChunkCoord> toUnload;
+    toUnload.reserve(toUnloadSet.size());
+    for (const ChunkCoord& c : toUnloadSet) {
+        toUnload.push_back(c);
     }
 
     size_t pendingCount = pendingChunkData.size();
