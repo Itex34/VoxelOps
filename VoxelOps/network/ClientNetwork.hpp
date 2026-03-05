@@ -8,6 +8,7 @@
 #include <cstring>
 #include <vector>
 #include <string>
+#include <string_view>
 #include <cstdint>
 #include <atomic>
 #include <deque>
@@ -24,6 +25,12 @@
 
 class ClientNetwork {
 public:
+    enum class ConnectionState : uint8_t {
+        Disconnected = 0,
+        Connecting = 1,
+        Connected = 2
+    };
+
     struct ChunkQueueDepths {
         size_t chunkData = 0;
         size_t chunkDelta = 0;
@@ -41,9 +48,11 @@ public:
     bool ConnectTo(const char ip[16], uint16_t port);
 
     // Send connect request. Server assigns the canonical username.
-    bool SendConnectRequest();
+    bool SendConnectRequest(std::string_view requestedUsername = {});
 
-    // Send a PlayerPosition packet (seq is a local sequence number; pos/vel in world units).
+    // Send movement input for server-authoritative simulation.
+    bool SendPlayerInput(const PlayerInput& input);
+    // Legacy state packet (kept for compatibility while migrating handlers).
     bool SendPosition(uint32_t seq, const glm::vec3& pos, const glm::vec3& vel);
     bool SendChunkRequest(const glm::ivec3& centerChunk, uint16_t viewDistance);
     bool SendChunkDataAck(const ChunkData& packet);
@@ -57,6 +66,10 @@ public:
 
     // Query
     bool IsConnected() const;
+    ConnectionState GetConnectionState() const noexcept;
+    const std::string& GetConnectionStatusText() const noexcept;
+    const std::string& GetAssignedUsername() const noexcept;
+    bool ShouldAutoReconnect() const noexcept;
 
 
     bool SendShootRequest(uint32_t clientShotId, uint32_t clientTick, uint16_t weaponId,
@@ -66,6 +79,8 @@ public:
     bool PopChunkData(ChunkData& out);
     bool PopChunkDelta(ChunkDelta& out);
     bool PopChunkUnload(ChunkUnload& out);
+    bool PopPlayerSnapshot(PlayerSnapshotFrame& out);
+    bool PopShootResult(ShootResult& out);
     ChunkQueueDepths GetChunkQueueDepths();
 private:
     HSteamNetConnection m_conn = k_HSteamNetConnection_Invalid;
@@ -80,12 +95,22 @@ private:
 
     // handle messages received from server
     void OnMessage(const uint8_t* data, uint32_t size);
+    bool EnsureClientIdentity();
+    void SetConnectionStatus(ConnectionState state, std::string text, bool allowReconnect = true);
 
     // small internal: store last connect response state
     bool m_registered = false;
+    std::string m_clientIdentity;
+    std::string m_assignedUsername;
+    std::string m_connectionStatus = "disconnected";
+    ConnectionState m_connectionState = ConnectionState::Disconnected;
+    bool m_allowAutoReconnect = true;
+    bool m_useTransientIdentity = false;
 
     std::mutex m_chunkQueueMutex;
     std::deque<ChunkData> m_chunkDataQueue;
     std::deque<ChunkDelta> m_chunkDeltaQueue;
     std::deque<ChunkUnload> m_chunkUnloadQueue;
+    std::deque<PlayerSnapshotFrame> m_playerSnapshotQueue;
+    std::deque<ShootResult> m_shootResultQueue;
 };

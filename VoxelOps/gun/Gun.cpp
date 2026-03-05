@@ -4,15 +4,16 @@
 #include <stdexcept>
 
 // Constructor
-Gun::Gun(float inFireInterval, float inReloadTime) noexcept :
+Gun::Gun(GunType inType, float inFireInterval, float inReloadTime, unsigned int inMaxAmmo) noexcept :
+    gunType(inType),
     reloadTime(inReloadTime),
     fireInterval(inFireInterval),
     timeSinceLastShot(0.0f),
     wantsToFire(false),
     isReloading(false),
     reloadTimer(0.0f),
-    maxAmmo(30),
-    currentAmmo(30)
+    maxAmmo(inMaxAmmo),
+    currentAmmo(inMaxAmmo)
 {
 }
 

@@ -1,5 +1,12 @@
 #include "Mesh.hpp"
 #include <iostream>
+#include <GLFW/glfw3.h>
+
+namespace {
+bool CanDeleteGlObjects() noexcept {
+    return glfwGetCurrentContext() != nullptr;
+}
+}
 
 // Constructor
 Mesh::Mesh(std::vector<Vertex> vertices,
@@ -38,7 +45,51 @@ Mesh::Mesh(std::vector<Vertex> vertices,
     glBindVertexArray(0);
 }
 
+Mesh::Mesh(Mesh&& other) noexcept
+    : VAO(other.VAO),
+    VBO(other.VBO),
+    EBO(other.EBO),
+    textures(std::move(other.textures)),
+    indexCount_(other.indexCount_),
+    vertexCount_(other.vertexCount_)
+{
+    other.VAO = 0;
+    other.VBO = 0;
+    other.EBO = 0;
+    other.indexCount_ = 0;
+    other.vertexCount_ = 0;
+}
 
+Mesh& Mesh::operator=(Mesh&& other) noexcept {
+    if (this == &other) {
+        return *this;
+    }
+
+    if (CanDeleteGlObjects() && VAO != 0) {
+        glDeleteVertexArrays(1, &VAO);
+    }
+    if (CanDeleteGlObjects() && VBO != 0) {
+        glDeleteBuffers(1, &VBO);
+    }
+    if (CanDeleteGlObjects() && EBO != 0) {
+        glDeleteBuffers(1, &EBO);
+    }
+
+    VAO = other.VAO;
+    VBO = other.VBO;
+    EBO = other.EBO;
+    textures = std::move(other.textures);
+    indexCount_ = other.indexCount_;
+    vertexCount_ = other.vertexCount_;
+
+    other.VAO = 0;
+    other.VBO = 0;
+    other.EBO = 0;
+    other.indexCount_ = 0;
+    other.vertexCount_ = 0;
+
+    return *this;
+}
 
 void Mesh::draw() const {
     for (unsigned int i = 0; i < textures.size(); ++i) {
@@ -52,7 +103,15 @@ void Mesh::draw() const {
 }
 
 Mesh::~Mesh() {
-
+    if (CanDeleteGlObjects() && VAO != 0) {
+        glDeleteVertexArrays(1, &VAO);
+    }
+    if (CanDeleteGlObjects() && VBO != 0) {
+        glDeleteBuffers(1, &VBO);
+    }
+    if (CanDeleteGlObjects() && EBO != 0) {
+        glDeleteBuffers(1, &EBO);
+    }
 }
 
 

@@ -72,7 +72,7 @@ void WorldGen::generateInitialChunksTwoPass(ChunkManager& cm, int radiusChunks) 
     for (auto& [pos, chunkPtr] : snap) {
         if (!chunkPtr) continue;
         applyClientDecorationPass(cm, *chunkPtr, pos);
-        std::lock_guard<std::mutex> lk(cm.mapMutex);
+        std::lock_guard<std::shared_mutex> lk(cm.mapMutex);
         cm.decoratedChunks.insert(pos);
     }
 
@@ -122,7 +122,7 @@ void WorldGen::generateChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
     applyClientDecorationPass(cm, *chunk, pos);
 
     {
-        std::lock_guard<std::mutex> lk(cm.mapMutex);
+        std::lock_guard<std::shared_mutex> lk(cm.mapMutex);
         cm.chunkMap[pos] = std::move(chunk);
         cm.chunkMap[pos]->markDirty();
         cm.decoratedChunks.insert(pos);
@@ -169,7 +169,7 @@ void WorldGen::generateTerrainChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
     }
 
     {
-        std::lock_guard<std::mutex> lk(cm.mapMutex);
+        std::lock_guard<std::shared_mutex> lk(cm.mapMutex);
         cm.chunkMap[pos] = std::move(chunk);
         cm.chunkMap[pos]->markDirty();
         cm.decoratedChunks.erase(pos);
@@ -179,7 +179,7 @@ void WorldGen::generateTerrainChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
 void WorldGen::decorateChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
     ServerChunk* chunkPtr = nullptr;
     {
-        std::lock_guard<std::mutex> lk(cm.mapMutex);
+        std::lock_guard<std::shared_mutex> lk(cm.mapMutex);
         auto it = cm.chunkMap.find(pos);
         if (it != cm.chunkMap.end()) {
             chunkPtr = it->second.get();
@@ -189,7 +189,7 @@ void WorldGen::decorateChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
 
     applyClientDecorationPass(cm, *chunkPtr, pos);
 
-    std::lock_guard<std::mutex> lk(cm.mapMutex);
+    std::lock_guard<std::shared_mutex> lk(cm.mapMutex);
     cm.decoratedChunks.insert(pos);
 }
 

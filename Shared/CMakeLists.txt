@@ -4,7 +4,10 @@
 
 add_library(Shared STATIC
     network/Packets.cpp
-    # add other shared .cpp here if needed
+    player/PlayerData.cpp
+    player/HitboxCache.cpp
+    player/MeshHitCache.cpp
+    runtime/Paths.cpp
 )
 
 target_include_directories(Shared PUBLIC

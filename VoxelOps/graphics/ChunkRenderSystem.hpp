@@ -5,7 +5,6 @@
 class ChunkManager;
 class Shader;
 class Frustum;
-class Player;
 
 class ChunkRenderSystem {
 public:
@@ -13,7 +12,7 @@ public:
         ChunkManager& cm,
         Shader& shader,
         Frustum& frustum,
-        Player& player,
+        const glm::vec3& viewPosition,
         int maxRenderDistance
     );
 

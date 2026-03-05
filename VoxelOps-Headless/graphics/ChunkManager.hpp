@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <mutex>
+#include <shared_mutex>
 #include <optional>
 #include <cstdint>
 #include <cmath>
@@ -41,6 +42,12 @@ class WorldGen;
 
 class ChunkManager {
 public:
+    struct AabbCollisionQueryResult {
+        bool collided = false;
+        bool missingChunk = false;
+        glm::ivec3 firstMissingChunk{ 0 };
+    };
+
     ChunkManager(uint64_t seed = 1337u);
     ~ChunkManager() = default;
 
@@ -65,6 +72,13 @@ public:
     void setBlockInWorld(const glm::ivec3& worldPos, BlockID blockID);
     void setBlockGlobal(int worldX, int worldY, int worldZ, BlockID id);
     BlockID getBlockGlobal(int worldX, int worldY, int worldZ);
+    bool hasChunkLoaded(const glm::ivec3& chunkPos) const;
+    AabbCollisionQueryResult queryAabbCollision(
+        const glm::vec3& pos,
+        float radius,
+        float height,
+        bool treatMissingChunkAsSolid
+    ) const;
 
     // Safe local block access (handles cross-chunk writes)
     void setBlockSafe(ServerChunk& currentChunk, const glm::ivec3& pos, BlockID id);
@@ -104,7 +118,7 @@ private:
     uint64_t worldSeed = 1337u;
 
     // protects chunkMap structure (only)
-    mutable std::mutex mapMutex;
+    mutable std::shared_mutex mapMutex;
     std::unordered_map<glm::ivec3, std::unique_ptr<ServerChunk>, IVec3Hash, IVec3Eq> chunkMap;
     // Tracks whether a chunk has had decoration pass applied at least once.
     std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> decoratedChunks;

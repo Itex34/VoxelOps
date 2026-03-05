@@ -4,11 +4,12 @@
 
 enum class PacketType : uint8_t {
     Message = 0,  // optional: text chat, server->client or client->server
-    ConnectRequest = 1,  // client -> server (username bytes follow)
-    ConnectResponse = 2,  // server -> client (1 byte okFlag)
+    ConnectRequest = 1,  // client -> server: protocolVersion + identity + requested username
+    ConnectResponse = 2,  // server -> client: okFlag + reject reason + protocolVersion + assigned username
     ClientConnect = 3,  // server broadcast: new client joined (username)
     ClientDisconnect = 4,  // server broadcast: client left (username)
 
+    PlayerInput = 8,      // client -> server: seq + movement input
     PlayerSnapshot = 9,
     PlayerPosition = 10,  // client -> server: seq + px,py,pz,vx,vy,vz
 

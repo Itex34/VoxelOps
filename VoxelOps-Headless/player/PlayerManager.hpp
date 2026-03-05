@@ -9,6 +9,7 @@
 
 // Forward declaration for serialization helpers
 struct PlayerSnapshot;
+class ChunkManager;
 
 class PlayerManager {
 public:
@@ -23,13 +24,20 @@ public:
 
     // Called by network code when a heartbeat or data arrives to update lastHeartbeat
     bool touchHeartbeat(PlayerID id);
-    bool applyAuthoritativeState(PlayerID id, const glm::vec3& position, const glm::vec3& velocity);
+    bool enqueuePlayerInput(PlayerID id, const PlayerInput& input);
+    bool setFlyModeAllowed(PlayerID id, bool allowed);
+    void SetDebugLoggingEnabled(bool enabled);
+    bool IsDebugLoggingEnabled();
 
     // Main tick. deltaSeconds: time elapsed since last tick (use fixed timestep ideally).
-    void update(double deltaSeconds);
+    void update(double deltaSeconds, ChunkManager& chunkManager);
 
     // Build a snapshot for sending (returns raw bytes to send to a client)
-    std::vector<uint8_t> buildSnapshotFor(PlayerID recipientId);
+    std::vector<uint8_t> buildSnapshotFor(PlayerID recipientId, uint32_t serverTick);
+    std::vector<std::vector<uint8_t>> buildSnapshotsForRecipients(
+        const std::vector<PlayerID>& recipientIds,
+        uint32_t serverTick
+    );
 
     // Send snapshots to all players (calls connection->send). This is a convenience
     // that iterates players and uses buildSnapshotFor.
@@ -37,14 +45,20 @@ public:
 
     // Lookup
     std::optional<ServerPlayer> getPlayerCopy(PlayerID id);
-
-    // Process client input (call from your network receive handler)
-    void processClientInput(PlayerID id, const std::vector<uint8_t>& packetData);
+    std::vector<ServerPlayer> getAllPlayersCopy();
+    bool applyDamage(PlayerID id, float damage, float& outHealthAfter, bool& outKilled);
 
 private:
     PlayerID addPlayerInternal();
 
-    void simulatePhysicsFor(ServerPlayer& p, double dt);
+    bool checkCollision(const ServerPlayer& p, const glm::vec3& pos, ChunkManager& chunkManager) const;
+    void moveAndCollide(
+        ServerPlayer& p,
+        const glm::vec3& delta,
+        ChunkManager& chunkManager,
+        bool allowStepUp
+    );
+    void simulatePhysicsFor(ServerPlayer& p, double dt, ChunkManager& chunkManager);
     void sendBytes(const std::shared_ptr<ConnectionHandle>& conn, const std::vector<uint8_t>& buf);
 
     std::unordered_map<PlayerID, ServerPlayer> playersById;
@@ -54,5 +68,5 @@ private:
     std::atomic<PlayerID> nextId{ 1 };
 
     // Config
-    std::chrono::seconds heartbeatTimeout{ 30 };
+    std::chrono::seconds heartbeatTimeout{ 300 };
 };

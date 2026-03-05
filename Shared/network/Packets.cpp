@@ -1,6 +1,8 @@
 #include "Packets.hpp"
 #include <cstring>
 #include <cassert>
+#include <cmath>
+#include <algorithm>
 
 namespace {
 
@@ -78,6 +80,137 @@ namespace {
 
 
 
+// -------------------- ConnectRequest --------------------
+std::vector<uint8_t> ConnectRequest::serialize() const {
+    const std::string identityTrimmed = identity.substr(0, std::min(identity.size(), kMaxConnectIdentityChars));
+    const std::string nameTrimmed = requestedUsername.substr(0, std::min(requestedUsername.size(), kMaxConnectUsernameChars));
+
+    std::vector<uint8_t> out;
+    out.reserve(1 + 2 + 1 + 1 + identityTrimmed.size() + nameTrimmed.size());
+    write_u8(out, static_cast<uint8_t>(PacketType::ConnectRequest));
+    write_u16(out, protocolVersion);
+    write_u8(out, static_cast<uint8_t>(identityTrimmed.size()));
+    write_u8(out, static_cast<uint8_t>(nameTrimmed.size()));
+    out.insert(out.end(), identityTrimmed.begin(), identityTrimmed.end());
+    out.insert(out.end(), nameTrimmed.begin(), nameTrimmed.end());
+    return out;
+}
+
+std::optional<ConnectRequest> ConnectRequest::deserialize(const std::vector<uint8_t>& buf) {
+    size_t off = 0;
+    uint8_t type = 0;
+    uint8_t identityLen = 0;
+    uint8_t nameLen = 0;
+
+    if (!read_u8(buf, off, type)) return std::nullopt;
+    if (type != static_cast<uint8_t>(PacketType::ConnectRequest)) return std::nullopt;
+
+    ConnectRequest req;
+    if (!read_u16(buf, off, req.protocolVersion)) return std::nullopt;
+    if (!read_u8(buf, off, identityLen)) return std::nullopt;
+    if (!read_u8(buf, off, nameLen)) return std::nullopt;
+    if (identityLen > kMaxConnectIdentityChars || nameLen > kMaxConnectUsernameChars) return std::nullopt;
+    if (off + identityLen + nameLen > buf.size()) return std::nullopt;
+
+    if (identityLen > 0) {
+        req.identity.assign(reinterpret_cast<const char*>(buf.data() + off), identityLen);
+        off += identityLen;
+    }
+    if (nameLen > 0) {
+        req.requestedUsername.assign(reinterpret_cast<const char*>(buf.data() + off), nameLen);
+        off += nameLen;
+    }
+    if (off != buf.size()) return std::nullopt;
+    return req;
+}
+
+// -------------------- ConnectResponse --------------------
+std::vector<uint8_t> ConnectResponse::serialize() const {
+    const std::string assignedTrimmed = assignedUsername.substr(0, std::min(assignedUsername.size(), kMaxConnectUsernameChars));
+    const std::string messageTrimmed = message.substr(0, std::min(message.size(), kMaxConnectMessageChars));
+
+    std::vector<uint8_t> out;
+    out.reserve(1 + 1 + 1 + 2 + 1 + 1 + assignedTrimmed.size() + messageTrimmed.size());
+    write_u8(out, static_cast<uint8_t>(PacketType::ConnectResponse));
+    write_u8(out, ok ? 1u : 0u);
+    write_u8(out, static_cast<uint8_t>(reason));
+    write_u16(out, serverProtocolVersion);
+    write_u8(out, static_cast<uint8_t>(assignedTrimmed.size()));
+    write_u8(out, static_cast<uint8_t>(messageTrimmed.size()));
+    out.insert(out.end(), assignedTrimmed.begin(), assignedTrimmed.end());
+    out.insert(out.end(), messageTrimmed.begin(), messageTrimmed.end());
+    return out;
+}
+
+std::optional<ConnectResponse> ConnectResponse::deserialize(const std::vector<uint8_t>& buf) {
+    size_t off = 0;
+    uint8_t type = 0;
+    uint8_t ok = 0;
+    uint8_t reason = 0;
+    uint8_t assignedLen = 0;
+    uint8_t msgLen = 0;
+
+    if (!read_u8(buf, off, type)) return std::nullopt;
+    if (type != static_cast<uint8_t>(PacketType::ConnectResponse)) return std::nullopt;
+
+    ConnectResponse resp;
+    if (!read_u8(buf, off, ok)) return std::nullopt;
+    if (!read_u8(buf, off, reason)) return std::nullopt;
+    if (!read_u16(buf, off, resp.serverProtocolVersion)) return std::nullopt;
+    if (!read_u8(buf, off, assignedLen)) return std::nullopt;
+    if (!read_u8(buf, off, msgLen)) return std::nullopt;
+    if (assignedLen > kMaxConnectUsernameChars || msgLen > kMaxConnectMessageChars) return std::nullopt;
+    if (off + assignedLen + msgLen > buf.size()) return std::nullopt;
+
+    resp.ok = (ok != 0) ? 1u : 0u;
+    resp.reason = static_cast<ConnectRejectReason>(reason);
+    if (assignedLen > 0) {
+        resp.assignedUsername.assign(reinterpret_cast<const char*>(buf.data() + off), assignedLen);
+        off += assignedLen;
+    }
+    if (msgLen > 0) {
+        resp.message.assign(reinterpret_cast<const char*>(buf.data() + off), msgLen);
+        off += msgLen;
+    }
+    if (off != buf.size()) return std::nullopt;
+    return resp;
+}
+
+// -------------------- PlayerInput --------------------
+std::vector<uint8_t> PlayerInput::serialize() const {
+    std::vector<uint8_t> out;
+    out.reserve(1 + 4 + 1 + 1 + 4 * 4);
+    write_u8(out, static_cast<uint8_t>(PacketType::PlayerInput));
+    write_u32(out, sequenceNumber);
+    write_u8(out, inputFlags);
+    write_u8(out, flyMode);
+    write_f32(out, yaw);
+    write_f32(out, pitch);
+    write_f32(out, moveX);
+    write_f32(out, moveZ);
+    return out;
+}
+
+std::optional<PlayerInput> PlayerInput::deserialize(const std::vector<uint8_t>& buf) {
+    size_t off = 0;
+    uint8_t type = 0;
+    if (!read_u8(buf, off, type)) return std::nullopt;
+    if (type != static_cast<uint8_t>(PacketType::PlayerInput)) return std::nullopt;
+
+    PlayerInput p;
+    if (!read_u32(buf, off, p.sequenceNumber)) return std::nullopt;
+    if (!read_u8(buf, off, p.inputFlags)) return std::nullopt;
+    if (!read_u8(buf, off, p.flyMode)) return std::nullopt;
+    if (!read_f32(buf, off, p.yaw)) return std::nullopt;
+    if (!read_f32(buf, off, p.pitch)) return std::nullopt;
+    if (!read_f32(buf, off, p.moveX)) return std::nullopt;
+    if (!read_f32(buf, off, p.moveZ)) return std::nullopt;
+    if (!std::isfinite(p.yaw) || !std::isfinite(p.pitch) || !std::isfinite(p.moveX) || !std::isfinite(p.moveZ)) {
+        return std::nullopt;
+    }
+    return p;
+}
+
 std::vector<uint8_t> ShootRequest::serialize() const {
     std::vector<uint8_t> out;
     out.reserve(1 + 4 + 4 + 2 + 12 + 12 + 4 + 1);
@@ -110,6 +243,12 @@ std::optional<ShootRequest> ShootRequest::deserialize(const std::vector<uint8_t>
     if (!read_f32(buf, off, r.dirZ)) return std::nullopt;
     if (!read_u32(buf, off, r.seed)) return std::nullopt;
     if (!read_u8(buf, off, r.inputFlags)) return std::nullopt;
+    if (
+        !std::isfinite(r.posX) || !std::isfinite(r.posY) || !std::isfinite(r.posZ) ||
+        !std::isfinite(r.dirX) || !std::isfinite(r.dirY) || !std::isfinite(r.dirZ)
+    ) {
+        return std::nullopt;
+    }
     return r;
 }
 
@@ -184,6 +323,64 @@ std::optional<PlayerPosition> PlayerPosition::deserialize(const std::vector<uint
     if (!read_f32(buf, off, p.velY)) return std::nullopt;
     if (!read_f32(buf, off, p.velZ)) return std::nullopt;
     return p;
+}
+
+// -------------------- PlayerSnapshotFrame --------------------
+std::vector<uint8_t> PlayerSnapshotFrame::serialize() const {
+    std::vector<uint8_t> out;
+    out.reserve(1 + 4 + 8 + 4 + 4 + players.size() * (8 + (8 * 4) + 3));
+    write_u8(out, static_cast<uint8_t>(PacketType::PlayerSnapshot));
+    write_u32(out, serverTick);
+    write_u64(out, selfPlayerId);
+    write_u32(out, lastProcessedInputSequence);
+    write_u32(out, static_cast<uint32_t>(players.size()));
+    for (const PlayerSnapshot& p : players) {
+        write_u64(out, p.id);
+        write_f32(out, p.px); write_f32(out, p.py); write_f32(out, p.pz);
+        write_f32(out, p.vx); write_f32(out, p.vy); write_f32(out, p.vz);
+        write_f32(out, p.yaw); write_f32(out, p.pitch);
+        write_u8(out, p.onGround);
+        write_u8(out, p.flyMode);
+        write_u8(out, p.allowFlyMode);
+    }
+    return out;
+}
+
+std::optional<PlayerSnapshotFrame> PlayerSnapshotFrame::deserialize(const std::vector<uint8_t>& buf) {
+    size_t off = 0;
+    uint8_t type = 0;
+    uint32_t count = 0;
+    constexpr size_t kEntrySize = 8 + (8 * 4) + 3;
+
+    if (!read_u8(buf, off, type)) return std::nullopt;
+    if (type != static_cast<uint8_t>(PacketType::PlayerSnapshot)) return std::nullopt;
+
+    PlayerSnapshotFrame frame;
+    if (!read_u32(buf, off, frame.serverTick)) return std::nullopt;
+    if (!read_u64(buf, off, frame.selfPlayerId)) return std::nullopt;
+    if (!read_u32(buf, off, frame.lastProcessedInputSequence)) return std::nullopt;
+    if (!read_u32(buf, off, count)) return std::nullopt;
+    if (count > ((buf.size() - off) / kEntrySize)) return std::nullopt;
+
+    frame.players.clear();
+    frame.players.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) {
+        PlayerSnapshot p{};
+        if (!read_u64(buf, off, p.id)) return std::nullopt;
+        if (!read_f32(buf, off, p.px)) return std::nullopt;
+        if (!read_f32(buf, off, p.py)) return std::nullopt;
+        if (!read_f32(buf, off, p.pz)) return std::nullopt;
+        if (!read_f32(buf, off, p.vx)) return std::nullopt;
+        if (!read_f32(buf, off, p.vy)) return std::nullopt;
+        if (!read_f32(buf, off, p.vz)) return std::nullopt;
+        if (!read_f32(buf, off, p.yaw)) return std::nullopt;
+        if (!read_f32(buf, off, p.pitch)) return std::nullopt;
+        if (!read_u8(buf, off, p.onGround)) return std::nullopt;
+        if (!read_u8(buf, off, p.flyMode)) return std::nullopt;
+        if (!read_u8(buf, off, p.allowFlyMode)) return std::nullopt;
+        frame.players.push_back(p);
+    }
+    return frame;
 }
 
 // -------------------- ChunkRequest --------------------

@@ -3,9 +3,67 @@
 #include <vector>
 #include <cstdint>
 #include <optional>
+#include <string>
 
 /// Shared network packet definitions used by client and server.
 /// Binary layout uses little-endian. First byte of any packet is PacketType.
+
+constexpr uint8_t kPlayerInputFlagForward = 1u << 0;
+constexpr uint8_t kPlayerInputFlagBackward = 1u << 1;
+constexpr uint8_t kPlayerInputFlagLeft = 1u << 2;
+constexpr uint8_t kPlayerInputFlagRight = 1u << 3;
+constexpr uint8_t kPlayerInputFlagJump = 1u << 4;
+constexpr uint8_t kPlayerInputFlagSprint = 1u << 5;
+constexpr uint8_t kPlayerInputFlagFlyUp = 1u << 6;
+constexpr uint8_t kPlayerInputFlagFlyDown = 1u << 7;
+
+constexpr uint16_t kVoxelOpsProtocolVersion = 2;
+constexpr size_t kMaxConnectIdentityChars = 64;
+constexpr size_t kMaxConnectUsernameChars = 32;
+constexpr size_t kMaxConnectMessageChars = 120;
+
+enum class ConnectRejectReason : uint8_t {
+    None = 0,
+    ProtocolMismatch = 1,
+    InvalidPacket = 2,
+    InvalidIdentity = 3,
+    IdentityInUse = 4,
+    ServerError = 5,
+    UsernameTaken = 6
+};
+
+struct ConnectRequest {
+    uint16_t protocolVersion = kVoxelOpsProtocolVersion;
+    std::string identity;
+    std::string requestedUsername;
+
+    std::vector<uint8_t> serialize() const;
+    static std::optional<ConnectRequest> deserialize(const std::vector<uint8_t>& buf);
+};
+
+struct ConnectResponse {
+    uint8_t ok = 0;
+    ConnectRejectReason reason = ConnectRejectReason::None;
+    uint16_t serverProtocolVersion = kVoxelOpsProtocolVersion;
+    std::string assignedUsername;
+    std::string message;
+
+    std::vector<uint8_t> serialize() const;
+    static std::optional<ConnectResponse> deserialize(const std::vector<uint8_t>& buf);
+};
+
+struct PlayerInput {
+    uint32_t sequenceNumber = 0;
+    uint8_t inputFlags = 0;
+    uint8_t flyMode = 0;
+    float yaw = 0.f;
+    float pitch = 0.f;
+    float moveX = 0.f;
+    float moveZ = 0.f;
+
+    std::vector<uint8_t> serialize() const;
+    static std::optional<PlayerInput> deserialize(const std::vector<uint8_t>& buf);
+};
 
 struct ShootRequest {
     uint32_t clientShotId = 0;
@@ -48,12 +106,24 @@ struct PlayerPosition {
 
 
 struct PlayerSnapshot{
-    uint64_t id;
-    float px, py, pz;
-    float vx, vy, vz;
-    float yaw;
-    float pitch;
-    uint8_t onGround;
+    uint64_t id = 0;
+    float px = 0.0f, py = 0.0f, pz = 0.0f;
+    float vx = 0.0f, vy = 0.0f, vz = 0.0f;
+    float yaw = 0.0f;
+    float pitch = 0.0f;
+    uint8_t onGround = 0;
+    uint8_t flyMode = 0;
+    uint8_t allowFlyMode = 0;
+};
+
+struct PlayerSnapshotFrame {
+    uint32_t serverTick = 0;
+    uint64_t selfPlayerId = 0;
+    uint32_t lastProcessedInputSequence = 0;
+    std::vector<PlayerSnapshot> players;
+
+    std::vector<uint8_t> serialize() const;
+    static std::optional<PlayerSnapshotFrame> deserialize(const std::vector<uint8_t>& buf);
 };
 
 struct ChunkRequest {

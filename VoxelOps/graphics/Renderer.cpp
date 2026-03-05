@@ -156,7 +156,7 @@ void Renderer::renderFrame(RenderFrameParams& params)
     }
 
     // Camera position changes every frame; keep this outside one-time static uniforms.
-    params.chunkShader.setVec3("cameraPos", params.player.getCamera().position);
+    params.chunkShader.setVec3("cameraPos", params.activeCamera.position);
 
     params.chunkShader.setInt("texture1", 0);
     glPolygonMode(GL_FRONT_AND_BACK, params.toggleWireframe ? GL_LINE : GL_FILL);
@@ -164,9 +164,12 @@ void Renderer::renderFrame(RenderFrameParams& params)
     params.chunkManager.renderChunks(
         params.chunkShader,
         params.frustum,
-        params.player,
+        params.activeCamera.position,
         params.player.renderDistance
     );
+
+    const glm::vec3 ambientColor = glm::vec3(0.36f, 0.40f, 0.46f);
+    params.player.renderRemotePlayers(view, projection, lightDir, lightColor, ambientColor);
 
     // Debug passes
     if (params.toggleChunkBorders) {

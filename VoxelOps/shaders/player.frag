@@ -15,9 +15,14 @@ void main()
 {
     // simple Lambert diffuse
     vec3 norm = normalize(Normal);
-    float diff = max(dot(norm, -lightDir), 0.0);
+    // lightDir is provided as fragment -> light direction (same convention as world shader).
+    float diff = max(dot(norm, normalize(lightDir)), 0.0);
     vec3 diffuse = diff * lightColor;
 
-    vec3 color = (ambientColor + diffuse) * texture(diffuseTexture, TexCoords).rgb;
-    FragColor = vec4(color, 1.0);
+    vec4 texel = texture(diffuseTexture, TexCoords);
+    if (texel.a < 0.05) {
+        discard;
+    }
+    vec3 color = (ambientColor + diffuse) * texel.rgb;
+    FragColor = vec4(color, texel.a);
 }

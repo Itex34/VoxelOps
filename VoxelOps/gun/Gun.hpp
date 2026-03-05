@@ -2,9 +2,11 @@
 
 #include "../graphics/Model.hpp"
 #include "../physics/RayManager.hpp"
+#include "../../Shared/gun/GunType.hpp"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -12,25 +14,23 @@ class Shader; // forward
 
 class Gun {
 public:
-    // seconds between shots, reload time in seconds
-    Gun(float inFireInterval = 0.2f, float inReloadTime = 3.0f) noexcept;
+    Gun(
+        GunType inType = GunType::Pistol,
+        float inFireInterval = 0.2f,
+        float inReloadTime = 3.0f,
+        unsigned int inMaxAmmo = 30
+    ) noexcept;
     ~Gun() = default;
 
-    // Non-copyable (models usually not copyable). Movable allowed.
     Gun(const Gun&) = delete;
     Gun& operator=(const Gun&) = delete;
     Gun(Gun&&) noexcept = default;
     Gun& operator=(Gun&&) noexcept = default;
 
-    // Input: call when player presses fire
     void requestFire() noexcept;
 
-    // Update internal timers and perform fire when allowed.
-    // rayOrigin / rayDirection are used when firing.
-    // deltaTime is seconds elapsed since last update.
     void update(const glm::vec3& rayOrigin, const glm::vec3& rayDirection, float deltaTime);
 
-    // immediate fire (performs raycast / effects). Usually internal.
     void fire(const glm::vec3& rayOrigin, const glm::vec3& rayDirection);
 
     // Render the gun model relative to given transform
@@ -46,6 +46,9 @@ public:
     unsigned int getCurrentAmmo() const noexcept { return currentAmmo; }
     unsigned int getMaxAmmo() const noexcept { return maxAmmo; }
     bool isReloadingNow() const noexcept { return isReloading; }
+    GunType getType() const noexcept { return gunType; }
+    uint16_t getWeaponId() const noexcept { return ToWeaponId(gunType); }
+    float getFireIntervalSeconds() const noexcept { return fireInterval; }
 
 public:
     glm::vec3 gunCamOffset = glm::vec3(0.08f, -0.05f, -0.12f); // example typical values (meters)
@@ -57,6 +60,7 @@ private:
     std::unique_ptr<Model> gunModel;
 
     // settings
+    GunType gunType = GunType::Pistol;
     float reloadTime;     // seconds
     float fireInterval;   // seconds per shot
 

@@ -4,6 +4,10 @@
 #include <glm/vec3.hpp>
 #include <list>
 #include <memory>
+#include <deque>
+#include <limits>
+
+#include "../../Shared/network/Packets.hpp"
 
 using PlayerID = uint64_t;
 using Clock = std::chrono::steady_clock;
@@ -24,11 +28,24 @@ struct ServerPlayer {
     float pitch = 0.0f;
     bool onGround = false;
 
-    float height = 1.8f;
+    float height = 2.56f;
     float radius = 0.3f;
+    float health = 100.0f;
+    float maxHealth = 100.0f;
 
     std::shared_ptr<ConnectionHandle> conn; // nullable
     Clock::time_point lastHeartbeat = Clock::now();
+    Clock::time_point lastInputReceived = Clock::now();
+    std::deque<PlayerInput> pendingInputs;
+    uint32_t lastProcessedInputSequence = std::numeric_limits<uint32_t>::max();
+    uint8_t activeInputFlags = 0;
+    bool flyMode = false;
+    bool allowFlyMode = false;
+    float moveX = 0.0f;
+    float moveZ = 0.0f;
+    bool jumpPressedLastTick = false;
+    float timeSinceGrounded = 0.0f;
+    float jumpBufferTimer = 0.0f;
 
     // For fast O(1) removal from order list (set by PlayerManager)
     std::list<PlayerID>::iterator orderIt;

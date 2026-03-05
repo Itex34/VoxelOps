@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
+﻿cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
 project(VoxelOps-Headless CXX)
 
@@ -22,6 +22,9 @@ add_executable(VoxelOps-Headless
     "physics/Raycast.cpp" 
     
     "network/ServerNetwork.cpp"
+    "network/ServerNetworkChunkPipeline.cpp"
+    "network/ServerNetworkCallbacks.cpp"
+    "network/ServerNetworkPersistence.cpp"
     "network/CompressChunk.cpp"
     "network/ChunkStore.cpp"  
     "physics/RayManager.cpp" 
@@ -39,6 +42,7 @@ target_link_libraries(VoxelOps-Headless PRIVATE glm::glm)
 target_link_libraries(VoxelOps-Headless PRIVATE GameNetworkingSockets::shared GameNetworkingSockets::static GameNetworkingSockets::GameNetworkingSockets GameNetworkingSockets::GameNetworkingSockets_s)
 target_link_libraries(VoxelOps-Headless PRIVATE Shared)
 target_link_libraries(VoxelOps-Headless PRIVATE lz4::lz4)
+
 
 
 

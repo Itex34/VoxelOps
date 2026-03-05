@@ -1,7 +1,6 @@
 #include "ChunkRenderSystem.hpp"
 
 #include "ChunkManager.hpp"
-#include "../player/Player.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -13,10 +12,10 @@ void ChunkRenderSystem::renderChunks(
     ChunkManager& cm,
     Shader& shader,
     Frustum& frustum,
-    Player& player,
+    const glm::vec3& viewPosition,
     int maxRenderDistance
 ) {
-    const glm::vec3 playerPos = player.getPosition();
+    const glm::vec3 playerPos = viewPosition;
     const glm::ivec3 playerBlockPos(
         static_cast<int>(std::floor(playerPos.x)),
         static_cast<int>(std::floor(playerPos.y)),

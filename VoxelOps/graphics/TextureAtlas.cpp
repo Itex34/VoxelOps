@@ -1,4 +1,5 @@
 #include "TextureAtlas.hpp"
+#include "../../Shared/runtime/Paths.hpp"
 #include <stb_image.h>
 
 #include <iostream>
@@ -64,7 +65,9 @@ GLuint loadTexture2DNearestSRGB(const char* path) {
 }
 
 TextureAtlas::TextureAtlas(){
-    atlasTextureID = loadTexture2DNearestSRGB("../../../../VoxelOps/assets/textures/textureAtlas.png");
+    const std::string atlasPath =
+        Shared::RuntimePaths::ResolveVoxelOpsPath("assets/textures/textureAtlas.png").generic_string();
+    atlasTextureID = loadTexture2DNearestSRGB(atlasPath.c_str());
     if (!atlasTextureID) {
         throw std::runtime_error("Failed to load texture atlas");
     }

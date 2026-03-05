@@ -22,12 +22,12 @@ static ProcessMemoryStatsMB getProcessMemoryMB() {
 #include "WorldGen.hpp"
 #include "ChunkRenderSystem.hpp"
 #include "../network/DecompressChunk.hpp"
+#include "../../Shared/runtime/Paths.hpp"
 
-
-#include "../player/Player.hpp"
 #include <glm/gtc/type_ptr.hpp>
 #include <cstring>
 #include <cstdint>
+#include <string>
 
 namespace {
 bool readI32LE(const std::vector<uint8_t>& data, size_t& offset, int32_t& out)
@@ -99,7 +99,11 @@ ChunkManager::ChunkManager(Renderer& renderer_) : renderer(renderer_){
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
 
-    debugShader.emplace("../../../../VoxelOps/shaders/debugVert.vert", "../../../../VoxelOps/shaders/debugFrag.frag");
+    const std::string debugVertPath =
+        Shared::RuntimePaths::ResolveVoxelOpsPath("shaders/debugVert.vert").generic_string();
+    const std::string debugFragPath =
+        Shared::RuntimePaths::ResolveVoxelOpsPath("shaders/debugFrag.frag").generic_string();
+    debugShader.emplace(debugVertPath.c_str(), debugFragPath.c_str());
 
     noise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
     noise.SetFrequency(0.009f); // controls "hilliness" (lower = smoother, higher = rougher)
@@ -118,11 +122,11 @@ ChunkManager::ChunkManager(Renderer& renderer_) : renderer(renderer_){
 void ChunkManager::renderChunks(
     Shader& shader,
     Frustum& frustum,
-    Player& player,
+    const glm::vec3& viewPosition,
     int maxRenderDistance
 )
 {
-    ChunkRenderSystem::renderChunks(*this, shader, frustum, player, maxRenderDistance);
+    ChunkRenderSystem::renderChunks(*this, shader, frustum, viewPosition, maxRenderDistance);
 }
 
 
@@ -151,8 +155,22 @@ void ChunkManager::markChunkDirty(const glm::ivec3& pos) {
     }
 }
 
-void ChunkManager::updateDirtyChunks() {
+void ChunkManager::updateDirtyChunks(size_t maxChunksPerCall, int64_t maxBudgetUs) {
+    const auto start = std::chrono::steady_clock::now();
+    size_t processed = 0;
     while (!m_dirtyChunkQueue.empty()) {
+        if (maxChunksPerCall > 0 && processed >= maxChunksPerCall) {
+            break;
+        }
+        if (maxBudgetUs > 0) {
+            const int64_t elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - start
+            ).count();
+            if (elapsedUs >= maxBudgetUs) {
+                break;
+            }
+        }
+
         const glm::ivec3 pos = m_dirtyChunkQueue.front();
         m_dirtyChunkQueue.pop_front();
         m_dirtyChunkPending.erase(pos);
@@ -162,6 +180,7 @@ void ChunkManager::updateDirtyChunks() {
         if (!it->second.dirty) continue;
 
         updateDirtyChunkAt(pos);
+        ++processed;
     }
 }
 
@@ -385,7 +404,7 @@ bool ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
     }
 
     rebuildColumnSunCache(chunkPos.x, chunkPos.z);
-    updateDirtyChunkAt(chunkPos);
+    markChunkDirty(chunkPos);
 
     static const glm::ivec3 dirs[6] = {
         { 1, 0, 0 }, { -1, 0, 0 },
@@ -395,7 +414,7 @@ bool ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
     for (const glm::ivec3& d : dirs) {
         const glm::ivec3 n = chunkPos + d;
         if (chunkMap.find(n) != chunkMap.end()) {
-            updateDirtyChunkAt(n);
+            markChunkDirty(n);
         }
     }
 
@@ -491,7 +510,7 @@ NetworkChunkDeltaApplyResult ChunkManager::applyNetworkChunkDelta(const ChunkDel
 
     for (const glm::ivec3& pos : rebuildSet) {
         if (chunkMap.find(pos) != chunkMap.end()) {
-            updateDirtyChunkAt(pos);
+            markChunkDirty(pos);
         }
     }
 
@@ -529,7 +548,7 @@ void ChunkManager::applyNetworkChunkUnload(const ChunkUnload& packet) {
     for (const glm::ivec3& d : dirs) {
         const glm::ivec3 n = chunkPos + d;
         if (chunkMap.find(n) != chunkMap.end()) {
-            updateDirtyChunkAt(n);
+            markChunkDirty(n);
         }
     }
 }
@@ -564,6 +583,10 @@ glm::ivec3 ChunkManager::worldToChunkPos(const glm::ivec3& worldPos) const {
     // floor division to get the chunk indices (works for negatives)
     glm::vec3 f = glm::floor(glm::vec3(worldPos) / float(CHUNK_SIZE));
     return glm::ivec3(static_cast<int>(f.x), static_cast<int>(f.y), static_cast<int>(f.z));
+}
+
+bool ChunkManager::hasChunkLoaded(const glm::ivec3& chunkPos) const {
+    return chunkMap.find(chunkPos) != chunkMap.end();
 }
 
 glm::ivec3 ChunkManager::worldToLocalPos(const glm::ivec3& worldPos) const {

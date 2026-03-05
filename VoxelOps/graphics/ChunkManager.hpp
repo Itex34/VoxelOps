@@ -30,6 +30,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <chrono>
+#include <cstdint>
 
 //--IN CHUNKS--
 constexpr int WORLD_MIN_X = -20; 
@@ -144,7 +145,6 @@ struct ChunkRange {
 };
 
 
-class Player;
 class WorldGen;
 class ChunkRenderSystem;
 
@@ -162,7 +162,7 @@ public:
     void renderChunks(
         Shader& shader,
         Frustum& frustum,
-        Player& player,
+        const glm::vec3& viewPosition,
         int maxRenderDistance
     );
 
@@ -172,7 +172,7 @@ public:
     void setBlockGlobal(int worldX, int worldY, int worldZ, BlockID id);
     BlockID getBlockGlobal(int worldX, int worldY, int worldZ);
 
-    void updateDirtyChunks();
+    void updateDirtyChunks(size_t maxChunksPerCall = 0, int64_t maxBudgetUs = 0);
     void updateChunks(const glm::ivec3& playerWorldPos, int renderDistance);
     void updateDirtyChunkAt(const glm::ivec3& chunkPos);
 
@@ -189,6 +189,8 @@ public:
     std::unordered_map<glm::ivec3, Chunk, IVec3Hash>& getChunks() {
         return chunkMap;
     }
+
+    [[nodiscard]] bool hasChunkLoaded(const glm::ivec3& chunkPos) const;
 
 
 

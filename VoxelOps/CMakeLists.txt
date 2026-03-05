@@ -19,7 +19,7 @@ add_executable(VoxelOps
     "voxels/Voxel.cpp"
     "voxels/Chunk.cpp" 
     "graphics/Renderer.cpp"
-    "physics/Physics.cpp" 
+     
     "player/Player.cpp"
     "input/InputCallbacks.cpp"
     "data/GameData.hpp"
@@ -42,44 +42,30 @@ add_executable(VoxelOps
     "graphics/WorldGen.cpp"
     "graphics/Backend.cpp"
     "graphics/Sky.cpp" 
-    "graphics/PostProcessor.cpp")
+    "graphics/PostProcessor.cpp"
+    "ui/debug/DebugUi.cpp")
 
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)
 find_package(glad CONFIG REQUIRED)
-find_package(unofficial-joltphysics CONFIG REQUIRED)
 find_package(GameNetworkingSockets CONFIG REQUIRED)
 find_package(lz4 CONFIG REQUIRED)
+find_package(imgui CONFIG REQUIRED)
 
 target_link_libraries(VoxelOps PRIVATE glfw)
 target_link_libraries(VoxelOps PRIVATE glm::glm)
 target_link_libraries(VoxelOps PRIVATE assimp::assimp)
 target_link_libraries(VoxelOps PRIVATE glad::glad)
-target_link_libraries(VoxelOps PRIVATE unofficial::joltphysics::Jolt)
 target_link_libraries(VoxelOps PRIVATE GameNetworkingSockets::shared GameNetworkingSockets::static GameNetworkingSockets::GameNetworkingSockets GameNetworkingSockets::GameNetworkingSockets_s)
 target_link_libraries(VoxelOps PRIVATE Shared)
 target_link_libraries(VoxelOps PRIVATE lz4::lz4)
-
+target_link_libraries(VoxelOps PRIVATE imgui::imgui)
 
 target_include_directories(VoxelOps PRIVATE ${Stb_INCLUDE_DIR})
 target_include_directories(VoxelOps PRIVATE ../Shared)
 target_include_directories(VoxelOps PRIVATE ../third_party/precomputed_atmospheric_scattering)
 
-
-# include the headers!
-
-
-target_compile_definitions(VoxelOps
-    PRIVATE
-        $<$<CONFIG:Debug>:JPH_PROFILE_ENABLED=0>
-        $<$<CONFIG:Release>:JPH_DISABLE_PROFILING>
-)
-
-target_compile_definitions(VoxelOps
-    PRIVATE
-    $<$<CONFIG:Debug>:JPH_DEBUG_RENDERER>
-)
 
 
 
@@ -94,6 +80,3 @@ if(MSVC)
 else()
     target_compile_options(VoxelOps PRIVATE -fno-rtti -fno-exceptions)
 endif()
-
-message(STATUS "Jolt include dir: ${Jolt_INCLUDE_DIRS}")
-message(STATUS "Jolt libraries: ${Jolt_LIBRARIES}")

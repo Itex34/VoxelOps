@@ -17,6 +17,7 @@
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <string_view>
 
 #include <glm/vec3.hpp>
 
@@ -24,7 +25,7 @@
 #include <GameNetworkingSockets/steam/steamnetworkingtypes.h>
 
 
-#include "../../Shared/network/PacketType.hpp"   // for packet types
+#include "../../Shared/network/PacketType.hpp"
 #include "../../Shared/network/Packets.hpp"   
 #include "../player/PlayerManager.hpp"
 #include "../graphics/ChunkManager.hpp"
@@ -54,6 +55,15 @@ public:
 
     void SaveHistoryToFile();
     void LoadHistoryFromFile();
+    void SaveAdminsToFile();
+    void LoadAdminsFromFile();
+
+    bool SetAdminByUsername(const std::string& username, bool isAdmin);
+    bool IsAdminUsername(const std::string& username);
+    std::vector<std::pair<std::string, bool>> GetConnectedUsers();
+    std::vector<std::string> GetAdminUsernames();
+    void SetDebugLoggingEnabled(bool enabled);
+    bool IsDebugLoggingEnabled();
 
 
 
@@ -67,6 +77,23 @@ private:
     void MainLoop();
     void ShutdownNetworking();
     static std::string ReadStringFromPacket(const void* data, uint32_t size, size_t offset = 1);
+    bool IsInboundRateLimitExceeded(HSteamNetConnection incoming, PacketType packetType, uint32_t bytes);
+    void HandleConnectRequest(HSteamNetConnection incoming, const void* data, uint32_t size);
+    void HandleMessagePacket(HSteamNetConnection incoming, const void* data, uint32_t size);
+    void HandlePlayerInputPacket(HSteamNetConnection incoming, const void* data, uint32_t size, uint64_t& playerInputPacketsThisLoop);
+    void HandleChunkRequestPacket(HSteamNetConnection incoming, const void* data, uint32_t size, uint64_t& chunkRequestPacketsThisLoop);
+    void HandleChunkAckPacket(HSteamNetConnection incoming, const void* data, uint32_t size, uint64_t& chunkAckPacketsThisLoop);
+    void HandleShootRequestPacket(HSteamNetConnection incoming, const void* data, uint32_t size);
+    void RecordLagCompFrame(uint32_t serverTick);
+    void DispatchInboundPacket(
+        HSteamNetConnection incoming,
+        PacketType packetType,
+        const void* data,
+        uint32_t size,
+        uint64_t& playerInputPacketsThisLoop,
+        uint64_t& chunkRequestPacketsThisLoop,
+        uint64_t& chunkAckPacketsThisLoop
+    );
 
     // Callback bridge: Steam expects a free function pointer; we implement a static
     // bridge function that calls the instance method.
@@ -95,27 +122,64 @@ private:
     };
 
     struct ClientSession {
+        std::string identity;
         std::string username;
         PlayerID playerId = 0;
         glm::ivec3 interestCenterChunk{ 0 };
         uint16_t viewDistance = 8;
         bool hasChunkInterest = false;
+        bool chunkInterestDirty = false;
+        std::chrono::steady_clock::time_point nextChunkInterestUpdateAt =
+            std::chrono::steady_clock::time_point::min();
         std::unordered_set<ChunkCoord, ChunkCoordHash> streamedChunks;
         // ChunkData packets sent but not yet ACKed by the client.
         std::unordered_map<ChunkCoord, std::chrono::steady_clock::time_point, ChunkCoordHash> pendingChunkData;
         // Payload hash (FNV-1a over ChunkData.payload) expected in ChunkAck.sequence.
         std::unordered_map<ChunkCoord, uint32_t, ChunkCoordHash> pendingChunkDataPayloadHash;
+        bool isAdmin = false;
+        std::chrono::steady_clock::time_point inboundRateWindowStart =
+            std::chrono::steady_clock::time_point::min();
+        uint32_t inboundPacketsInWindow = 0;
+        uint32_t inboundBytesInWindow = 0;
+        uint32_t inboundPlayerInputsInWindow = 0;
+        uint32_t inboundChunkRequestsInWindow = 0;
+        std::chrono::steady_clock::time_point lastAcceptedShootTime =
+            std::chrono::steady_clock::time_point::min();
+        uint32_t lastShootClientShotId = 0;
+        bool hasLastShootClientShotId = false;
+    };
+
+    struct LagCompPlayerPose {
+        glm::vec3 position{ 0.0f };
+        float yaw = 0.0f;
+        float height = 2.56f;
+        float radius = 0.3f;
+    };
+
+    struct LagCompFrame {
+        uint32_t serverTick = 0;
+        std::unordered_map<PlayerID, LagCompPlayerPose> players;
     };
 
     static uint16_t ClampViewDistance(uint16_t requested);
     std::string AllocateAutoUsernameLocked(HSteamNetConnection incomingConn);
+    std::string BuildDisplayNameForIdentityLocked(
+        std::string_view identity,
+        std::string_view requestedName,
+        HSteamNetConnection incomingConn
+    );
     void UpdateChunkStreamingForClient(HSteamNetConnection conn, const glm::ivec3& centerChunk, uint16_t viewDistance);
     bool SendChunkData(HSteamNetConnection conn, const ChunkCoord& coord, uint32_t* outPayloadHash = nullptr);
     bool SendChunkUnload(HSteamNetConnection conn, const ChunkCoord& coord);
     bool PrepareChunkForStreaming(const ChunkCoord& coord);
     bool QueueChunkPreparation(HSteamNetConnection conn, const ChunkCoord& coord);
     size_t FlushChunkSendQueueForClient(HSteamNetConnection conn, size_t maxSends);
+    size_t FlushChunkSendQueues(size_t globalBudget, size_t perClientBudget);
     size_t GetChunkSendQueueDepthForClient(HSteamNetConnection conn);
+    void PruneChunkPipelineForClient(
+        HSteamNetConnection conn,
+        const std::unordered_set<ChunkCoord, ChunkCoordHash>& desired
+    );
     void ClearChunkPipelineForConnection(HSteamNetConnection conn);
     void StartChunkPipeline();
     void StopChunkPipeline();
@@ -146,6 +210,8 @@ private:
 
     std::atomic<bool> m_quit;
     std::atomic<bool> m_started{ false };
+    std::atomic<uint32_t> m_serverTick{ 0 };
+    std::deque<LagCompFrame> m_lagCompFrames;
     std::mutex m_mutex;
     std::mutex m_shutdownMutex;
     bool m_shutdownComplete = false;
@@ -158,6 +224,8 @@ private:
     // (username, message)
     std::vector<std::pair<std::string, std::string>> m_messageHistory;
     const char* HISTORY_FILE = "chat_history.txt";
+    std::unordered_set<std::string> m_adminIdentities;
+    const char* ADMINS_FILE = "admins.txt";
 
     HSteamNetPollGroup m_pollGroup;
     HSteamListenSocket m_listenSock;
