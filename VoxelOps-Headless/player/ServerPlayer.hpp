@@ -8,6 +8,7 @@
 #include <limits>
 
 #include "../../Shared/network/Packets.hpp"
+#include "../../Shared/gun/GunType.hpp"
 
 using PlayerID = uint64_t;
 using Clock = std::chrono::steady_clock;
@@ -32,6 +33,9 @@ struct ServerPlayer {
     float radius = 0.3f;
     float health = 100.0f;
     float maxHealth = 100.0f;
+    bool isAlive = true;
+    Clock::time_point respawnAt{};
+    bool pendingRespawnRequest = false;
 
     std::shared_ptr<ConnectionHandle> conn; // nullable
     Clock::time_point lastHeartbeat = Clock::now();
@@ -41,6 +45,7 @@ struct ServerPlayer {
     uint8_t activeInputFlags = 0;
     bool flyMode = false;
     bool allowFlyMode = false;
+    uint16_t equippedWeaponId = ToWeaponId(GunType::Pistol);
     float moveX = 0.0f;
     float moveZ = 0.0f;
     bool jumpPressedLastTick = false;

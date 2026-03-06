@@ -73,6 +73,10 @@ void ServerNetwork::OnConnectionStatusChanged(SteamNetConnectionStatusChangedCal
             }
         }
         if (session.playerId != 0) {
+            {
+                std::lock_guard<std::mutex> lk(m_mutex);
+                m_matchScores.erase(session.playerId);
+            }
             m_playerManager.removePlayer(session.playerId);
         }
         ClearChunkPipelineForConnection(hConn);

@@ -37,6 +37,27 @@ public:
         size_t chunkUnload = 0;
     };
 
+    struct KillFeedEvent {
+        std::string killer;
+        std::string victim;
+        uint16_t weaponId = 0;
+    };
+
+    struct ScoreboardEntry {
+        std::string username;
+        uint32_t kills = 0;
+        uint32_t deaths = 0;
+        int pingMs = -1;
+    };
+
+    struct ScoreboardSnapshot {
+        int remainingSeconds = 0;
+        bool matchEnded = false;
+        bool matchStarted = false;
+        std::string winner;
+        std::vector<ScoreboardEntry> entries;
+    };
+
     ClientNetwork();
     ~ClientNetwork();
 
@@ -44,14 +65,15 @@ public:
     // Returns true on success.
     bool Start();
 
-    // Connect to server at IPv4 address + port. Returns true if a connection attempt was started.
-    bool ConnectTo(const char ip[16], uint16_t port);
+    // Connect to server at host/IP + port. Returns true if a connection attempt was started.
+    bool ConnectTo(std::string_view host, uint16_t port);
 
     // Send connect request. Server assigns the canonical username.
     bool SendConnectRequest(std::string_view requestedUsername = {});
 
     // Send movement input for server-authoritative simulation.
     bool SendPlayerInput(const PlayerInput& input);
+    bool SendRespawnRequest();
     // Legacy state packet (kept for compatibility while migrating handlers).
     bool SendPosition(uint32_t seq, const glm::vec3& pos, const glm::vec3& vel);
     bool SendChunkRequest(const glm::ivec3& centerChunk, uint16_t viewDistance);
@@ -70,6 +92,7 @@ public:
     const std::string& GetConnectionStatusText() const noexcept;
     const std::string& GetAssignedUsername() const noexcept;
     bool ShouldAutoReconnect() const noexcept;
+    int GetPingMs() const noexcept;
 
 
     bool SendShootRequest(uint32_t clientShotId, uint32_t clientTick, uint16_t weaponId,
@@ -81,6 +104,8 @@ public:
     bool PopChunkUnload(ChunkUnload& out);
     bool PopPlayerSnapshot(PlayerSnapshotFrame& out);
     bool PopShootResult(ShootResult& out);
+    bool PopKillFeedEvent(KillFeedEvent& out);
+    bool PopScoreboardSnapshot(ScoreboardSnapshot& out);
     ChunkQueueDepths GetChunkQueueDepths();
 private:
     HSteamNetConnection m_conn = k_HSteamNetConnection_Invalid;
@@ -113,4 +138,6 @@ private:
     std::deque<ChunkUnload> m_chunkUnloadQueue;
     std::deque<PlayerSnapshotFrame> m_playerSnapshotQueue;
     std::deque<ShootResult> m_shootResultQueue;
+    std::deque<KillFeedEvent> m_killFeedQueue;
+    std::deque<ScoreboardSnapshot> m_scoreboardQueue;
 };

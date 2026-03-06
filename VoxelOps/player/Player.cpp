@@ -735,6 +735,7 @@ void Player::updateRemotePlayers(float deltaTime) {
         }
         current.rotation = glm::normalize(glm::slerp(current.rotation, targetRotation, alpha));
         current.scale = glm::mix(current.scale, target.scale, alpha);
+        current.weaponId = target.weaponId;
     }
 }
 

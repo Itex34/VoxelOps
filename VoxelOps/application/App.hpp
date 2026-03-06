@@ -36,7 +36,12 @@ private:
     void processShooting(Runtime& runtime);
     void processMovementNetworking(Runtime& runtime);
     void processChunkStreaming(Runtime& runtime, bool prioritizeMovement);
+    void drawKillFeed(Runtime& runtime);
+    void drawScoreboard(Runtime& runtime);
+    void drawPingCounter(Runtime& runtime);
+    void drawDeathOverlay(Runtime& runtime);
     bool equipGun(Runtime& runtime, GunType gunType);
+    void renderRemotePlayerGuns(Runtime& runtime, const Camera& activeCamera);
     void renderHeldGun(Runtime& runtime, const Camera& activeCamera);
     void applyMouseInputModes();
 

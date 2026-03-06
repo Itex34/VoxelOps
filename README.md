@@ -31,7 +31,7 @@ From repo root:
 
 ## Client CLI
 ```text
---server-ip <ipv4>    default: 127.0.0.1
+--server-ip <host>    default: 127.0.0.1
 --server-port <port>  default: 27015
 --name <username>     optional (max 32 chars)
 --help

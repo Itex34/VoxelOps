@@ -32,7 +32,7 @@ constexpr uint32_t kMaxConnectRequestBytes =
     static_cast<uint32_t>(kMaxConnectIdentityChars) +
     static_cast<uint32_t>(kMaxConnectUsernameChars);
 constexpr uint32_t kMaxChatMessageBytes = 1u + 512u;
-constexpr uint32_t kPlayerInputPacketBytes = 1u + 4u + 1u + 1u + 4u * 4u;
+constexpr uint32_t kPlayerInputPacketBytes = 1u + 4u + 1u + 1u + 2u + 4u * 4u;
 constexpr uint32_t kPlayerPositionPacketBytes = 1u + 4u + 6u * 4u;
 constexpr uint32_t kChunkRequestPacketBytes = 1u + 4u + 4u + 4u + 2u;
 constexpr uint32_t kChunkAckPacketBytes = 1u + 1u + 4u + 4u + 4u + 4u + 8u;
@@ -587,10 +587,11 @@ bool ParsePlayerInputPacket(const uint8_t* data, uint32_t size, PlayerInput& out
     out.sequenceNumber = ReadU32LE(data + 1);
     out.inputFlags = data[5];
     out.flyMode = data[6];
-    out.yaw = ReadF32LE(data + 7);
-    out.pitch = ReadF32LE(data + 11);
-    out.moveX = ReadF32LE(data + 15);
-    out.moveZ = ReadF32LE(data + 19);
+    out.weaponId = ReadU16LE(data + 7);
+    out.yaw = ReadF32LE(data + 9);
+    out.pitch = ReadF32LE(data + 13);
+    out.moveX = ReadF32LE(data + 17);
+    out.moveZ = ReadF32LE(data + 21);
     return std::isfinite(out.yaw) &&
         std::isfinite(out.pitch) &&
         std::isfinite(out.moveX) &&
@@ -676,6 +677,14 @@ bool ServerNetwork::Start(uint16_t port)
     m_quit.store(false, std::memory_order_release);
     m_serverTick.store(0, std::memory_order_release);
     m_lagCompFrames.clear();
+    m_matchStartTime = std::chrono::steady_clock::now();
+    m_matchStarted = false;
+    m_matchEnded = false;
+    m_matchWinner.clear();
+    {
+        std::lock_guard<std::mutex> lk(m_mutex);
+        m_matchScores.clear();
+    }
     {
         std::lock_guard<std::mutex> shutdownLock(m_shutdownMutex);
         m_shutdownComplete = false;
@@ -767,11 +776,16 @@ void ServerNetwork::ShutdownNetworking()
             sessions.push_back(kv);
         }
         m_clients.clear();
+        m_matchScores.clear();
     }
 
     for (const auto& [conn, session] : sessions) {
         ClearChunkPipelineForConnection(conn);
         if (session.playerId != 0) {
+            {
+                std::lock_guard<std::mutex> lk(m_mutex);
+                m_matchScores.erase(session.playerId);
+            }
             m_playerManager.removePlayer(session.playerId);
         }
         SteamNetworkingSockets()->CloseConnection(conn, 0, "server shutting down", false);
@@ -800,6 +814,9 @@ void ServerNetwork::RecordLagCompFrame(uint32_t serverTick)
     const std::vector<ServerPlayer> players = m_playerManager.getAllPlayersCopy();
     frame.players.reserve(players.size());
     for (const ServerPlayer& player : players) {
+        if (!player.isAlive) {
+            continue;
+        }
         LagCompPlayerPose pose{};
         pose.position = player.position;
         pose.yaw = player.yaw;
@@ -835,7 +852,7 @@ static int FloorDiv(int a, int b) {
 
 void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, const glm::ivec3& centerChunk, uint16_t viewDistance)
 {
-    constexpr size_t kMaxChunkPrepQueuePerUpdate = 64;
+    constexpr size_t kMaxChunkPrepQueuePerUpdate = 128;
     constexpr size_t kMaxPendingChunkData = 256;
     constexpr auto kChunkRetryInterval = std::chrono::milliseconds(500);
     const uint16_t clampedViewDistance = ClampViewDistance(viewDistance);
@@ -1248,6 +1265,22 @@ void ServerNetwork::HandleConnectRequest(HSteamNetConnection incoming, const voi
             it->second.isAdmin = (m_adminIdentities.find(identity) != m_adminIdentities.end());
             sessionIsAdmin = it->second.isAdmin;
             attached = true;
+            m_matchScores[playerId] = MatchScore{};
+
+            if (!m_matchStarted) {
+                size_t activePlayers = 0;
+                for (const auto& [_, session] : m_clients) {
+                    if (session.playerId != 0) {
+                        ++activePlayers;
+                    }
+                }
+                if (activePlayers >= 2) {
+                    m_matchStarted = true;
+                    m_matchStartTime = std::chrono::steady_clock::now();
+                    m_matchEnded = false;
+                    m_matchWinner.clear();
+                }
+            }
         }
     }
     if (!attached) {
@@ -1301,6 +1334,14 @@ void ServerNetwork::HandleMessagePacket(HSteamNetConnection incoming, const void
         if (playerId != 0) {
             m_playerManager.touchHeartbeat(playerId);
         }
+
+        if (msg == "RESPAWN") {
+            if (playerId != 0) {
+                (void)m_playerManager.requestRespawn(playerId);
+            }
+            return;
+        }
+
         m_messageHistory.emplace_back(username, msg);
         std::string out;
         out.push_back(static_cast<char>(PacketType::Message));
@@ -1341,6 +1382,7 @@ void ServerNetwork::HandlePlayerInputPacket(
     }
     if (!username.empty() && playerId != 0) {
         m_playerManager.enqueuePlayerInput(playerId, input);
+        m_playerManager.setEquippedWeapon(playerId, input.weaponId);
     }
     else {
         std::cout << "[input] unregistered conn = " << incoming << " seq = " << input.sequenceNumber << "\n";
@@ -1527,6 +1569,7 @@ void ServerNetwork::HandleShootRequestPacket(HSteamNetConnection incoming, const
     }
     if (playerId != 0) {
         m_playerManager.touchHeartbeat(playerId);
+        m_playerManager.setEquippedWeapon(playerId, req.weaponId);
     }
 
     bool rejectedReplay = false;
@@ -1601,6 +1644,10 @@ void ServerNetwork::HandleShootRequestPacket(HSteamNetConnection incoming, const
         return;
     }
     const ServerPlayer& shooter = *shooterOpt;
+    if (!shooter.isAlive) {
+        sendResult(res);
+        return;
+    }
 
     const glm::vec3 requestDir(req.dirX, req.dirY, req.dirZ);
     const float dirLenSq = glm::dot(requestDir, requestDir);
@@ -1662,7 +1709,7 @@ void ServerNetwork::HandleShootRequestPacket(HSteamNetConnection incoming, const
     float bestPlayerDistance = maxDistance + 1.0f;
 
     for (const ServerPlayer& target : players) {
-        if (target.id == playerId) {
+        if (target.id == playerId || !target.isAlive) {
             continue;
         }
 
@@ -1838,6 +1885,45 @@ void ServerNetwork::HandleShootRequestPacket(HSteamNetConnection incoming, const
             << " point=(" << hitPoint.x << "," << hitPoint.y << "," << hitPoint.z << ")"
             << "\n";
     }
+
+    if (killed) {
+        std::string victimUsername;
+        {
+            std::lock_guard<std::mutex> lk(m_mutex);
+            if (!m_matchEnded) {
+                auto killerIt = m_matchScores.find(playerId);
+                if (killerIt != m_matchScores.end()) {
+                    ++killerIt->second.kills;
+                }
+                auto victimIt = m_matchScores.find(hitPlayerId);
+                if (victimIt != m_matchScores.end()) {
+                    ++victimIt->second.deaths;
+                }
+            }
+            for (const auto& [_, session] : m_clients) {
+                if (session.playerId == hitPlayerId) {
+                    victimUsername = session.username;
+                    break;
+                }
+            }
+        }
+        if (victimUsername.empty()) {
+            victimUsername = std::string("Player") + std::to_string(hitPlayerId);
+        }
+
+        std::string killPayload = "KILLFEED|";
+        killPayload += username;
+        killPayload += "|";
+        killPayload += victimUsername;
+        killPayload += "|";
+        killPayload += std::to_string(req.weaponId);
+
+        std::string out;
+        out.reserve(1 + killPayload.size());
+        out.push_back(static_cast<char>(PacketType::Message));
+        out += killPayload;
+        BroadcastRaw(out.data(), static_cast<uint32_t>(out.size()), k_HSteamNetConnection_Invalid);
+    }
     (void)healthAfter;
     (void)killed;
     sendResult(res);
@@ -1893,9 +1979,10 @@ void ServerNetwork::MainLoop()
     constexpr size_t kMaxCollisionPrewarmGenerationsPerLoop = 8;
     constexpr int64_t kCollisionPrewarmBudgetUs = 1500;
     const auto kCollisionPrewarmInterval = std::chrono::milliseconds(50);
-    constexpr size_t kChunkSendGlobalBudgetPerFlush = 2;
-    constexpr size_t kChunkSendPerClientBudgetPerFlush = 1;
+    constexpr size_t kChunkSendGlobalBudgetPerFlush = 8;
+    constexpr size_t kChunkSendPerClientBudgetPerFlush = 4;
     const auto kChunkSendFlushInterval = std::chrono::milliseconds(16);
+    const auto kScoreboardBroadcastInterval = std::chrono::seconds(1);
     const auto snapshotInterval = std::chrono::duration<double>(kServerTickSeconds);
     double simAccumulator = 0.0;
     uint32_t serverTick = 0;
@@ -1911,6 +1998,7 @@ void ServerNetwork::MainLoop()
     uint64_t perfCollisionPrewarmGenerated = 0;
     uint64_t perfChunkInterestTasks = 0;
     uint64_t perfChunksSent = 0;
+    uint64_t perfScoreboardBroadcasts = 0;
     double perfLoopUsTotal = 0.0;
     double perfLoopUsMax = 0.0;
     double perfMessageDrainUsTotal = 0.0;
@@ -1919,6 +2007,7 @@ void ServerNetwork::MainLoop()
     double perfSnapshotUsTotal = 0.0;
     double perfChunkInterestUsTotal = 0.0;
     double perfChunkSendUsTotal = 0.0;
+    auto nextScoreboardBroadcastAt = std::chrono::steady_clock::now();
 
     while (!m_quit) {
         const auto loopStart = std::chrono::steady_clock::now();
@@ -2005,6 +2094,10 @@ void ServerNetwork::MainLoop()
             std::cout << "[cleanup] remove conn=" << conn << " user=" << session.username << "\n";
             ClearChunkPipelineForConnection(conn);
             if (session.playerId != 0) {
+                {
+                    std::lock_guard<std::mutex> lk(m_mutex);
+                    m_matchScores.erase(session.playerId);
+                }
                 m_playerManager.removePlayer(session.playerId);
             }
             if (!session.username.empty()) {
@@ -2102,6 +2195,10 @@ void ServerNetwork::MainLoop()
 
                 for (const auto& [conn, session] : removedSessions) {
                     ClearChunkPipelineForConnection(conn);
+                    if (session.playerId != 0) {
+                        std::lock_guard<std::mutex> lk(m_mutex);
+                        m_matchScores.erase(session.playerId);
+                    }
                     if (!session.username.empty()) {
                         std::string out;
                         out.push_back(static_cast<char>(PacketType::ClientDisconnect));
@@ -2119,6 +2216,162 @@ void ServerNetwork::MainLoop()
                 ).count()
               )
             : 0.0;
+
+        bool scoreboardBroadcastedThisLoop = false;
+        const auto scoreboardNow = std::chrono::steady_clock::now();
+        if (scoreboardNow >= nextScoreboardBroadcastAt) {
+            std::string scoreboardPayload;
+            std::string endAnnouncementPayload;
+            {
+                std::lock_guard<std::mutex> lk(m_mutex);
+
+                int remainingSec = static_cast<int>(m_matchDuration.count());
+                if (m_matchStarted) {
+                    const int64_t elapsedSec = std::chrono::duration_cast<std::chrono::seconds>(
+                        scoreboardNow - m_matchStartTime
+                    ).count();
+                    const int64_t remainingSecRaw =
+                        static_cast<int64_t>(m_matchDuration.count()) - elapsedSec;
+                    remainingSec = static_cast<int>(std::max<int64_t>(0, remainingSecRaw));
+                }
+
+                if (m_matchStarted && !m_matchEnded && remainingSec <= 0) {
+                    m_matchEnded = true;
+
+                    struct WinnerCandidate {
+                        std::string username;
+                        uint32_t kills = 0;
+                    };
+                    std::vector<WinnerCandidate> candidates;
+                    candidates.reserve(m_clients.size());
+                    for (const auto& [_, session] : m_clients) {
+                        if (session.playerId == 0 || session.username.empty()) {
+                            continue;
+                        }
+                        uint32_t kills = 0;
+                        auto scoreIt = m_matchScores.find(session.playerId);
+                        if (scoreIt != m_matchScores.end()) {
+                            kills = scoreIt->second.kills;
+                        }
+                        candidates.push_back(WinnerCandidate{ session.username, kills });
+                    }
+                    std::sort(
+                        candidates.begin(),
+                        candidates.end(),
+                        [](const WinnerCandidate& a, const WinnerCandidate& b) {
+                            if (a.kills != b.kills) {
+                                return a.kills > b.kills;
+                            }
+                            return a.username < b.username;
+                        }
+                    );
+
+                    if (candidates.empty()) {
+                        m_matchWinner = "No winner";
+                    }
+                    else if (candidates.size() >= 2 && candidates[0].kills == candidates[1].kills) {
+                        m_matchWinner = "Tie";
+                    }
+                    else {
+                        m_matchWinner = candidates[0].username;
+                    }
+
+                    endAnnouncementPayload = "MATCH_END|";
+                    endAnnouncementPayload += m_matchWinner;
+                }
+
+                struct ScoreboardRow {
+                    std::string username;
+                    uint32_t kills = 0;
+                    uint32_t deaths = 0;
+                    int pingMs = -1;
+                };
+
+                std::vector<ScoreboardRow> rows;
+                rows.reserve(m_clients.size());
+                for (const auto& [conn, session] : m_clients) {
+                    if (session.playerId == 0 || session.username.empty()) {
+                        continue;
+                    }
+
+                    ScoreboardRow row;
+                    row.username = session.username;
+                    auto scoreIt = m_matchScores.find(session.playerId);
+                    if (scoreIt != m_matchScores.end()) {
+                        row.kills = scoreIt->second.kills;
+                        row.deaths = scoreIt->second.deaths;
+                    }
+
+                    SteamNetConnectionRealTimeStatus_t status{};
+                    const EResult pingResult = SteamNetworkingSockets()->GetConnectionRealTimeStatus(
+                        conn,
+                        &status,
+                        0,
+                        nullptr
+                    );
+                    if (pingResult == k_EResultOK) {
+                        row.pingMs = status.m_nPing;
+                    }
+
+                    rows.push_back(std::move(row));
+                }
+
+                std::sort(
+                    rows.begin(),
+                    rows.end(),
+                    [](const ScoreboardRow& a, const ScoreboardRow& b) {
+                        if (a.kills != b.kills) {
+                            return a.kills > b.kills;
+                        }
+                        if (a.deaths != b.deaths) {
+                            return a.deaths < b.deaths;
+                        }
+                        return a.username < b.username;
+                    }
+                );
+
+                scoreboardPayload.reserve(64 + rows.size() * 32);
+                scoreboardPayload += "SCOREBOARD|";
+                scoreboardPayload += std::to_string(remainingSec);
+                scoreboardPayload += "|";
+                scoreboardPayload += (m_matchEnded ? "1" : "0");
+                scoreboardPayload += "|";
+                scoreboardPayload += (m_matchStarted ? "1" : "0");
+                scoreboardPayload += "|";
+                scoreboardPayload += m_matchWinner.empty() ? "-" : m_matchWinner;
+                scoreboardPayload += "|";
+                scoreboardPayload += std::to_string(rows.size());
+                for (const ScoreboardRow& row : rows) {
+                    scoreboardPayload += "|";
+                    scoreboardPayload += row.username;
+                    scoreboardPayload += ",";
+                    scoreboardPayload += std::to_string(row.kills);
+                    scoreboardPayload += ",";
+                    scoreboardPayload += std::to_string(row.deaths);
+                    scoreboardPayload += ",";
+                    scoreboardPayload += std::to_string(row.pingMs);
+                }
+            }
+
+            if (!endAnnouncementPayload.empty()) {
+                std::string out;
+                out.reserve(1 + endAnnouncementPayload.size());
+                out.push_back(static_cast<char>(PacketType::Message));
+                out += endAnnouncementPayload;
+                BroadcastRaw(out.data(), static_cast<uint32_t>(out.size()), k_HSteamNetConnection_Invalid);
+            }
+
+            if (!scoreboardPayload.empty()) {
+                std::string out;
+                out.reserve(1 + scoreboardPayload.size());
+                out.push_back(static_cast<char>(PacketType::Message));
+                out += scoreboardPayload;
+                BroadcastRaw(out.data(), static_cast<uint32_t>(out.size()), k_HSteamNetConnection_Invalid);
+            }
+
+            nextScoreboardBroadcastAt = scoreboardNow + kScoreboardBroadcastInterval;
+            scoreboardBroadcastedThisLoop = true;
+        }
 
         struct ChunkInterestTask {
             HSteamNetConnection conn = k_HSteamNetConnection_Invalid;
@@ -2283,6 +2536,9 @@ void ServerNetwork::MainLoop()
         perfCollisionPrewarmGenerated += collisionPrewarmGeneratedThisLoop;
         perfChunkInterestTasks += chunkInterestTasks.size();
         perfChunksSent += chunksSentThisLoop;
+        if (scoreboardBroadcastedThisLoop) {
+            ++perfScoreboardBroadcasts;
+        }
         perfLoopUsTotal += loopUs;
         perfMessageDrainUsTotal += messageDrainUs;
         perfSimUsTotal += simUs;
@@ -2334,6 +2590,7 @@ void ServerNetwork::MainLoop()
                 << " prewarmGenerated=" << perfCollisionPrewarmGenerated
                 << " chunkInterestTasks=" << perfChunkInterestTasks
                 << " chunksSent=" << perfChunksSent
+                << " scoreboardBroadcasts=" << perfScoreboardBroadcasts
                 << "\n";
 
             perfWindowStart = perfNow;
@@ -2346,6 +2603,7 @@ void ServerNetwork::MainLoop()
             perfCollisionPrewarmGenerated = 0;
             perfChunkInterestTasks = 0;
             perfChunksSent = 0;
+            perfScoreboardBroadcasts = 0;
             perfLoopUsTotal = 0.0;
             perfLoopUsMax = 0.0;
             perfMessageDrainUsTotal = 0.0;

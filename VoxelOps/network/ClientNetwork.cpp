@@ -5,11 +5,30 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <random>
 #include <sstream>
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <ws2tcpip.h>
+#ifdef max
+#undef max
+#endif
+#ifdef min
+#undef min
+#endif
+#else
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <sys/socket.h>
+#endif
 
 namespace {
 uint32_t fnv1a32(const uint8_t* data, size_t size)
@@ -25,6 +44,8 @@ uint32_t fnv1a32(const uint8_t* data, size_t size)
 constexpr size_t kMaxChunkDataQueueDepth = 128;
 constexpr size_t kMaxChunkDeltaQueueDepth = 512;
 constexpr size_t kMaxChunkUnloadQueueDepth = 256;
+constexpr size_t kMaxKillFeedQueueDepth = 64;
+constexpr size_t kMaxScoreboardQueueDepth = 16;
 constexpr const char* kClientIdentityFileName = "client_identity.txt";
 
 template <typename T>
@@ -115,6 +136,268 @@ std::string GenerateIdentityToken()
     }
     return token;
 }
+
+bool TryParseKillFeedMessage(const std::string& message, ClientNetwork::KillFeedEvent& out)
+{
+    constexpr std::string_view kPrefix = "KILLFEED|";
+    if (message.size() <= kPrefix.size() || message.rfind(kPrefix.data(), 0) != 0) {
+        return false;
+    }
+
+    const size_t killerStart = kPrefix.size();
+    const size_t killerSep = message.find('|', killerStart);
+    if (killerSep == std::string::npos || killerSep == killerStart) {
+        return false;
+    }
+    const size_t victimStart = killerSep + 1;
+    const size_t victimSep = message.find('|', victimStart);
+    if (victimSep == std::string::npos || victimSep == victimStart) {
+        return false;
+    }
+    const size_t weaponStart = victimSep + 1;
+    if (weaponStart >= message.size()) {
+        return false;
+    }
+
+    uint16_t weaponId = 0;
+    try {
+        const unsigned long weaponRaw = std::stoul(message.substr(weaponStart));
+        if (weaponRaw > 0xFFFFu) {
+            return false;
+        }
+        weaponId = static_cast<uint16_t>(weaponRaw);
+    }
+    catch (...) {
+        return false;
+    }
+
+    out.killer = message.substr(killerStart, killerSep - killerStart);
+    out.victim = message.substr(victimStart, victimSep - victimStart);
+    out.weaponId = weaponId;
+    return !out.killer.empty() && !out.victim.empty();
+}
+
+bool ParseIntToken(std::string_view token, int& out)
+{
+    if (token.empty()) {
+        return false;
+    }
+    size_t i = 0;
+    bool negative = false;
+    if (token[0] == '-') {
+        negative = true;
+        i = 1;
+    }
+    if (i >= token.size()) {
+        return false;
+    }
+    int value = 0;
+    for (; i < token.size(); ++i) {
+        const char c = token[i];
+        if (c < '0' || c > '9') {
+            return false;
+        }
+        const int digit = c - '0';
+        if (value > ((std::numeric_limits<int>::max)() - digit) / 10) {
+            return false;
+        }
+        value = value * 10 + digit;
+    }
+    out = negative ? -value : value;
+    return true;
+}
+
+bool ParseUint32Token(std::string_view token, uint32_t& out)
+{
+    if (token.empty()) {
+        return false;
+    }
+    uint64_t value = 0;
+    for (char c : token) {
+        if (c < '0' || c > '9') {
+            return false;
+        }
+        value = value * 10u + static_cast<uint64_t>(c - '0');
+        if (value > static_cast<uint64_t>((std::numeric_limits<uint32_t>::max)())) {
+            return false;
+        }
+    }
+    out = static_cast<uint32_t>(value);
+    return true;
+}
+
+bool ResolveHostToAddress(std::string_view host, uint16_t port, SteamNetworkingIPAddr& outAddr)
+{
+    if (host.empty()) {
+        return false;
+    }
+
+    std::string hostStr(host);
+
+    // Fast path for literal IPv4/IPv6 addresses.
+    SteamNetworkingIPAddr parsedAddr;
+    parsedAddr.Clear();
+    if (parsedAddr.ParseString(hostStr.c_str())) {
+        parsedAddr.m_port = port;
+        outAddr = parsedAddr;
+        return true;
+    }
+
+    addrinfo hints{};
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_protocol = IPPROTO_UDP;
+
+    addrinfo* results = nullptr;
+    const int gaiError = getaddrinfo(hostStr.c_str(), nullptr, &hints, &results);
+    if (gaiError != 0 || results == nullptr) {
+        if (results != nullptr) {
+            freeaddrinfo(results);
+        }
+        return false;
+    }
+
+    bool found = false;
+    char addressBuffer[INET6_ADDRSTRLEN] = {};
+    for (addrinfo* it = results; it != nullptr; it = it->ai_next) {
+        const void* rawAddress = nullptr;
+        if (it->ai_family == AF_INET) {
+            const sockaddr_in* addr4 = reinterpret_cast<const sockaddr_in*>(it->ai_addr);
+            rawAddress = &addr4->sin_addr;
+        }
+        else if (it->ai_family == AF_INET6) {
+            const sockaddr_in6* addr6 = reinterpret_cast<const sockaddr_in6*>(it->ai_addr);
+            rawAddress = &addr6->sin6_addr;
+        }
+        else {
+            continue;
+        }
+
+        if (inet_ntop(it->ai_family, rawAddress, addressBuffer, sizeof(addressBuffer)) == nullptr) {
+            continue;
+        }
+
+        SteamNetworkingIPAddr addr;
+        addr.Clear();
+        if (!addr.ParseString(addressBuffer)) {
+            continue;
+        }
+
+        addr.m_port = port;
+        outAddr = addr;
+        found = true;
+        break;
+    }
+
+    freeaddrinfo(results);
+    return found;
+}
+
+bool TryParseScoreboardMessage(const std::string& message, ClientNetwork::ScoreboardSnapshot& out)
+{
+    constexpr std::string_view kPrefix = "SCOREBOARD|";
+    if (message.size() <= kPrefix.size() || message.rfind(kPrefix.data(), 0) != 0) {
+        return false;
+    }
+
+    std::vector<std::string_view> fields;
+    const std::string_view msgView(message);
+    size_t start = kPrefix.size();
+    while (start <= msgView.size()) {
+        const size_t sep = msgView.find('|', start);
+        if (sep == std::string_view::npos) {
+            fields.push_back(msgView.substr(start));
+            break;
+        }
+        fields.push_back(msgView.substr(start, sep - start));
+        start = sep + 1;
+    }
+
+    if (fields.size() < 4) {
+        return false;
+    }
+
+    int remaining = 0;
+    int endedRaw = 0;
+    int startedRaw = 1;
+    int expectedCount = 0;
+    if (!ParseIntToken(fields[0], remaining) || remaining < 0) {
+        return false;
+    }
+    if (!ParseIntToken(fields[1], endedRaw) || (endedRaw != 0 && endedRaw != 1)) {
+        return false;
+    }
+
+    size_t winnerIndex = 2;
+    size_t countIndex = 3;
+    size_t entriesStartIndex = 4;
+    if (fields.size() >= 5) {
+        // New format: remaining|ended|started|winner|count|...
+        int parsedStarted = 1;
+        if (ParseIntToken(fields[2], parsedStarted) && (parsedStarted == 0 || parsedStarted == 1)) {
+            startedRaw = parsedStarted;
+            winnerIndex = 3;
+            countIndex = 4;
+            entriesStartIndex = 5;
+        }
+    }
+
+    if (!ParseIntToken(fields[countIndex], expectedCount) || expectedCount < 0) {
+        return false;
+    }
+
+    const size_t expectedFields = entriesStartIndex + static_cast<size_t>(expectedCount);
+    if (fields.size() != expectedFields) {
+        return false;
+    }
+
+    ClientNetwork::ScoreboardSnapshot snapshot;
+    snapshot.remainingSeconds = remaining;
+    snapshot.matchEnded = (endedRaw != 0);
+    snapshot.matchStarted = (startedRaw != 0);
+    snapshot.winner = (fields[winnerIndex] == "-") ? std::string() : std::string(fields[winnerIndex]);
+    snapshot.entries.reserve(static_cast<size_t>(expectedCount));
+
+    for (size_t i = 0; i < static_cast<size_t>(expectedCount); ++i) {
+        const std::string_view entryField = fields[entriesStartIndex + i];
+        const size_t c1 = entryField.find(',');
+        if (c1 == std::string_view::npos) return false;
+        const size_t c2 = entryField.find(',', c1 + 1);
+        if (c2 == std::string_view::npos) return false;
+        const size_t c3 = entryField.find(',', c2 + 1);
+        if (c3 == std::string_view::npos) return false;
+        if (entryField.find(',', c3 + 1) != std::string_view::npos) return false;
+
+        const std::string_view name = entryField.substr(0, c1);
+        const std::string_view killsTok = entryField.substr(c1 + 1, c2 - c1 - 1);
+        const std::string_view deathsTok = entryField.substr(c2 + 1, c3 - c2 - 1);
+        const std::string_view pingTok = entryField.substr(c3 + 1);
+
+        if (name.empty()) {
+            return false;
+        }
+
+        uint32_t kills = 0;
+        uint32_t deaths = 0;
+        int pingMs = -1;
+        if (!ParseUint32Token(killsTok, kills) || !ParseUint32Token(deathsTok, deaths)) {
+            return false;
+        }
+        if (!ParseIntToken(pingTok, pingMs)) {
+            return false;
+        }
+
+        ClientNetwork::ScoreboardEntry entry;
+        entry.username = std::string(name);
+        entry.kills = kills;
+        entry.deaths = deaths;
+        entry.pingMs = pingMs;
+        snapshot.entries.push_back(std::move(entry));
+    }
+
+    out = std::move(snapshot);
+    return true;
+}
 }
 
 ClientNetwork::ClientNetwork() = default;
@@ -136,23 +419,26 @@ bool ClientNetwork::Start() {
     return true;
 }
 
-bool ClientNetwork::ConnectTo(const char ip[16], uint16_t port) {
+bool ClientNetwork::ConnectTo(std::string_view host, uint16_t port) {
     if (!m_started.load()) {
         std::cerr << "ClientNetwork: Start() must be called first\n";
         SetConnectionStatus(ConnectionState::Disconnected, "network not started");
         return false;
     }
 
-    // parse dotted IPv4 like "127.0.0.1"
-    int a = 0, b = 0, c = 0, d = 0;
-    if (std::sscanf(ip, "%d.%d.%d.%d", &a, &b, &c, &d) != 4) {
-        std::cerr << "ConnectTo: invalid ip string\n";
-        SetConnectionStatus(ConnectionState::Disconnected, "invalid server IPv4");
-        return false;
+    std::string hostTrimmed(host);
+    size_t begin = 0;
+    while (begin < hostTrimmed.size() && std::isspace(static_cast<unsigned char>(hostTrimmed[begin])) != 0) {
+        ++begin;
     }
-    if (a < 0 || a > 255 || b < 0 || b > 255 || c < 0 || c > 255 || d < 0 || d > 255) {
-        std::cerr << "ConnectTo: ip octet out of range\n";
-        SetConnectionStatus(ConnectionState::Disconnected, "invalid server IPv4");
+    size_t end = hostTrimmed.size();
+    while (end > begin && std::isspace(static_cast<unsigned char>(hostTrimmed[end - 1])) != 0) {
+        --end;
+    }
+    hostTrimmed = hostTrimmed.substr(begin, end - begin);
+    if (hostTrimmed.empty()) {
+        std::cerr << "ConnectTo: empty host\n";
+        SetConnectionStatus(ConnectionState::Disconnected, "invalid server host");
         return false;
     }
 
@@ -166,21 +452,11 @@ bool ClientNetwork::ConnectTo(const char ip[16], uint16_t port) {
 
     SteamNetworkingIPAddr addr;
     addr.Clear();
-
-    // Build 32-bit IPv4 address in network byte order: 0xAABBCCDD for A.B.C.D
-    uint32_t ipNum =
-        ((uint32_t)(a & 0xFF) << 24) |
-        ((uint32_t)(b & 0xFF) << 16) |
-        ((uint32_t)(c & 0xFF) << 8) |
-        ((uint32_t)(d & 0xFF));
-
-
-
-    // Use the SetIPv4(ip, port) overload (user indicated this is the available signature)
-    addr.SetIPv4(ipNum, port);
-
-    // If SetIPv4 does not set the port (signature differs), set it explicitly:
-    addr.m_port = port;
+    if (!ResolveHostToAddress(hostTrimmed, port, addr)) {
+        std::cerr << "ConnectTo: failed to resolve host '" << hostTrimmed << "'\n";
+        SetConnectionStatus(ConnectionState::Disconnected, "failed to resolve server host");
+        return false;
+    }
 
     // connect (no extra options)
     m_conn = SteamNetworkingSockets()->ConnectByIPAddress(addr, 0, nullptr);
@@ -191,7 +467,7 @@ bool ClientNetwork::ConnectTo(const char ip[16], uint16_t port) {
     }
     {
         std::ostringstream status;
-        status << "connecting to " << ip << ":" << port;
+        status << "connecting to " << hostTrimmed << ":" << port;
         SetConnectionStatus(ConnectionState::Connecting, status.str());
     }
     return true;
@@ -260,6 +536,26 @@ bool ClientNetwork::SendPlayerInput(const PlayerInput& input)
         out.data(),
         static_cast<uint32_t>(out.size()),
         k_nSteamNetworkingSend_UnreliableNoDelay,
+        nullptr
+    );
+    return (r == k_EResultOK);
+}
+
+bool ClientNetwork::SendRespawnRequest()
+{
+    if (!IsConnected()) return false;
+
+    static constexpr char kPayload[] = "RESPAWN";
+    std::vector<uint8_t> out;
+    out.reserve(1 + sizeof(kPayload) - 1);
+    out.push_back(static_cast<uint8_t>(PacketType::Message));
+    out.insert(out.end(), kPayload, kPayload + (sizeof(kPayload) - 1));
+
+    const EResult r = SteamNetworkingSockets()->SendMessageToConnection(
+        m_conn,
+        out.data(),
+        static_cast<uint32_t>(out.size()),
+        k_nSteamNetworkingSend_Reliable,
         nullptr
     );
     return (r == k_EResultOK);
@@ -385,6 +681,8 @@ void ClientNetwork::Shutdown() {
         m_chunkUnloadQueue.clear();
         m_playerSnapshotQueue.clear();
         m_shootResultQueue.clear();
+        m_killFeedQueue.clear();
+        m_scoreboardQueue.clear();
     }
 }
 
@@ -470,6 +768,21 @@ void ClientNetwork::OnMessage(const uint8_t* data, uint32_t size) {
         // simple text message from server
         if (size > 1) {
             std::string s(reinterpret_cast<const char*>(data + 1), size - 1);
+            KillFeedEvent killEvent;
+            if (TryParseKillFeedMessage(s, killEvent)) {
+                std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+                m_killFeedQueue.push_back(std::move(killEvent));
+                TrimQueueToDepth(m_killFeedQueue, kMaxKillFeedQueueDepth);
+                return;
+            }
+
+            ScoreboardSnapshot scoreboardSnapshot;
+            if (TryParseScoreboardMessage(s, scoreboardSnapshot)) {
+                std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+                m_scoreboardQueue.push_back(std::move(scoreboardSnapshot));
+                TrimQueueToDepth(m_scoreboardQueue, kMaxScoreboardQueueDepth);
+                return;
+            }
             std::cout << "[server msg] " << s << "\n";
         }
         return;
@@ -639,6 +952,26 @@ bool ClientNetwork::ShouldAutoReconnect() const noexcept
     return m_allowAutoReconnect;
 }
 
+int ClientNetwork::GetPingMs() const noexcept
+{
+    if (!IsConnected()) {
+        return -1;
+    }
+
+    SteamNetConnectionRealTimeStatus_t status{};
+    const EResult r = SteamNetworkingSockets()->GetConnectionRealTimeStatus(
+        m_conn,
+        &status,
+        0,
+        nullptr
+    );
+    if (r != k_EResultOK) {
+        return -1;
+    }
+
+    return status.m_nPing;
+}
+
 bool ClientNetwork::PopChunkData(ChunkData& out)
 {
     std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
@@ -691,6 +1024,28 @@ bool ClientNetwork::PopShootResult(ShootResult& out)
     }
     out = std::move(m_shootResultQueue.front());
     m_shootResultQueue.pop_front();
+    return true;
+}
+
+bool ClientNetwork::PopKillFeedEvent(KillFeedEvent& out)
+{
+    std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+    if (m_killFeedQueue.empty()) {
+        return false;
+    }
+    out = std::move(m_killFeedQueue.front());
+    m_killFeedQueue.pop_front();
+    return true;
+}
+
+bool ClientNetwork::PopScoreboardSnapshot(ScoreboardSnapshot& out)
+{
+    std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+    if (m_scoreboardQueue.empty()) {
+        return false;
+    }
+    out = std::move(m_scoreboardQueue.front());
+    m_scoreboardQueue.pop_front();
     return true;
 }
 

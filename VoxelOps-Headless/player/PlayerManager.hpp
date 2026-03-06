@@ -26,6 +26,7 @@ public:
     bool touchHeartbeat(PlayerID id);
     bool enqueuePlayerInput(PlayerID id, const PlayerInput& input);
     bool setFlyModeAllowed(PlayerID id, bool allowed);
+    bool setEquippedWeapon(PlayerID id, uint16_t weaponId);
     void SetDebugLoggingEnabled(bool enabled);
     bool IsDebugLoggingEnabled();
 
@@ -47,9 +48,12 @@ public:
     std::optional<ServerPlayer> getPlayerCopy(PlayerID id);
     std::vector<ServerPlayer> getAllPlayersCopy();
     bool applyDamage(PlayerID id, float damage, float& outHealthAfter, bool& outKilled);
+    bool requestRespawn(PlayerID id);
 
 private:
     PlayerID addPlayerInternal();
+    glm::vec3 chooseRespawnPositionLocked(PlayerID respawningId) const;
+    void respawnPlayerLocked(ServerPlayer& player, const glm::vec3& position);
 
     bool checkCollision(const ServerPlayer& p, const glm::vec3& pos, ChunkManager& chunkManager) const;
     void moveAndCollide(
@@ -69,4 +73,5 @@ private:
 
     // Config
     std::chrono::seconds heartbeatTimeout{ 300 };
+    std::chrono::milliseconds respawnDelay{ 3000 };
 };

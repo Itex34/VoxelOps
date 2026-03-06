@@ -9,7 +9,9 @@
 #include <iostream>
 #include <chrono>
 #include <atomic>
+#include <array>
 #include <cstring>
+#include <limits>
 #include <glm/glm.hpp>
 
 namespace {
@@ -20,6 +22,18 @@ constexpr bool kServerBlockOnMissingCollisionChunk = true;
 std::atomic<uint64_t> g_missingChunkCollisionCount{ 0 };
 std::atomic<bool> g_enablePlayerManagerPerfDiagnostics{ true };
 std::atomic<bool> g_enableMissingChunkCollisionDiagnostics{ true };
+constexpr size_t kPlayerSnapshotEntrySize = 8 + (8 * 4) + 3 + 2 + 4 + 1 + 4;
+const std::array<glm::vec3, 9> kRespawnCandidates{ {
+    glm::vec3(0.0f, 60.0f, 0.0f),
+    glm::vec3(14.0f, 60.0f, 14.0f),
+    glm::vec3(-14.0f, 60.0f, 14.0f),
+    glm::vec3(14.0f, 60.0f, -14.0f),
+    glm::vec3(-14.0f, 60.0f, -14.0f),
+    glm::vec3(24.0f, 60.0f, 0.0f),
+    glm::vec3(-24.0f, 60.0f, 0.0f),
+    glm::vec3(0.0f, 60.0f, 24.0f),
+    glm::vec3(0.0f, 60.0f, -24.0f)
+} };
 
 inline const Shared::PlayerData::MovementSettings& movementSettings() {
     return Shared::PlayerData::GetMovementSettings();
@@ -43,6 +57,11 @@ inline void AppendU8(std::vector<uint8_t>& out, uint8_t v) {
     out.push_back(v);
 }
 
+inline void AppendU16(std::vector<uint8_t>& out, uint16_t v) {
+    out.push_back(static_cast<uint8_t>(v & 0xFFu));
+    out.push_back(static_cast<uint8_t>((v >> 8) & 0xFFu));
+}
+
 inline void AppendU32(std::vector<uint8_t>& out, uint32_t v) {
     out.push_back(static_cast<uint8_t>(v & 0xFFu));
     out.push_back(static_cast<uint8_t>((v >> 8) & 0xFFu));
@@ -64,9 +83,8 @@ inline void AppendF32(std::vector<uint8_t>& out, float value) {
 }
 
 std::vector<uint8_t> SerializePlayerSnapshotsPayload(const std::vector<PlayerSnapshot>& players) {
-    constexpr size_t kEntrySize = 8 + (8 * 4) + 3;
     std::vector<uint8_t> out;
-    out.reserve(4 + players.size() * kEntrySize);
+    out.reserve(4 + players.size() * kPlayerSnapshotEntrySize);
     AppendU32(out, static_cast<uint32_t>(players.size()));
     for (const PlayerSnapshot& p : players) {
         AppendU64(out, p.id);
@@ -81,6 +99,10 @@ std::vector<uint8_t> SerializePlayerSnapshotsPayload(const std::vector<PlayerSna
         AppendU8(out, p.onGround);
         AppendU8(out, p.flyMode);
         AppendU8(out, p.allowFlyMode);
+        AppendU16(out, p.weaponId);
+        AppendF32(out, p.health);
+        AppendU8(out, p.isAlive);
+        AppendF32(out, p.respawnSeconds);
     }
     return out;
 }
@@ -114,6 +136,67 @@ bool PlayerManager::IsDebugLoggingEnabled() {
         g_enableMissingChunkCollisionDiagnostics.load(std::memory_order_acquire);
 }
 
+glm::vec3 PlayerManager::chooseRespawnPositionLocked(PlayerID respawningId) const {
+    if (kRespawnCandidates.empty()) {
+        return glm::vec3(0.0f, 60.0f, 0.0f);
+    }
+
+    float bestScore = -1.0f;
+    glm::vec3 bestPosition = kRespawnCandidates.front();
+    bool foundAnyAliveOpponent = false;
+
+    for (const glm::vec3& candidate : kRespawnCandidates) {
+        float nearestAliveDistSq = std::numeric_limits<float>::max();
+        bool hasAliveOpponent = false;
+        for (const auto& kv : playersById) {
+            if (kv.first == respawningId) {
+                continue;
+            }
+            const ServerPlayer& other = kv.second;
+            if (!other.isAlive) {
+                continue;
+            }
+            const glm::vec3 delta = candidate - other.position;
+            const float distSq = glm::dot(delta, delta);
+            nearestAliveDistSq = std::min(nearestAliveDistSq, distSq);
+            hasAliveOpponent = true;
+        }
+
+        if (!hasAliveOpponent) {
+            if (!foundAnyAliveOpponent) {
+                return candidate;
+            }
+            continue;
+        }
+
+        foundAnyAliveOpponent = true;
+        if (nearestAliveDistSq > bestScore) {
+            bestScore = nearestAliveDistSq;
+            bestPosition = candidate;
+        }
+    }
+
+    return bestPosition;
+}
+
+void PlayerManager::respawnPlayerLocked(ServerPlayer& player, const glm::vec3& position) {
+    player.position = position;
+    player.velocity = glm::vec3(0.0f);
+    player.onGround = false;
+    player.flyMode = false;
+    player.activeInputFlags = 0;
+    player.moveX = 0.0f;
+    player.moveZ = 0.0f;
+    player.jumpPressedLastTick = false;
+    player.timeSinceGrounded = 0.0f;
+    player.jumpBufferTimer = 0.0f;
+    player.pendingInputs.clear();
+    player.health = player.maxHealth;
+    player.isAlive = true;
+    player.respawnAt = Clock::time_point{};
+    player.pendingRespawnRequest = false;
+}
+
 PlayerID PlayerManager::addPlayerInternal() {
     return nextId.fetch_add(1, std::memory_order_relaxed);
 }
@@ -128,6 +211,10 @@ PlayerID PlayerManager::onPlayerConnect(std::shared_ptr<ConnectionHandle> conn, 
     p.velocity = glm::vec3(0.0f);
     p.height = movementSettings().collisionHeight;
     p.radius = movementSettings().collisionRadius;
+    p.health = p.maxHealth;
+    p.isAlive = true;
+    p.respawnAt = Clock::time_point{};
+    p.pendingRespawnRequest = false;
     p.lastHeartbeat = now;
     p.lastInputReceived = now;
     p.conn = conn;
@@ -196,6 +283,15 @@ bool PlayerManager::setFlyModeAllowed(PlayerID id, bool allowed) {
     return true;
 }
 
+bool PlayerManager::setEquippedWeapon(PlayerID id, uint16_t weaponId) {
+    std::lock_guard<std::mutex> lock(mtx);
+    auto it = playersById.find(id);
+    if (it == playersById.end()) return false;
+
+    it->second.equippedWeaponId = weaponId;
+    return true;
+}
+
 void PlayerManager::update(double deltaSeconds, ChunkManager& chunkManager) {
     const auto updateStart = std::chrono::steady_clock::now();
     std::vector<PlayerID> toRemove;
@@ -205,8 +301,44 @@ void PlayerManager::update(double deltaSeconds, ChunkManager& chunkManager) {
         playerCountForLog = playersById.size();
         const auto now = Clock::now();
         for (auto& kv : playersById) {
-            simulatePhysicsFor(kv.second, deltaSeconds, chunkManager);
-            if (now - kv.second.lastHeartbeat > heartbeatTimeout) {
+            ServerPlayer& player = kv.second;
+            if (player.isAlive) {
+                simulatePhysicsFor(player, deltaSeconds, chunkManager);
+            }
+            else {
+                while (!player.pendingInputs.empty()) {
+                    const PlayerInput cmd = player.pendingInputs.front();
+                    player.pendingInputs.pop_front();
+                    if (!IsNewerU32(cmd.sequenceNumber, player.lastProcessedInputSequence)) {
+                        continue;
+                    }
+                    player.lastProcessedInputSequence = cmd.sequenceNumber;
+                    player.yaw = NormalizeYawDegrees(std::isfinite(cmd.yaw) ? cmd.yaw : 0.0f);
+                    player.pitch = std::isfinite(cmd.pitch) ? cmd.pitch : 0.0f;
+                }
+
+                player.activeInputFlags = 0;
+                player.moveX = 0.0f;
+                player.moveZ = 0.0f;
+                player.flyMode = false;
+                player.velocity = glm::vec3(0.0f);
+                player.onGround = false;
+                player.jumpPressedLastTick = false;
+                player.timeSinceGrounded = 0.0f;
+                player.jumpBufferTimer = 0.0f;
+
+                if (
+                    player.pendingRespawnRequest &&
+                    player.respawnAt != Clock::time_point{} &&
+                    now >= player.respawnAt
+                ) {
+                    const glm::vec3 respawnPos = chooseRespawnPositionLocked(player.id);
+                    respawnPlayerLocked(player, respawnPos);
+                    player.lastInputReceived = now;
+                }
+            }
+
+            if (now - player.lastHeartbeat > heartbeatTimeout) {
                 toRemove.push_back(kv.first);
             }
         }
@@ -409,6 +541,7 @@ std::vector<std::vector<uint8_t>> PlayerManager::buildSnapshotsForRecipients(
     }
 
     std::lock_guard<std::mutex> lock(mtx);
+    const auto now = Clock::now();
 
     std::vector<PlayerSnapshot> players;
     players.reserve(playersById.size());
@@ -424,6 +557,16 @@ std::vector<std::vector<uint8_t>> PlayerManager::buildSnapshotsForRecipients(
         pkt.onGround = p.onGround ? 1 : 0;
         pkt.flyMode = p.flyMode ? 1 : 0;
         pkt.allowFlyMode = p.allowFlyMode ? 1 : 0;
+        pkt.weaponId = p.equippedWeaponId;
+        pkt.health = p.health;
+        pkt.isAlive = p.isAlive ? 1 : 0;
+        if (p.isAlive || p.respawnAt == Clock::time_point{}) {
+            pkt.respawnSeconds = 0.0f;
+        }
+        else {
+            const float remaining = std::chrono::duration<float>(p.respawnAt - now).count();
+            pkt.respawnSeconds = std::max(0.0f, remaining);
+        }
         players.push_back(pkt);
     }
 
@@ -502,19 +645,52 @@ bool PlayerManager::applyDamage(PlayerID id, float damage, float& outHealthAfter
     }
 
     ServerPlayer& target = it->second;
+    if (!target.isAlive) {
+        outHealthAfter = 0.0f;
+        outKilled = false;
+        return false;
+    }
+
     target.health = std::max(0.0f, target.health - damage);
     outHealthAfter = target.health;
     if (target.health <= 0.0f) {
         outKilled = true;
-        // Simple instant respawn until full lifecycle/score system is in place.
-        target.position = glm::vec3(0.0f, 60.0f, 0.0f);
+        target.health = 0.0f;
+        target.isAlive = false;
+        target.respawnAt = Clock::now() + respawnDelay;
+        target.pendingRespawnRequest = false;
         target.velocity = glm::vec3(0.0f);
+        target.flyMode = false;
+        target.activeInputFlags = 0;
+        target.moveX = 0.0f;
+        target.moveZ = 0.0f;
         target.onGround = false;
         target.jumpPressedLastTick = false;
         target.timeSinceGrounded = 0.0f;
         target.jumpBufferTimer = 0.0f;
-        target.health = target.maxHealth;
-        outHealthAfter = target.health;
+        target.pendingInputs.clear();
+        outHealthAfter = 0.0f;
     }
+    return true;
+}
+
+bool PlayerManager::requestRespawn(PlayerID id) {
+    std::lock_guard<std::mutex> lock(mtx);
+    auto it = playersById.find(id);
+    if (it == playersById.end()) {
+        return false;
+    }
+
+    ServerPlayer& player = it->second;
+    if (player.isAlive) {
+        return false;
+    }
+
+    const auto now = Clock::now();
+    if (player.respawnAt == Clock::time_point{} || now < player.respawnAt) {
+        return false;
+    }
+
+    player.pendingRespawnRequest = true;
     return true;
 }

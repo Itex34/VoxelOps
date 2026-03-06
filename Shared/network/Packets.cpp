@@ -179,11 +179,12 @@ std::optional<ConnectResponse> ConnectResponse::deserialize(const std::vector<ui
 // -------------------- PlayerInput --------------------
 std::vector<uint8_t> PlayerInput::serialize() const {
     std::vector<uint8_t> out;
-    out.reserve(1 + 4 + 1 + 1 + 4 * 4);
+    out.reserve(1 + 4 + 1 + 1 + 2 + 4 * 4);
     write_u8(out, static_cast<uint8_t>(PacketType::PlayerInput));
     write_u32(out, sequenceNumber);
     write_u8(out, inputFlags);
     write_u8(out, flyMode);
+    write_u16(out, weaponId);
     write_f32(out, yaw);
     write_f32(out, pitch);
     write_f32(out, moveX);
@@ -201,6 +202,7 @@ std::optional<PlayerInput> PlayerInput::deserialize(const std::vector<uint8_t>& 
     if (!read_u32(buf, off, p.sequenceNumber)) return std::nullopt;
     if (!read_u8(buf, off, p.inputFlags)) return std::nullopt;
     if (!read_u8(buf, off, p.flyMode)) return std::nullopt;
+    if (!read_u16(buf, off, p.weaponId)) return std::nullopt;
     if (!read_f32(buf, off, p.yaw)) return std::nullopt;
     if (!read_f32(buf, off, p.pitch)) return std::nullopt;
     if (!read_f32(buf, off, p.moveX)) return std::nullopt;
@@ -328,7 +330,8 @@ std::optional<PlayerPosition> PlayerPosition::deserialize(const std::vector<uint
 // -------------------- PlayerSnapshotFrame --------------------
 std::vector<uint8_t> PlayerSnapshotFrame::serialize() const {
     std::vector<uint8_t> out;
-    out.reserve(1 + 4 + 8 + 4 + 4 + players.size() * (8 + (8 * 4) + 3));
+    constexpr size_t kEntrySize = 8 + (8 * 4) + 3 + 2 + 4 + 1 + 4;
+    out.reserve(1 + 4 + 8 + 4 + 4 + players.size() * kEntrySize);
     write_u8(out, static_cast<uint8_t>(PacketType::PlayerSnapshot));
     write_u32(out, serverTick);
     write_u64(out, selfPlayerId);
@@ -342,6 +345,10 @@ std::vector<uint8_t> PlayerSnapshotFrame::serialize() const {
         write_u8(out, p.onGround);
         write_u8(out, p.flyMode);
         write_u8(out, p.allowFlyMode);
+        write_u16(out, p.weaponId);
+        write_f32(out, p.health);
+        write_u8(out, p.isAlive);
+        write_f32(out, p.respawnSeconds);
     }
     return out;
 }
@@ -350,7 +357,7 @@ std::optional<PlayerSnapshotFrame> PlayerSnapshotFrame::deserialize(const std::v
     size_t off = 0;
     uint8_t type = 0;
     uint32_t count = 0;
-    constexpr size_t kEntrySize = 8 + (8 * 4) + 3;
+    constexpr size_t kEntrySize = 8 + (8 * 4) + 3 + 2 + 4 + 1 + 4;
 
     if (!read_u8(buf, off, type)) return std::nullopt;
     if (type != static_cast<uint8_t>(PacketType::PlayerSnapshot)) return std::nullopt;
@@ -378,6 +385,10 @@ std::optional<PlayerSnapshotFrame> PlayerSnapshotFrame::deserialize(const std::v
         if (!read_u8(buf, off, p.onGround)) return std::nullopt;
         if (!read_u8(buf, off, p.flyMode)) return std::nullopt;
         if (!read_u8(buf, off, p.allowFlyMode)) return std::nullopt;
+        if (!read_u16(buf, off, p.weaponId)) return std::nullopt;
+        if (!read_f32(buf, off, p.health)) return std::nullopt;
+        if (!read_u8(buf, off, p.isAlive)) return std::nullopt;
+        if (!read_f32(buf, off, p.respawnSeconds)) return std::nullopt;
         frame.players.push_back(p);
     }
     return frame;

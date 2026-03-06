@@ -27,6 +27,7 @@ struct PlayerState {
     glm::vec3 position;
     glm::quat rotation;
     glm::vec3 scale = glm::vec3(1.0f);
+    uint16_t weaponId = 0;
 };
 
 struct NetworkInputState {

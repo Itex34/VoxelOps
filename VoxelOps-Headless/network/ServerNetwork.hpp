@@ -161,6 +161,11 @@ private:
         std::unordered_map<PlayerID, LagCompPlayerPose> players;
     };
 
+    struct MatchScore {
+        uint32_t kills = 0;
+        uint32_t deaths = 0;
+    };
+
     static uint16_t ClampViewDistance(uint16_t requested);
     std::string AllocateAutoUsernameLocked(HSteamNetConnection incomingConn);
     std::string BuildDisplayNameForIdentityLocked(
@@ -218,8 +223,14 @@ private:
 
     // connection -> client session
     std::unordered_map<HSteamNetConnection, ClientSession> m_clients;
+    std::unordered_map<PlayerID, MatchScore> m_matchScores;
     PlayerManager m_playerManager;
     ChunkManager m_chunkManager;
+    std::chrono::steady_clock::time_point m_matchStartTime = std::chrono::steady_clock::now();
+    std::chrono::seconds m_matchDuration{ 600 };
+    bool m_matchStarted = false;
+    bool m_matchEnded = false;
+    std::string m_matchWinner;
 
     // (username, message)
     std::vector<std::pair<std::string, std::string>> m_messageHistory;

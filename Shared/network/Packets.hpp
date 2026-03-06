@@ -17,7 +17,7 @@ constexpr uint8_t kPlayerInputFlagSprint = 1u << 5;
 constexpr uint8_t kPlayerInputFlagFlyUp = 1u << 6;
 constexpr uint8_t kPlayerInputFlagFlyDown = 1u << 7;
 
-constexpr uint16_t kVoxelOpsProtocolVersion = 2;
+constexpr uint16_t kVoxelOpsProtocolVersion = 5;
 constexpr size_t kMaxConnectIdentityChars = 64;
 constexpr size_t kMaxConnectUsernameChars = 32;
 constexpr size_t kMaxConnectMessageChars = 120;
@@ -56,6 +56,7 @@ struct PlayerInput {
     uint32_t sequenceNumber = 0;
     uint8_t inputFlags = 0;
     uint8_t flyMode = 0;
+    uint16_t weaponId = 0;
     float yaw = 0.f;
     float pitch = 0.f;
     float moveX = 0.f;
@@ -114,6 +115,10 @@ struct PlayerSnapshot{
     uint8_t onGround = 0;
     uint8_t flyMode = 0;
     uint8_t allowFlyMode = 0;
+    uint16_t weaponId = 0;
+    float health = 100.0f;
+    uint8_t isAlive = 1;
+    float respawnSeconds = 0.0f;
 };
 
 struct PlayerSnapshotFrame {
