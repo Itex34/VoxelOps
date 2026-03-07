@@ -1973,6 +1973,8 @@ void ServerNetwork::MainLoop()
     constexpr double kServerTickSeconds = 1.0 / static_cast<double>(kServerTickRateHz);
     constexpr size_t kMaxSimCatchupTicksPerLoop = 4;
     constexpr size_t kChunkInterestUpdatesPerLoop = 4;
+    constexpr size_t kMaxInboundMessagesPerLoop = 256;
+    constexpr int64_t kInboundMessageBudgetUs = 3000;
     const auto kChunkInterestUpdateInterval = std::chrono::milliseconds(100);
     constexpr int kCollisionPrewarmRadiusXZ = 1;
     constexpr int kCollisionPrewarmRadiusY = 1;
@@ -2027,10 +2029,22 @@ void ServerNetwork::MainLoop()
         SteamNetworkingSockets()->RunCallbacks();
 
         // Receive messages on poll group (any connection assigned to it).
-        // Drain all available messages each tick to avoid ACK/request backlogs.
+        // Drain with a bounded budget so message bursts do not starve simulation ticks.
         const auto messageDrainStart = std::chrono::steady_clock::now();
         SteamNetworkingMessage_t* pMsg = nullptr;
-        while (SteamNetworkingSockets()->ReceiveMessagesOnPollGroup(m_pollGroup, &pMsg, 1) > 0 && pMsg) {
+        size_t inboundMessagesProcessed = 0;
+        const auto reachedMessageDrainBudget = [&]() {
+            ++inboundMessagesProcessed;
+            const int64_t elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - messageDrainStart
+            ).count();
+            return elapsedUs >= kInboundMessageBudgetUs;
+        };
+        while (
+            inboundMessagesProcessed < kMaxInboundMessagesPerLoop &&
+            SteamNetworkingSockets()->ReceiveMessagesOnPollGroup(m_pollGroup, &pMsg, 1) > 0 &&
+            pMsg
+        ) {
             HSteamNetConnection incoming = pMsg->m_conn;
             const void* data = pMsg->m_pData;
             const uint32_t cb = pMsg->m_cbSize;
@@ -2042,6 +2056,9 @@ void ServerNetwork::MainLoop()
                     << " (closing connection)\n";
                 SteamNetworkingSockets()->CloseConnection(incoming, 0, "invalid packet size", false);
                 pMsg->Release();
+                if (reachedMessageDrainBudget()) {
+                    break;
+                }
                 continue;
             }
 
@@ -2052,11 +2069,17 @@ void ServerNetwork::MainLoop()
                     << " size=" << cb
                     << " conn=" << incoming << "\n";
                 pMsg->Release();
+                if (reachedMessageDrainBudget()) {
+                    break;
+                }
                 continue;
             }
 
             if (IsInboundRateLimitExceeded(incoming, packetType, cb)) {
                 pMsg->Release();
+                if (reachedMessageDrainBudget()) {
+                    break;
+                }
                 continue;
             }
 
@@ -2071,6 +2094,9 @@ void ServerNetwork::MainLoop()
                 chunkAckPacketsThisLoop
             );
             pMsg->Release();
+            if (reachedMessageDrainBudget()) {
+                break;
+            }
         }
 
         // Optional: extra safeguard - check connection states for any connections left (callback already handles most)

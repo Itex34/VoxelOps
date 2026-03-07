@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -46,6 +47,8 @@ constexpr size_t kMaxChunkDeltaQueueDepth = 512;
 constexpr size_t kMaxChunkUnloadQueueDepth = 256;
 constexpr size_t kMaxKillFeedQueueDepth = 64;
 constexpr size_t kMaxScoreboardQueueDepth = 16;
+constexpr size_t kMaxMessagesPerPoll = 128;
+constexpr int64_t kMessagePollBudgetUs = 2000;
 constexpr const char* kClientIdentityFileName = "client_identity.txt";
 
 template <typename T>
@@ -650,14 +653,27 @@ void ClientNetwork::Poll() {
             return;
         }
     }
+    const auto pollStart = std::chrono::steady_clock::now();
+    size_t drainedMessages = 0;
     SteamNetworkingMessage_t* pMsg = nullptr;
-    while (SteamNetworkingSockets()->ReceiveMessagesOnConnection(m_conn, &pMsg, 1) > 0 && pMsg) {
+    while (
+        drainedMessages < kMaxMessagesPerPoll &&
+        SteamNetworkingSockets()->ReceiveMessagesOnConnection(m_conn, &pMsg, 1) > 0 &&
+        pMsg
+    ) {
         const uint8_t* data = reinterpret_cast<const uint8_t*>(pMsg->m_pData);
         uint32_t cb = pMsg->m_cbSize;
         if (cb >= 1) {
             OnMessage(data, cb);
         }
         pMsg->Release();
+        ++drainedMessages;
+        const int64_t elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - pollStart
+        ).count();
+        if (elapsedUs >= kMessagePollBudgetUs) {
+            break;
+        }
     }
 }
 

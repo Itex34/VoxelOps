@@ -440,7 +440,7 @@ struct App::Runtime {
     static constexpr float RenderExtrapolationBlend = 0.60f;
     static constexpr float RenderCameraSmoothingGroundHz = 26.0f;
     static constexpr float RenderCameraSmoothingAirHz = 16.0f;
-    static constexpr size_t InputRedundancyCopies = 2; // resend latest unacked states to mask packet loss
+    static constexpr size_t InputRedundancyCopies = 1; // keep one recent resend for loss recovery without tripling traffic
     static constexpr double ChunkRequestSendInterval = 0.5; // 2 Hz baseline + immediate on center changes
     static constexpr double ChunkRequestCenterChangeMinInterval = 1.0 / 30.0; // up to 30 Hz on border crossings
     static constexpr size_t MaxChunkDataApplyPerFrame = 12;
@@ -2000,6 +2000,7 @@ void App::processChunkStreaming(Runtime& runtime, bool prioritizeMovement) {
     size_t chunkUnloadApplied = 0;
     while (
         chunkUnloadApplied < Runtime::MaxChunkUnloadApplyPerFrame &&
+        withinChunkApplyBudget() &&
         runtime.clientNet.PopChunkUnload(chunkUnload)
     ) {
         runtime.chunkManager->applyNetworkChunkUnload(chunkUnload);
@@ -2362,7 +2363,13 @@ void App::processFrame(Runtime& runtime) {
     glfwSwapBuffers(m_Window);
     glfwPollEvents();
 
-    const bool prioritizeMovement = (localPredictionSteps > 1);
+    const ClientNetwork::ChunkQueueDepths queueDepths = runtime.clientNet.GetChunkQueueDepths();
+    const bool frameUnderPressure = GameData::deltaTime > (Runtime::LocalPredictionStep * 1.2);
+    const bool chunkBacklog =
+        queueDepths.chunkData > (Runtime::MaxChunkDataApplyPerFrame * 3) ||
+        queueDepths.chunkDelta > (Runtime::MaxChunkDeltaApplyPerFrame * 3) ||
+        queueDepths.chunkUnload > (Runtime::MaxChunkUnloadApplyPerFrame * 3);
+    const bool prioritizeMovement = (localPredictionSteps > 1) || frameUnderPressure || chunkBacklog;
     processChunkStreaming(runtime, prioritizeMovement);
 }
 
