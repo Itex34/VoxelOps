@@ -229,6 +229,254 @@ bool ParseUint32Token(std::string_view token, uint32_t& out)
     return true;
 }
 
+inline bool ReadU8(const uint8_t* data, size_t size, size_t& offset, uint8_t& out)
+{
+    if (!data || offset + 1 > size) {
+        return false;
+    }
+    out = data[offset++];
+    return true;
+}
+
+inline bool ReadU16LE(const uint8_t* data, size_t size, size_t& offset, uint16_t& out)
+{
+    if (!data || offset + 2 > size) {
+        return false;
+    }
+    out = static_cast<uint16_t>(data[offset]) |
+        (static_cast<uint16_t>(data[offset + 1]) << 8);
+    offset += 2;
+    return true;
+}
+
+inline bool ReadU32LE(const uint8_t* data, size_t size, size_t& offset, uint32_t& out)
+{
+    if (!data || offset + 4 > size) {
+        return false;
+    }
+    out = static_cast<uint32_t>(data[offset]) |
+        (static_cast<uint32_t>(data[offset + 1]) << 8) |
+        (static_cast<uint32_t>(data[offset + 2]) << 16) |
+        (static_cast<uint32_t>(data[offset + 3]) << 24);
+    offset += 4;
+    return true;
+}
+
+inline bool ReadI32LE(const uint8_t* data, size_t size, size_t& offset, int32_t& out)
+{
+    uint32_t raw = 0;
+    if (!ReadU32LE(data, size, offset, raw)) {
+        return false;
+    }
+    out = static_cast<int32_t>(raw);
+    return true;
+}
+
+inline bool ReadU64LE(const uint8_t* data, size_t size, size_t& offset, uint64_t& out)
+{
+    if (!data || offset + 8 > size) {
+        return false;
+    }
+    uint64_t value = 0;
+    for (int i = 0; i < 8; ++i) {
+        value |= (static_cast<uint64_t>(data[offset + i]) << (8 * i));
+    }
+    out = value;
+    offset += 8;
+    return true;
+}
+
+inline bool ReadF32LE(const uint8_t* data, size_t size, size_t& offset, float& out)
+{
+    uint32_t raw = 0;
+    if (!ReadU32LE(data, size, offset, raw)) {
+        return false;
+    }
+    std::memcpy(&out, &raw, sizeof(out));
+    return true;
+}
+
+bool ParseConnectResponsePacket(const uint8_t* data, size_t size, ConnectResponse& out)
+{
+    size_t offset = 0;
+    uint8_t type = 0;
+    uint8_t ok = 0;
+    uint8_t reason = 0;
+    uint8_t assignedLen = 0;
+    uint8_t messageLen = 0;
+    uint16_t protocolVersion = 0;
+    if (!ReadU8(data, size, offset, type) ||
+        type != static_cast<uint8_t>(PacketType::ConnectResponse) ||
+        !ReadU8(data, size, offset, ok) ||
+        !ReadU8(data, size, offset, reason) ||
+        !ReadU16LE(data, size, offset, protocolVersion) ||
+        !ReadU8(data, size, offset, assignedLen) ||
+        !ReadU8(data, size, offset, messageLen)) {
+        return false;
+    }
+    if (assignedLen > kMaxConnectUsernameChars || messageLen > kMaxConnectMessageChars) {
+        return false;
+    }
+    if (offset + static_cast<size_t>(assignedLen) + static_cast<size_t>(messageLen) != size) {
+        return false;
+    }
+
+    out.ok = (ok != 0) ? 1u : 0u;
+    out.reason = static_cast<ConnectRejectReason>(reason);
+    out.serverProtocolVersion = protocolVersion;
+    out.assignedUsername.assign(reinterpret_cast<const char*>(data + offset), assignedLen);
+    offset += assignedLen;
+    out.message.assign(reinterpret_cast<const char*>(data + offset), messageLen);
+    return true;
+}
+
+bool ParsePlayerSnapshotFramePacket(const uint8_t* data, size_t size, PlayerSnapshotFrame& out)
+{
+    constexpr size_t kSnapshotEntryBytes = 8 + (8 * 4) + 3 + 2 + 4 + 1 + 4;
+    size_t offset = 0;
+    uint8_t type = 0;
+    uint32_t playerCount = 0;
+    if (!ReadU8(data, size, offset, type) ||
+        type != static_cast<uint8_t>(PacketType::PlayerSnapshot) ||
+        !ReadU32LE(data, size, offset, out.serverTick) ||
+        !ReadU64LE(data, size, offset, out.selfPlayerId) ||
+        !ReadU32LE(data, size, offset, out.lastProcessedInputSequence) ||
+        !ReadU32LE(data, size, offset, playerCount)) {
+        return false;
+    }
+
+    const size_t bytesRemaining = (offset <= size) ? (size - offset) : 0;
+    if (playerCount > (bytesRemaining / kSnapshotEntryBytes)) {
+        return false;
+    }
+
+    out.players.clear();
+    out.players.reserve(playerCount);
+    for (uint32_t i = 0; i < playerCount; ++i) {
+        PlayerSnapshot snapshot{};
+        if (!ReadU64LE(data, size, offset, snapshot.id) ||
+            !ReadF32LE(data, size, offset, snapshot.px) ||
+            !ReadF32LE(data, size, offset, snapshot.py) ||
+            !ReadF32LE(data, size, offset, snapshot.pz) ||
+            !ReadF32LE(data, size, offset, snapshot.vx) ||
+            !ReadF32LE(data, size, offset, snapshot.vy) ||
+            !ReadF32LE(data, size, offset, snapshot.vz) ||
+            !ReadF32LE(data, size, offset, snapshot.yaw) ||
+            !ReadF32LE(data, size, offset, snapshot.pitch) ||
+            !ReadU8(data, size, offset, snapshot.onGround) ||
+            !ReadU8(data, size, offset, snapshot.flyMode) ||
+            !ReadU8(data, size, offset, snapshot.allowFlyMode) ||
+            !ReadU16LE(data, size, offset, snapshot.weaponId) ||
+            !ReadF32LE(data, size, offset, snapshot.health) ||
+            !ReadU8(data, size, offset, snapshot.isAlive) ||
+            !ReadF32LE(data, size, offset, snapshot.respawnSeconds)) {
+            return false;
+        }
+        out.players.push_back(snapshot);
+    }
+
+    return offset == size;
+}
+
+bool ParseChunkDataPacket(const uint8_t* data, size_t size, ChunkData& out)
+{
+    size_t offset = 0;
+    uint8_t type = 0;
+    uint32_t payloadSize = 0;
+    if (!ReadU8(data, size, offset, type) ||
+        type != static_cast<uint8_t>(PacketType::ChunkData) ||
+        !ReadI32LE(data, size, offset, out.chunkX) ||
+        !ReadI32LE(data, size, offset, out.chunkY) ||
+        !ReadI32LE(data, size, offset, out.chunkZ) ||
+        !ReadU64LE(data, size, offset, out.version) ||
+        !ReadU8(data, size, offset, out.flags) ||
+        !ReadU32LE(data, size, offset, payloadSize)) {
+        return false;
+    }
+    if (offset + payloadSize != size) {
+        return false;
+    }
+    out.payload.resize(payloadSize);
+    if (payloadSize > 0) {
+        std::memcpy(out.payload.data(), data + offset, payloadSize);
+    }
+    return true;
+}
+
+bool ParseChunkDeltaPacket(const uint8_t* data, size_t size, ChunkDelta& out)
+{
+    size_t offset = 0;
+    uint8_t type = 0;
+    uint32_t editCount = 0;
+    if (!ReadU8(data, size, offset, type) ||
+        type != static_cast<uint8_t>(PacketType::ChunkDelta) ||
+        !ReadI32LE(data, size, offset, out.chunkX) ||
+        !ReadI32LE(data, size, offset, out.chunkY) ||
+        !ReadI32LE(data, size, offset, out.chunkZ) ||
+        !ReadU64LE(data, size, offset, out.resultingVersion) ||
+        !ReadU32LE(data, size, offset, editCount)) {
+        return false;
+    }
+    if (editCount > ((size - offset) / 4)) {
+        return false;
+    }
+
+    out.edits.clear();
+    out.edits.reserve(editCount);
+    for (uint32_t i = 0; i < editCount; ++i) {
+        ChunkDeltaOp op{};
+        if (!ReadU8(data, size, offset, op.x) ||
+            !ReadU8(data, size, offset, op.y) ||
+            !ReadU8(data, size, offset, op.z) ||
+            !ReadU8(data, size, offset, op.blockId)) {
+            return false;
+        }
+        out.edits.push_back(op);
+    }
+    return offset == size;
+}
+
+bool ParseChunkUnloadPacket(const uint8_t* data, size_t size, ChunkUnload& out)
+{
+    size_t offset = 0;
+    uint8_t type = 0;
+    if (!ReadU8(data, size, offset, type) ||
+        type != static_cast<uint8_t>(PacketType::ChunkUnload) ||
+        !ReadI32LE(data, size, offset, out.chunkX) ||
+        !ReadI32LE(data, size, offset, out.chunkY) ||
+        !ReadI32LE(data, size, offset, out.chunkZ)) {
+        return false;
+    }
+    return offset == size;
+}
+
+bool ParseShootResultPacket(const uint8_t* data, size_t size, ShootResult& out)
+{
+    size_t offset = 0;
+    uint8_t type = 0;
+    uint32_t entityRaw = 0;
+    if (!ReadU8(data, size, offset, type) ||
+        type != static_cast<uint8_t>(PacketType::ShootResult) ||
+        !ReadU32LE(data, size, offset, out.clientShotId) ||
+        !ReadU32LE(data, size, offset, out.serverTick) ||
+        !ReadU8(data, size, offset, out.accepted) ||
+        !ReadU8(data, size, offset, out.didHit) ||
+        !ReadU32LE(data, size, offset, entityRaw) ||
+        !ReadF32LE(data, size, offset, out.hitX) ||
+        !ReadF32LE(data, size, offset, out.hitY) ||
+        !ReadF32LE(data, size, offset, out.hitZ) ||
+        !ReadF32LE(data, size, offset, out.normalX) ||
+        !ReadF32LE(data, size, offset, out.normalY) ||
+        !ReadF32LE(data, size, offset, out.normalZ) ||
+        !ReadF32LE(data, size, offset, out.damageApplied) ||
+        !ReadU16LE(data, size, offset, out.newAmmoCount) ||
+        !ReadU32LE(data, size, offset, out.serverSeed)) {
+        return false;
+    }
+    out.hitEntityId = static_cast<int32_t>(entityRaw);
+    return offset == size;
+}
+
 bool ResolveHostToAddress(std::string_view host, uint16_t port, SteamNetworkingIPAddr& outAddr)
 {
     if (host.empty()) {
@@ -727,9 +975,8 @@ float ClientNetwork::ReadFloatLE(const uint8_t* ptr) {
 void ClientNetwork::OnMessage(const uint8_t* data, uint32_t size) {
     uint8_t t = data[0];
     if (static_cast<PacketType>(t) == PacketType::ConnectResponse) {
-        std::vector<uint8_t> buf(data, data + size);
-        auto opt = ConnectResponse::deserialize(buf);
-        if (!opt.has_value()) {
+        ConnectResponse resp;
+        if (!ParseConnectResponsePacket(data, size, resp)) {
             std::cerr << "[net] malformed ConnectResponse\n";
             m_registered = false;
             m_assignedUsername.clear();
@@ -741,7 +988,6 @@ void ClientNetwork::OnMessage(const uint8_t* data, uint32_t size) {
             return;
         }
 
-        const ConnectResponse& resp = *opt;
         if (resp.ok != 0) {
             m_registered = true;
             m_assignedUsername = resp.assignedUsername;
@@ -805,16 +1051,15 @@ void ClientNetwork::OnMessage(const uint8_t* data, uint32_t size) {
     }
 
     if (static_cast<PacketType>(t) == PacketType::PlayerSnapshot) {
-        std::vector<uint8_t> buf(data, data + size);
-        auto opt = PlayerSnapshotFrame::deserialize(buf);
-        if (!opt.has_value()) {
+        PlayerSnapshotFrame frame;
+        if (!ParsePlayerSnapshotFramePacket(data, size, frame)) {
             std::cerr << "[net] malformed PlayerSnapshot\n";
             return;
         }
 
         {
             std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
-            m_playerSnapshotQueue.push_back(std::move(*opt));
+            m_playerSnapshotQueue.push_back(std::move(frame));
             // Keep only recent snapshots to bound memory and stale processing.
             while (m_playerSnapshotQueue.size() > 8) {
                 m_playerSnapshotQueue.pop_front();
@@ -824,14 +1069,12 @@ void ClientNetwork::OnMessage(const uint8_t* data, uint32_t size) {
     }
 
     if (static_cast<PacketType>(t) == PacketType::ChunkData) {
-        std::vector<uint8_t> buf(data, data + size);
-        auto opt = ChunkData::deserialize(buf);
-        if (!opt.has_value()) {
+        ChunkData packet;
+        if (!ParseChunkDataPacket(data, size, packet)) {
             std::cerr << "[net] malformed ChunkData\n";
             return;
         }
 
-        ChunkData packet = std::move(*opt);
         {
             std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
             m_chunkDataQueue.push_back(std::move(packet));
@@ -841,69 +1084,45 @@ void ClientNetwork::OnMessage(const uint8_t* data, uint32_t size) {
     }
 
     if (static_cast<PacketType>(t) == PacketType::ChunkDelta) {
-        std::vector<uint8_t> buf(data, data + size);
-        auto opt = ChunkDelta::deserialize(buf);
-        if (!opt.has_value()) {
+        ChunkDelta packet;
+        if (!ParseChunkDeltaPacket(data, size, packet)) {
             std::cerr << "[net] malformed ChunkDelta\n";
             return;
         }
 
-        ChunkDelta packet = std::move(*opt);
         {
             std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
             m_chunkDeltaQueue.push_back(std::move(packet));
             TrimQueueToDepth(m_chunkDeltaQueue, kMaxChunkDeltaQueueDepth);
         }
-
-        ChunkAck ack;
-        ack.ackedType = static_cast<uint8_t>(PacketType::ChunkDelta);
-        ack.chunkX = packet.chunkX;
-        ack.chunkY = packet.chunkY;
-        ack.chunkZ = packet.chunkZ;
-        ack.version = packet.resultingVersion;
-        const std::vector<uint8_t> ackBuf = ack.serialize();
-        SteamNetworkingSockets()->SendMessageToConnection(m_conn, ackBuf.data(), (uint32_t)ackBuf.size(), k_nSteamNetworkingSend_Reliable, nullptr);
         return;
     }
 
     if (static_cast<PacketType>(t) == PacketType::ChunkUnload) {
-        std::vector<uint8_t> buf(data, data + size);
-        auto opt = ChunkUnload::deserialize(buf);
-        if (!opt.has_value()) {
+        ChunkUnload packet;
+        if (!ParseChunkUnloadPacket(data, size, packet)) {
             std::cerr << "[net] malformed ChunkUnload\n";
             return;
         }
 
-        ChunkUnload packet = std::move(*opt);
         {
             std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
             m_chunkUnloadQueue.push_back(std::move(packet));
             TrimQueueToDepth(m_chunkUnloadQueue, kMaxChunkUnloadQueueDepth);
         }
-
-        ChunkAck ack;
-        ack.ackedType = static_cast<uint8_t>(PacketType::ChunkUnload);
-        ack.chunkX = packet.chunkX;
-        ack.chunkY = packet.chunkY;
-        ack.chunkZ = packet.chunkZ;
-        ack.version = 0;
-        const std::vector<uint8_t> ackBuf = ack.serialize();
-        SteamNetworkingSockets()->SendMessageToConnection(m_conn, ackBuf.data(), (uint32_t)ackBuf.size(), k_nSteamNetworkingSend_Reliable, nullptr);
         return;
     }
 
     // handle ShootResult (server -> client authoritative shot result)
     if (static_cast<PacketType>(t) == PacketType::ShootResult) {
-        // copy incoming bytes into vector for deserialization helper
-        std::vector<uint8_t> buf(data, data + size);
-        auto opt = ShootResult::deserialize(buf);
-        if (!opt.has_value()) {
+        ShootResult result;
+        if (!ParseShootResultPacket(data, size, result)) {
             std::cerr << "[net] malformed ShootResult\n";
             return;
         }
         {
             std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
-            m_shootResultQueue.push_back(std::move(*opt));
+            m_shootResultQueue.push_back(std::move(result));
             while (m_shootResultQueue.size() > 32) {
                 m_shootResultQueue.pop_front();
             }

@@ -1971,6 +1971,8 @@ void ServerNetwork::MainLoop()
     auto lastFrameTime = std::chrono::steady_clock::now();
     auto lastSnapshotTime = lastFrameTime;
     constexpr double kServerTickSeconds = 1.0 / static_cast<double>(kServerTickRateHz);
+    constexpr uint32_t kSnapshotSendRateHz = 30u;
+    constexpr double kSnapshotSendSeconds = 1.0 / static_cast<double>(kSnapshotSendRateHz);
     constexpr size_t kMaxSimCatchupTicksPerLoop = 4;
     constexpr size_t kChunkInterestUpdatesPerLoop = 4;
     constexpr size_t kMaxInboundMessagesPerLoop = 256;
@@ -1985,7 +1987,7 @@ void ServerNetwork::MainLoop()
     constexpr size_t kChunkSendPerClientBudgetPerFlush = 4;
     const auto kChunkSendFlushInterval = std::chrono::milliseconds(16);
     const auto kScoreboardBroadcastInterval = std::chrono::seconds(1);
-    const auto snapshotInterval = std::chrono::duration<double>(kServerTickSeconds);
+    const auto snapshotInterval = std::chrono::duration<double>(kSnapshotSendSeconds);
     double simAccumulator = 0.0;
     uint32_t serverTick = 0;
     auto nextChunkSendFlushAt = std::chrono::steady_clock::now();
