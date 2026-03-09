@@ -30,7 +30,12 @@ add_executable(VoxelOps
     "graphics/TextureAtlas.cpp" 
     "physics/Raycast.cpp" 
     "physics/RayManager.cpp"
-    "application/App.cpp"
+    "application/AppWindow.cpp"
+    "application/AppSetup.cpp"
+    "application/AppUi.cpp"
+    "application/AppSimulation.cpp"
+    "application/AppLifecycle.cpp"
+    "application/AppHelpers.cpp"
     "graphics/Lighting.cpp"
     "network/ClientNetwork.cpp"
     "network/DecompressChunk.cpp"
@@ -43,7 +48,7 @@ add_executable(VoxelOps
     "graphics/Backend.cpp"
     "graphics/Sky.cpp" 
     "graphics/PostProcessor.cpp"
-    "ui/debug/DebugUi.cpp")
+    "ui/debug/DebugUi.cpp" "ui/player/InventoryUI.cpp" "ui/player/Crosshair.cpp" "commands/CommandParser.cpp")
 
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)

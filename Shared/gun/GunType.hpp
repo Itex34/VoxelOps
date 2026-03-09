@@ -19,3 +19,5 @@ constexpr std::string_view GunTypeName(GunType gunType) noexcept {
     default: return "Unknown";
     }
 }
+
+constexpr GunType kDefaultGunType = GunType::Pistol;

@@ -1,10 +1,10 @@
 #pragma once
 
-#include <GLFW/glfw3.h>
 #include <cstdint>
 #include <string>
-
+#include "../runtime/Runtime.hpp"
 class Camera;
+struct GLFWwindow;
 enum class GunType : uint16_t;
 
 class App {
@@ -15,7 +15,6 @@ public:
     void Exit();
 
 private:
-    struct Runtime;
 
     bool initWindowAndContext();
     void initCallbacks(Runtime& runtime);
