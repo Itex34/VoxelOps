@@ -50,6 +50,89 @@ constexpr size_t kMaxScoreboardQueueDepth = 16;
 constexpr size_t kMaxMessagesPerPoll = 128;
 constexpr int64_t kMessagePollBudgetUs = 2000;
 constexpr const char* kClientIdentityFileName = "client_identity.txt";
+constexpr bool kEnableClientNetProfiling = true;
+
+struct ClientNetProfileState {
+    std::chrono::steady_clock::time_point lastLog = std::chrono::steady_clock::now();
+    uint64_t polls = 0;
+    uint64_t messages = 0;
+    uint64_t bytes = 0;
+    int64_t totalPollUs = 0;
+    int64_t totalCallbackUs = 0;
+    int64_t totalRecvUs = 0;
+    int64_t maxPollUs = 0;
+};
+
+ClientNetProfileState& GetClientNetProfileState()
+{
+    static ClientNetProfileState state;
+    return state;
+}
+
+void RecordClientNetProfile(
+    ClientNetwork* net,
+    int64_t pollUs,
+    int64_t callbackUs,
+    int64_t recvUs,
+    uint64_t messages,
+    uint64_t bytes
+)
+{
+    if (!kEnableClientNetProfiling || net == nullptr) {
+        return;
+    }
+
+    ClientNetProfileState& state = GetClientNetProfileState();
+    state.polls += 1;
+    state.messages += messages;
+    state.bytes += bytes;
+    state.totalPollUs += pollUs;
+    state.totalCallbackUs += callbackUs;
+    state.totalRecvUs += recvUs;
+    state.maxPollUs = std::max(state.maxPollUs, pollUs);
+
+    const auto now = std::chrono::steady_clock::now();
+    const double elapsedSec = std::chrono::duration_cast<std::chrono::duration<double>>(
+        now - state.lastLog
+    ).count();
+    if (elapsedSec < 1.0) {
+        return;
+    }
+
+    const double polls = (state.polls > 0) ? static_cast<double>(state.polls) : 1.0;
+    const double msgs = static_cast<double>(state.messages);
+    const double avgPollMs = static_cast<double>(state.totalPollUs) / (polls * 1000.0);
+    const double avgCallbackMs = static_cast<double>(state.totalCallbackUs) / (polls * 1000.0);
+    const double avgRecvMs = static_cast<double>(state.totalRecvUs) / (polls * 1000.0);
+    const double maxPollMs = static_cast<double>(state.maxPollUs) / 1000.0;
+    const double avgMsgUs = (state.messages > 0)
+        ? (static_cast<double>(state.totalRecvUs) / msgs)
+        : 0.0;
+
+    const ClientNetwork::ChunkQueueDepths queueDepths = net->GetChunkQueueDepths();
+    std::cerr
+        << "[net/profile] polls=" << state.polls
+        << " msgs=" << state.messages
+        << " bytes=" << state.bytes
+        << " pollAvgMs=" << std::fixed << std::setprecision(3) << avgPollMs
+        << " pollMaxMs=" << maxPollMs
+        << " cbAvgMs=" << avgCallbackMs
+        << " recvAvgMs=" << avgRecvMs
+        << " msgAvgUs=" << avgMsgUs
+        << " queue(data/delta/unload)=("
+        << queueDepths.chunkData << "/"
+        << queueDepths.chunkDelta << "/"
+        << queueDepths.chunkUnload << ")\n";
+
+    state.lastLog = now;
+    state.polls = 0;
+    state.messages = 0;
+    state.bytes = 0;
+    state.totalPollUs = 0;
+    state.totalCallbackUs = 0;
+    state.totalRecvUs = 0;
+    state.maxPollUs = 0;
+}
 
 template <typename T>
 void TrimQueueToDepth(std::deque<T>& queue, size_t maxDepth)
@@ -865,11 +948,24 @@ bool ClientNetwork::SendChunkDataAck(const ChunkData& packet)
 void ClientNetwork::Poll() {
     if (!m_started.load()) return;
 
+    const auto pollTotalStart = std::chrono::steady_clock::now();
+
     // run callbacks (connection state, etc.)
     SteamNetworkingSockets()->RunCallbacks();
+    const auto afterCallbacks = std::chrono::steady_clock::now();
+    const int64_t callbackUs = std::chrono::duration_cast<std::chrono::microseconds>(
+        afterCallbacks - pollTotalStart
+    ).count();
 
     // receive messages on the connection (drain)
-    if (m_conn == k_HSteamNetConnection_Invalid) return;
+    if (m_conn == k_HSteamNetConnection_Invalid) {
+        const auto pollTotalEnd = std::chrono::steady_clock::now();
+        const int64_t pollUs = std::chrono::duration_cast<std::chrono::microseconds>(
+            pollTotalEnd - pollTotalStart
+        ).count();
+        RecordClientNetProfile(this, pollUs, callbackUs, 0, 0, 0);
+        return;
+    }
     SteamNetConnectionInfo_t info{};
     if (SteamNetworkingSockets()->GetConnectionInfo(m_conn, &info)) {
         if (info.m_eState == k_ESteamNetworkingConnectionState_Connected && m_registered) {
@@ -898,11 +994,17 @@ void ClientNetwork::Poll() {
             m_registered = false;
             m_assignedUsername.clear();
             SetConnectionStatus(ConnectionState::Disconnected, reason);
+            const auto pollTotalEnd = std::chrono::steady_clock::now();
+            const int64_t pollUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                pollTotalEnd - pollTotalStart
+            ).count();
+            RecordClientNetProfile(this, pollUs, callbackUs, 0, 0, 0);
             return;
         }
     }
-    const auto pollStart = std::chrono::steady_clock::now();
+    const auto pollBudgetStart = std::chrono::steady_clock::now();
     size_t drainedMessages = 0;
+    uint64_t drainedBytes = 0;
     SteamNetworkingMessage_t* pMsg = nullptr;
     while (
         drainedMessages < kMaxMessagesPerPoll &&
@@ -913,16 +1015,26 @@ void ClientNetwork::Poll() {
         uint32_t cb = pMsg->m_cbSize;
         if (cb >= 1) {
             OnMessage(data, cb);
+            drainedBytes += cb;
         }
         pMsg->Release();
         ++drainedMessages;
         const int64_t elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - pollStart
+            std::chrono::steady_clock::now() - pollBudgetStart
         ).count();
         if (elapsedUs >= kMessagePollBudgetUs) {
             break;
         }
     }
+
+    const auto pollTotalEnd = std::chrono::steady_clock::now();
+    const int64_t pollUs = std::chrono::duration_cast<std::chrono::microseconds>(
+        pollTotalEnd - pollTotalStart
+    ).count();
+    const int64_t recvUs = std::chrono::duration_cast<std::chrono::microseconds>(
+        pollTotalEnd - pollBudgetStart
+    ).count();
+    RecordClientNetProfile(this, pollUs, callbackUs, recvUs, drainedMessages, drainedBytes);
 }
 
 void ClientNetwork::Shutdown() {
@@ -1346,4 +1458,5 @@ void ClientNetwork::SetConnectionStatus(ConnectionState state, std::string text,
     m_connectionStatus = std::move(text);
     m_allowAutoReconnect = allowReconnect;
 }
+
 
