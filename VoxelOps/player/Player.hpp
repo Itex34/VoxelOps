@@ -165,7 +165,7 @@ private:
     float moveSpeed = 8.0f;
     float runSpeed = 16.0f;
     float jumpVelocity = 8.5f;
-    float mouseSensitivity = 0.1f;
+    float mouseSensitivity = 0.03f;
 
     // Player dimensions
     float playerHeight = 2.56f;

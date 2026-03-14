@@ -1,12 +1,18 @@
 #pragma once
 
+
 #include <cstdint>
 #include <string_view>
+
+
 
 enum class GunType : uint16_t {
     Pistol = 0,
     Sniper = 1,
+
+    COUNT
 };
+
 
 constexpr uint16_t ToWeaponId(GunType gunType) noexcept {
     return static_cast<uint16_t>(gunType);
