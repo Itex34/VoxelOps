@@ -161,11 +161,10 @@ private:
 
     Camera camera;
 
-    // Movement settings (tweakable)
     float moveSpeed = 8.0f;
     float runSpeed = 16.0f;
     float jumpVelocity = 8.5f;
-    float mouseSensitivity = 0.03f;
+    float mouseSensitivity = 0.05f;
 
     // Player dimensions
     float playerHeight = 2.56f;
