@@ -1062,7 +1062,7 @@ void ClientNetwork::Shutdown() {
     }
 }
 
-// --- helpers ---
+
 void ClientNetwork::AppendUint32LE(std::vector<uint8_t>& out, uint32_t v) {
     out.push_back((v >> 0) & 0xFF);
     out.push_back((v >> 8) & 0xFF);

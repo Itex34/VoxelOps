@@ -102,6 +102,7 @@ void Renderer::renderFrame(RenderFrameParams& params)
 {
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     beginFrame();
+    glEnable(GL_MULTISAMPLE);
 
     glm::mat4 projection = glm::perspective(
         glm::radians(GameData::FOV),

@@ -7,7 +7,7 @@
 
 constexpr int TEXTURE_ATLAS_SIZE = 16; // 16x16 blocks in the atlas
 constexpr float ATLAS_TILE_SIZE = 1.0f / TEXTURE_ATLAS_SIZE;
-
+constexpr int TILE_RESOLUTION = 16; // each tile is 16x16 pixels
 struct TextureAtlas {
 public:
 	TextureAtlas();

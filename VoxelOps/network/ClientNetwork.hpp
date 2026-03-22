@@ -79,8 +79,6 @@ public:
     bool SendChunkRequest(const glm::ivec3& centerChunk, uint16_t viewDistance);
     bool SendChunkDataAck(const ChunkData& packet);
 
-    // Poll for incoming messages and run callbacks. Call this regularly (e.g. every 50-100 ms).
-    // This will internally RunCallbacks() and ReceiveMessagesOnConnection() to process messages.
     void Poll();
 
     // Close connection and cleanup

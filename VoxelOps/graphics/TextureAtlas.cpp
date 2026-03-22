@@ -36,14 +36,13 @@ GLuint loadTexture2DNearestSRGB(const char* path) {
         stbi_image_free(data);
         return 0;
     }
-
     GLuint textureID = 0;
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_2D, textureID);
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
@@ -118,8 +117,12 @@ std::pair<glm::vec2, glm::vec2> TextureAtlas::getUVRect(const std::string& name)
     float tileWidth = 1.0f / static_cast<float>(TEXTURE_ATLAS_SIZE);
     float tileHeight = 1.0f / static_cast<float>(TEXTURE_ATLAS_SIZE);
 
-    glm::vec2 topLeft = glm::vec2(tilePos.x * tileWidth, tilePos.y * tileHeight);
-    glm::vec2 bottomRight = topLeft + glm::vec2(tileWidth, tileHeight);
+    float atlasPixelSize = 1.0f / (TEXTURE_ATLAS_SIZE * TILE_RESOLUTION);
+
+    float padding = atlasPixelSize;
+
+    glm::vec2 topLeft = glm::vec2(tilePos.x * tileWidth, tilePos.y * tileHeight) + padding;
+    glm::vec2 bottomRight = topLeft + glm::vec2(tileWidth, tileHeight) - 2.0f * padding;
 
     return { topLeft, bottomRight };
 }

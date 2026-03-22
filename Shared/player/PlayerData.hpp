@@ -18,7 +18,7 @@ struct MovementSettings {
     float sprintJumpVelocityMultiplier = 1.4f;
     float sprintJumpMinMoveInput = 0.2f;
     float coyoteTimeSec = 0.1f;
-    float jumpBufferSec = 0.1f;
+    float jumpBufferSec = 0.1f;   
 
     float collisionHeight = 2.56f;
     float collisionRadius = 0.3f;
