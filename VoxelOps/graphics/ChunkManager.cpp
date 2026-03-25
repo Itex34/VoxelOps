@@ -1,4 +1,4 @@
-﻿
+
 #include <windows.h>
 #include <psapi.h>
 
@@ -68,6 +68,11 @@ uint32_t fnv1a32(const uint8_t* data, size_t size)
     return h;
 }
 }
+
+constexpr double kChunkMeshBuildLogThresholdMs = 2.0;
+constexpr double kChunkMeshUploadLogThresholdMs = 2.0;
+constexpr double kChunkMeshTotalLogThresholdMs = 6.0;
+constexpr double kRegionRebuildLogThresholdMs = 10.0;
 
 //positions only cube used for wireframe debug
 float cubeVertices[] = {
@@ -825,24 +830,32 @@ void ChunkManager::updateDirtyChunkAt(const glm::ivec3& chunkPos) {
 
     for (int i = 0; i < 6; ++i)
         neighbors[i] = findChunk(chunkPos + offsets[i]);
-
-
-
-
-    auto start = std::chrono::high_resolution_clock::now();
+    const auto totalStart = std::chrono::steady_clock::now();
 
     auto built = builder.buildChunkMesh(
         chunk, neighbors, chunkPos, atlas, enableAO, enableShadows,
         [this](int wx, int wz) { return this->getColumnTopOccluderY(wx, wz); }
     );
 
-    auto end = std::chrono::high_resolution_clock::now();
-
-    std::chrono::duration<double, std::micro> elapsed = end - start;
-
-    //std::cout << "Chunk meshed in : " << elapsed.count() << " microseconds" << '\n';
+    const auto buildEnd = std::chrono::steady_clock::now();
 
     uploadChunkMesh(chunkPos, built.vertices, built.indices);
+
+    const auto totalEnd = std::chrono::steady_clock::now();
+    const double buildMs = std::chrono::duration<double, std::milli>(buildEnd - totalStart).count();
+    const double uploadMs = std::chrono::duration<double, std::milli>(totalEnd - buildEnd).count();
+    const double totalMs = std::chrono::duration<double, std::milli>(totalEnd - totalStart).count();
+    if (buildMs >= kChunkMeshBuildLogThresholdMs ||
+        uploadMs >= kChunkMeshUploadLogThresholdMs ||
+        totalMs >= kChunkMeshTotalLogThresholdMs) {
+        std::cerr
+            << "[chunk/mesh] slow buildMs=" << buildMs
+            << " uploadMs=" << uploadMs
+            << " totalMs=" << totalMs
+            << " verts=" << built.vertices.size()
+            << " idx=" << built.indices.size()
+            << " chunk=(" << chunkPos.x << "," << chunkPos.y << "," << chunkPos.z << ")\n";
+    }
 
     chunk.dirty = false;
 }
@@ -858,7 +871,7 @@ void ChunkManager::requestChunkRebuild(const glm::ivec3& pos) {
 
     bool expected = false;
     if (!chunk.building.compare_exchange_strong(expected, true))
-        return;  // already building → skip duplicate builds
+        return;  // already building ? skip duplicate builds
 
     // enqueue CPU mesh build
     meshPool.enqueue([this, pos] {
@@ -982,6 +995,8 @@ bool ChunkManager::rebuildRegion(const glm::ivec3& regionPos, size_t reserveVert
     if (it == regions.end()) return false;
 
     Region& oldRegion = it->second;
+    const auto rebuildStart = std::chrono::steady_clock::now();
+    const size_t chunkCount = oldRegion.chunks.size();
 
     struct BuiltChunkData {
         glm::ivec3 chunkPos;
@@ -1064,6 +1079,19 @@ bool ChunkManager::rebuildRegion(const glm::ivec3& regionPos, size_t reserveVert
     oldRegion.indexBytes = newIndexBytes;
     oldRegion.gpu = std::move(newGpu);
     oldRegion.chunks = std::move(newMeshes);
+    const auto rebuildEnd = std::chrono::steady_clock::now();
+    const double rebuildMs = std::chrono::duration<double, std::milli>(rebuildEnd - rebuildStart).count();
+    if (rebuildMs >= kRegionRebuildLogThresholdMs) {
+        std::cerr
+            << "[chunk/region] rebuildMs=" << rebuildMs
+            << " region=(" << regionPos.x << "," << regionPos.y << "," << regionPos.z << ")"
+            << " chunks=" << chunkCount
+            << " verts=" << requiredVertices
+            << " idx=" << requiredIndices
+            << " vboBytes=" << oldRegion.vertexBytes
+            << " eboBytes=" << oldRegion.indexBytes
+            << "\n";
+    }
     return true;
 }
 
@@ -1228,6 +1256,8 @@ void ChunkManager::rebuildSunlightAffectedColumnChunks(int colChunkX, int colChu
         updateDirtyChunkAt(glm::ivec3(colChunkX, chunkY, colChunkZ));
     }
 }
+
+
 
 
 

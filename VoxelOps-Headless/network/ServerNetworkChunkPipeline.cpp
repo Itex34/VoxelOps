@@ -283,9 +283,18 @@ size_t ServerNetwork::FlushChunkSendQueueForClient(HSteamNetConnection conn, siz
         {
             std::lock_guard<std::mutex> lk(m_mutex);
             auto it = m_clients.find(conn);
-            if (it != m_clients.end() && it->second.pendingChunkData.find(coord) != it->second.pendingChunkData.end()) {
-                it->second.pendingChunkData[coord] = now;
-                it->second.pendingChunkDataPayloadHash[coord] = payloadHash;
+            if (it != m_clients.end()) {
+                if (kUseChunkAcks) {
+                    if (it->second.pendingChunkData.find(coord) != it->second.pendingChunkData.end()) {
+                        it->second.pendingChunkData[coord] = now;
+                        it->second.pendingChunkDataPayloadHash[coord] = payloadHash;
+                    }
+                }
+                else {
+                    it->second.pendingChunkData.erase(coord);
+                    it->second.pendingChunkDataPayloadHash.erase(coord);
+                    it->second.streamedChunks.insert(coord);
+                }
             }
         }
         ++sent;

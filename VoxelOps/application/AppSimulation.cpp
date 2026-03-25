@@ -590,16 +590,17 @@ void App::processChunkStreaming(Runtime& runtime, bool prioritizeMovement) {
         ).count();
         return elapsedUs < chunkApplyBudgetUs;
     };
-
-    ChunkData chunkData;
     size_t chunkDataApplied = 0;
+
+    constexpr bool kUseChunkAcks = false;
+    ChunkData chunkData;
     while (
         chunkDataApplied < Runtime::MaxChunkDataApplyPerFrame &&
         withinChunkApplyBudget() &&
         runtime.clientNet.PopChunkData(chunkData)
     ) {
         const bool accepted = runtime.chunkManager->applyNetworkChunkData(chunkData);
-        if (accepted && !runtime.clientNet.SendChunkDataAck(chunkData)) {
+        if (kUseChunkAcks && accepted && !runtime.clientNet.SendChunkDataAck(chunkData)) {
             std::cerr
                 << "[chunk/ack] app failed to ACK applied chunk ("
                 << chunkData.chunkX << "," << chunkData.chunkY << "," << chunkData.chunkZ << ")\n";
@@ -723,6 +724,25 @@ void App::processFrame(Runtime& runtime) {
     // Clamp hitches so interpolation and prediction do not overreact to one bad frame.
     if (frameDeltaSeconds > 0.1) {
         frameDeltaSeconds = 0.1;
+    }
+
+    {
+        static double s_lastFrameTimeLog = 0.0;
+        constexpr double kFrameTimeLogThresholdMs = 12.5;
+        constexpr double kFrameTimeLogCooldownSec = 0.5;
+        const double frameMs = frameDeltaSeconds * 1000.0;
+        if (frameMs >= kFrameTimeLogThresholdMs && (frameNow - s_lastFrameTimeLog) >= kFrameTimeLogCooldownSec) {
+            const ClientNetwork::ChunkQueueDepths queueDepths = runtime.clientNet.GetChunkQueueDepths();
+            const double fps = frameMs > 0.0 ? (1000.0 / frameMs) : 0.0;
+            std::cerr
+                << "[frame] slow frameMs=" << frameMs
+                << " fps=" << fps
+                << " queue(data/delta/unload)=("
+                << queueDepths.chunkData << "/"
+                << queueDepths.chunkDelta << "/"
+                << queueDepths.chunkUnload << ")\n";
+            s_lastFrameTimeLog = frameNow;
+        }
     }
     GameData::deltaTime = frameDeltaSeconds;
     GameData::lastFrame = frameNow;
@@ -1001,4 +1021,5 @@ void App::processFrame(Runtime& runtime) {
     const bool prioritizeMovement = (localPredictionSteps > 1) || frameUnderPressure || chunkBacklog;
     processChunkStreaming(runtime, prioritizeMovement);
 }
+
 

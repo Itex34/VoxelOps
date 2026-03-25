@@ -101,6 +101,8 @@ private:
     void OnConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_t* pInfo);
 
 private:
+    static constexpr bool kUseChunkAcks = false;
+
     struct ChunkCoord {
         int32_t x = 0;
         int32_t y = 0;

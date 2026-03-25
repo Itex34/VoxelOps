@@ -55,7 +55,7 @@ private:
     bool m_ShowDebugUi = false;
     bool m_EnableRawMouseInput = true;
 
-    std::string m_ServerIp = "127.0.0.1";
+    std::string m_ServerIp = "variety-reduction.gl.at.ply.gg:20047";
     uint16_t m_ServerPort = 27015;
     std::string m_RequestedUsername;
 

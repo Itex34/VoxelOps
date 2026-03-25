@@ -1449,6 +1449,10 @@ void ServerNetwork::HandleChunkAckPacket(
     uint64_t& chunkAckPacketsThisLoop
 )
 {
+    if (!kUseChunkAcks) {
+        return;
+    }
+
     ++chunkAckPacketsThisLoop;
     ChunkAck ack{};
     if (!ParseChunkAckPacket(reinterpret_cast<const uint8_t*>(data), size, ack)) {
@@ -1958,7 +1962,7 @@ void ServerNetwork::DispatchInboundPacket(
     case PacketType::ChunkAck:
         HandleChunkAckPacket(incoming, data, size, chunkAckPacketsThisLoop);
         return;
-    case PacketType::ShootRequest:
+	case PacketType::ShootRequest:
         HandleShootRequestPacket(incoming, data, size);
         return;
     default:
