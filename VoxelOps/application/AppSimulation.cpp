@@ -4,11 +4,16 @@
 #include "App.hpp"
 #include "AppHelpers.hpp"
 
+#include "../../Shared/items/Items.hpp"
+#include "../../Shared/player/Inventory.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -17,6 +22,17 @@
 #include <imgui.h>
 
 using namespace AppHelpers;
+
+namespace {
+std::optional<GunType> GunTypeFromInventoryItemId(uint16_t itemId)
+{
+    switch (itemId) {
+    case static_cast<uint16_t>(ITEM_PISTOL): return GunType::Pistol;
+    case static_cast<uint16_t>(ITEM_SNIPER): return GunType::Sniper;
+    default: return std::nullopt;
+    }
+}
+}
 
 void App::updateDebugCamera(Runtime& runtime) {
     glfwGetCursorPos(m_Window, &runtime.xpos, &runtime.ypos);
@@ -54,6 +70,14 @@ void App::updateDebugCamera(Runtime& runtime) {
 
 void App::updateToggleStates(Runtime& runtime) {
     const bool keyboardBlockedByUi = IsImGuiTextInputActive();
+    const bool textInputBlocked =
+        (ImGui::GetCurrentContext() != nullptr) &&
+        ImGui::GetIO().WantTextInput;
+    const auto refreshCursorState = [&]() {
+        GameData::cursorEnabled =
+            m_ForceCursorEnabled || m_ShowDebugUi || m_ShowInventoryUi || !runtime.clientNet.IsConnected();
+        applyMouseInputModes();
+    };
 
     const bool isF1Pressed = glfwGetKey(m_Window, GLFW_KEY_F1) == GLFW_PRESS;
     if (!keyboardBlockedByUi && isF1Pressed && !m_WasF1Pressed) {
@@ -85,16 +109,73 @@ void App::updateToggleStates(Runtime& runtime) {
         if (runtime.debugUi) {
             runtime.debugUi->setVisible(m_ShowDebugUi);
         }
-
-        if (m_ShowDebugUi) {
-            GameData::cursorEnabled = true;
-        }
-        else {
-            GameData::cursorEnabled = false;
-        }
-        applyMouseInputModes();
+        refreshCursorState();
     }
     m_WasF10Pressed = isF10Pressed;
+
+    const bool isXPressed = glfwGetKey(m_Window, GLFW_KEY_X) == GLFW_PRESS;
+    if (!textInputBlocked && isXPressed && !m_WasXPressed) {
+        m_ShowInventoryUi = !m_ShowInventoryUi;
+        if (runtime.inventoryUi) {
+            runtime.inventoryUi->setVisible(m_ShowInventoryUi);
+        }
+        refreshCursorState();
+    }
+    m_WasXPressed = isXPressed;
+
+    const bool isEscapePressed = glfwGetKey(m_Window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+    if (!textInputBlocked && isEscapePressed && !m_WasEscapePressed) {
+        m_ForceCursorEnabled = !m_ForceCursorEnabled;
+        refreshCursorState();
+    }
+    m_WasEscapePressed = isEscapePressed;
+
+    const bool canRecaptureCursor =
+        runtime.clientNet.IsConnected() &&
+        !m_ShowDebugUi &&
+        !m_ShowInventoryUi &&
+        m_ForceCursorEnabled;
+    const bool primaryMouseDown = glfwGetMouseButton(m_Window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    if (canRecaptureCursor && primaryMouseDown && !textInputBlocked) {
+        m_ForceCursorEnabled = false;
+        refreshCursorState();
+    }
+}
+
+void App::processHotbarSelection(Runtime& runtime) {
+    const bool keyboardBlockedByUi = IsImGuiTextInputActive();
+    for (uint16_t i = 0; i < static_cast<uint16_t>(kHotbarSlots); ++i) {
+        const int glfwKey = GLFW_KEY_1 + static_cast<int>(i);
+        const bool pressed = glfwGetKey(m_Window, glfwKey) == GLFW_PRESS;
+        if (!keyboardBlockedByUi && pressed && !m_WasHotbarSelectPressed[i]) {
+            runtime.activeHotbarSlot = i;
+        }
+        m_WasHotbarSelectPressed[i] = pressed;
+    }
+}
+
+void App::syncEquippedGunFromInventory(Runtime& runtime) {
+    if (!runtime.inventoryUi || !runtime.inventoryUi->hasSnapshot()) {
+        return;
+    }
+
+    if (runtime.activeHotbarSlot >= static_cast<uint16_t>(kHotbarSlots)) {
+        runtime.activeHotbarSlot = 0;
+    }
+
+    const Slot& activeSlot = runtime.inventoryUi->slots()[runtime.activeHotbarSlot];
+    if (Inventory::IsEmpty(activeSlot) || !Inventory::IsValidItemId(activeSlot.itemId)) {
+        runtime.equippedGun = nullptr;
+        return;
+    }
+
+    const std::optional<GunType> selectedGunType = GunTypeFromInventoryItemId(activeSlot.itemId);
+    if (!selectedGunType.has_value()) {
+        runtime.equippedGun = nullptr;
+        return;
+    }
+
+    (void)equipGun(runtime, *selectedGunType);
 }
 
 
@@ -128,15 +209,6 @@ void App::processWorldInteraction(Runtime& runtime) {
 void App::processShooting(Runtime& runtime) {
     if (!runtime.localPlayerAlive) {
         return;
-    }
-
-    const bool keyboardBlockedByUi = IsImGuiTextInputActive();
-
-    if (!keyboardBlockedByUi && glfwGetKey(m_Window, GLFW_KEY_1) == GLFW_PRESS) {
-        (void)equipGun(runtime, GunType::Pistol);
-    }
-    else if (!keyboardBlockedByUi && glfwGetKey(m_Window, GLFW_KEY_2) == GLFW_PRESS) {
-        (void)equipGun(runtime, GunType::Sniper);
     }
 
     if (GameData::cursorEnabled || m_UseDebugCamera) {
@@ -187,6 +259,11 @@ void App::processShooting(Runtime& runtime) {
 
 void App::processMovementNetworking(Runtime& runtime) {
     runtime.clientNet.Poll();
+    if (runtime.inventoryUi) {
+        runtime.inventoryUi->consumeNetwork(runtime.clientNet);
+    }
+    processHotbarSelection(runtime);
+    syncEquippedGunFromInventory(runtime);
 
     const std::string& statusNow = runtime.clientNet.GetConnectionStatusText();
     if (statusNow != runtime.lastConnectionStatus) {
@@ -260,6 +337,43 @@ void App::processMovementNetworking(Runtime& runtime) {
         runtime.scoreboardEntries = std::move(scoreboardSnapshot.entries);
     }
 
+    WorldItemSnapshot worldItemSnapshot{};
+    while (runtime.clientNet.PopWorldItemSnapshot(worldItemSnapshot)) {
+        if (
+            runtime.lastWorldItemSnapshotTick != 0 &&
+            !IsNewerU32(worldItemSnapshot.serverTick, runtime.lastWorldItemSnapshotTick)
+        ) {
+            continue;
+        }
+        runtime.lastWorldItemSnapshotTick = worldItemSnapshot.serverTick;
+
+        std::unordered_set<uint64_t> seenIds;
+        seenIds.reserve(worldItemSnapshot.items.size());
+        for (const WorldItemState& itemState : worldItemSnapshot.items) {
+            seenIds.insert(itemState.id);
+            Runtime::WorldItemVisual& item = runtime.worldItems[itemState.id];
+            const glm::vec3 snapshotPos(itemState.px, itemState.py, itemState.pz);
+            if (item.id == 0) {
+                item.position = snapshotPos;
+                item.targetPosition = snapshotPos;
+            }
+            item.id = itemState.id;
+            item.itemId = itemState.itemId;
+            item.quantity = itemState.quantity;
+            item.targetPosition = snapshotPos;
+            item.velocity = glm::vec3(itemState.vx, itemState.vy, itemState.vz);
+        }
+
+        for (auto it = runtime.worldItems.begin(); it != runtime.worldItems.end();) {
+            if (seenIds.find(it->first) == seenIds.end()) {
+                it = runtime.worldItems.erase(it);
+            }
+            else {
+                ++it;
+            }
+        }
+    }
+
     bool hasNewestSelfSnapshot = false;
     uint32_t newestServerTick = 0;
     uint32_t newestAckedInputTick = 0;
@@ -269,6 +383,7 @@ void App::processMovementNetworking(Runtime& runtime) {
     bool newestServerFlyMode = false;
     bool newestServerAllowFlyMode = false;
     bool newestServerAlive = true;
+    float newestServerHealth = 100.0f;
     float newestRespawnSeconds = 0.0f;
     bool newestServerJumpPressedLastTick = false;
     float newestServerTimeSinceGrounded = 0.0f;
@@ -312,6 +427,7 @@ void App::processMovementNetworking(Runtime& runtime) {
         newestServerFlyMode = (localSnapshot->flyMode != 0);
         newestServerAllowFlyMode = (localSnapshot->allowFlyMode != 0);
         newestServerAlive = (localSnapshot->isAlive != 0);
+        newestServerHealth = std::max(0.0f, localSnapshot->health);
         newestRespawnSeconds = std::max(0.0f, localSnapshot->respawnSeconds);
         newestServerJumpPressedLastTick = (localSnapshot->jumpPressedLastTick != 0);
         newestServerTimeSinceGrounded = localSnapshot->timeSinceGrounded;
@@ -358,6 +474,7 @@ void App::processMovementNetworking(Runtime& runtime) {
         snapshot.timeSinceGrounded = newestServerTimeSinceGrounded;
         snapshot.jumpBufferTimer = newestServerJumpBufferTimer;
         runtime.reconciler.Apply(runtime, snapshot);
+        runtime.localHealth = newestServerHealth;
         if (runtime.renderStateNeedsResync) {
             const Player::SimulationState state = runtime.player->captureSimulationState();
             runtime.renderPrevSimState = state;
@@ -376,11 +493,15 @@ void App::processMovementNetworking(Runtime& runtime) {
         runtime.matchWinner.clear();
         runtime.scoreboardEntries.clear();
         runtime.localPlayerAlive = true;
+        runtime.localHealth = 100.0f;
         runtime.localRespawnSeconds = 0.0f;
         runtime.localDeathKiller.clear();
         runtime.wasRespawnClickDown = false;
         runtime.player->setFlyModeAllowed(false);
         runtime.player->clearConnectedPlayers();
+        runtime.worldItems.clear();
+        runtime.lastWorldItemSnapshotTick = 0;
+        runtime.activeHotbarSlot = 0;
         runtime.snapshotInterpolator.Clear();
         runtime.hasAppliedServerTick = false;
         runtime.hasReceivedSelfSnapshotTick = false;
@@ -390,6 +511,10 @@ void App::processMovementNetworking(Runtime& runtime) {
         runtime.renderStateNeedsResync = false;
         runtime.hasRenderSimState = false;
         runtime.hasSmoothedPlayerCameraPos = false;
+        m_ForceCursorEnabled = false;
+        if (runtime.inventoryUi) {
+            runtime.inventoryUi->reset();
+        }
         return;
     }
 
@@ -398,6 +523,9 @@ void App::processMovementNetworking(Runtime& runtime) {
         if (respawnClickDown && !runtime.wasRespawnClickDown) {
             (void)runtime.clientNet.SendRespawnRequest();
         }
+    }
+    if (!runtime.localPlayerAlive && !runtime.pendingInputs.empty()) {
+        runtime.pendingInputs.clear();
     }
     runtime.wasRespawnClickDown = respawnClickDown;
 
@@ -425,7 +553,7 @@ void App::processMovementNetworking(Runtime& runtime) {
         packet.inputTick = runtime.inputTickCounter++;
         packet.inputFlags = input.flags;
         packet.flyMode = input.flyMode ? 1 : 0;
-        packet.weaponId = runtime.equippedGun ? runtime.equippedGun->getWeaponId() : ToWeaponId(kDefaultGunType);
+        packet.weaponId = runtime.equippedGun ? runtime.equippedGun->getWeaponId() : kInventoryEmptyItemId;
         packet.yaw = input.yaw;
         packet.pitch = input.pitch;
         packet.moveX = input.moveX;
@@ -434,32 +562,34 @@ void App::processMovementNetworking(Runtime& runtime) {
             break;
         }
 
-        Runtime::PendingInputEntry entry;
-        entry.packet = packet;
-        entry.deltaSeconds = Runtime::InputSendInterval;
-        runtime.pendingInputs.push_back(entry);
-        while (runtime.pendingInputs.size() > Runtime::MaxPendingInputs) {
-            runtime.pendingInputs.pop_front();
-        }
+        if (runtime.localPlayerAlive) {
+            Runtime::PendingInputEntry entry;
+            entry.packet = packet;
+            entry.deltaSeconds = Runtime::InputSendInterval;
+            runtime.pendingInputs.push_back(entry);
+            while (runtime.pendingInputs.size() > Runtime::MaxPendingInputs) {
+                runtime.pendingInputs.pop_front();
+            }
 
-        size_t resentCopies = 0;
-        for (
-            auto pendingIt = runtime.pendingInputs.rbegin();
-            pendingIt != runtime.pendingInputs.rend() &&
-            resentCopies < Runtime::InputRedundancyCopies;
-            ++pendingIt
-        ) {
-            const PlayerInput& resendPacket = pendingIt->packet;
-            if (resendPacket.inputTick == packet.inputTick) {
-                continue;
+            size_t resentCopies = 0;
+            for (
+                auto pendingIt = runtime.pendingInputs.rbegin();
+                pendingIt != runtime.pendingInputs.rend() &&
+                resentCopies < Runtime::InputRedundancyCopies;
+                ++pendingIt
+            ) {
+                const PlayerInput& resendPacket = pendingIt->packet;
+                if (resendPacket.inputTick == packet.inputTick) {
+                    continue;
+                }
+                if (IsAckedU32(resendPacket.inputTick, runtime.lastAckedInputTick)) {
+                    continue;
+                }
+                if (!runtime.clientNet.SendPlayerInput(resendPacket)) {
+                    break;
+                }
+                ++resentCopies;
             }
-            if (IsAckedU32(resendPacket.inputTick, runtime.lastAckedInputTick)) {
-                continue;
-            }
-            if (!runtime.clientNet.SendPlayerInput(resendPacket)) {
-                break;
-            }
-            ++resentCopies;
         }
 
         ++inputSendsThisFrame;
@@ -697,6 +827,10 @@ void App::processFrame(Runtime& runtime) {
     if (!runtime.clientNet.IsConnected()) {
         GameData::cursorEnabled = true;
     }
+    GameData::gameplayInputEnabled =
+        runtime.clientNet.IsConnected() &&
+        !m_ShowDebugUi &&
+        !m_ForceCursorEnabled;
 
     runtime.inputCallbacks->processInput(m_Window);
     applyMouseInputModes();
@@ -820,6 +954,15 @@ void App::processFrame(Runtime& runtime) {
     runtime.hasSmoothedPlayerCameraPos = true;
     runtime.interpolatedPlayerCamera.position = targetCameraPos;
 
+    const float worldItemBlend = std::clamp(
+        1.0f - std::exp(-14.0f * static_cast<float>(GameData::deltaTime)),
+        0.0f,
+        1.0f
+    );
+    for (auto& [_, item] : runtime.worldItems) {
+        item.position = glm::mix(item.position, item.targetPosition, worldItemBlend);
+    }
+
     const Camera& activeCamera = m_UseDebugCamera
         ? runtime.debugCamera
         : runtime.interpolatedPlayerCamera;
@@ -838,6 +981,7 @@ void App::processFrame(Runtime& runtime) {
         .chunkUniformsInitialized = &runtime.chunkUniformsInitialized
     };
     runtime.renderer.renderFrame(frameParams);
+    renderWorldItems(runtime, activeCamera);
     renderRemotePlayerGuns(runtime, activeCamera);
     if (!m_UseDebugCamera && runtime.localPlayerAlive) {
         renderHeldGun(runtime, runtime.interpolatedPlayerCamera);
@@ -889,22 +1033,41 @@ void App::processFrame(Runtime& runtime) {
             mutableState.gunViewEulerDeg = &runtime.equippedGunViewEulerDeg;
 
             runtime.debugUi->drawMainWindow(frameData, mutableState);
-
-            if (!runtime.debugUi->isVisible() && m_ShowDebugUi) {
-                m_ShowDebugUi = false;
-                GameData::cursorEnabled = false;
-            }
-            applyMouseInputModes();
         }
+
+        if (!runtime.debugUi->isVisible() && m_ShowDebugUi) {
+            m_ShowDebugUi = false;
+        }
+        if (runtime.inventoryUi) {
+            runtime.inventoryUi->draw(runtime.clientNet, runtime.clientNet.IsConnected());
+            if (!runtime.inventoryUi->isVisible() && m_ShowInventoryUi) {
+                m_ShowInventoryUi = false;
+            }
+        }
+
+        GameData::cursorEnabled =
+            m_ForceCursorEnabled || m_ShowDebugUi || m_ShowInventoryUi || !runtime.clientNet.IsConnected();
+        applyMouseInputModes();
 
         drawConnectionPrompt(runtime);
         drawScoreboard(runtime);
         drawPingCounter(runtime);
         drawKillFeed(runtime);
+        drawPlayerHud(runtime);
         drawDeathOverlay(runtime);
         runtime.debugUi->render();
     }
 
+    static bool f11PressedLastFrame = false;
+
+    bool f11PressedNow = glfwGetKey(m_Window, GLFW_KEY_F11) == GLFW_PRESS;
+
+    if (f11PressedNow && !f11PressedLastFrame)
+    {
+        toggleFullscreen(m_Window);
+    }
+
+    f11PressedLastFrame = f11PressedNow;
     updateFPSCounter();
     const auto perfRenderEnd = std::chrono::steady_clock::now();
     runtime.perfRenderCpuMs = toMs(perfRenderStart, perfRenderEnd);

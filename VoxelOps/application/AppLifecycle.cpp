@@ -10,10 +10,12 @@ using namespace AppHelpers;
 
 void App::shutdown(Runtime& runtime) {
     runtime.clientNet.Shutdown();
+    m_worldItemRenderer.shutdown();
     if (runtime.debugUi) {
         runtime.debugUi->shutdown();
         runtime.debugUi.reset();
     }
+    runtime.inventoryUi.reset();
 
     runtime.sky.shutdown();
 

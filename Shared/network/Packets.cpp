@@ -656,3 +656,57 @@ std::optional<InventorySnapshot> InventorySnapshot::deserialize(const std::vecto
     return snapshot;
 }
 
+// -------------------- WorldItemSnapshot --------------------
+std::vector<uint8_t> WorldItemSnapshot::serialize() const {
+    std::vector<uint8_t> out;
+    constexpr size_t kEntrySize = 8 + 2 + 2 + (6 * 4);
+    out.reserve(1 + 4 + 2 + (items.size() * kEntrySize));
+    write_u8(out, static_cast<uint8_t>(PacketType::WorldItemSnapshot));
+    write_u32(out, serverTick);
+    write_u16(out, static_cast<uint16_t>(items.size()));
+    for (const WorldItemState& item : items) {
+        write_u64(out, item.id);
+        write_u16(out, item.itemId);
+        write_u16(out, item.quantity);
+        write_f32(out, item.px);
+        write_f32(out, item.py);
+        write_f32(out, item.pz);
+        write_f32(out, item.vx);
+        write_f32(out, item.vy);
+        write_f32(out, item.vz);
+    }
+    return out;
+}
+
+std::optional<WorldItemSnapshot> WorldItemSnapshot::deserialize(const std::vector<uint8_t>& buf) {
+    size_t off = 0;
+    uint8_t type = 0;
+    uint16_t itemCount = 0;
+    constexpr size_t kEntrySize = 8 + 2 + 2 + (6 * 4);
+    if (!read_u8(buf, off, type)) return std::nullopt;
+    if (type != static_cast<uint8_t>(PacketType::WorldItemSnapshot)) return std::nullopt;
+
+    WorldItemSnapshot snapshot{};
+    if (!read_u32(buf, off, snapshot.serverTick)) return std::nullopt;
+    if (!read_u16(buf, off, itemCount)) return std::nullopt;
+    if (itemCount > ((buf.size() - off) / kEntrySize)) return std::nullopt;
+
+    snapshot.items.clear();
+    snapshot.items.reserve(itemCount);
+    for (uint16_t i = 0; i < itemCount; ++i) {
+        WorldItemState item{};
+        if (!read_u64(buf, off, item.id)) return std::nullopt;
+        if (!read_u16(buf, off, item.itemId)) return std::nullopt;
+        if (!read_u16(buf, off, item.quantity)) return std::nullopt;
+        if (!read_f32(buf, off, item.px)) return std::nullopt;
+        if (!read_f32(buf, off, item.py)) return std::nullopt;
+        if (!read_f32(buf, off, item.pz)) return std::nullopt;
+        if (!read_f32(buf, off, item.vx)) return std::nullopt;
+        if (!read_f32(buf, off, item.vy)) return std::nullopt;
+        if (!read_f32(buf, off, item.vz)) return std::nullopt;
+        snapshot.items.push_back(item);
+    }
+    if (off != buf.size()) return std::nullopt;
+    return snapshot;
+}
+

@@ -627,7 +627,7 @@ void Player::simulateMovement(const NetworkInputState& input, float dt, bool upd
 // update (called each frame)
 void Player::update(GLFWwindow* window, double deltaTime) {
     static bool f8PressedLast = false;
-    const bool allowGameplayInput = !GameData::cursorEnabled && !IsImGuiTextInputActive();
+    const bool allowGameplayInput = GameData::gameplayInputEnabled && !IsImGuiTextInputActive();
     const bool f8Pressed = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_F8) == GLFW_PRESS);
     if (m_flyModeAllowed && f8Pressed && !f8PressedLast) {
         flyMode = !flyMode;
@@ -689,7 +689,7 @@ void Player::update(GLFWwindow* window, double deltaTime) {
 NetworkInputState Player::captureCurrentInput(GLFWwindow* window) const noexcept {
     NetworkInputState input;
     
-    const bool allowGameplayInput = !GameData::cursorEnabled && !IsImGuiTextInputActive();
+    const bool allowGameplayInput = GameData::gameplayInputEnabled && !IsImGuiTextInputActive();
     
     const bool keyW = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS);
     const bool keyS = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS);
@@ -870,4 +870,3 @@ void Player::breakBlock() {
         chunkManager.playerBreakBlockAt(hitBlock);
     }
 }
-

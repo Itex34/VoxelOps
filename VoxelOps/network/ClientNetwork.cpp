@@ -37,6 +37,7 @@ constexpr size_t kMaxChunkDeltaQueueDepth = 512;
 constexpr size_t kMaxChunkUnloadQueueDepth = 256;
 constexpr size_t kMaxKillFeedQueueDepth = 64;
 constexpr size_t kMaxScoreboardQueueDepth = 16;
+constexpr size_t kMaxWorldItemSnapshotQueueDepth = 8;
 constexpr size_t kMaxMessagesPerPoll = 128;
 constexpr int64_t kMessagePollBudgetUs = 2000;
 constexpr const char* kClientIdentityFileName = "client_identity.txt";
@@ -581,6 +582,20 @@ bool ParseInventorySnapshotPacket(const uint8_t* data, size_t size, InventorySna
     return true;
 }
 
+bool ParseWorldItemSnapshotPacket(const uint8_t* data, size_t size, WorldItemSnapshot& out)
+{
+    if (!data || size < 1) {
+        return false;
+    }
+    const std::vector<uint8_t> bytes(data, data + size);
+    const std::optional<WorldItemSnapshot> parsed = WorldItemSnapshot::deserialize(bytes);
+    if (!parsed.has_value()) {
+        return false;
+    }
+    out = *parsed;
+    return true;
+}
+
 bool ResolveHostToAddress(std::string_view host, uint16_t port, SteamNetworkingIPAddr& outAddr)
 {
     if (host.empty()) {
@@ -1109,6 +1124,7 @@ void ClientNetwork::Shutdown() {
         m_shootResultQueue.clear();
         m_inventoryActionResultQueue.clear();
         m_inventorySnapshotQueue.clear();
+        m_worldItemSnapshotQueue.clear();
         m_killFeedQueue.clear();
         m_scoreboardQueue.clear();
     }
@@ -1347,6 +1363,20 @@ void ClientNetwork::OnMessage(const uint8_t* data, uint32_t size) {
         }
         return;
     }
+
+    if (static_cast<PacketType>(t) == PacketType::WorldItemSnapshot) {
+        WorldItemSnapshot snapshot;
+        if (!ParseWorldItemSnapshotPacket(data, size, snapshot)) {
+            std::cerr << "[net] malformed WorldItemSnapshot\n";
+            return;
+        }
+        {
+            std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+            m_worldItemSnapshotQueue.push_back(std::move(snapshot));
+            TrimQueueToDepth(m_worldItemSnapshotQueue, kMaxWorldItemSnapshotQueueDepth);
+        }
+        return;
+    }
 }
 
 
@@ -1499,6 +1529,17 @@ bool ClientNetwork::PopInventorySnapshot(InventorySnapshot& out)
     }
     out = std::move(m_inventorySnapshotQueue.front());
     m_inventorySnapshotQueue.pop_front();
+    return true;
+}
+
+bool ClientNetwork::PopWorldItemSnapshot(WorldItemSnapshot& out)
+{
+    std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+    if (m_worldItemSnapshotQueue.empty()) {
+        return false;
+    }
+    out = std::move(m_worldItemSnapshotQueue.front());
+    m_worldItemSnapshotQueue.pop_front();
     return true;
 }
 

@@ -105,6 +105,7 @@ public:
     bool PopShootResult(ShootResult& out);
     bool PopInventoryActionResult(InventoryActionResult& out);
     bool PopInventorySnapshot(InventorySnapshot& out);
+    bool PopWorldItemSnapshot(WorldItemSnapshot& out);
     bool PopKillFeedEvent(KillFeedEvent& out);
     bool PopScoreboardSnapshot(ScoreboardSnapshot& out);
     ChunkQueueDepths GetChunkQueueDepths();
@@ -141,6 +142,7 @@ private:
     std::deque<ShootResult> m_shootResultQueue;
     std::deque<InventoryActionResult> m_inventoryActionResultQueue;
     std::deque<InventorySnapshot> m_inventorySnapshotQueue;
+    std::deque<WorldItemSnapshot> m_worldItemSnapshotQueue;
     std::deque<KillFeedEvent> m_killFeedQueue;
     std::deque<ScoreboardSnapshot> m_scoreboardQueue;
 };

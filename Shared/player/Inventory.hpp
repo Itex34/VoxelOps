@@ -7,7 +7,7 @@
 
 constexpr uint8_t kHotbarSlots = 6;
 constexpr uint8_t kBackpackSlots = 12;
-constexpr uint8_t kAmmoSlots = 6;
+constexpr uint8_t kAmmoSlots = 5;
 constexpr uint16_t kInventorySlotCount =
     static_cast<uint16_t>(kHotbarSlots + kBackpackSlots + kAmmoSlots);
 constexpr uint16_t kInventoryEmptyItemId = (std::numeric_limits<uint16_t>::max)();
@@ -63,10 +63,12 @@ public:
 	static bool IsValidSlotIndex(uint16_t slotIndex) noexcept;
 	static bool IsEmpty(const Slot& slot) noexcept;
 	static bool IsValidItemId(uint16_t itemId) noexcept;
+	static bool IsAmmoSlotIndex(uint16_t slotIndex) noexcept;
+	static bool IsItemAllowedInSlot(uint16_t itemId, uint16_t slotIndex) noexcept;
 	static uint16_t MaxStackForItem(uint16_t itemId) noexcept;
 
 private:
-	void NormalizeSlot(Slot& slot) noexcept;
+	void NormalizeSlot(uint16_t slotIndex, Slot& slot) noexcept;
 	void TouchRevision() noexcept;
 
 	std::array<Slot, kInventorySlotCount> m_slots{};

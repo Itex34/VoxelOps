@@ -58,6 +58,10 @@ bool ClientReconciler::Apply(Runtime& runtime, const ServerSnapshot& snapshot)
         runtime.localSimAccumulator = 0.0;
     }
     if (!wasAlive && runtime.localPlayerAlive) {
+        // Drop any stale pre-respawn inputs so replay starts from fresh movement.
+        runtime.pendingInputs.clear();
+        runtime.localSimAccumulator = 0.0;
+        runtime.renderStateNeedsResync = true;
         runtime.hasSmoothedPlayerCameraPos = false;
         runtime.localDeathKiller.clear();
     }

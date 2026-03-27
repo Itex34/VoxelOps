@@ -7,6 +7,7 @@
 namespace GameData {
 
 	int screenWidth = 800, screenHeight = 600;
+	extern int windowedX = 400, windowedY = 300;
 
 	double deltaTime = 0.0f;
 	double lastFrame = 0.0f;
@@ -22,6 +23,7 @@ namespace GameData {
 
 	bool firstMouse = true;
 	bool cursorEnabled = false;
+	bool gameplayInputEnabled = true;
 
 
 	float xPos = 0.0f;

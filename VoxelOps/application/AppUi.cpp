@@ -4,6 +4,8 @@
 #include "App.hpp"
 #include "AppHelpers.hpp"
 
+#include "../../Shared/items/Items.hpp"
+
 #include <imgui.h>
 
 #include <algorithm>
@@ -79,6 +81,10 @@ void App::renderRemotePlayerGuns(Runtime& runtime, const Camera& activeCamera) {
 
         gunIt->second->render(gunPos, gunRot, gunScale, *runtime.gunShader);
     }
+}
+
+void App::renderWorldItems(Runtime& runtime, const Camera& activeCamera) {
+    m_worldItemRenderer.render(runtime, activeCamera);
 }
 
 
@@ -566,6 +572,117 @@ void App::drawPingCounter(Runtime& runtime) {
     const ImVec2 bgMax(x + textSize.x + 8.0f, y + textSize.y + 3.0f);
     drawList->AddRectFilled(bgMin, bgMax, IM_COL32(0, 0, 0, 125), 4.0f);
     drawList->AddText(ImVec2(x, y), textColor, line.c_str());
+}
+
+void App::drawPlayerHud(Runtime& runtime) {
+    if (ImGui::GetCurrentContext() == nullptr || !runtime.clientNet.IsConnected()) {
+        return;
+    }
+
+    ImGuiIO& io = ImGui::GetIO();
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+
+    const float health = std::clamp(runtime.localHealth, 0.0f, 100.0f);
+    const float healthPct = health / 100.0f;
+    const float healthBarWidth = 240.0f;
+    const float healthBarHeight = 18.0f;
+    const float healthBarX = 24.0f;
+    const float healthBarY = io.DisplaySize.y - 102.0f;
+    const ImVec2 healthMin(healthBarX, healthBarY);
+    const ImVec2 healthMax(healthBarX + healthBarWidth, healthBarY + healthBarHeight);
+
+    drawList->AddRectFilled(healthMin, healthMax, IM_COL32(0, 0, 0, 140), 4.0f);
+    const ImU32 healthColor = runtime.localPlayerAlive
+        ? IM_COL32(120, 220, 120, 255)
+        : IM_COL32(220, 80, 80, 255);
+    drawList->AddRectFilled(
+        healthMin,
+        ImVec2(healthBarX + (healthBarWidth * healthPct), healthBarY + healthBarHeight),
+        healthColor,
+        4.0f
+    );
+    drawList->AddRect(healthMin, healthMax, IM_COL32(255, 255, 255, 85), 4.0f);
+
+    char healthText[64]{};
+    if (runtime.localPlayerAlive) {
+        std::snprintf(healthText, sizeof(healthText), "HP %d", static_cast<int>(std::round(health)));
+    }
+    else {
+        std::snprintf(healthText, sizeof(healthText), "HP 0");
+    }
+    drawList->AddText(ImVec2(healthBarX + 8.0f, healthBarY - 20.0f), IM_COL32(245, 245, 245, 255), healthText);
+
+    constexpr int hotbarCount = kHotbarSlots;
+    const float slotWidth = 110.0f;
+    const float slotHeight = 58.0f;
+    const float slotSpacing = 8.0f;
+    const float totalHotbarWidth = (slotWidth * hotbarCount) + (slotSpacing * (hotbarCount - 1));
+    const float hotbarX = (io.DisplaySize.x - totalHotbarWidth) * 0.5f;
+    const float hotbarY = io.DisplaySize.y - slotHeight - 18.0f;
+
+    const bool hasInventorySnapshot = runtime.inventoryUi && runtime.inventoryUi->hasSnapshot();
+    const std::array<Slot, kInventorySlotCount>* slots = hasInventorySnapshot ? &runtime.inventoryUi->slots() : nullptr;
+
+    auto hotbarItemName = [](const Slot& slot) -> std::string {
+        if (Inventory::IsEmpty(slot) || !Inventory::IsValidItemId(slot.itemId)) {
+            return "Empty";
+        }
+        std::string name = Items::ItemDatabase[slot.itemId].name;
+        if (name.empty()) {
+            name = "Item " + std::to_string(slot.itemId);
+        }
+        if (name.size() > 12) {
+            name.resize(12);
+            name += ".";
+        }
+        return name;
+    };
+
+    for (int i = 0; i < hotbarCount; ++i) {
+        const float x = hotbarX + i * (slotWidth + slotSpacing);
+        const ImVec2 slotMin(x, hotbarY);
+        const ImVec2 slotMax(x + slotWidth, hotbarY + slotHeight);
+
+        Slot slot{};
+        slot.itemId = kInventoryEmptyItemId;
+        slot.quantity = 0;
+        if (slots != nullptr) {
+            slot = (*slots)[static_cast<size_t>(i)];
+        }
+        const bool empty = Inventory::IsEmpty(slot);
+        const bool active = (static_cast<uint16_t>(i) == runtime.activeHotbarSlot);
+
+        drawList->AddRectFilled(slotMin, slotMax, IM_COL32(8, 8, 8, 170), 6.0f);
+        drawList->AddRect(
+            slotMin,
+            slotMax,
+            active ? IM_COL32(245, 210, 120, 255) : IM_COL32(255, 255, 255, 75),
+            6.0f,
+            0,
+            active ? 2.5f : 1.0f
+        );
+
+        const std::string indexText = std::to_string(i + 1);
+        drawList->AddText(ImVec2(x + 6.0f, hotbarY + 4.0f), IM_COL32(210, 210, 210, 220), indexText.c_str());
+
+        const std::string name = hotbarItemName(slot);
+        const ImVec2 nameSize = ImGui::CalcTextSize(name.c_str());
+        drawList->AddText(
+            ImVec2(x + (slotWidth - nameSize.x) * 0.5f, hotbarY + 20.0f),
+            empty ? IM_COL32(140, 140, 140, 190) : IM_COL32(240, 240, 240, 255),
+            name.c_str()
+        );
+
+        if (!empty) {
+            const std::string qtyText = "x" + std::to_string(slot.quantity);
+            const ImVec2 qtySize = ImGui::CalcTextSize(qtyText.c_str());
+            drawList->AddText(
+                ImVec2(x + slotWidth - qtySize.x - 6.0f, hotbarY + slotHeight - qtySize.y - 5.0f),
+                IM_COL32(235, 235, 235, 255),
+                qtyText.c_str()
+            );
+        }
+    }
 }
 
 

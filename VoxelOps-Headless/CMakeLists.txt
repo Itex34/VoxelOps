@@ -22,6 +22,7 @@ add_executable(VoxelOps-Headless
     "physics/Raycast.cpp" 
     
     "network/ServerNetwork.cpp"
+    "network/WorldItemPhysics.cpp"
     "network/ServerNetworkChunkPipeline.cpp"
     "network/ServerNetworkCallbacks.cpp"
     "network/ServerNetworkPersistence.cpp"

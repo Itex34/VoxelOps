@@ -5,6 +5,7 @@
 namespace GameData {
 
 	extern int screenWidth, screenHeight;
+	extern int windowedX, windowedY;
 
 	extern double deltaTime;
 	extern double lastFrame;
@@ -20,6 +21,7 @@ namespace GameData {
 
 	extern bool firstMouse;
 	extern bool cursorEnabled;
+	extern bool gameplayInputEnabled;
 
 
 	extern float xPos;

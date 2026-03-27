@@ -29,6 +29,7 @@
 #include "../../Shared/network/Packets.hpp"   
 #include "../player/PlayerManager.hpp"
 #include "../graphics/ChunkManager.hpp"
+#include "WorldItemPhysics.hpp"
 
 
 class ServerNetwork {
@@ -84,6 +85,13 @@ private:
     void HandleChunkRequestPacket(HSteamNetConnection incoming, const void* data, uint32_t size, uint64_t& chunkRequestPacketsThisLoop);
     void HandleShootRequestPacket(HSteamNetConnection incoming, const void* data, uint32_t size);
     void HandleInventoryActionRequestPacket(HSteamNetConnection incoming, const void* data, uint32_t size);
+    void SpawnDroppedItem(PlayerID dropperId, uint16_t itemId, uint16_t quantity);
+    void UpdateWorldItems(double deltaSeconds);
+    void SendWorldItemSnapshots(
+        const std::vector<std::pair<HSteamNetConnection, PlayerID>>& recipients,
+        uint32_t serverTick
+    );
+    void SendInventorySnapshotToPlayer(PlayerID playerId);
     void RecordLagCompFrame(uint32_t serverTick);
     void DispatchInboundPacket(
         HSteamNetConnection incoming,
@@ -221,6 +229,8 @@ private:
     // connection -> client session
     std::unordered_map<HSteamNetConnection, ClientSession> m_clients;
     std::unordered_map<PlayerID, MatchScore> m_matchScores;
+    std::unordered_map<uint64_t, WorldItemEntity> m_worldItems;
+    uint64_t m_nextWorldItemId = 1;
     PlayerManager m_playerManager;
     ChunkManager m_chunkManager;
     std::chrono::steady_clock::time_point m_matchStartTime = std::chrono::steady_clock::now();

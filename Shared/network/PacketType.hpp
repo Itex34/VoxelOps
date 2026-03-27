@@ -23,5 +23,7 @@ enum class PacketType : uint8_t {
 
     InventoryActionRequest = 24, // client -> server: inventory command request
     InventoryActionResult = 25,  // server -> client: command accept/reject + revision
-    InventorySnapshot = 26       // server -> client: authoritative inventory state
+    InventorySnapshot = 26,      // server -> client: authoritative inventory state
+
+    WorldItemSnapshot = 27       // server -> client: authoritative nearby dropped items
 };

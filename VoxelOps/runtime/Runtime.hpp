@@ -16,6 +16,7 @@
 #include "../runtime/ClientReconciler.hpp"
 #include "../runtime/SnapshotInterpolator.hpp"
 #include "../ui/debug/DebugUi.hpp"
+#include "../ui/player/InventoryUI.hpp"
 #include "../../Shared/gun/GunType.hpp"
 #include "../../Shared/player/PlayerData.hpp"
 #include "../../Shared/runtime/Paths.hpp"
@@ -43,6 +44,7 @@ struct Runtime {
     std::unique_ptr<Shader> gunShader;
     Sky sky;
     std::unique_ptr<DebugUi> debugUi;
+    std::unique_ptr<InventoryUI> inventoryUi;
 
     Frustum frustum;
     Camera debugCamera{ glm::vec3(0.0f, 100.0f, 0.0f) };
@@ -68,17 +70,28 @@ struct Runtime {
         uint16_t weaponId = 0;
         double expiresAt = 0.0;
     };
+    struct WorldItemVisual {
+        uint64_t id = 0;
+        uint16_t itemId = 0;
+        uint16_t quantity = 0;
+        glm::vec3 position{ 0.0f };
+        glm::vec3 targetPosition{ 0.0f };
+        glm::vec3 velocity{ 0.0f };
+    };
     std::deque<PendingInputEntry> pendingInputs;
     static constexpr size_t MaxPendingInputs = 256;
     std::deque<KillFeedEntry> killFeedEntries;
     static constexpr size_t MaxKillFeedEntries = 8;
     static constexpr double KillFeedDurationSec = 5.0;
+    std::unordered_map<uint64_t, WorldItemVisual> worldItems;
+    uint32_t lastWorldItemSnapshotTick = 0;
     int matchRemainingSeconds = 600;
     bool matchStarted = false;
     bool matchEnded = false;
     std::string matchWinner;
     std::vector<ClientNetwork::ScoreboardEntry> scoreboardEntries;
     bool localPlayerAlive = true;
+    float localHealth = 100.0f;
     float localRespawnSeconds = 0.0f;
     std::string localDeathKiller;
     bool wasRespawnClickDown = false;
@@ -94,6 +107,7 @@ struct Runtime {
     std::string usernamePromptError;
     uint32_t nextClientShotId = 1;
     double shootSendInterval = 1.0 / 8.0;
+    uint16_t activeHotbarSlot = 0;
     GunType equippedGunType = kDefaultGunType;
     std::unordered_map<uint16_t, std::unique_ptr<Gun>> preloadedGuns;
     Gun* equippedGun = nullptr;

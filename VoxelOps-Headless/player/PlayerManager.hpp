@@ -56,6 +56,14 @@ public:
         InventorySnapshot& outSnapshot
     );
     bool getInventorySnapshot(PlayerID id, InventorySnapshot& outSnapshot);
+    bool getInventorySlot(PlayerID id, uint16_t slotIndex, Slot& outSlot);
+    bool appendItemsToInventory(
+        PlayerID id,
+        uint16_t itemId,
+        uint16_t quantity,
+        uint16_t& outAcceptedQuantity,
+        InventorySnapshot* outSnapshot = nullptr
+    );
 
 private:
     PlayerID addPlayerInternal();

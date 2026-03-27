@@ -219,8 +219,10 @@ void App::initUi(Runtime& runtime) {
         return;
     }
 
+    runtime.inventoryUi = std::make_unique<InventoryUI>();
     runtime.debugUi->setVisible(m_ShowDebugUi);
-    if (m_ShowDebugUi) {
+    runtime.inventoryUi->setVisible(m_ShowInventoryUi);
+    if (m_ShowDebugUi || m_ShowInventoryUi) {
         GameData::cursorEnabled = true;
     }
     applyMouseInputModes();

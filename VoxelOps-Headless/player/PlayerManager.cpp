@@ -55,6 +55,28 @@ inline float NormalizeYawDegrees(float yawDegrees) {
     return y;
 }
 
+inline bool TryGetWeaponInventoryItemId(uint16_t weaponId, uint16_t& outItemId) {
+    switch (weaponId) {
+    case ToWeaponId(GunType::Pistol):
+        outItemId = static_cast<uint16_t>(ITEM_PISTOL);
+        return true;
+    case ToWeaponId(GunType::Sniper):
+        outItemId = static_cast<uint16_t>(ITEM_SNIPER);
+        return true;
+    default:
+        return false;
+    }
+}
+
+inline bool InventoryHasItem(const Inventory& inventory, uint16_t itemId) {
+    for (const Slot& slot : inventory.slots()) {
+        if (slot.itemId == itemId && slot.quantity > 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 inline void AppendU8(std::vector<uint8_t>& out, uint8_t v) {
     out.push_back(v);
 }
@@ -224,6 +246,7 @@ PlayerID PlayerManager::onPlayerConnect(std::shared_ptr<ConnectionHandle> conn, 
     p.lastInputReceived = now;
     p.conn = conn;
     (void)p.inventory.appendItems(static_cast<uint16_t>(ITEM_PISTOL), 1);
+    (void)p.inventory.appendItems(static_cast<uint16_t>(ITEM_SNIPER), 1);
     (void)p.inventory.appendItems(static_cast<uint16_t>(ITEM_PISTOL_AMMO), 48);
 
     playersOrder.push_back(id);
@@ -300,7 +323,17 @@ bool PlayerManager::setEquippedWeapon(PlayerID id, uint16_t weaponId) {
     auto it = playersById.find(id);
     if (it == playersById.end()) return false;
 
-    it->second.equippedWeaponId = weaponId;
+    uint16_t requiredItemId = kInventoryEmptyItemId;
+    if (!TryGetWeaponInventoryItemId(weaponId, requiredItemId)) {
+        return false;
+    }
+
+    ServerPlayer& player = it->second;
+    if (!InventoryHasItem(player.inventory, requiredItemId)) {
+        return false;
+    }
+
+    player.equippedWeaponId = weaponId;
     return true;
 }
 
@@ -806,4 +839,50 @@ bool PlayerManager::getInventorySnapshot(PlayerID id, InventorySnapshot& outSnap
     outSnapshot.revision = inventory.revision();
     outSnapshot.slots.assign(inventory.slots().begin(), inventory.slots().end());
     return true;
+}
+
+bool PlayerManager::getInventorySlot(PlayerID id, uint16_t slotIndex, Slot& outSlot) {
+    std::lock_guard<std::mutex> lock(mtx);
+    auto it = playersById.find(id);
+    if (it == playersById.end()) {
+        return false;
+    }
+    if (!Inventory::IsValidSlotIndex(slotIndex)) {
+        return false;
+    }
+
+    const Inventory& inventory = it->second.inventory;
+    outSlot = inventory.slots()[slotIndex];
+    return true;
+}
+
+bool PlayerManager::appendItemsToInventory(
+    PlayerID id,
+    uint16_t itemId,
+    uint16_t quantity,
+    uint16_t& outAcceptedQuantity,
+    InventorySnapshot* outSnapshot
+) {
+    outAcceptedQuantity = 0;
+    if (!Inventory::IsValidItemId(itemId) || quantity == 0) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(mtx);
+    auto it = playersById.find(id);
+    if (it == playersById.end()) {
+        return false;
+    }
+
+    Inventory& inventory = it->second.inventory;
+    uint16_t remaining = quantity;
+    const bool changed = inventory.appendItems(itemId, quantity, &remaining);
+    outAcceptedQuantity = static_cast<uint16_t>(quantity - remaining);
+
+    if (outSnapshot != nullptr && changed) {
+        outSnapshot->revision = inventory.revision();
+        outSnapshot->slots.assign(inventory.slots().begin(), inventory.slots().end());
+    }
+
+    return changed;
 }

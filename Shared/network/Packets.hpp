@@ -18,7 +18,7 @@ constexpr uint8_t kPlayerInputFlagSprint = 1u << 5;
 constexpr uint8_t kPlayerInputFlagFlyUp = 1u << 6;
 constexpr uint8_t kPlayerInputFlagFlyDown = 1u << 7;
 
-constexpr uint16_t kVoxelOpsProtocolVersion = 7;
+constexpr uint16_t kVoxelOpsProtocolVersion = 8;
 constexpr size_t kMaxConnectIdentityChars = 64;
 constexpr size_t kMaxConnectUsernameChars = 32;
 constexpr size_t kMaxConnectMessageChars = 120;
@@ -210,4 +210,24 @@ struct InventorySnapshot {
 
     std::vector<uint8_t> serialize() const;
     static std::optional<InventorySnapshot> deserialize(const std::vector<uint8_t>& buf);
+};
+
+struct WorldItemState {
+    uint64_t id = 0;
+    uint16_t itemId = 0;
+    uint16_t quantity = 0;
+    float px = 0.0f;
+    float py = 0.0f;
+    float pz = 0.0f;
+    float vx = 0.0f;
+    float vy = 0.0f;
+    float vz = 0.0f;
+};
+
+struct WorldItemSnapshot {
+    uint32_t serverTick = 0;
+    std::vector<WorldItemState> items;
+
+    std::vector<uint8_t> serialize() const;
+    static std::optional<WorldItemSnapshot> deserialize(const std::vector<uint8_t>& buf);
 };

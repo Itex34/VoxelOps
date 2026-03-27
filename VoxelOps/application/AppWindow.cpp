@@ -86,3 +86,34 @@ bool App::initWindowAndContext() {
     return true;
 }
 
+
+void App::toggleFullscreen(GLFWwindow* window)
+{
+    m_IsFullscreen = !m_IsFullscreen;
+
+    if (m_IsFullscreen)
+    {
+        // Save current window position/size
+        glfwGetWindowPos(window, &GameData::windowedX, &GameData::windowedY);
+        glfwGetWindowSize(window, &GameData::screenWidth, &GameData::screenHeight);
+
+        GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+
+        glfwSetWindowMonitor(window, monitor,
+            0, 0,
+            mode->width, mode->height,
+            mode->refreshRate
+        );
+    }
+    else
+    {
+        // Restore windowed mode
+        glfwSetWindowMonitor(window, NULL,
+            GameData::windowedX, GameData::windowedY,
+            GameData::screenWidth, GameData::screenHeight,
+            0
+        );
+    }
+}
+

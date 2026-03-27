@@ -2,6 +2,20 @@
 
 #include <algorithm>
 
+namespace {
+constexpr uint16_t kHotbarStart = 0;
+constexpr uint16_t kBackpackStart = kHotbarStart + kHotbarSlots;
+constexpr uint16_t kAmmoStart = kBackpackStart + kBackpackSlots;
+constexpr uint16_t kAmmoEnd = kAmmoStart + kAmmoSlots;
+
+bool IsAmmoItem(const uint16_t itemId) noexcept {
+	if (itemId >= static_cast<uint16_t>(ITEM_COUNT)) {
+		return false;
+	}
+	return Items::ItemDatabase[itemId].type == ItemType::Ammo;
+}
+}
+
 Inventory::Inventory() {
 	for (Slot& slot : m_slots) {
 		slot.itemId = kInventoryEmptyItemId;
@@ -30,6 +44,20 @@ bool Inventory::IsValidItemId(uint16_t itemId) noexcept {
 	return itemId < static_cast<uint16_t>(ITEM_COUNT);
 }
 
+bool Inventory::IsAmmoSlotIndex(uint16_t slotIndex) noexcept {
+	return slotIndex >= kAmmoStart && slotIndex < kAmmoEnd;
+}
+
+bool Inventory::IsItemAllowedInSlot(uint16_t itemId, uint16_t slotIndex) noexcept {
+	if (!IsValidSlotIndex(slotIndex) || !IsValidItemId(itemId)) {
+		return false;
+	}
+	if (IsAmmoSlotIndex(slotIndex)) {
+		return IsAmmoItem(itemId);
+	}
+	return true;
+}
+
 uint16_t Inventory::MaxStackForItem(uint16_t itemId) noexcept {
 	if (!IsValidItemId(itemId)) {
 		return 0;
@@ -41,8 +69,13 @@ uint16_t Inventory::MaxStackForItem(uint16_t itemId) noexcept {
 	return static_cast<uint16_t>(std::min(maxStack, static_cast<int>((std::numeric_limits<uint16_t>::max)())));
 }
 
-void Inventory::NormalizeSlot(Slot& slot) noexcept {
+void Inventory::NormalizeSlot(const uint16_t slotIndex, Slot& slot) noexcept {
 	if (!IsValidItemId(slot.itemId) || slot.quantity == 0) {
+		slot.itemId = kInventoryEmptyItemId;
+		slot.quantity = 0;
+		return;
+	}
+	if (!IsItemAllowedInSlot(slot.itemId, slotIndex)) {
 		slot.itemId = kInventoryEmptyItemId;
 		slot.quantity = 0;
 		return;
@@ -77,28 +110,46 @@ bool Inventory::appendItems(uint16_t itemId, uint16_t quantity, uint16_t* outRem
 	}
 
 	bool changed = false;
-	for (uint16_t i = 0; i < kInventorySlotCount && remaining > 0; ++i) {
-		Slot& slot = m_slots[i];
-		if (slot.itemId != itemId || slot.quantity >= maxStack) {
-			continue;
+	const auto stackIntoRange = [&](const uint16_t begin, const uint16_t endExclusive) {
+		for (uint16_t i = begin; i < endExclusive && remaining > 0; ++i) {
+			Slot& slot = m_slots[i];
+			NormalizeSlot(i, slot);
+			if (!IsItemAllowedInSlot(itemId, i) || slot.itemId != itemId || slot.quantity >= maxStack) {
+				continue;
+			}
+			const uint16_t freeSpace = static_cast<uint16_t>(maxStack - slot.quantity);
+			const uint16_t toAdd = (remaining < freeSpace) ? remaining : freeSpace;
+			slot.quantity = static_cast<uint16_t>(slot.quantity + toAdd);
+			remaining = static_cast<uint16_t>(remaining - toAdd);
+			changed = true;
 		}
-		const uint16_t freeSpace = static_cast<uint16_t>(maxStack - slot.quantity);
-		const uint16_t toAdd = (remaining < freeSpace) ? remaining : freeSpace;
-		slot.quantity = static_cast<uint16_t>(slot.quantity + toAdd);
-		remaining = static_cast<uint16_t>(remaining - toAdd);
-		changed = true;
-	}
+	};
+	const auto fillEmptyRange = [&](const uint16_t begin, const uint16_t endExclusive) {
+		for (uint16_t i = begin; i < endExclusive && remaining > 0; ++i) {
+			Slot& slot = m_slots[i];
+			NormalizeSlot(i, slot);
+			if (!IsItemAllowedInSlot(itemId, i) || !IsEmpty(slot)) {
+				continue;
+			}
+			const uint16_t toAdd = (remaining < maxStack) ? remaining : maxStack;
+			slot.itemId = itemId;
+			slot.quantity = toAdd;
+			remaining = static_cast<uint16_t>(remaining - toAdd);
+			changed = true;
+		}
+	};
 
-	for (uint16_t i = 0; i < kInventorySlotCount && remaining > 0; ++i) {
-		Slot& slot = m_slots[i];
-		if (!IsEmpty(slot)) {
-			continue;
-		}
-		const uint16_t toAdd = (remaining < maxStack) ? remaining : maxStack;
-		slot.itemId = itemId;
-		slot.quantity = toAdd;
-		remaining = static_cast<uint16_t>(remaining - toAdd);
-		changed = true;
+	const bool ammoItem = IsAmmoItem(itemId);
+	if (ammoItem) {
+		// Keep ammo primarily in the dedicated ammo bar.
+		stackIntoRange(kAmmoStart, kAmmoEnd);
+		stackIntoRange(kHotbarStart, kAmmoStart);
+		fillEmptyRange(kAmmoStart, kAmmoEnd);
+		fillEmptyRange(kHotbarStart, kAmmoStart);
+	}
+	else {
+		stackIntoRange(kHotbarStart, kAmmoStart);
+		fillEmptyRange(kHotbarStart, kAmmoStart);
 	}
 
 	if (changed) {
@@ -131,7 +182,7 @@ bool Inventory::applyAction(
 	}
 
 	Slot& source = m_slots[action.sourceSlot];
-	NormalizeSlot(source);
+	NormalizeSlot(action.sourceSlot, source);
 	if (IsEmpty(source) && action.type != InventoryActionType::Swap) {
 		outReject = InventoryRejectReason::SourceEmpty;
 		return false;
@@ -144,11 +195,15 @@ bool Inventory::applyAction(
 			return false;
 		}
 		Slot& destination = m_slots[action.destinationSlot];
-		NormalizeSlot(destination);
+		NormalizeSlot(action.destinationSlot, destination);
 
 		const uint16_t requestedAmount = (action.amount == 0) ? source.quantity : action.amount;
 		if (requestedAmount == 0 || requestedAmount > source.quantity) {
 			outReject = InventoryRejectReason::InvalidAmount;
+			return false;
+		}
+		if (!IsItemAllowedInSlot(source.itemId, action.destinationSlot)) {
+			outReject = InventoryRejectReason::InvalidItem;
 			return false;
 		}
 
@@ -156,8 +211,8 @@ bool Inventory::applyAction(
 			destination.itemId = source.itemId;
 			destination.quantity = requestedAmount;
 			source.quantity = static_cast<uint16_t>(source.quantity - requestedAmount);
-			NormalizeSlot(source);
-			NormalizeSlot(destination);
+			NormalizeSlot(action.sourceSlot, source);
+			NormalizeSlot(action.destinationSlot, destination);
 			outChangedSlots.push_back(action.sourceSlot);
 			outChangedSlots.push_back(action.destinationSlot);
 			TouchRevision();
@@ -184,8 +239,8 @@ bool Inventory::applyAction(
 
 		destination.quantity = static_cast<uint16_t>(destination.quantity + moved);
 		source.quantity = static_cast<uint16_t>(source.quantity - moved);
-		NormalizeSlot(source);
-		NormalizeSlot(destination);
+		NormalizeSlot(action.sourceSlot, source);
+		NormalizeSlot(action.destinationSlot, destination);
 		outChangedSlots.push_back(action.sourceSlot);
 		outChangedSlots.push_back(action.destinationSlot);
 		TouchRevision();
@@ -197,7 +252,7 @@ bool Inventory::applyAction(
 			return false;
 		}
 		Slot& destination = m_slots[action.destinationSlot];
-		NormalizeSlot(destination);
+		NormalizeSlot(action.destinationSlot, destination);
 		if (!IsEmpty(destination)) {
 			outReject = InventoryRejectReason::DestinationOccupied;
 			return false;
@@ -219,12 +274,16 @@ bool Inventory::applyAction(
 			outReject = InventoryRejectReason::InvalidAmount;
 			return false;
 		}
+		if (!IsItemAllowedInSlot(source.itemId, action.destinationSlot)) {
+			outReject = InventoryRejectReason::InvalidItem;
+			return false;
+		}
 
 		destination.itemId = source.itemId;
 		destination.quantity = requestedAmount;
 		source.quantity = static_cast<uint16_t>(source.quantity - requestedAmount);
-		NormalizeSlot(source);
-		NormalizeSlot(destination);
+		NormalizeSlot(action.sourceSlot, source);
+		NormalizeSlot(action.destinationSlot, destination);
 		outChangedSlots.push_back(action.sourceSlot);
 		outChangedSlots.push_back(action.destinationSlot);
 		TouchRevision();
@@ -236,8 +295,18 @@ bool Inventory::applyAction(
 			return false;
 		}
 		Slot& destination = m_slots[action.destinationSlot];
-		NormalizeSlot(destination);
+		NormalizeSlot(action.destinationSlot, destination);
+		if (!IsEmpty(source) && !IsItemAllowedInSlot(source.itemId, action.destinationSlot)) {
+			outReject = InventoryRejectReason::InvalidItem;
+			return false;
+		}
+		if (!IsEmpty(destination) && !IsItemAllowedInSlot(destination.itemId, action.sourceSlot)) {
+			outReject = InventoryRejectReason::InvalidItem;
+			return false;
+		}
 		std::swap(source, destination);
+		NormalizeSlot(action.sourceSlot, source);
+		NormalizeSlot(action.destinationSlot, destination);
 		outChangedSlots.push_back(action.sourceSlot);
 		outChangedSlots.push_back(action.destinationSlot);
 		TouchRevision();
@@ -250,7 +319,7 @@ bool Inventory::applyAction(
 			return false;
 		}
 		source.quantity = static_cast<uint16_t>(source.quantity - requestedAmount);
-		NormalizeSlot(source);
+		NormalizeSlot(action.sourceSlot, source);
 		outChangedSlots.push_back(action.sourceSlot);
 		TouchRevision();
 		return true;
@@ -266,7 +335,7 @@ bool Inventory::applyAction(
 			return false;
 		}
 		source.quantity = static_cast<uint16_t>(source.quantity - 1);
-		NormalizeSlot(source);
+		NormalizeSlot(action.sourceSlot, source);
 		outChangedSlots.push_back(action.sourceSlot);
 		TouchRevision();
 		return true;
