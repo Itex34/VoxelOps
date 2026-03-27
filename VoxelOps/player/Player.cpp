@@ -155,7 +155,6 @@ namespace {
         if (xMax <= xMin) xMax = xMin + 1e-4f;
         if (zMax <= zMin) zMax = zMin + 1e-4f;
 
-        // Prefer mesh-derived Y cuts, but keep robust defaults and enforce sane contiguous segments.
         float legsTop = targetHeight * 0.40f;
         float headBottom = targetHeight * 0.72f;
         const ModelRegionAabb& legsRegion = model.getLocalRegionAabb(ModelRegion::Legs);
@@ -359,10 +358,8 @@ Player::Player(const glm::vec3& startPos, ChunkManager& inChunkManager, const st
         }
     }
 
-    // set camera pos after model load
     syncCameraToBody();
 
-    // load shader (catch exceptions if your Shader throws)
     try {
         const std::string playerVertPath =
             Shared::RuntimePaths::ResolveVoxelOpsPath("shaders/player.vert").generic_string();
@@ -394,7 +391,7 @@ const glm::mat4& Player::getModelMatrix() const noexcept {
 // local hitboxes oriented with player's facing direction are transformed correctly.
 void Player::updateModelMatrix() noexcept {
     glm::mat4 model(1.0f);
-    // translate to feet; if your hitboxes are defined relative to feet, this is correct.
+    // translate to feet
     model = glm::translate(model, position);
 
     // rotate by yaw so hitboxes follow player facing. yaw is degrees in this class.
@@ -624,6 +621,9 @@ void Player::simulateMovement(const NetworkInputState& input, float dt, bool upd
     syncCameraToBody();
 }
 
+
+
+
 // update (called each frame)
 void Player::update(GLFWwindow* window, double deltaTime) {
     static bool f8PressedLast = false;
@@ -683,6 +683,54 @@ void Player::update(GLFWwindow* window, double deltaTime) {
     }
 }
 
+
+
+
+NetworkInputState Player::captureCurrentInput(GLFWwindow* window) const noexcept {
+    NetworkInputState input;
+    
+    const bool allowGameplayInput = !GameData::cursorEnabled && !IsImGuiTextInputActive();
+    
+    const bool keyW = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS);
+    const bool keyS = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS);
+    const bool keyA = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS);
+    const bool keyD = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS);
+    const bool keyShift = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS);
+    const bool keySpace = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS);
+    const bool keyCtrl = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS);
+
+    const glm::vec2 localMove(
+        (keyD ? 1.0f : 0.0f) - (keyA ? 1.0f : 0.0f),
+        (keyW ? 1.0f : 0.0f) - (keyS ? 1.0f : 0.0f)
+    );
+    glm::vec2 localMoveNormalized = localMove;
+    if (glm::length(localMoveNormalized) > 1.0f) {
+        localMoveNormalized = glm::normalize(localMoveNormalized);
+    }
+    const float yawRad = glm::radians(static_cast<float>(yaw));
+    const glm::vec2 forward2D(std::cos(yawRad), std::sin(yawRad));
+    const glm::vec2 right2D(-forward2D.y, forward2D.x);
+    const glm::vec2 worldMove = right2D * localMoveNormalized.x + forward2D * localMoveNormalized.y;
+    input.moveX = worldMove.x;
+    input.moveZ = worldMove.y;
+    input.yaw = NormalizeYawDegrees(static_cast<float>(yaw));
+    input.pitch = pitch;
+    input.flyMode = flyMode;
+    input.flags = 0;
+    if (keyW) input.flags |= kPlayerInputFlagForward;
+    if (keyS) input.flags |= kPlayerInputFlagBackward;
+    if (keyA) input.flags |= kPlayerInputFlagLeft;
+    if (keyD) input.flags |= kPlayerInputFlagRight;
+    if (keySpace) input.flags |= kPlayerInputFlagJump;
+    if (keyShift) input.flags |= kPlayerInputFlagSprint;
+    if (flyMode && keySpace) input.flags |= kPlayerInputFlagFlyUp;
+    if (flyMode && keyCtrl) input.flags |= kPlayerInputFlagFlyDown;
+    
+    return input;
+}
+
+
+
 void Player::setConnectedPlayers(const std::unordered_map<PlayerID, PlayerState>& players) {
     m_remotePlayerTargets.clear();
     m_remotePlayerTargets.reserve(players.size());
@@ -711,31 +759,16 @@ void Player::clearConnectedPlayers() {
 }
 
 void Player::updateRemotePlayers(float deltaTime) {
-    if (connectedPlayers.empty() || deltaTime <= 0.0f) {
+    if (connectedPlayers.empty()) {
         return;
     }
 
-    const float alpha = std::clamp(1.0f - std::exp(-12.0f * deltaTime), 0.0f, 1.0f);
     for (auto& [id, current] : connectedPlayers) {
         auto targetIt = m_remotePlayerTargets.find(id);
         if (targetIt == m_remotePlayerTargets.end()) {
             continue;
         }
-        const PlayerState& target = targetIt->second;
-        const glm::vec3 delta = target.position - current.position;
-        const float distSq = glm::dot(delta, delta);
-        if (distSq > 36.0f) {
-            current = target;
-            continue;
-        }
-        current.position = glm::mix(current.position, target.position, alpha);
-        glm::quat targetRotation = target.rotation;
-        if (glm::dot(current.rotation, targetRotation) < 0.0f) {
-            targetRotation = -targetRotation;
-        }
-        current.rotation = glm::normalize(glm::slerp(current.rotation, targetRotation, alpha));
-        current.scale = glm::mix(current.scale, target.scale, alpha);
-        current.weaponId = target.weaponId;
+        current = targetIt->second;
     }
 }
 

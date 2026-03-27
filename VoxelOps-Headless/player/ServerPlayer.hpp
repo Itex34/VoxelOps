@@ -4,7 +4,7 @@
 #include <glm/vec3.hpp>
 #include <list>
 #include <memory>
-#include <deque>
+#include <map>
 #include <limits>
 
 #include "../../Shared/network/Packets.hpp"
@@ -40,8 +40,9 @@ struct ServerPlayer {
     std::shared_ptr<ConnectionHandle> conn; // nullable
     Clock::time_point lastHeartbeat = Clock::now();
     Clock::time_point lastInputReceived = Clock::now();
-    std::deque<PlayerInput> pendingInputs;
-    uint32_t lastProcessedInputSequence = std::numeric_limits<uint32_t>::max();
+    std::map<uint32_t, PlayerInput> pendingInputs;
+    uint32_t lastProcessedInputTick = 0;
+    bool hasReceivedInput = false;
     uint8_t activeInputFlags = 0;
     bool flyMode = false;
     bool allowFlyMode = false;

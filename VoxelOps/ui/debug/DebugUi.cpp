@@ -1,6 +1,7 @@
 #include "DebugUi.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 #include <imgui.h>
@@ -110,6 +111,67 @@ void DebugUi::drawMainWindow(const UiFrameData& data, UiMutableState& state) {
         backendName.data(),
         data.mdiUsable ? "yes" : "no");
 
+    if (ImGui::CollapsingHeader("Performance", ImGuiTreeNodeFlags_DefaultOpen)) {
+        constexpr size_t kHistory = 240;
+        static std::array<float, kHistory> s_histFrame{};
+        static std::array<float, kHistory> s_histInput{};
+        static std::array<float, kHistory> s_histNetwork{};
+        static std::array<float, kHistory> s_histPrediction{};
+        static std::array<float, kHistory> s_histGameplay{};
+        static std::array<float, kHistory> s_histRender{};
+        static std::array<float, kHistory> s_histPresent{};
+        static std::array<float, kHistory> s_histChunk{};
+        static size_t s_histWriteIndex = 0;
+
+        s_histFrame[s_histWriteIndex] = data.perfFrameCpuMs;
+        s_histInput[s_histWriteIndex] = data.perfInputMs;
+        s_histNetwork[s_histWriteIndex] = data.perfNetworkMs;
+        s_histPrediction[s_histWriteIndex] = data.perfPredictionMs;
+        s_histGameplay[s_histWriteIndex] = data.perfGameplayMs;
+        s_histRender[s_histWriteIndex] = data.perfRenderCpuMs;
+        s_histPresent[s_histWriteIndex] = data.perfPresentMs;
+        s_histChunk[s_histWriteIndex] = data.perfChunkStreamingMs;
+        s_histWriteIndex = (s_histWriteIndex + 1) % kHistory;
+
+        const float accountedMs =
+            data.perfInputMs +
+            data.perfNetworkMs +
+            data.perfPredictionMs +
+            data.perfGameplayMs +
+            data.perfRenderCpuMs +
+            data.perfPresentMs +
+            data.perfChunkStreamingMs;
+        const float denomMs = std::max(data.perfFrameCpuMs, 0.001f);
+        const auto pct = [denomMs](float ms) { return (ms / denomMs) * 100.0f; };
+        const float graphMaxMs = std::max(8.0f, std::max(data.perfFrameCpuMs * 1.5f, 16.0f));
+
+        ImGui::Text(
+            "CPU frame: %.3f ms | Accounted: %.3f ms (%.1f%%)",
+            data.perfFrameCpuMs,
+            accountedMs,
+            pct(accountedMs)
+        );
+        ImGui::PlotLines("CPU frame ms", s_histFrame.data(), static_cast<int>(kHistory), static_cast<int>(s_histWriteIndex), nullptr, 0.0f, graphMaxMs, ImVec2(0.0f, 70.0f));
+        ImGui::PlotLines("Input/UI", s_histInput.data(), static_cast<int>(kHistory), static_cast<int>(s_histWriteIndex), nullptr, 0.0f, graphMaxMs, ImVec2(0.0f, 46.0f));
+        ImGui::PlotLines("Network/Reconcile", s_histNetwork.data(), static_cast<int>(kHistory), static_cast<int>(s_histWriteIndex), nullptr, 0.0f, graphMaxMs, ImVec2(0.0f, 46.0f));
+        ImGui::PlotLines("Prediction", s_histPrediction.data(), static_cast<int>(kHistory), static_cast<int>(s_histWriteIndex), nullptr, 0.0f, graphMaxMs, ImVec2(0.0f, 46.0f));
+        ImGui::PlotLines("Gameplay", s_histGameplay.data(), static_cast<int>(kHistory), static_cast<int>(s_histWriteIndex), nullptr, 0.0f, graphMaxMs, ImVec2(0.0f, 46.0f));
+        ImGui::PlotLines("Render CPU", s_histRender.data(), static_cast<int>(kHistory), static_cast<int>(s_histWriteIndex), nullptr, 0.0f, graphMaxMs, ImVec2(0.0f, 46.0f));
+        ImGui::PlotLines("Present (swap+poll)", s_histPresent.data(), static_cast<int>(kHistory), static_cast<int>(s_histWriteIndex), nullptr, 0.0f, graphMaxMs, ImVec2(0.0f, 46.0f));
+        ImGui::PlotLines("Chunk streaming", s_histChunk.data(), static_cast<int>(kHistory), static_cast<int>(s_histWriteIndex), nullptr, 0.0f, graphMaxMs, ImVec2(0.0f, 46.0f));
+
+        ImGui::Text(
+            "Breakdown ms: in %.3f | net %.3f | pred %.3f | game %.3f | ren %.3f | present %.3f | chunk %.3f",
+            data.perfInputMs,
+            data.perfNetworkMs,
+            data.perfPredictionMs,
+            data.perfGameplayMs,
+            data.perfRenderCpuMs,
+            data.perfPresentMs,
+            data.perfChunkStreamingMs
+        );
+    }
+
     ImGui::Separator();
     ImGui::Text("Player");
     ImGui::Text("Pos: (%.2f, %.2f, %.2f)", data.playerPosition.x, data.playerPosition.y, data.playerPosition.z);
@@ -172,7 +234,7 @@ void DebugUi::drawMainWindow(const UiFrameData& data, UiMutableState& state) {
     ImGui::Text("Status: %.*s",
         static_cast<int>(data.netStatus.size()),
         data.netStatus.data() != nullptr ? data.netStatus.data() : "");
-    ImGui::Text("Server tick: %u | Acked input seq: %u", data.serverTick, data.ackedInputSeq);
+    ImGui::Text("Server tick: %u | Acked input tick: %u", data.serverTick, data.ackedInputTick);
     ImGui::Text("Pending inputs: %zu", data.pendingInputCount);
     ImGui::Text("Chunk queues data/delta/unload: %zu / %zu / %zu",
         data.chunkDataQueueDepth, data.chunkDeltaQueueDepth, data.chunkUnloadQueueDepth);

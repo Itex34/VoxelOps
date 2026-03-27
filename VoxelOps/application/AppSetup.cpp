@@ -117,7 +117,7 @@ bool App::equipGun(Runtime& runtime, GunType gunType) {
     if (runtime.clientNet.IsConnected() && runtime.player) {
         const NetworkInputState& input = runtime.player->getNetworkInputState();
         PlayerInput packet;
-        packet.sequenceNumber = runtime.netSeq++;
+        packet.inputTick = runtime.inputTickCounter++;
         packet.inputFlags = input.flags;
         packet.flyMode = input.flyMode ? 1 : 0;
         packet.weaponId = weaponId;

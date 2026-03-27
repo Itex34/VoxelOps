@@ -19,13 +19,21 @@ struct UiFrameData {
     bool netConnected = false;
     std::string_view netStatus{};
     uint32_t serverTick = 0;
-    uint32_t ackedInputSeq = 0;
+    uint32_t ackedInputTick = 0;
     size_t pendingInputCount = 0;
     size_t chunkDataQueueDepth = 0;
     size_t chunkDeltaQueueDepth = 0;
     size_t chunkUnloadQueueDepth = 0;
     std::string_view backendName{};
     bool mdiUsable = false;
+    float perfFrameCpuMs = 0.0f;
+    float perfInputMs = 0.0f;
+    float perfNetworkMs = 0.0f;
+    float perfPredictionMs = 0.0f;
+    float perfGameplayMs = 0.0f;
+    float perfRenderCpuMs = 0.0f;
+    float perfPresentMs = 0.0f;
+    float perfChunkStreamingMs = 0.0f;
 };
 
 struct UiMutableState {

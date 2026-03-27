@@ -32,16 +32,6 @@
 #endif
 
 namespace {
-uint32_t fnv1a32(const uint8_t* data, size_t size)
-{
-    uint32_t h = 2166136261u;
-    for (size_t i = 0; i < size; ++i) {
-        h ^= static_cast<uint32_t>(data[i]);
-        h *= 16777619u;
-    }
-    return h;
-}
-
 constexpr size_t kMaxChunkDataQueueDepth = 128;
 constexpr size_t kMaxChunkDeltaQueueDepth = 512;
 constexpr size_t kMaxChunkUnloadQueueDepth = 256;
@@ -50,7 +40,7 @@ constexpr size_t kMaxScoreboardQueueDepth = 16;
 constexpr size_t kMaxMessagesPerPoll = 128;
 constexpr int64_t kMessagePollBudgetUs = 2000;
 constexpr const char* kClientIdentityFileName = "client_identity.txt";
-constexpr bool kEnableClientNetProfiling = true;
+constexpr bool kEnableClientNetProfiling = false;
 
 struct ClientNetProfileState {
     std::chrono::steady_clock::time_point lastLog = std::chrono::steady_clock::now();
@@ -415,7 +405,7 @@ bool ParseConnectResponsePacket(const uint8_t* data, size_t size, ConnectRespons
 
 bool ParsePlayerSnapshotFramePacket(const uint8_t* data, size_t size, PlayerSnapshotFrame& out)
 {
-    constexpr size_t kSnapshotEntryBytes = 8 + (8 * 4) + 3 + 2 + 4 + 1 + 4;
+    constexpr size_t kSnapshotEntryBytes = 8 + (8 * 4) + 3 + 2 + 4 + 1 + 4 + 1 + 4 + 4;
     size_t offset = 0;
     uint8_t type = 0;
     uint32_t playerCount = 0;
@@ -423,7 +413,7 @@ bool ParsePlayerSnapshotFramePacket(const uint8_t* data, size_t size, PlayerSnap
         type != static_cast<uint8_t>(PacketType::PlayerSnapshot) ||
         !ReadU32LE(data, size, offset, out.serverTick) ||
         !ReadU64LE(data, size, offset, out.selfPlayerId) ||
-        !ReadU32LE(data, size, offset, out.lastProcessedInputSequence) ||
+        !ReadU32LE(data, size, offset, out.lastProcessedInputTick) ||
         !ReadU32LE(data, size, offset, playerCount)) {
         return false;
     }
@@ -452,7 +442,10 @@ bool ParsePlayerSnapshotFramePacket(const uint8_t* data, size_t size, PlayerSnap
             !ReadU16LE(data, size, offset, snapshot.weaponId) ||
             !ReadF32LE(data, size, offset, snapshot.health) ||
             !ReadU8(data, size, offset, snapshot.isAlive) ||
-            !ReadF32LE(data, size, offset, snapshot.respawnSeconds)) {
+            !ReadF32LE(data, size, offset, snapshot.respawnSeconds) ||
+            !ReadU8(data, size, offset, snapshot.jumpPressedLastTick) ||
+            !ReadF32LE(data, size, offset, snapshot.timeSinceGrounded) ||
+            !ReadF32LE(data, size, offset, snapshot.jumpBufferTimer)) {
             return false;
         }
         out.players.push_back(snapshot);
@@ -916,46 +909,19 @@ bool ClientNetwork::SendChunkRequest(const glm::ivec3& centerChunk, uint16_t vie
     return (r == k_EResultOK);
 }
 
-bool ClientNetwork::SendChunkDataAck(const ChunkData& packet)
-{
-    if (m_conn == k_HSteamNetConnection_Invalid) return false;
-
-    ChunkAck ack;
-    ack.ackedType = static_cast<uint8_t>(PacketType::ChunkData);
-    ack.sequence = fnv1a32(packet.payload.data(), packet.payload.size());
-    ack.chunkX = packet.chunkX;
-    ack.chunkY = packet.chunkY;
-    ack.chunkZ = packet.chunkZ;
-    ack.version = packet.version;
-
-    const std::vector<uint8_t> ackBuf = ack.serialize();
-    const EResult r = SteamNetworkingSockets()->SendMessageToConnection(
-        m_conn,
-        ackBuf.data(),
-        static_cast<uint32_t>(ackBuf.size()),
-        k_nSteamNetworkingSend_Reliable,
-        nullptr
-    );
-    if (r != k_EResultOK) {
-        std::cerr
-            << "[chunk/ack] failed to send ChunkData ACK result=" << r
-            << " chunk=(" << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ << ")"
-            << " version=" << packet.version << "\n";
-    }
-    return (r == k_EResultOK);
-}
-
 void ClientNetwork::Poll() {
     if (!m_started.load()) return;
 
     const auto pollTotalStart = std::chrono::steady_clock::now();
 
-    // run callbacks (connection state, etc.)
+
     SteamNetworkingSockets()->RunCallbacks();
     const auto afterCallbacks = std::chrono::steady_clock::now();
     const int64_t callbackUs = std::chrono::duration_cast<std::chrono::microseconds>(
         afterCallbacks - pollTotalStart
     ).count();
+
+
 
     // receive messages on the connection (drain)
     if (m_conn == k_HSteamNetConnection_Invalid) {
@@ -1002,6 +968,8 @@ void ClientNetwork::Poll() {
             return;
         }
     }
+
+
     const auto pollBudgetStart = std::chrono::steady_clock::now();
     size_t drainedMessages = 0;
     uint64_t drainedBytes = 0;
@@ -1010,21 +978,34 @@ void ClientNetwork::Poll() {
         drainedMessages < kMaxMessagesPerPoll &&
         SteamNetworkingSockets()->ReceiveMessagesOnConnection(m_conn, &pMsg, 1) > 0 &&
         pMsg
-    ) {
+        ) {
         const uint8_t* data = reinterpret_cast<const uint8_t*>(pMsg->m_pData);
         uint32_t cb = pMsg->m_cbSize;
+
         if (cb >= 1) {
+            PacketType type = static_cast<PacketType>(data[0]);
+
+            bool highPriority =
+                (type == PacketType::PlayerSnapshot) ||
+                (type == PacketType::ShootResult);
+
             OnMessage(data, cb);
+
             drainedBytes += cb;
+            ++drainedMessages;
+
+            if (!highPriority) {
+                const int64_t elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - pollBudgetStart
+                ).count();
+
+                if (elapsedUs >= kMessagePollBudgetUs) {
+                    break;
+                }
+            }
         }
+
         pMsg->Release();
-        ++drainedMessages;
-        const int64_t elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - pollBudgetStart
-        ).count();
-        if (elapsedUs >= kMessagePollBudgetUs) {
-            break;
-        }
     }
 
     const auto pollTotalEnd = std::chrono::steady_clock::now();
@@ -1142,6 +1123,9 @@ void ClientNetwork::OnMessage(const uint8_t* data, uint32_t size) {
         // simple text message from server
         if (size > 1) {
             std::string s(reinterpret_cast<const char*>(data + 1), size - 1);
+            if (s == "server_heartbeat") {
+                return;
+            }
             KillFeedEvent killEvent;
             if (TryParseKillFeedMessage(s, killEvent)) {
                 std::lock_guard<std::mutex> lk(m_chunkQueueMutex);

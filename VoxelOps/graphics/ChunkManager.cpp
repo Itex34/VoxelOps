@@ -73,6 +73,8 @@ constexpr double kChunkMeshBuildLogThresholdMs = 2.0;
 constexpr double kChunkMeshUploadLogThresholdMs = 2.0;
 constexpr double kChunkMeshTotalLogThresholdMs = 6.0;
 constexpr double kRegionRebuildLogThresholdMs = 10.0;
+constexpr bool kEnableRegionLifecycleLogs = false;
+constexpr bool kEnableMissingChunkUnloadLogs = false;
 
 //positions only cube used for wireframe debug
 float cubeVertices[] = {
@@ -528,13 +530,15 @@ void ChunkManager::applyNetworkChunkUnload(const ChunkUnload& packet) {
     auto it = chunkMap.find(chunkPos);
     if (it == chunkMap.end()) {
         m_networkChunkVersions.erase(chunkPos);
-        static uint64_t missingChunkUnloadCount = 0;
-        ++missingChunkUnloadCount;
-        if (missingChunkUnloadCount <= 20 || (missingChunkUnloadCount % 100) == 0) {
-            std::cerr
-                << "[chunk/unload] unload for missing chunk=("
-                << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ
-                << ") count=" << missingChunkUnloadCount << "\n";
+        if (kEnableMissingChunkUnloadLogs) {
+            static uint64_t missingChunkUnloadCount = 0;
+            ++missingChunkUnloadCount;
+            if (missingChunkUnloadCount <= 20 || (missingChunkUnloadCount % 100) == 0) {
+                std::cerr
+                    << "[chunk/unload] unload for missing chunk=("
+                    << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ
+                    << ") count=" << missingChunkUnloadCount << "\n";
+            }
         }
         return;
     }
@@ -912,8 +916,10 @@ Region& ChunkManager::getOrCreateRegion(const glm::ivec3& chunkPos) {
         Region(regionPos, REGION_VERTEX_BYTES, REGION_INDEX_BYTES)
     );
 
-    std::cout << "[ChunkManager] Created region at ("
-        << regionPos.x << ", " << regionPos.y << ", " << regionPos.z << ")\n";
+    if (kEnableRegionLifecycleLogs) {
+        std::cout << "[ChunkManager] Created region at ("
+            << regionPos.x << ", " << regionPos.y << ", " << regionPos.z << ")\n";
+    }
 
     return newIt->second;
 }

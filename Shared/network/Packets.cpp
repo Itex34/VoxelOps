@@ -181,7 +181,7 @@ std::vector<uint8_t> PlayerInput::serialize() const {
     std::vector<uint8_t> out;
     out.reserve(1 + 4 + 1 + 1 + 2 + 4 * 4);
     write_u8(out, static_cast<uint8_t>(PacketType::PlayerInput));
-    write_u32(out, sequenceNumber);
+    write_u32(out, inputTick);
     write_u8(out, inputFlags);
     write_u8(out, flyMode);
     write_u16(out, weaponId);
@@ -199,7 +199,7 @@ std::optional<PlayerInput> PlayerInput::deserialize(const std::vector<uint8_t>& 
     if (type != static_cast<uint8_t>(PacketType::PlayerInput)) return std::nullopt;
 
     PlayerInput p;
-    if (!read_u32(buf, off, p.sequenceNumber)) return std::nullopt;
+    if (!read_u32(buf, off, p.inputTick)) return std::nullopt;
     if (!read_u8(buf, off, p.inputFlags)) return std::nullopt;
     if (!read_u8(buf, off, p.flyMode)) return std::nullopt;
     if (!read_u16(buf, off, p.weaponId)) return std::nullopt;
@@ -330,12 +330,12 @@ std::optional<PlayerPosition> PlayerPosition::deserialize(const std::vector<uint
 // -------------------- PlayerSnapshotFrame --------------------
 std::vector<uint8_t> PlayerSnapshotFrame::serialize() const {
     std::vector<uint8_t> out;
-    constexpr size_t kEntrySize = 8 + (8 * 4) + 3 + 2 + 4 + 1 + 4;
+    constexpr size_t kEntrySize = 8 + (8 * 4) + 3 + 2 + 4 + 1 + 4 + 1 + 4 + 4;
     out.reserve(1 + 4 + 8 + 4 + 4 + players.size() * kEntrySize);
     write_u8(out, static_cast<uint8_t>(PacketType::PlayerSnapshot));
     write_u32(out, serverTick);
     write_u64(out, selfPlayerId);
-    write_u32(out, lastProcessedInputSequence);
+    write_u32(out, lastProcessedInputTick);
     write_u32(out, static_cast<uint32_t>(players.size()));
     for (const PlayerSnapshot& p : players) {
         write_u64(out, p.id);
@@ -349,6 +349,9 @@ std::vector<uint8_t> PlayerSnapshotFrame::serialize() const {
         write_f32(out, p.health);
         write_u8(out, p.isAlive);
         write_f32(out, p.respawnSeconds);
+        write_u8(out, p.jumpPressedLastTick);
+        write_f32(out, p.timeSinceGrounded);
+        write_f32(out, p.jumpBufferTimer);
     }
     return out;
 }
@@ -357,7 +360,7 @@ std::optional<PlayerSnapshotFrame> PlayerSnapshotFrame::deserialize(const std::v
     size_t off = 0;
     uint8_t type = 0;
     uint32_t count = 0;
-    constexpr size_t kEntrySize = 8 + (8 * 4) + 3 + 2 + 4 + 1 + 4;
+    constexpr size_t kEntrySize = 8 + (8 * 4) + 3 + 2 + 4 + 1 + 4 + 1 + 4 + 4;
 
     if (!read_u8(buf, off, type)) return std::nullopt;
     if (type != static_cast<uint8_t>(PacketType::PlayerSnapshot)) return std::nullopt;
@@ -365,7 +368,7 @@ std::optional<PlayerSnapshotFrame> PlayerSnapshotFrame::deserialize(const std::v
     PlayerSnapshotFrame frame;
     if (!read_u32(buf, off, frame.serverTick)) return std::nullopt;
     if (!read_u64(buf, off, frame.selfPlayerId)) return std::nullopt;
-    if (!read_u32(buf, off, frame.lastProcessedInputSequence)) return std::nullopt;
+    if (!read_u32(buf, off, frame.lastProcessedInputTick)) return std::nullopt;
     if (!read_u32(buf, off, count)) return std::nullopt;
     if (count > ((buf.size() - off) / kEntrySize)) return std::nullopt;
 
@@ -389,6 +392,9 @@ std::optional<PlayerSnapshotFrame> PlayerSnapshotFrame::deserialize(const std::v
         if (!read_f32(buf, off, p.health)) return std::nullopt;
         if (!read_u8(buf, off, p.isAlive)) return std::nullopt;
         if (!read_f32(buf, off, p.respawnSeconds)) return std::nullopt;
+        if (!read_u8(buf, off, p.jumpPressedLastTick)) return std::nullopt;
+        if (!read_f32(buf, off, p.timeSinceGrounded)) return std::nullopt;
+        if (!read_f32(buf, off, p.jumpBufferTimer)) return std::nullopt;
         frame.players.push_back(p);
     }
     return frame;
@@ -529,36 +535,4 @@ std::optional<ChunkUnload> ChunkUnload::deserialize(const std::vector<uint8_t>& 
     if (!read_i32(buf, off, p.chunkZ)) return std::nullopt;
     return p;
 }
-
-// -------------------- ChunkAck --------------------
-std::vector<uint8_t> ChunkAck::serialize() const {
-    std::vector<uint8_t> out;
-    out.reserve(1 + 1 + 4 + 4 + 4 + 4 + 8);
-    write_u8(out, static_cast<uint8_t>(PacketType::ChunkAck));
-    write_u8(out, ackedType);
-    write_u32(out, sequence);
-    write_i32(out, chunkX);
-    write_i32(out, chunkY);
-    write_i32(out, chunkZ);
-    write_u64(out, version);
-    return out;
-}
-
-std::optional<ChunkAck> ChunkAck::deserialize(const std::vector<uint8_t>& buf) {
-    size_t off = 0;
-    uint8_t type = 0;
-    if (!read_u8(buf, off, type)) return std::nullopt;
-    if (type != static_cast<uint8_t>(PacketType::ChunkAck)) return std::nullopt;
-
-    ChunkAck ack;
-    if (!read_u8(buf, off, ack.ackedType)) return std::nullopt;
-    if (!read_u32(buf, off, ack.sequence)) return std::nullopt;
-    if (!read_i32(buf, off, ack.chunkX)) return std::nullopt;
-    if (!read_i32(buf, off, ack.chunkY)) return std::nullopt;
-    if (!read_i32(buf, off, ack.chunkZ)) return std::nullopt;
-    if (!read_u64(buf, off, ack.version)) return std::nullopt;
-    return ack;
-}
-
-
 

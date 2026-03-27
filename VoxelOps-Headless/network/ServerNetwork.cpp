@@ -35,7 +35,6 @@ constexpr uint32_t kMaxChatMessageBytes = 1u + 512u;
 constexpr uint32_t kPlayerInputPacketBytes = 1u + 4u + 1u + 1u + 2u + 4u * 4u;
 constexpr uint32_t kPlayerPositionPacketBytes = 1u + 4u + 6u * 4u;
 constexpr uint32_t kChunkRequestPacketBytes = 1u + 4u + 4u + 4u + 2u;
-constexpr uint32_t kChunkAckPacketBytes = 1u + 1u + 4u + 4u + 4u + 4u + 8u;
 constexpr uint32_t kShootRequestPacketBytes = 1u + 4u + 4u + 2u + 12u + 12u + 4u + 1u;
 constexpr auto kInboundRateWindow = std::chrono::seconds(1);
 constexpr uint32_t kMaxInboundPacketsPerWindow = 900u;
@@ -537,7 +536,6 @@ bool IsInboundPacketSizeValid(PacketType type, uint32_t bytes)
     case PacketType::PlayerInput: return bytes == kPlayerInputPacketBytes;
     case PacketType::PlayerPosition: return bytes == kPlayerPositionPacketBytes;
     case PacketType::ChunkRequest: return bytes == kChunkRequestPacketBytes;
-    case PacketType::ChunkAck: return bytes == kChunkAckPacketBytes;
     case PacketType::ShootRequest: return bytes == kShootRequestPacketBytes;
     default: return bytes >= 1u && bytes <= kMaxInboundPacketBytes;
     }
@@ -584,7 +582,7 @@ bool ParsePlayerInputPacket(const uint8_t* data, uint32_t size, PlayerInput& out
     if (!data || size != kPlayerInputPacketBytes) {
         return false;
     }
-    out.sequenceNumber = ReadU32LE(data + 1);
+    out.inputTick = ReadU32LE(data + 1);
     out.inputFlags = data[5];
     out.flyMode = data[6];
     out.weaponId = ReadU16LE(data + 7);
@@ -607,20 +605,6 @@ bool ParseChunkRequestPacket(const uint8_t* data, uint32_t size, ChunkRequest& o
     out.chunkY = ReadI32LE(data + 5);
     out.chunkZ = ReadI32LE(data + 9);
     out.viewDistance = ReadU16LE(data + 13);
-    return true;
-}
-
-bool ParseChunkAckPacket(const uint8_t* data, uint32_t size, ChunkAck& out)
-{
-    if (!data || size != kChunkAckPacketBytes) {
-        return false;
-    }
-    out.ackedType = data[1];
-    out.sequence = ReadU32LE(data + 2);
-    out.chunkX = ReadI32LE(data + 6);
-    out.chunkY = ReadI32LE(data + 10);
-    out.chunkZ = ReadI32LE(data + 14);
-    out.version = ReadU64LE(data + 18);
     return true;
 }
 
@@ -905,7 +889,6 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
 
         for (auto pIt = it->second.pendingChunkData.begin(); pIt != it->second.pendingChunkData.end();) {
             if (desired.find(pIt->first) == desired.end()) {
-                it->second.pendingChunkDataPayloadHash.erase(pIt->first);
                 pIt = it->second.pendingChunkData.erase(pIt);
             }
             else {
@@ -1069,7 +1052,6 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
         auto it = m_clients.find(conn);
         if (it != m_clients.end()) {
             it->second.streamedChunks.erase(c);
-            it->second.pendingChunkDataPayloadHash.erase(c);
             it->second.pendingChunkData.erase(c);
         }
     }
@@ -1385,7 +1367,7 @@ void ServerNetwork::HandlePlayerInputPacket(
         m_playerManager.setEquippedWeapon(playerId, input.weaponId);
     }
     else {
-        std::cout << "[input] unregistered conn = " << incoming << " seq = " << input.sequenceNumber << "\n";
+        std::cout << "[input] unregistered conn = " << incoming << " tick = " << input.inputTick << "\n";
     }
 }
 
@@ -1439,79 +1421,6 @@ void ServerNetwork::HandleChunkRequestPacket(
     }
     if (!registered) {
         return;
-    }
-}
-
-void ServerNetwork::HandleChunkAckPacket(
-    HSteamNetConnection incoming,
-    const void* data,
-    uint32_t size,
-    uint64_t& chunkAckPacketsThisLoop
-)
-{
-    if (!kUseChunkAcks) {
-        return;
-    }
-
-    ++chunkAckPacketsThisLoop;
-    ChunkAck ack{};
-    if (!ParseChunkAckPacket(reinterpret_cast<const uint8_t*>(data), size, ack)) {
-        std::cerr << "[chunk/ack] malformed ChunkAck size=" << size << " conn=" << incoming << "\n";
-        return;
-    }
-
-    if (ack.ackedType != static_cast<uint8_t>(PacketType::ChunkData)) {
-        return;
-    }
-
-    const ChunkCoord coord{ ack.chunkX, ack.chunkY, ack.chunkZ };
-    std::lock_guard<std::mutex> lk(m_mutex);
-    auto it = m_clients.find(incoming);
-    if (it == m_clients.end()) {
-        return;
-    }
-
-    auto pendingIt = it->second.pendingChunkData.find(coord);
-    auto expectedIt = it->second.pendingChunkDataPayloadHash.find(coord);
-    const bool wasPending = (pendingIt != it->second.pendingChunkData.end());
-    const bool wasStreamedAlready = it->second.streamedChunks.find(coord) != it->second.streamedChunks.end();
-    const bool hadExpectedHash = (expectedIt != it->second.pendingChunkDataPayloadHash.end());
-    const uint32_t expectedPayloadHash = hadExpectedHash ? expectedIt->second : 0;
-    const bool hashMatches = !hadExpectedHash || (ack.sequence == expectedPayloadHash);
-
-    if (wasPending && hashMatches) {
-        it->second.pendingChunkData.erase(pendingIt);
-        if (hadExpectedHash) {
-            it->second.pendingChunkDataPayloadHash.erase(expectedIt);
-        }
-        it->second.streamedChunks.insert(coord);
-    }
-    else if (wasPending && !hashMatches) {
-        // Keep pending so the chunk is retried; bypass retry cooldown for quick resend.
-        pendingIt->second = std::chrono::steady_clock::time_point::min();
-        std::cerr
-            << "[chunk/ack] payload hash mismatch conn=" << incoming
-            << " chunk=(" << coord.x << "," << coord.y << "," << coord.z << ")"
-            << " expected=" << expectedPayloadHash
-            << " got=" << ack.sequence
-            << " version=" << ack.version << "\n";
-    }
-    else if (!wasPending && !wasStreamedAlready) {
-        // Late ACK after server-side pruning/unload is expected during rapid movement.
-        if (hadExpectedHash) {
-            it->second.pendingChunkDataPayloadHash.erase(expectedIt);
-        }
-        static uint64_t unexpectedChunkAckCount = 0;
-        ++unexpectedChunkAckCount;
-        if (g_enableChunkDiagnostics.load(std::memory_order_acquire) &&
-            (unexpectedChunkAckCount <= 20 || (unexpectedChunkAckCount % 200) == 0)) {
-            std::cerr
-                << "[chunk/ack] ignored late/unexpected ChunkData ACK conn=" << incoming
-                << " chunk=(" << coord.x << "," << coord.y << "," << coord.z << ")"
-                << " seq=" << ack.sequence
-                << " version=" << ack.version
-                << " count=" << unexpectedChunkAckCount << "\n";
-        }
     }
 }
 
@@ -1939,8 +1848,7 @@ void ServerNetwork::DispatchInboundPacket(
     const void* data,
     uint32_t size,
     uint64_t& playerInputPacketsThisLoop,
-    uint64_t& chunkRequestPacketsThisLoop,
-    uint64_t& chunkAckPacketsThisLoop
+    uint64_t& chunkRequestPacketsThisLoop
 )
 {
     switch (packetType) {
@@ -1959,9 +1867,6 @@ void ServerNetwork::DispatchInboundPacket(
     case PacketType::ChunkRequest:
         HandleChunkRequestPacket(incoming, data, size, chunkRequestPacketsThisLoop);
         return;
-    case PacketType::ChunkAck:
-        HandleChunkAckPacket(incoming, data, size, chunkAckPacketsThisLoop);
-        return;
 	case PacketType::ShootRequest:
         HandleShootRequestPacket(incoming, data, size);
         return;
@@ -1975,7 +1880,7 @@ void ServerNetwork::MainLoop()
     auto lastFrameTime = std::chrono::steady_clock::now();
     auto lastSnapshotTime = lastFrameTime;
     constexpr double kServerTickSeconds = 1.0 / static_cast<double>(kServerTickRateHz);
-    constexpr uint32_t kSnapshotSendRateHz = 30u;
+    constexpr uint32_t kSnapshotSendRateHz = 60u;  // Match server tick rate for smooth reconciliation (CS:GO/Valorant style)
     constexpr double kSnapshotSendSeconds = 1.0 / static_cast<double>(kSnapshotSendRateHz);
     constexpr size_t kMaxSimCatchupTicksPerLoop = 4;
     constexpr size_t kChunkInterestUpdatesPerLoop = 4;
@@ -2001,7 +1906,6 @@ void ServerNetwork::MainLoop()
     uint64_t perfMessages = 0;
     uint64_t perfPlayerInputs = 0;
     uint64_t perfChunkRequests = 0;
-    uint64_t perfChunkAcks = 0;
     uint64_t perfSimTicks = 0;
     uint64_t perfCollisionPrewarmGenerated = 0;
     uint64_t perfChunkInterestTasks = 0;
@@ -2022,7 +1926,6 @@ void ServerNetwork::MainLoop()
         uint64_t msgPacketsThisLoop = 0;
         uint64_t playerInputPacketsThisLoop = 0;
         uint64_t chunkRequestPacketsThisLoop = 0;
-        uint64_t chunkAckPacketsThisLoop = 0;
 
         const auto frameNow = std::chrono::steady_clock::now();
         double deltaSeconds = std::chrono::duration<double>(frameNow - lastFrameTime).count();
@@ -2096,8 +1999,7 @@ void ServerNetwork::MainLoop()
                 data,
                 cb,
                 playerInputPacketsThisLoop,
-                chunkRequestPacketsThisLoop,
-                chunkAckPacketsThisLoop
+                chunkRequestPacketsThisLoop
             );
             pMsg->Release();
             if (reachedMessageDrainBudget()) {
@@ -2563,7 +2465,6 @@ void ServerNetwork::MainLoop()
         perfMessages += msgPacketsThisLoop;
         perfPlayerInputs += playerInputPacketsThisLoop;
         perfChunkRequests += chunkRequestPacketsThisLoop;
-        perfChunkAcks += chunkAckPacketsThisLoop;
         perfSimTicks += simTicksThisLoop;
         perfCollisionPrewarmGenerated += collisionPrewarmGeneratedThisLoop;
         perfChunkInterestTasks += chunkInterestTasks.size();
@@ -2593,7 +2494,6 @@ void ServerNetwork::MainLoop()
                 << " msgs=" << msgPacketsThisLoop
                 << " inputs=" << playerInputPacketsThisLoop
                 << " chunkReq=" << chunkRequestPacketsThisLoop
-                << " chunkAck=" << chunkAckPacketsThisLoop
                 << " prewarmGenerated=" << collisionPrewarmGeneratedThisLoop
                 << " chunkInterestTasks=" << chunkInterestTasks.size()
                 << " chunksSent=" << chunksSentThisLoop
@@ -2618,7 +2518,6 @@ void ServerNetwork::MainLoop()
                 << " msgs=" << perfMessages
                 << " inputs=" << perfPlayerInputs
                 << " chunkReq=" << perfChunkRequests
-                << " chunkAck=" << perfChunkAcks
                 << " prewarmGenerated=" << perfCollisionPrewarmGenerated
                 << " chunkInterestTasks=" << perfChunkInterestTasks
                 << " chunksSent=" << perfChunksSent
@@ -2630,7 +2529,6 @@ void ServerNetwork::MainLoop()
             perfMessages = 0;
             perfPlayerInputs = 0;
             perfChunkRequests = 0;
-            perfChunkAcks = 0;
             perfSimTicks = 0;
             perfCollisionPrewarmGenerated = 0;
             perfChunkInterestTasks = 0;

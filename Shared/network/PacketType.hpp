@@ -19,6 +19,5 @@ enum class PacketType : uint8_t {
     ChunkRequest = 20,      // client -> server: request/refresh chunk interest area
     ChunkData = 21,         // server -> client: full chunk payload (serialized/compressed bytes)
     ChunkDelta = 22,        // server -> client: block edits for a chunk
-    ChunkUnload = 23,       // server -> client: unload one chunk
-    ChunkAck = 24           // client -> server: ack chunk packet reception
+    ChunkUnload = 23        // server -> client: unload one chunk
 };

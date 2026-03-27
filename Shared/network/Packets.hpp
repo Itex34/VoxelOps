@@ -17,7 +17,7 @@ constexpr uint8_t kPlayerInputFlagSprint = 1u << 5;
 constexpr uint8_t kPlayerInputFlagFlyUp = 1u << 6;
 constexpr uint8_t kPlayerInputFlagFlyDown = 1u << 7;
 
-constexpr uint16_t kVoxelOpsProtocolVersion = 5;
+constexpr uint16_t kVoxelOpsProtocolVersion = 6;
 constexpr size_t kMaxConnectIdentityChars = 64;
 constexpr size_t kMaxConnectUsernameChars = 32;
 constexpr size_t kMaxConnectMessageChars = 120;
@@ -53,7 +53,7 @@ struct ConnectResponse {
 };
 
 struct PlayerInput {
-    uint32_t sequenceNumber = 0;
+    uint32_t inputTick = 0;
     uint8_t inputFlags = 0;
     uint8_t flyMode = 0;
     uint16_t weaponId = 0;
@@ -119,12 +119,15 @@ struct PlayerSnapshot{
     float health = 100.0f;
     uint8_t isAlive = 1;
     float respawnSeconds = 0.0f;
+    uint8_t jumpPressedLastTick = 0;
+    float timeSinceGrounded = 0.0f;
+    float jumpBufferTimer = 0.0f;
 };
 
 struct PlayerSnapshotFrame {
     uint32_t serverTick = 0;
     uint64_t selfPlayerId = 0;
-    uint32_t lastProcessedInputSequence = 0;
+    uint32_t lastProcessedInputTick = 0;
     std::vector<PlayerSnapshot> players;
 
     std::vector<uint8_t> serialize() const;
@@ -178,16 +181,4 @@ struct ChunkUnload {
 
     std::vector<uint8_t> serialize() const;
     static std::optional<ChunkUnload> deserialize(const std::vector<uint8_t>& buf);
-};
-
-struct ChunkAck {
-    uint8_t ackedType = 0;
-    uint32_t sequence = 0;
-    int32_t chunkX = 0;
-    int32_t chunkY = 0;
-    int32_t chunkZ = 0;
-    uint64_t version = 0;
-
-    std::vector<uint8_t> serialize() const;
-    static std::optional<ChunkAck> deserialize(const std::vector<uint8_t>& buf);
 };

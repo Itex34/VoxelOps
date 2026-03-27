@@ -77,7 +77,6 @@ public:
     // Legacy state packet (kept for compatibility while migrating handlers).
     bool SendPosition(uint32_t seq, const glm::vec3& pos, const glm::vec3& vel);
     bool SendChunkRequest(const glm::ivec3& centerChunk, uint16_t viewDistance);
-    bool SendChunkDataAck(const ChunkData& packet);
 
     void Poll();
 

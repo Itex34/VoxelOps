@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
+﻿cmake_minimum_required(VERSION 3.28 FATAL_ERROR)
 
 project(VoxelOps CXX)
 
@@ -39,6 +39,8 @@ add_executable(VoxelOps
     "graphics/Lighting.cpp"
     "network/ClientNetwork.cpp"
     "network/DecompressChunk.cpp"
+    "runtime/ClientReconciler.cpp"
+    "runtime/SnapshotInterpolator.cpp"
     "player/Hitbox.cpp"    
     "gun/Gun.cpp"
     "misc/ThreadPool.cpp" 

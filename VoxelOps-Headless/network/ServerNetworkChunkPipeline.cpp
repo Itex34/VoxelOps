@@ -6,18 +6,6 @@
 #include <iomanip>
 #include <sstream>
 
-namespace {
-uint32_t fnv1a32(const uint8_t* data, size_t size)
-{
-    uint32_t h = 2166136261u;
-    for (size_t i = 0; i < size; ++i) {
-        h ^= static_cast<uint32_t>(data[i]);
-        h *= 16777619u;
-    }
-    return h;
-}
-}
-
 uint16_t ServerNetwork::ClampViewDistance(uint16_t requested)
 {
     constexpr uint16_t kMin = 2;
@@ -274,27 +262,16 @@ size_t ServerNetwork::FlushChunkSendQueueForClient(HSteamNetConnection conn, siz
             continue;
         }
 
-        uint32_t payloadHash = 0;
-        if (!SendChunkData(conn, coord, &payloadHash)) {
+        if (!SendChunkData(conn, coord)) {
             continue;
         }
 
-        const auto now = std::chrono::steady_clock::now();
         {
             std::lock_guard<std::mutex> lk(m_mutex);
             auto it = m_clients.find(conn);
             if (it != m_clients.end()) {
-                if (kUseChunkAcks) {
-                    if (it->second.pendingChunkData.find(coord) != it->second.pendingChunkData.end()) {
-                        it->second.pendingChunkData[coord] = now;
-                        it->second.pendingChunkDataPayloadHash[coord] = payloadHash;
-                    }
-                }
-                else {
-                    it->second.pendingChunkData.erase(coord);
-                    it->second.pendingChunkDataPayloadHash.erase(coord);
-                    it->second.streamedChunks.insert(coord);
-                }
+                it->second.pendingChunkData.erase(coord);
+                it->second.streamedChunks.insert(coord);
             }
         }
         ++sent;
@@ -409,7 +386,7 @@ void ServerNetwork::ClearChunkPipelineForConnection(HSteamNetConnection conn)
     }
 }
 
-bool ServerNetwork::SendChunkData(HSteamNetConnection conn, const ChunkCoord& coord, uint32_t* outPayloadHash)
+bool ServerNetwork::SendChunkData(HSteamNetConnection conn, const ChunkCoord& coord)
 {
     ServerChunk* chunk = m_chunkManager.getChunkIfExists(glm::ivec3(coord.x, coord.y, coord.z));
     if (!chunk) {
@@ -428,9 +405,6 @@ bool ServerNetwork::SendChunkData(HSteamNetConnection conn, const ChunkCoord& co
     const CompressedChunkPayload compressedPayload = CompressChunkPayload(rawPayload);
     packet.flags = compressedPayload.compressed ? 0x1u : 0u;
     packet.payload = compressedPayload.payload;
-    if (outPayloadHash) {
-        *outPayloadHash = fnv1a32(packet.payload.data(), packet.payload.size());
-    }
 
     const std::vector<uint8_t> bytes = packet.serialize();
     const EResult result = SteamNetworkingSockets()->SendMessageToConnection(

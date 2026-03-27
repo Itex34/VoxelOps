@@ -82,7 +82,6 @@ private:
     void HandleMessagePacket(HSteamNetConnection incoming, const void* data, uint32_t size);
     void HandlePlayerInputPacket(HSteamNetConnection incoming, const void* data, uint32_t size, uint64_t& playerInputPacketsThisLoop);
     void HandleChunkRequestPacket(HSteamNetConnection incoming, const void* data, uint32_t size, uint64_t& chunkRequestPacketsThisLoop);
-    void HandleChunkAckPacket(HSteamNetConnection incoming, const void* data, uint32_t size, uint64_t& chunkAckPacketsThisLoop);
     void HandleShootRequestPacket(HSteamNetConnection incoming, const void* data, uint32_t size);
     void RecordLagCompFrame(uint32_t serverTick);
     void DispatchInboundPacket(
@@ -91,8 +90,7 @@ private:
         const void* data,
         uint32_t size,
         uint64_t& playerInputPacketsThisLoop,
-        uint64_t& chunkRequestPacketsThisLoop,
-        uint64_t& chunkAckPacketsThisLoop
+        uint64_t& chunkRequestPacketsThisLoop
     );
 
     // Callback bridge: Steam expects a free function pointer; we implement a static
@@ -101,8 +99,6 @@ private:
     void OnConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_t* pInfo);
 
 private:
-    static constexpr bool kUseChunkAcks = false;
-
     struct ChunkCoord {
         int32_t x = 0;
         int32_t y = 0;
@@ -134,10 +130,8 @@ private:
         std::chrono::steady_clock::time_point nextChunkInterestUpdateAt =
             std::chrono::steady_clock::time_point::min();
         std::unordered_set<ChunkCoord, ChunkCoordHash> streamedChunks;
-        // ChunkData packets sent but not yet ACKed by the client.
+        // ChunkData packets queued/sent but not yet marked as streamed.
         std::unordered_map<ChunkCoord, std::chrono::steady_clock::time_point, ChunkCoordHash> pendingChunkData;
-        // Payload hash (FNV-1a over ChunkData.payload) expected in ChunkAck.sequence.
-        std::unordered_map<ChunkCoord, uint32_t, ChunkCoordHash> pendingChunkDataPayloadHash;
         bool isAdmin = false;
         std::chrono::steady_clock::time_point inboundRateWindowStart =
             std::chrono::steady_clock::time_point::min();
@@ -176,7 +170,7 @@ private:
         HSteamNetConnection incomingConn
     );
     void UpdateChunkStreamingForClient(HSteamNetConnection conn, const glm::ivec3& centerChunk, uint16_t viewDistance);
-    bool SendChunkData(HSteamNetConnection conn, const ChunkCoord& coord, uint32_t* outPayloadHash = nullptr);
+    bool SendChunkData(HSteamNetConnection conn, const ChunkCoord& coord);
     bool SendChunkUnload(HSteamNetConnection conn, const ChunkCoord& coord);
     bool PrepareChunkForStreaming(const ChunkCoord& coord);
     bool QueueChunkPreparation(HSteamNetConnection conn, const ChunkCoord& coord);

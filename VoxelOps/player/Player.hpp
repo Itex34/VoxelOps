@@ -111,6 +111,7 @@ public:
 
     [[nodiscard]] glm::vec3 getFront() const noexcept { return front; }
     [[nodiscard]] const NetworkInputState& getNetworkInputState() const noexcept { return m_networkInput; }
+    [[nodiscard]] NetworkInputState captureCurrentInput(GLFWwindow* window) const noexcept;  // Capture fresh input directly (no 1-frame delay)
     void simulateFromNetworkInput(const NetworkInputState& input, double deltaTime, bool updateFov = false);
     void setFlyModeAllowed(bool allowed) noexcept;
     [[nodiscard]] bool isFlyModeAllowed() const noexcept { return m_flyModeAllowed; }

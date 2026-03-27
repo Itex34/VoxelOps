@@ -13,6 +13,8 @@
 #include "../physics/RayManager.hpp"
 #include "../physics/Raycast.hpp"
 #include "../player/Player.hpp"
+#include "../runtime/ClientReconciler.hpp"
+#include "../runtime/SnapshotInterpolator.hpp"
 #include "../ui/debug/DebugUi.hpp"
 #include "../../Shared/gun/GunType.hpp"
 #include "../../Shared/player/PlayerData.hpp"
@@ -33,6 +35,8 @@ struct Runtime {
 
     RayManager rayManager;
     ClientNetwork clientNet;
+    SnapshotInterpolator snapshotInterpolator;
+    ClientReconciler reconciler;
 
     std::unique_ptr<Shader> chunkShader;
     std::unique_ptr<Shader> dbgShader;
@@ -47,8 +51,8 @@ struct Runtime {
     bool supportsGL43Shaders = false;
     bool chunkUniformsInitialized = false;
 
-    uint32_t netSeq = 1;
-    uint32_t lastAckedInputSeq = 0;
+    uint32_t inputTickCounter = 1;
+    uint32_t lastAckedInputTick = 0;
     uint32_t lastAppliedServerTick = 0;
     bool hasAppliedServerTick = false;
     uint32_t lastReceivedSelfSnapshotTick = 0;
@@ -99,22 +103,17 @@ struct Runtime {
     static constexpr double InputSendInterval = 1.0 / 60.0; // 60 Hz
     static constexpr double LocalPredictionStep = 1.0 / 60.0; // match authoritative server tick for replay parity
     static constexpr size_t MaxLocalPredictionStepsPerFrame = 8;
-    static constexpr float BasicAuthReconcileDeadzone = 0.20f;
-    static constexpr float BasicAuthReconcileTeleportDistance = 2.0f;
-    static constexpr float BasicAuthCorrectionSpeedGround = 7.5f;
-    static constexpr float BasicAuthCorrectionSpeedAir = 2.0f;
-    static constexpr float BasicAuthGroundYDeadzone = 0.30f;
-    static constexpr float BasicAuthGroundYCorrectionScale = 0.25f;
-    static constexpr float BasicAuthAirYDeadzone = 0.14f;
-    static constexpr float BasicAuthAirYCorrectionScale = 0.12f;
-    static constexpr float BasicAuthStepTransitionYApplyScale = 0.12f;
-    static constexpr float BasicAuthAirYApplyScale = 0.35f;
-    static constexpr float BasicAuthMaxPendingCorrection = 0.75f;
+    static constexpr float BasicAuthReconcileDeadzone = 0.08f;  // For reconciliation threshold
+    static constexpr float BasicAuthReconcileTeleportDistance = 2.0f;  // For large correction detection
     static constexpr float RenderLeadMaxDistance = 0.40f;
     static constexpr float RenderExtrapolationBlend = 0.60f;
+    static constexpr float RenderExtrapolationSpeedMin = 0.20f;
+    static constexpr float RenderExtrapolationSpeedMax = 1.10f;
     static constexpr float RenderCameraSmoothingGroundHz = 26.0f;
     static constexpr float RenderCameraSmoothingAirHz = 16.0f;
-    static constexpr size_t InputRedundancyCopies = 1; // keep one recent resend for loss recovery without tripling traffic
+    static constexpr float RenderIdleSettleSpeedThreshold = 0.20f;
+    static constexpr float RenderIdleSettleHz = 28.0f;
+    static constexpr size_t InputRedundancyCopies = 1;
     static constexpr double ChunkRequestSendInterval = 0.5; // 2 Hz baseline + immediate on center changes
     static constexpr double ChunkRequestCenterChangeMinInterval = 1.0 / 30.0; // up to 30 Hz on border crossings
     static constexpr size_t MaxChunkDataApplyPerFrame = 12;
@@ -129,12 +128,20 @@ struct Runtime {
     double lastChunkCoverageLogTime = 0.0;
     glm::ivec3 lastChunkRequestCenter{ 0 };
     bool hasLastChunkRequestCenter = false;
-    glm::vec3 pendingAuthoritativeCorrection{ 0.0f };
+    bool renderStateNeedsResync = false;
     Player::SimulationState renderPrevSimState{};
     Player::SimulationState renderCurrSimState{};
     bool hasRenderSimState = false;
     glm::vec3 smoothedPlayerCameraPos{ 0.0f };
     bool hasSmoothedPlayerCameraPos = false;
+    float perfFrameCpuMs = 0.0f;
+    float perfInputMs = 0.0f;
+    float perfNetworkMs = 0.0f;
+    float perfPredictionMs = 0.0f;
+    float perfGameplayMs = 0.0f;
+    float perfRenderCpuMs = 0.0f;
+    float perfPresentMs = 0.0f;
+    float perfChunkStreamingMs = 0.0f;
 
     double lastX = 0.0;
     double lastY = 0.0;

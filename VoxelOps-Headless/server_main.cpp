@@ -286,7 +286,8 @@ int main(int argc, char** argv) {
 
     print_console_help();
 
-    // Simple periodic heartbeat broadcast (every second)
+    // Optional periodic heartbeat broadcast.
+    constexpr bool kEnableHeartbeatBroadcast = false;
     const auto heartbeatInterval = 1s;
     auto lastHeartbeat = std::chrono::steady_clock::now();
 
@@ -305,7 +306,7 @@ int main(int argc, char** argv) {
         }
 
         auto now = std::chrono::steady_clock::now();
-        if (now - lastHeartbeat >= heartbeatInterval) {
+        if (kEnableHeartbeatBroadcast && (now - lastHeartbeat >= heartbeatInterval)) {
             lastHeartbeat = now;
 
             std::string msg;

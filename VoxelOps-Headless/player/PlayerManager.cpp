@@ -16,13 +16,15 @@
 
 namespace {
 constexpr size_t kMaxBufferedInputs = 256;
+constexpr int32_t kMaxInputLeadTicks = 120;
+constexpr int32_t kMaxInputGapTicks = 8;
 constexpr int64_t kSlowPlayerManagerUpdateUs = 4000;
 std::atomic<uint64_t> g_playerManagerSlowUpdateCount{ 0 };
 constexpr bool kServerBlockOnMissingCollisionChunk = true;
 std::atomic<uint64_t> g_missingChunkCollisionCount{ 0 };
 std::atomic<bool> g_enablePlayerManagerPerfDiagnostics{ true };
 std::atomic<bool> g_enableMissingChunkCollisionDiagnostics{ true };
-constexpr size_t kPlayerSnapshotEntrySize = 8 + (8 * 4) + 3 + 2 + 4 + 1 + 4;
+constexpr size_t kPlayerSnapshotEntrySize = 8 + (8 * 4) + 3 + 2 + 4 + 1 + 4 + 1 + 4 + 4;
 const std::array<glm::vec3, 9> kRespawnCandidates{ {
     glm::vec3(0.0f, 60.0f, 0.0f),
     glm::vec3(14.0f, 60.0f, 14.0f),
@@ -103,6 +105,9 @@ std::vector<uint8_t> SerializePlayerSnapshotsPayload(const std::vector<PlayerSna
         AppendF32(out, p.health);
         AppendU8(out, p.isAlive);
         AppendF32(out, p.respawnSeconds);
+        AppendU8(out, p.jumpPressedLastTick ? 1u : 0u);
+        AppendF32(out, p.timeSinceGrounded);
+        AppendF32(out, p.jumpBufferTimer);
     }
     return out;
 }
@@ -110,7 +115,7 @@ std::vector<uint8_t> SerializePlayerSnapshotsPayload(const std::vector<PlayerSna
 std::vector<uint8_t> BuildSnapshotFrameBytes(
     uint32_t serverTick,
     PlayerID selfPlayerId,
-    uint32_t lastProcessedInputSequence,
+    uint32_t lastProcessedInputTick,
     const std::vector<uint8_t>& playersPayload
 ) {
     std::vector<uint8_t> out;
@@ -118,7 +123,7 @@ std::vector<uint8_t> BuildSnapshotFrameBytes(
     AppendU8(out, static_cast<uint8_t>(PacketType::PlayerSnapshot));
     AppendU32(out, serverTick);
     AppendU64(out, selfPlayerId);
-    AppendU32(out, lastProcessedInputSequence);
+    AppendU32(out, lastProcessedInputTick);
     out.insert(out.end(), playersPayload.begin(), playersPayload.end());
     return out;
 }
@@ -252,17 +257,22 @@ bool PlayerManager::enqueuePlayerInput(PlayerID id, const PlayerInput& input) {
     if (it == playersById.end()) return false;
 
     ServerPlayer& p = it->second;
-    if (!IsNewerU32(input.sequenceNumber, p.lastProcessedInputSequence)) {
+    if (!p.hasReceivedInput) {
+        p.lastProcessedInputTick = (input.inputTick > 0) ? (input.inputTick - 1) : 0;
+        p.hasReceivedInput = true;
+    }
+    if (!IsNewerU32(input.inputTick, p.lastProcessedInputTick)) {
         return true;
     }
-    if (!p.pendingInputs.empty() && !IsNewerU32(input.sequenceNumber, p.pendingInputs.back().sequenceNumber)) {
+    const int32_t leadTicks = static_cast<int32_t>(input.inputTick - p.lastProcessedInputTick);
+    if (leadTicks > kMaxInputLeadTicks) {
         return true;
     }
 
-    if (p.pendingInputs.size() >= kMaxBufferedInputs) {
-        p.pendingInputs.pop_front();
+    p.pendingInputs[input.inputTick] = input;
+    while (p.pendingInputs.size() > kMaxBufferedInputs) {
+        p.pendingInputs.erase(p.pendingInputs.begin());
     }
-    p.pendingInputs.push_back(input);
     const auto now = Clock::now();
     p.lastHeartbeat = now;
     p.lastInputReceived = now;
@@ -306,15 +316,37 @@ void PlayerManager::update(double deltaSeconds, ChunkManager& chunkManager) {
                 simulatePhysicsFor(player, deltaSeconds, chunkManager);
             }
             else {
-                while (!player.pendingInputs.empty()) {
-                    const PlayerInput cmd = player.pendingInputs.front();
-                    player.pendingInputs.pop_front();
-                    if (!IsNewerU32(cmd.sequenceNumber, player.lastProcessedInputSequence)) {
-                        continue;
+                if (!player.hasReceivedInput && !player.pendingInputs.empty()) {
+                    const uint32_t firstTick = player.pendingInputs.begin()->first;
+                    player.lastProcessedInputTick = (firstTick > 0) ? (firstTick - 1) : 0;
+                    player.hasReceivedInput = true;
+                }
+                if (player.hasReceivedInput) {
+                    const uint32_t expectedTick = player.lastProcessedInputTick + 1;
+                    auto pendingIt = player.pendingInputs.find(expectedTick);
+                    bool advancedInputTick = false;
+                    if (pendingIt != player.pendingInputs.end()) {
+                        const PlayerInput& cmd = pendingIt->second;
+                        player.pendingInputs.erase(pendingIt);
+                        player.yaw = NormalizeYawDegrees(std::isfinite(cmd.yaw) ? cmd.yaw : 0.0f);
+                        player.pitch = std::isfinite(cmd.pitch) ? cmd.pitch : 0.0f;
+                        player.lastProcessedInputTick = expectedTick;
+                        advancedInputTick = true;
                     }
-                    player.lastProcessedInputSequence = cmd.sequenceNumber;
-                    player.yaw = NormalizeYawDegrees(std::isfinite(cmd.yaw) ? cmd.yaw : 0.0f);
-                    player.pitch = std::isfinite(cmd.pitch) ? cmd.pitch : 0.0f;
+                    else if (!player.pendingInputs.empty()) {
+                        const uint32_t oldestTick = player.pendingInputs.begin()->first;
+                        const uint32_t gap = (oldestTick > expectedTick) ? (oldestTick - expectedTick) : 0;
+                        if (gap > static_cast<uint32_t>(kMaxInputGapTicks)) {
+                            player.lastProcessedInputTick = (oldestTick > 0) ? (oldestTick - 1) : 0;
+                            advancedInputTick = true;
+                        }
+                    }
+                    if (advancedInputTick) {
+                        while (!player.pendingInputs.empty() &&
+                            !IsNewerU32(player.pendingInputs.begin()->first, player.lastProcessedInputTick)) {
+                            player.pendingInputs.erase(player.pendingInputs.begin());
+                        }
+                    }
                 }
 
                 player.activeInputFlags = 0;
@@ -433,28 +465,47 @@ void PlayerManager::simulatePhysicsFor(ServerPlayer& p, double dt, ChunkManager&
         kPlayerInputFlagFlyUp |
         kPlayerInputFlagFlyDown;
 
-    // Consume at most one new input per simulation tick to preserve discrete input edges.
-    while (!p.pendingInputs.empty()) {
-        const PlayerInput cmd = p.pendingInputs.front();
-        p.pendingInputs.pop_front();
-        if (!IsNewerU32(cmd.sequenceNumber, p.lastProcessedInputSequence)) {
-            continue;
+    if (!p.hasReceivedInput && !p.pendingInputs.empty()) {
+        const uint32_t firstTick = p.pendingInputs.begin()->first;
+        p.lastProcessedInputTick = (firstTick > 0) ? (firstTick - 1) : 0;
+        p.hasReceivedInput = true;
+    }
+    if (p.hasReceivedInput) {
+        const uint32_t expectedTick = p.lastProcessedInputTick + 1;
+        auto pendingIt = p.pendingInputs.find(expectedTick);
+        bool advancedInputTick = false;
+        if (pendingIt != p.pendingInputs.end()) {
+            const PlayerInput& cmd = pendingIt->second;
+            p.pendingInputs.erase(pendingIt);
+
+            const float safeYaw = std::isfinite(cmd.yaw) ? cmd.yaw : 0.0f;
+            const float safePitch = std::isfinite(cmd.pitch) ? cmd.pitch : 0.0f;
+            const float safeMoveX = std::isfinite(cmd.moveX) ? cmd.moveX : 0.0f;
+            const float safeMoveZ = std::isfinite(cmd.moveZ) ? cmd.moveZ : 0.0f;
+
+            p.activeInputFlags = cmd.inputFlags;
+            p.flyMode = p.allowFlyMode && (cmd.flyMode != 0);
+            // Keep look values only for replication/debug; they are not used for authoritative movement.
+            p.yaw = NormalizeYawDegrees(safeYaw);
+            p.pitch = safePitch;
+            p.moveX = std::clamp(safeMoveX, -1.0f, 1.0f);
+            p.moveZ = std::clamp(safeMoveZ, -1.0f, 1.0f);
+            p.lastProcessedInputTick = expectedTick;
+            advancedInputTick = true;
         }
-
-        const float safeYaw = std::isfinite(cmd.yaw) ? cmd.yaw : 0.0f;
-        const float safePitch = std::isfinite(cmd.pitch) ? cmd.pitch : 0.0f;
-        const float safeMoveX = std::isfinite(cmd.moveX) ? cmd.moveX : 0.0f;
-        const float safeMoveZ = std::isfinite(cmd.moveZ) ? cmd.moveZ : 0.0f;
-
-        p.lastProcessedInputSequence = cmd.sequenceNumber;
-        p.activeInputFlags = cmd.inputFlags;
-        p.flyMode = p.allowFlyMode && (cmd.flyMode != 0);
-        // Keep look values only for replication/debug; they are not used for authoritative movement.
-        p.yaw = NormalizeYawDegrees(safeYaw);
-        p.pitch = safePitch;
-        p.moveX = std::clamp(safeMoveX, -1.0f, 1.0f);
-        p.moveZ = std::clamp(safeMoveZ, -1.0f, 1.0f);
-        break;
+        else if (!p.pendingInputs.empty()) {
+            const uint32_t oldestTick = p.pendingInputs.begin()->first;
+            const uint32_t gap = (oldestTick > expectedTick) ? (oldestTick - expectedTick) : 0;
+            if (gap > static_cast<uint32_t>(kMaxInputGapTicks)) {
+                p.lastProcessedInputTick = (oldestTick > 0) ? (oldestTick - 1) : 0;
+                advancedInputTick = true;
+            }
+        }
+        if (advancedInputTick) {
+            while (!p.pendingInputs.empty() && !IsNewerU32(p.pendingInputs.begin()->first, p.lastProcessedInputTick)) {
+                p.pendingInputs.erase(p.pendingInputs.begin());
+            }
+        }
     }
 
     uint8_t effectiveFlags = p.activeInputFlags;
@@ -567,6 +618,9 @@ std::vector<std::vector<uint8_t>> PlayerManager::buildSnapshotsForRecipients(
             const float remaining = std::chrono::duration<float>(p.respawnAt - now).count();
             pkt.respawnSeconds = std::max(0.0f, remaining);
         }
+        pkt.jumpPressedLastTick = p.jumpPressedLastTick ? 1u : 0u;
+        pkt.timeSinceGrounded = p.timeSinceGrounded;
+        pkt.jumpBufferTimer = p.jumpBufferTimer;
         players.push_back(pkt);
     }
 
@@ -582,7 +636,7 @@ std::vector<std::vector<uint8_t>> PlayerManager::buildSnapshotsForRecipients(
         frames.push_back(BuildSnapshotFrameBytes(
             serverTick,
             recipientId,
-            recipIt->second.lastProcessedInputSequence,
+            recipIt->second.lastProcessedInputTick,
             playersPayload
         ));
     }
