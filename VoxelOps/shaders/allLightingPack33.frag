@@ -8,8 +8,7 @@ flat in int TileIndex;
 
 out vec4 FragColor;
 
-uniform sampler2D texture1;
-uniform vec4 u_tileInfo[256];
+uniform sampler2DArray texture1;
 
 // directional light (direction FROM fragment TOWARD light; normalized)
 uniform vec3 lightDir;
@@ -41,9 +40,8 @@ uniform float shadowContrast;   // >= 1.0. 1.0 = linear, >1 emphasizes shadows (
 
 void main() {
 
-    vec4 tile = u_tileInfo[TileIndex];
-    vec2 uvAtlas = tile.xy + fract(TexCoordBlocks) * tile.zw;
-    vec4 tex = texture(texture1, uvAtlas);
+    vec2 uvLayer = fract(TexCoordBlocks);
+    vec4 tex = texture(texture1, vec3(uvLayer, float(TileIndex)));
     vec3 albedo = tex.rgb;
 
     // AO and sunlight from vertex color

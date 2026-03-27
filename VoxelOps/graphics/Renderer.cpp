@@ -121,7 +121,7 @@ void Renderer::renderFrame(RenderFrameParams& params)
     const glm::vec3 lightColor = glm::vec3(1.0f, 0.98f, 0.96f);
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, params.chunkManager.atlas.atlasTextureID);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, params.chunkManager.atlas.atlasTextureArrayID);
 
     params.chunkShader.use();
     params.chunkShader.setMat4("viewProj", viewProjection);

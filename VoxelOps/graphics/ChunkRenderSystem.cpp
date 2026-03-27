@@ -23,26 +23,6 @@ void ChunkRenderSystem::renderChunks(
     );
     const glm::ivec3 playerChunkPos = cm.worldToChunkPos(playerBlockPos);
 
-    if (!cm.m_tileInfoInitialized) {
-        for (size_t i = 0; i < 256; ++i) {
-            cm.m_tileInfo[i] = glm::vec4(0, 0, 1, 1);
-        }
-
-        for (const auto& [name, tilePos] : cm.atlas.tileMap) {
-            int tileX = tilePos.x;
-            int tileY = tilePos.y;
-            int index = tileY * TEXTURE_ATLAS_SIZE + tileX;
-
-            auto [min, max] = cm.atlas.getUVRect(name);
-            cm.m_tileInfo[index] = glm::vec4(min, max - min);
-        }
-
-        shader.setVec4v("u_tileInfo", 256, cm.m_tileInfo);
-        shader.setFloat("u_chunkSize", float(CHUNK_SIZE));
-
-        cm.m_tileInfoInitialized = true;
-    }
-
     size_t regionCount = 0;
     size_t validMeshCount = 0;
     size_t drawnCount = 0;

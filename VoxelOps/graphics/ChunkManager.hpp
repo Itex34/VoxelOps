@@ -285,11 +285,6 @@ private:
 
     std::optional<Shader> debugShader;
 
-
-
-    glm::vec4 m_tileInfo[256]; 
-    bool m_tileInfoInitialized = false;
-
     bool suppressSunlightAffectedRebuilds = false;
 
 

@@ -156,28 +156,3 @@ const uint8_t uvRemap[6][4] = {
     { 1, 0, 3, 2 }
 };
 
-
-
-std::array<glm::vec2, 4> getTexCoordsForFace(BlockID blockID, int face, const TextureAtlas& atlas) {
-    const auto& block = blockTypes.at(blockID);
-
-    std::string tileName;
-    switch (face) {
-        case 0: case 1: tileName = block.textures.RLSide; break;
-        case 4: case 5: tileName = block.textures.FBSide; break;
-        case 2: tileName = block.textures.top; break;
-        case 3: tileName = block.textures.bottom; break;
-    }
-
-    auto [uvTopLeft, uvBottomRight] = atlas.getUVRect(tileName);
-
-    std::array<glm::vec2, 4> uvs = {
-        glm::vec2(uvTopLeft.x, uvTopLeft.y),
-        glm::vec2(uvBottomRight.x, uvTopLeft.y),
-        glm::vec2(uvBottomRight.x, uvBottomRight.y),
-        glm::vec2(uvTopLeft.x, uvBottomRight.y)
-    };
-
-    return uvs;
-}
-

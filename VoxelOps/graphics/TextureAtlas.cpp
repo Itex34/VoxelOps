@@ -2,10 +2,20 @@
 #include "../../Shared/runtime/Paths.hpp"
 #include <stb_image.h>
 
+#include <cstdint>
+#include <cstring>
 #include <iostream>
+#include <vector>
 
 namespace {
-GLuint loadTexture2DNearestSRGB(const char* path) {
+struct LoadedImage {
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    std::vector<uint8_t> pixels;
+};
+
+bool loadImageFlipped(const char* path, LoadedImage& out) {
     int width = 0;
     int height = 0;
     int nrChannels = 0;
@@ -14,28 +24,44 @@ GLuint loadTexture2DNearestSRGB(const char* path) {
     unsigned char* data = stbi_load(path, &width, &height, &nrChannels, 0);
     if (!data) {
         std::cerr << "Failed to load texture: " << path << '\n';
+        return false;
+    }
+
+    out.width = width;
+    out.height = height;
+    out.channels = nrChannels;
+    out.pixels.assign(data, data + (static_cast<size_t>(width) * static_cast<size_t>(height) * static_cast<size_t>(nrChannels)));
+    stbi_image_free(data);
+    return true;
+}
+
+bool resolveFormats(int channels, GLenum& internalFormat, GLenum& format) {
+    if (channels == 1) {
+        internalFormat = GL_R8;
+        format = GL_RED;
+        return true;
+    }
+    if (channels == 3) {
+        internalFormat = GL_SRGB8;
+        format = GL_RGB;
+        return true;
+    }
+    if (channels == 4) {
+        internalFormat = GL_SRGB8_ALPHA8;
+        format = GL_RGBA;
+        return true;
+    }
+    return false;
+}
+
+GLuint createTexture2DFromImage(const LoadedImage& image) {
+    GLenum internalFormat = GL_RGBA8;
+    GLenum format = GL_RGBA;
+    if (!resolveFormats(image.channels, internalFormat, format)) {
+        std::cerr << "Unsupported channel count: " << image.channels << '\n';
         return 0;
     }
 
-    GLenum internalFormat = GL_RGBA8;
-    GLenum format = GL_RGBA;
-    if (nrChannels == 1) {
-        internalFormat = GL_R8;
-        format = GL_RED;
-    }
-    else if (nrChannels == 3) {
-        internalFormat = GL_SRGB8;
-        format = GL_RGB;
-    }
-    else if (nrChannels == 4) {
-        internalFormat = GL_SRGB8_ALPHA8;
-        format = GL_RGBA;
-    }
-    else {
-        std::cerr << "Unsupported channel count: " << nrChannels << '\n';
-        stbi_image_free(data);
-        return 0;
-    }
     GLuint textureID = 0;
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_2D, textureID);
@@ -46,7 +72,17 @@ GLuint loadTexture2DNearestSRGB(const char* path) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        internalFormat,
+        image.width,
+        image.height,
+        0,
+        format,
+        GL_UNSIGNED_BYTE,
+        image.pixels.data()
+    );
 
 #if defined(GL_MAX_TEXTURE_MAX_ANISOTROPY) && defined(GL_TEXTURE_MAX_ANISOTROPY)
     GLfloat aniso = 1.0f;
@@ -56,9 +92,93 @@ GLuint loadTexture2DNearestSRGB(const char* path) {
 
     glEnable(GL_FRAMEBUFFER_SRGB);
 
-    stbi_image_free(data);
     glBindTexture(GL_TEXTURE_2D, 0);
 
+    return textureID;
+}
+
+GLuint createTextureArrayFromAtlasImage(const LoadedImage& atlasImage) {
+    if (atlasImage.width != TEXTURE_ATLAS_SIZE * TILE_RESOLUTION ||
+        atlasImage.height != TEXTURE_ATLAS_SIZE * TILE_RESOLUTION) {
+        std::cerr
+            << "Unexpected atlas dimensions: "
+            << atlasImage.width << "x" << atlasImage.height
+            << " expected "
+            << (TEXTURE_ATLAS_SIZE * TILE_RESOLUTION) << "x"
+            << (TEXTURE_ATLAS_SIZE * TILE_RESOLUTION) << '\n';
+        return 0;
+    }
+
+    GLenum internalFormat = GL_RGBA8;
+    GLenum format = GL_RGBA;
+    if (!resolveFormats(atlasImage.channels, internalFormat, format)) {
+        std::cerr << "Unsupported channel count for array texture: " << atlasImage.channels << '\n';
+        return 0;
+    }
+
+    constexpr int kLayerCount = TEXTURE_ATLAS_SIZE * TEXTURE_ATLAS_SIZE;
+    const size_t tileRowBytes = static_cast<size_t>(TILE_RESOLUTION) * static_cast<size_t>(atlasImage.channels);
+    std::vector<uint8_t> tilePixels(
+        static_cast<size_t>(TILE_RESOLUTION) *
+        static_cast<size_t>(TILE_RESOLUTION) *
+        static_cast<size_t>(atlasImage.channels)
+    );
+
+    GLuint textureID = 0;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, textureID);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BASE_LEVEL, 0);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_LEVEL, 0);
+
+    glTexImage3D(
+        GL_TEXTURE_2D_ARRAY,
+        0,
+        internalFormat,
+        TILE_RESOLUTION,
+        TILE_RESOLUTION,
+        kLayerCount,
+        0,
+        format,
+        GL_UNSIGNED_BYTE,
+        nullptr
+    );
+
+    for (int tileY = 0; tileY < TEXTURE_ATLAS_SIZE; ++tileY) {
+        for (int tileX = 0; tileX < TEXTURE_ATLAS_SIZE; ++tileX) {
+            const int layer = tileY * TEXTURE_ATLAS_SIZE + tileX;
+            for (int row = 0; row < TILE_RESOLUTION; ++row) {
+                const int srcY = tileY * TILE_RESOLUTION + row;
+                const size_t srcOffset =
+                    (static_cast<size_t>(srcY) * static_cast<size_t>(atlasImage.width) +
+                        static_cast<size_t>(tileX * TILE_RESOLUTION)) * static_cast<size_t>(atlasImage.channels);
+                const size_t dstOffset = static_cast<size_t>(row) * tileRowBytes;
+                std::memcpy(tilePixels.data() + dstOffset, atlasImage.pixels.data() + srcOffset, tileRowBytes);
+            }
+
+            glTexSubImage3D(
+                GL_TEXTURE_2D_ARRAY,
+                0,
+                0,
+                0,
+                layer,
+                TILE_RESOLUTION,
+                TILE_RESOLUTION,
+                1,
+                format,
+                GL_UNSIGNED_BYTE,
+                tilePixels.data()
+            );
+        }
+    }
+
+    glEnable(GL_FRAMEBUFFER_SRGB);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
     return textureID;
 }
 }
@@ -66,9 +186,20 @@ GLuint loadTexture2DNearestSRGB(const char* path) {
 TextureAtlas::TextureAtlas(){
     const std::string atlasPath =
         Shared::RuntimePaths::ResolveVoxelOpsPath("assets/textures/textureAtlas.png").generic_string();
-    atlasTextureID = loadTexture2DNearestSRGB(atlasPath.c_str());
+
+    LoadedImage atlasImage;
+    if (!loadImageFlipped(atlasPath.c_str(), atlasImage)) {
+        throw std::runtime_error("Failed to load texture atlas image data");
+    }
+
+    atlasTextureID = createTexture2DFromImage(atlasImage);
     if (!atlasTextureID) {
-        throw std::runtime_error("Failed to load texture atlas");
+        throw std::runtime_error("Failed to create 2D texture atlas");
+    }
+
+    atlasTextureArrayID = createTextureArrayFromAtlasImage(atlasImage);
+    if (!atlasTextureArrayID) {
+        throw std::runtime_error("Failed to create texture array from atlas");
     }
 
     tileMap["dirt"] = { 0, 0 };
@@ -104,27 +235,15 @@ TextureAtlas::TextureAtlas(){
     tileMap["sapphire_block"] = { 6, 6 };
 }
 
-
-std::pair<glm::vec2, glm::vec2> TextureAtlas::getUVRect(const std::string& name) const {
-    auto it = tileMap.find(name);
-    if (it == tileMap.end()) {
-        throw std::runtime_error("Tile not found in atlas: " + name);
+TextureAtlas::~TextureAtlas() {
+    if (atlasTextureArrayID != 0) {
+        glDeleteTextures(1, &atlasTextureArrayID);
+        atlasTextureArrayID = 0;
     }
-
-    glm::ivec2 tilePos = it->second;
-
-
-    float tileWidth = 1.0f / static_cast<float>(TEXTURE_ATLAS_SIZE);
-    float tileHeight = 1.0f / static_cast<float>(TEXTURE_ATLAS_SIZE);
-
-    float atlasPixelSize = 1.0f / (TEXTURE_ATLAS_SIZE * TILE_RESOLUTION);
-
-    float padding = atlasPixelSize;
-
-    glm::vec2 topLeft = glm::vec2(tilePos.x * tileWidth, tilePos.y * tileHeight) + padding;
-    glm::vec2 bottomRight = topLeft + glm::vec2(tileWidth, tileHeight) - 2.0f * padding;
-
-    return { topLeft, bottomRight };
+    if (atlasTextureID != 0) {
+        glDeleteTextures(1, &atlasTextureID);
+        atlasTextureID = 0;
+    }
 }
 
 

@@ -8,8 +8,6 @@
 #include <unordered_map>
 #include <functional>
 
-#include "../graphics/TextureAtlas.hpp"
-
 // Face order: +X, -X, +Y, -Y, +Z, -Z
 extern const glm::ivec3 faceNormals[6];
 extern const glm::ivec3 faceVertices[6][4];
@@ -47,9 +45,6 @@ enum class BlockID : uint8_t {
     SapphireBlock,
     COUNT,
 };
-
-
-std::array<glm::vec2, 4> getTexCoordsForFace(BlockID blockID, int face, const TextureAtlas& atlas);
 
 namespace std {
     template <>
