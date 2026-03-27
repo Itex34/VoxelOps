@@ -3,13 +3,11 @@
 #include "../voxels/Voxel.hpp"
 #include "Mesh.hpp"
 #include "../graphics/TextureAtlas.hpp"
-#include "Renderer.hpp"
 #include <array>
 #include <cstdint>
 
 
 
-// --- put these at top of function (static across planes) ---
 struct QuadKey {
     uint32_t x0, y0, z0;
     uint32_t x1, y1, z1;
@@ -23,7 +21,6 @@ struct QuadKey {
 
 struct QuadKeyHash {
     size_t operator()(QuadKey const& k) const noexcept {
-        // cheap XOR hash
         uint64_t a = ((uint64_t)k.x0 << 32) ^ (k.y0 << 16) ^ k.z0;
         uint64_t b = ((uint64_t)k.x1 << 32) ^ (k.y1 << 16) ^ k.z1;
         uint64_t c = ((uint64_t)k.x2 << 32) ^ (k.y2 << 16) ^ k.z2;
@@ -31,9 +28,6 @@ struct QuadKeyHash {
         return (size_t)(a ^ (b << 1) ^ (c << 2) ^ (d << 3));
     }
 };
-static
-
-
 
 struct GreedyCell {
     uint16_t gen = 0;
@@ -70,29 +64,7 @@ struct MeshBuildProfileSnapshot {
 
 class ChunkMeshBuilder {
 public:
-    Mesh buildFullChunkMesh(const Chunk& chunk, const TextureAtlas& atlas);
-    Mesh buildPartialChunkMesh(
-        const Chunk& chunk,
-        const TextureAtlas& atlas,
-        std::array<bool, 6> visibleFaces/* 0 : +X, 1 : -X, 2 : +Z, 3 : -Z, 4 : +Y, 5 : -Y */
-    ); //build mesh for a chunk with only some faces visible, 
-       //for example when visibleFaces is [false, false, false, false] it will only build the top 
-       //and bottom faces of the chunk
 
-
-
-
-
-    Mesh buildPartialChunkMeshGreedy(
-        const Chunk& chunk,
-        const TextureAtlas& atlas,
-        std::array<bool, 6> visibleFaces 
-    );
-
-
-
-
-using BlockGetter = std::function<BlockID(const glm::ivec3& worldPos)>; //deprecated
     using SunTopGetter = std::function<int(int, int)>;
 
     BuiltChunkMesh buildChunkMesh(
@@ -109,13 +81,6 @@ using BlockGetter = std::function<BlockID(const glm::ivec3& worldPos)>; //deprec
     static void resetProfileSnapshot();
 
 
-
-    Mesh buildGreedyMesh(const Chunk& chunk,
-        const glm::ivec3& chunkPos,
-        const TextureAtlas& atlas,
-        BlockGetter getBlock
-    );
-
 private:
     std::unordered_map<QuadKey, uint16_t, QuadKeyHash> quadEmitMap;
     std::unordered_map<QuadKey, std::pair<std::array<uint8_t, 4>, std::array<uint8_t, 4>>, QuadKeyHash> quadMap;
@@ -126,7 +91,6 @@ private:
         const Chunk* neighbors[6]
     ) noexcept
     {
-        // Fast interior path
         if ((unsigned)x < CHUNK_SIZE &&
             (unsigned)y < CHUNK_SIZE &&
             (unsigned)z < CHUNK_SIZE)
@@ -134,7 +98,6 @@ private:
             return chunk.getBlockUnchecked(x, y, z);
         }
 
-        // Only ONE axis can be out of bounds in meshing
         if (x < 0) {
             const Chunk* n = neighbors[1]; // -X
             return n ? n->getBlockUnchecked(x + CHUNK_SIZE, y, z) : BlockID::Air;
@@ -172,7 +135,7 @@ private:
         const Chunk* neighbors[6]
     ) noexcept
     {
-        // Hard reject unsupported vertical access
+        // hard reject unsupported vertical access
         if (y < -1 || y > CHUNK_SIZE)
             return BlockID::Air;
 
@@ -189,12 +152,6 @@ private:
 
         return BlockID::Air;
     }
-
-
-
-
-
-
 
 };
 

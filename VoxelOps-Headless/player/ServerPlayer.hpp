@@ -8,6 +8,7 @@
 #include <limits>
 
 #include "../../Shared/network/Packets.hpp"
+#include "../../Shared/player/Inventory.hpp"
 #include "../../Shared/gun/GunType.hpp"
 
 using PlayerID = uint64_t;
@@ -52,6 +53,7 @@ struct ServerPlayer {
     bool jumpPressedLastTick = false;
     float timeSinceGrounded = 0.0f;
     float jumpBufferTimer = 0.0f;
+    Inventory inventory{};
 
     // For fast O(1) removal from order list (set by PlayerManager)
     std::list<PlayerID>::iterator orderIt;

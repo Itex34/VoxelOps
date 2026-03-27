@@ -19,5 +19,9 @@ enum class PacketType : uint8_t {
     ChunkRequest = 20,      // client -> server: request/refresh chunk interest area
     ChunkData = 21,         // server -> client: full chunk payload (serialized/compressed bytes)
     ChunkDelta = 22,        // server -> client: block edits for a chunk
-    ChunkUnload = 23        // server -> client: unload one chunk
+    ChunkUnload = 23,       // server -> client: unload one chunk
+
+    InventoryActionRequest = 24, // client -> server: inventory command request
+    InventoryActionResult = 25,  // server -> client: command accept/reject + revision
+    InventorySnapshot = 26       // server -> client: authoritative inventory state
 };

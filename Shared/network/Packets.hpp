@@ -1,5 +1,6 @@
 #pragma once
 #include "PacketType.hpp"
+#include "../player/Inventory.hpp"
 #include <vector>
 #include <cstdint>
 #include <optional>
@@ -17,7 +18,7 @@ constexpr uint8_t kPlayerInputFlagSprint = 1u << 5;
 constexpr uint8_t kPlayerInputFlagFlyUp = 1u << 6;
 constexpr uint8_t kPlayerInputFlagFlyDown = 1u << 7;
 
-constexpr uint16_t kVoxelOpsProtocolVersion = 6;
+constexpr uint16_t kVoxelOpsProtocolVersion = 7;
 constexpr size_t kMaxConnectIdentityChars = 64;
 constexpr size_t kMaxConnectUsernameChars = 32;
 constexpr size_t kMaxConnectMessageChars = 120;
@@ -181,4 +182,32 @@ struct ChunkUnload {
 
     std::vector<uint8_t> serialize() const;
     static std::optional<ChunkUnload> deserialize(const std::vector<uint8_t>& buf);
+};
+
+struct InventoryActionRequest {
+    uint32_t requestId = 0;
+    uint32_t expectedRevision = 0;
+    InventoryAction action{};
+
+    std::vector<uint8_t> serialize() const;
+    static std::optional<InventoryActionRequest> deserialize(const std::vector<uint8_t>& buf);
+};
+
+struct InventoryActionResult {
+    uint32_t requestId = 0;
+    uint8_t accepted = 0;
+    InventoryRejectReason rejectReason = InventoryRejectReason::None;
+    uint32_t newRevision = 0;
+    std::vector<uint16_t> changedSlots;
+
+    std::vector<uint8_t> serialize() const;
+    static std::optional<InventoryActionResult> deserialize(const std::vector<uint8_t>& buf);
+};
+
+struct InventorySnapshot {
+    uint32_t revision = 0;
+    std::vector<Slot> slots;
+
+    std::vector<uint8_t> serialize() const;
+    static std::optional<InventorySnapshot> deserialize(const std::vector<uint8_t>& buf);
 };

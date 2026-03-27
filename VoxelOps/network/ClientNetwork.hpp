@@ -74,6 +74,7 @@ public:
     // Send movement input for server-authoritative simulation.
     bool SendPlayerInput(const PlayerInput& input);
     bool SendRespawnRequest();
+    bool SendInventoryActionRequest(const InventoryActionRequest& request);
     // Legacy state packet (kept for compatibility while migrating handlers).
     bool SendPosition(uint32_t seq, const glm::vec3& pos, const glm::vec3& vel);
     bool SendChunkRequest(const glm::ivec3& centerChunk, uint16_t viewDistance);
@@ -101,6 +102,8 @@ public:
     bool PopChunkUnload(ChunkUnload& out);
     bool PopPlayerSnapshot(PlayerSnapshotFrame& out);
     bool PopShootResult(ShootResult& out);
+    bool PopInventoryActionResult(InventoryActionResult& out);
+    bool PopInventorySnapshot(InventorySnapshot& out);
     bool PopKillFeedEvent(KillFeedEvent& out);
     bool PopScoreboardSnapshot(ScoreboardSnapshot& out);
     ChunkQueueDepths GetChunkQueueDepths();
@@ -135,6 +138,8 @@ private:
     std::deque<ChunkUnload> m_chunkUnloadQueue;
     std::deque<PlayerSnapshotFrame> m_playerSnapshotQueue;
     std::deque<ShootResult> m_shootResultQueue;
+    std::deque<InventoryActionResult> m_inventoryActionResultQueue;
+    std::deque<InventorySnapshot> m_inventorySnapshotQueue;
     std::deque<KillFeedEvent> m_killFeedQueue;
     std::deque<ScoreboardSnapshot> m_scoreboardQueue;
 };

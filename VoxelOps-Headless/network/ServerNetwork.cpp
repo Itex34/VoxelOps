@@ -36,6 +36,7 @@ constexpr uint32_t kPlayerInputPacketBytes = 1u + 4u + 1u + 1u + 2u + 4u * 4u;
 constexpr uint32_t kPlayerPositionPacketBytes = 1u + 4u + 6u * 4u;
 constexpr uint32_t kChunkRequestPacketBytes = 1u + 4u + 4u + 4u + 2u;
 constexpr uint32_t kShootRequestPacketBytes = 1u + 4u + 4u + 2u + 12u + 12u + 4u + 1u;
+constexpr uint32_t kInventoryActionRequestPacketBytes = 1u + 4u + 4u + 1u + 2u + 2u + 2u;
 constexpr auto kInboundRateWindow = std::chrono::seconds(1);
 constexpr uint32_t kMaxInboundPacketsPerWindow = 900u;
 constexpr uint32_t kMaxInboundBytesPerWindow = 256u * 1024u;
@@ -537,6 +538,7 @@ bool IsInboundPacketSizeValid(PacketType type, uint32_t bytes)
     case PacketType::PlayerPosition: return bytes == kPlayerPositionPacketBytes;
     case PacketType::ChunkRequest: return bytes == kChunkRequestPacketBytes;
     case PacketType::ShootRequest: return bytes == kShootRequestPacketBytes;
+    case PacketType::InventoryActionRequest: return bytes == kInventoryActionRequestPacketBytes;
     default: return bytes >= 1u && bytes <= kMaxInboundPacketBytes;
     }
 }
@@ -631,6 +633,21 @@ bool ParseShootRequestPacket(const uint8_t* data, uint32_t size, ShootRequest& o
         std::isfinite(out.dirX) &&
         std::isfinite(out.dirY) &&
         std::isfinite(out.dirZ);
+}
+
+bool ParseInventoryActionRequestPacket(const uint8_t* data, uint32_t size, InventoryActionRequest& out)
+{
+    if (!data || size != kInventoryActionRequestPacketBytes) {
+        return false;
+    }
+
+    std::vector<uint8_t> bytes(data, data + size);
+    const std::optional<InventoryActionRequest> parsed = InventoryActionRequest::deserialize(bytes);
+    if (!parsed.has_value()) {
+        return false;
+    }
+    out = *parsed;
+    return true;
 }
 }
 
@@ -1287,6 +1304,18 @@ void ServerNetwork::HandleConnectRequest(HSteamNetConnection incoming, const voi
     response.message = "ok";
     sendResponse(response);
 
+    InventorySnapshot inventorySnapshot{};
+    if (m_playerManager.getInventorySnapshot(playerId, inventorySnapshot)) {
+        const std::vector<uint8_t> snapshotBytes = inventorySnapshot.serialize();
+        (void)SteamNetworkingSockets()->SendMessageToConnection(
+            incoming,
+            snapshotBytes.data(),
+            static_cast<uint32_t>(snapshotBytes.size()),
+            k_nSteamNetworkingSend_Reliable,
+            nullptr
+        );
+    }
+
     std::string out;
     out.push_back(static_cast<char>(PacketType::ClientConnect));
     out += username;
@@ -1842,6 +1871,66 @@ void ServerNetwork::HandleShootRequestPacket(HSteamNetConnection incoming, const
     sendResult(res);
 }
 
+void ServerNetwork::HandleInventoryActionRequestPacket(HSteamNetConnection incoming, const void* data, uint32_t size)
+{
+    InventoryActionRequest request{};
+    if (!ParseInventoryActionRequestPacket(reinterpret_cast<const uint8_t*>(data), size, request)) {
+        std::cerr << "[recv] malformed InventoryActionRequest\n";
+        return;
+    }
+
+    PlayerID playerId = 0;
+    {
+        std::lock_guard<std::mutex> lk(m_mutex);
+        auto it = m_clients.find(incoming);
+        if (it != m_clients.end()) {
+            playerId = it->second.playerId;
+        }
+    }
+    if (playerId == 0) {
+        return;
+    }
+
+    m_playerManager.touchHeartbeat(playerId);
+
+    InventoryActionResult result{};
+    InventorySnapshot snapshot{};
+    if (!m_playerManager.applyInventoryAction(playerId, request, result, snapshot)) {
+        result.requestId = request.requestId;
+        result.accepted = 0;
+        result.rejectReason = InventoryRejectReason::Unsupported;
+        result.changedSlots.clear();
+        result.newRevision = 0;
+        const std::vector<uint8_t> resultBytes = result.serialize();
+        (void)SteamNetworkingSockets()->SendMessageToConnection(
+            incoming,
+            resultBytes.data(),
+            static_cast<uint32_t>(resultBytes.size()),
+            k_nSteamNetworkingSend_Reliable,
+            nullptr
+        );
+        return;
+    }
+
+    const std::vector<uint8_t> resultBytes = result.serialize();
+    (void)SteamNetworkingSockets()->SendMessageToConnection(
+        incoming,
+        resultBytes.data(),
+        static_cast<uint32_t>(resultBytes.size()),
+        k_nSteamNetworkingSend_Reliable,
+        nullptr
+    );
+
+    const std::vector<uint8_t> snapshotBytes = snapshot.serialize();
+    (void)SteamNetworkingSockets()->SendMessageToConnection(
+        incoming,
+        snapshotBytes.data(),
+        static_cast<uint32_t>(snapshotBytes.size()),
+        k_nSteamNetworkingSend_Reliable,
+        nullptr
+    );
+}
+
 void ServerNetwork::DispatchInboundPacket(
     HSteamNetConnection incoming,
     PacketType packetType,
@@ -1869,6 +1958,9 @@ void ServerNetwork::DispatchInboundPacket(
         return;
 	case PacketType::ShootRequest:
         HandleShootRequestPacket(incoming, data, size);
+        return;
+    case PacketType::InventoryActionRequest:
+        HandleInventoryActionRequestPacket(incoming, data, size);
         return;
     default:
         return;
@@ -2571,5 +2663,3 @@ bool ServerNetwork::IsDebugLoggingEnabled()
     }
     return m_playerManager.IsDebugLoggingEnabled();
 }
-
-

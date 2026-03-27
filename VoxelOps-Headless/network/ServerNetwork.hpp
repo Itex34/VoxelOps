@@ -83,6 +83,7 @@ private:
     void HandlePlayerInputPacket(HSteamNetConnection incoming, const void* data, uint32_t size, uint64_t& playerInputPacketsThisLoop);
     void HandleChunkRequestPacket(HSteamNetConnection incoming, const void* data, uint32_t size, uint64_t& chunkRequestPacketsThisLoop);
     void HandleShootRequestPacket(HSteamNetConnection incoming, const void* data, uint32_t size);
+    void HandleInventoryActionRequestPacket(HSteamNetConnection incoming, const void* data, uint32_t size);
     void RecordLagCompFrame(uint32_t serverTick);
     void DispatchInboundPacket(
         HSteamNetConnection incoming,

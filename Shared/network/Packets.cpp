@@ -536,3 +536,123 @@ std::optional<ChunkUnload> ChunkUnload::deserialize(const std::vector<uint8_t>& 
     return p;
 }
 
+// -------------------- InventoryActionRequest --------------------
+std::vector<uint8_t> InventoryActionRequest::serialize() const {
+    std::vector<uint8_t> out;
+    out.reserve(1 + 4 + 4 + 1 + 2 + 2 + 2);
+    write_u8(out, static_cast<uint8_t>(PacketType::InventoryActionRequest));
+    write_u32(out, requestId);
+    write_u32(out, expectedRevision);
+    write_u8(out, static_cast<uint8_t>(action.type));
+    write_u16(out, action.sourceSlot);
+    write_u16(out, action.destinationSlot);
+    write_u16(out, action.amount);
+    return out;
+}
+
+std::optional<InventoryActionRequest> InventoryActionRequest::deserialize(const std::vector<uint8_t>& buf) {
+    size_t off = 0;
+    uint8_t type = 0;
+    uint8_t actionTypeRaw = 0;
+    if (!read_u8(buf, off, type)) return std::nullopt;
+    if (type != static_cast<uint8_t>(PacketType::InventoryActionRequest)) return std::nullopt;
+
+    InventoryActionRequest req{};
+    if (!read_u32(buf, off, req.requestId)) return std::nullopt;
+    if (!read_u32(buf, off, req.expectedRevision)) return std::nullopt;
+    if (!read_u8(buf, off, actionTypeRaw)) return std::nullopt;
+    if (!read_u16(buf, off, req.action.sourceSlot)) return std::nullopt;
+    if (!read_u16(buf, off, req.action.destinationSlot)) return std::nullopt;
+    if (!read_u16(buf, off, req.action.amount)) return std::nullopt;
+    if (off != buf.size()) return std::nullopt;
+    if (actionTypeRaw > static_cast<uint8_t>(InventoryActionType::Use)) return std::nullopt;
+    req.action.type = static_cast<InventoryActionType>(actionTypeRaw);
+    return req;
+}
+
+// -------------------- InventoryActionResult --------------------
+std::vector<uint8_t> InventoryActionResult::serialize() const {
+    std::vector<uint8_t> out;
+    out.reserve(1 + 4 + 1 + 1 + 4 + 2 + (changedSlots.size() * 2));
+    write_u8(out, static_cast<uint8_t>(PacketType::InventoryActionResult));
+    write_u32(out, requestId);
+    write_u8(out, accepted ? 1u : 0u);
+    write_u8(out, static_cast<uint8_t>(rejectReason));
+    write_u32(out, newRevision);
+    write_u16(out, static_cast<uint16_t>(changedSlots.size()));
+    for (uint16_t slotIndex : changedSlots) {
+        write_u16(out, slotIndex);
+    }
+    return out;
+}
+
+std::optional<InventoryActionResult> InventoryActionResult::deserialize(const std::vector<uint8_t>& buf) {
+    size_t off = 0;
+    uint8_t type = 0;
+    uint8_t acceptedRaw = 0;
+    uint8_t rejectRaw = 0;
+    uint16_t changedCount = 0;
+    if (!read_u8(buf, off, type)) return std::nullopt;
+    if (type != static_cast<uint8_t>(PacketType::InventoryActionResult)) return std::nullopt;
+
+    InventoryActionResult result{};
+    if (!read_u32(buf, off, result.requestId)) return std::nullopt;
+    if (!read_u8(buf, off, acceptedRaw)) return std::nullopt;
+    if (!read_u8(buf, off, rejectRaw)) return std::nullopt;
+    if (!read_u32(buf, off, result.newRevision)) return std::nullopt;
+    if (!read_u16(buf, off, changedCount)) return std::nullopt;
+    if (changedCount > ((buf.size() - off) / 2)) return std::nullopt;
+
+    if (rejectRaw > static_cast<uint8_t>(InventoryRejectReason::NotUsable)) return std::nullopt;
+    result.accepted = (acceptedRaw != 0) ? 1u : 0u;
+    result.rejectReason = static_cast<InventoryRejectReason>(rejectRaw);
+    result.changedSlots.clear();
+    result.changedSlots.reserve(changedCount);
+    for (uint16_t i = 0; i < changedCount; ++i) {
+        uint16_t slotIndex = 0;
+        if (!read_u16(buf, off, slotIndex)) return std::nullopt;
+        result.changedSlots.push_back(slotIndex);
+    }
+    if (off != buf.size()) return std::nullopt;
+    return result;
+}
+
+// -------------------- InventorySnapshot --------------------
+std::vector<uint8_t> InventorySnapshot::serialize() const {
+    std::vector<uint8_t> out;
+    out.reserve(1 + 4 + 2 + (slots.size() * 4));
+    write_u8(out, static_cast<uint8_t>(PacketType::InventorySnapshot));
+    write_u32(out, revision);
+    write_u16(out, static_cast<uint16_t>(slots.size()));
+    for (const Slot& slot : slots) {
+        write_u16(out, slot.itemId);
+        write_u16(out, slot.quantity);
+    }
+    return out;
+}
+
+std::optional<InventorySnapshot> InventorySnapshot::deserialize(const std::vector<uint8_t>& buf) {
+    size_t off = 0;
+    uint8_t type = 0;
+    uint16_t slotCount = 0;
+    if (!read_u8(buf, off, type)) return std::nullopt;
+    if (type != static_cast<uint8_t>(PacketType::InventorySnapshot)) return std::nullopt;
+
+    InventorySnapshot snapshot{};
+    if (!read_u32(buf, off, snapshot.revision)) return std::nullopt;
+    if (!read_u16(buf, off, slotCount)) return std::nullopt;
+    if (slotCount > ((buf.size() - off) / 4)) return std::nullopt;
+    if (slotCount != kInventorySlotCount) return std::nullopt;
+
+    snapshot.slots.clear();
+    snapshot.slots.reserve(slotCount);
+    for (uint16_t i = 0; i < slotCount; ++i) {
+        Slot slot{};
+        if (!read_u16(buf, off, slot.itemId)) return std::nullopt;
+        if (!read_u16(buf, off, slot.quantity)) return std::nullopt;
+        snapshot.slots.push_back(slot);
+    }
+    if (off != buf.size()) return std::nullopt;
+    return snapshot;
+}
+

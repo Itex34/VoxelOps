@@ -223,6 +223,8 @@ PlayerID PlayerManager::onPlayerConnect(std::shared_ptr<ConnectionHandle> conn, 
     p.lastHeartbeat = now;
     p.lastInputReceived = now;
     p.conn = conn;
+    (void)p.inventory.appendItems(static_cast<uint16_t>(ITEM_PISTOL), 1);
+    (void)p.inventory.appendItems(static_cast<uint16_t>(ITEM_PISTOL_AMMO), 48);
 
     playersOrder.push_back(id);
     auto it = std::prev(playersOrder.end());
@@ -746,5 +748,62 @@ bool PlayerManager::requestRespawn(PlayerID id) {
     }
 
     player.pendingRespawnRequest = true;
+    return true;
+}
+
+bool PlayerManager::applyInventoryAction(
+    PlayerID id,
+    const InventoryActionRequest& request,
+    InventoryActionResult& outResult,
+    InventorySnapshot& outSnapshot
+) {
+    outResult = InventoryActionResult{};
+    outResult.requestId = request.requestId;
+    outResult.accepted = 0;
+    outResult.rejectReason = InventoryRejectReason::None;
+    outResult.newRevision = 0;
+    outResult.changedSlots.clear();
+
+    outSnapshot = InventorySnapshot{};
+
+    std::lock_guard<std::mutex> lock(mtx);
+    auto it = playersById.find(id);
+    if (it == playersById.end()) {
+        outResult.rejectReason = InventoryRejectReason::Unsupported;
+        return false;
+    }
+
+    ServerPlayer& player = it->second;
+    Inventory& inventory = player.inventory;
+    if (request.expectedRevision != inventory.revision()) {
+        outResult.accepted = 0;
+        outResult.rejectReason = InventoryRejectReason::RevisionMismatch;
+        outResult.newRevision = inventory.revision();
+    }
+    else {
+        InventoryRejectReason reject = InventoryRejectReason::None;
+        std::vector<uint16_t> changedSlots;
+        const bool applied = inventory.applyAction(request.action, reject, changedSlots);
+        outResult.accepted = applied ? 1u : 0u;
+        outResult.rejectReason = reject;
+        outResult.newRevision = inventory.revision();
+        outResult.changedSlots = std::move(changedSlots);
+    }
+
+    outSnapshot.revision = inventory.revision();
+    outSnapshot.slots.assign(inventory.slots().begin(), inventory.slots().end());
+    return true;
+}
+
+bool PlayerManager::getInventorySnapshot(PlayerID id, InventorySnapshot& outSnapshot) {
+    std::lock_guard<std::mutex> lock(mtx);
+    auto it = playersById.find(id);
+    if (it == playersById.end()) {
+        return false;
+    }
+
+    const Inventory& inventory = it->second.inventory;
+    outSnapshot.revision = inventory.revision();
+    outSnapshot.slots.assign(inventory.slots().begin(), inventory.slots().end());
     return true;
 }

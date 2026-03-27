@@ -553,6 +553,34 @@ bool ParseShootResultPacket(const uint8_t* data, size_t size, ShootResult& out)
     return offset == size;
 }
 
+bool ParseInventoryActionResultPacket(const uint8_t* data, size_t size, InventoryActionResult& out)
+{
+    if (!data || size < 1) {
+        return false;
+    }
+    const std::vector<uint8_t> bytes(data, data + size);
+    const std::optional<InventoryActionResult> parsed = InventoryActionResult::deserialize(bytes);
+    if (!parsed.has_value()) {
+        return false;
+    }
+    out = *parsed;
+    return true;
+}
+
+bool ParseInventorySnapshotPacket(const uint8_t* data, size_t size, InventorySnapshot& out)
+{
+    if (!data || size < 1) {
+        return false;
+    }
+    const std::vector<uint8_t> bytes(data, data + size);
+    const std::optional<InventorySnapshot> parsed = InventorySnapshot::deserialize(bytes);
+    if (!parsed.has_value()) {
+        return false;
+    }
+    out = *parsed;
+    return true;
+}
+
 bool ResolveHostToAddress(std::string_view host, uint16_t port, SteamNetworkingIPAddr& outAddr)
 {
     if (host.empty()) {
@@ -888,6 +916,21 @@ bool ClientNetwork::SendRespawnRequest()
     return (r == k_EResultOK);
 }
 
+bool ClientNetwork::SendInventoryActionRequest(const InventoryActionRequest& request)
+{
+    if (!IsConnected()) return false;
+
+    const std::vector<uint8_t> out = request.serialize();
+    const EResult r = SteamNetworkingSockets()->SendMessageToConnection(
+        m_conn,
+        out.data(),
+        static_cast<uint32_t>(out.size()),
+        k_nSteamNetworkingSend_Reliable,
+        nullptr
+    );
+    return (r == k_EResultOK);
+}
+
 bool ClientNetwork::SendChunkRequest(const glm::ivec3& centerChunk, uint16_t viewDistance)
 {
     if (!IsConnected()) return false;
@@ -1038,6 +1081,8 @@ void ClientNetwork::Shutdown() {
         m_chunkUnloadQueue.clear();
         m_playerSnapshotQueue.clear();
         m_shootResultQueue.clear();
+        m_inventoryActionResultQueue.clear();
+        m_inventorySnapshotQueue.clear();
         m_killFeedQueue.clear();
         m_scoreboardQueue.clear();
     }
@@ -1225,6 +1270,38 @@ void ClientNetwork::OnMessage(const uint8_t* data, uint32_t size) {
         }
         return;
     }
+
+    if (static_cast<PacketType>(t) == PacketType::InventoryActionResult) {
+        InventoryActionResult result;
+        if (!ParseInventoryActionResultPacket(data, size, result)) {
+            std::cerr << "[net] malformed InventoryActionResult\n";
+            return;
+        }
+        {
+            std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+            m_inventoryActionResultQueue.push_back(std::move(result));
+            while (m_inventoryActionResultQueue.size() > 64) {
+                m_inventoryActionResultQueue.pop_front();
+            }
+        }
+        return;
+    }
+
+    if (static_cast<PacketType>(t) == PacketType::InventorySnapshot) {
+        InventorySnapshot snapshot;
+        if (!ParseInventorySnapshotPacket(data, size, snapshot)) {
+            std::cerr << "[net] malformed InventorySnapshot\n";
+            return;
+        }
+        {
+            std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+            m_inventorySnapshotQueue.push_back(std::move(snapshot));
+            while (m_inventorySnapshotQueue.size() > 8) {
+                m_inventorySnapshotQueue.pop_front();
+            }
+        }
+        return;
+    }
 }
 
 
@@ -1355,6 +1432,28 @@ bool ClientNetwork::PopShootResult(ShootResult& out)
     }
     out = std::move(m_shootResultQueue.front());
     m_shootResultQueue.pop_front();
+    return true;
+}
+
+bool ClientNetwork::PopInventoryActionResult(InventoryActionResult& out)
+{
+    std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+    if (m_inventoryActionResultQueue.empty()) {
+        return false;
+    }
+    out = std::move(m_inventoryActionResultQueue.front());
+    m_inventoryActionResultQueue.pop_front();
+    return true;
+}
+
+bool ClientNetwork::PopInventorySnapshot(InventorySnapshot& out)
+{
+    std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+    if (m_inventorySnapshotQueue.empty()) {
+        return false;
+    }
+    out = std::move(m_inventorySnapshotQueue.front());
+    m_inventorySnapshotQueue.pop_front();
     return true;
 }
 

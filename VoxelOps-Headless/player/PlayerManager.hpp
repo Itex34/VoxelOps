@@ -49,6 +49,13 @@ public:
     std::vector<ServerPlayer> getAllPlayersCopy();
     bool applyDamage(PlayerID id, float damage, float& outHealthAfter, bool& outKilled);
     bool requestRespawn(PlayerID id);
+    bool applyInventoryAction(
+        PlayerID id,
+        const InventoryActionRequest& request,
+        InventoryActionResult& outResult,
+        InventorySnapshot& outSnapshot
+    );
+    bool getInventorySnapshot(PlayerID id, InventorySnapshot& outSnapshot);
 
 private:
     PlayerID addPlayerInternal();
