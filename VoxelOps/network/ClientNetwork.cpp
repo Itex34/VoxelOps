@@ -916,6 +916,32 @@ bool ClientNetwork::SendRespawnRequest()
     return (r == k_EResultOK);
 }
 
+bool ClientNetwork::SendChunkResyncRequest(const glm::ivec3& chunkPos)
+{
+    if (!IsConnected()) return false;
+
+    std::string payload = "CHUNK_RESYNC|";
+    payload += std::to_string(chunkPos.x);
+    payload += "|";
+    payload += std::to_string(chunkPos.y);
+    payload += "|";
+    payload += std::to_string(chunkPos.z);
+
+    std::vector<uint8_t> out;
+    out.reserve(1 + payload.size());
+    out.push_back(static_cast<uint8_t>(PacketType::Message));
+    out.insert(out.end(), payload.begin(), payload.end());
+
+    const EResult r = SteamNetworkingSockets()->SendMessageToConnection(
+        m_conn,
+        out.data(),
+        static_cast<uint32_t>(out.size()),
+        k_nSteamNetworkingSend_Reliable,
+        nullptr
+    );
+    return (r == k_EResultOK);
+}
+
 bool ClientNetwork::SendInventoryActionRequest(const InventoryActionRequest& request)
 {
     if (!IsConnected()) return false;
@@ -1216,10 +1242,29 @@ void ClientNetwork::OnMessage(const uint8_t* data, uint32_t size) {
             return;
         }
 
+        bool droppedChunkData = false;
+        glm::ivec3 droppedChunkPos(0);
         {
             std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+            if (m_chunkDataQueue.size() >= kMaxChunkDataQueueDepth) {
+                const ChunkData& dropped = m_chunkDataQueue.front();
+                droppedChunkPos = glm::ivec3(dropped.chunkX, dropped.chunkY, dropped.chunkZ);
+                m_chunkDataQueue.pop_front();
+                droppedChunkData = true;
+            }
             m_chunkDataQueue.push_back(std::move(packet));
-            TrimQueueToDepth(m_chunkDataQueue, kMaxChunkDataQueueDepth);
+        }
+
+        if (droppedChunkData) {
+            static uint64_t s_droppedChunkDataCount = 0;
+            ++s_droppedChunkDataCount;
+            if (s_droppedChunkDataCount <= 20 || (s_droppedChunkDataCount % 100) == 0) {
+                std::cerr
+                    << "[net] chunk data queue overflow, resync requested chunk=("
+                    << droppedChunkPos.x << "," << droppedChunkPos.y << "," << droppedChunkPos.z << ")"
+                    << " count=" << s_droppedChunkDataCount << "\n";
+            }
+            (void)SendChunkResyncRequest(droppedChunkPos);
         }
         return;
     }

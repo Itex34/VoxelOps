@@ -74,6 +74,7 @@ public:
     // Send movement input for server-authoritative simulation.
     bool SendPlayerInput(const PlayerInput& input);
     bool SendRespawnRequest();
+    bool SendChunkResyncRequest(const glm::ivec3& chunkPos);
     bool SendInventoryActionRequest(const InventoryActionRequest& request);
     // Legacy state packet (kept for compatibility while migrating handlers).
     bool SendPosition(uint32_t seq, const glm::vec3& pos, const glm::vec3& vel);

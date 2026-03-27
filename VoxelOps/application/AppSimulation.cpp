@@ -502,7 +502,6 @@ void App::processMovementNetworking(Runtime& runtime) {
 
 
 void App::processChunkStreaming(Runtime& runtime, bool prioritizeMovement) {
-    const uint16_t resyncViewDistance = 2;
     constexpr double kChunkResyncCooldownSec = 0.25;
     static std::unordered_map<glm::ivec3, double, IVec3Hash> s_chunkResyncCooldownUntil;
 
@@ -513,7 +512,7 @@ void App::processChunkStreaming(Runtime& runtime, bool prioritizeMovement) {
             return;
         }
         s_chunkResyncCooldownUntil[chunkPos] = nowSec + kChunkResyncCooldownSec;
-        if (!runtime.clientNet.SendChunkRequest(chunkPos, resyncViewDistance)) {
+        if (!runtime.clientNet.SendChunkResyncRequest(chunkPos)) {
             std::cerr
                 << "[chunk/resync] failed to request full chunk ("
                 << chunkPos.x << "," << chunkPos.y << "," << chunkPos.z << ")\n";

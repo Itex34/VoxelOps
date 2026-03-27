@@ -10,6 +10,7 @@
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/vec3.hpp>
 #include <algorithm>
+#include <charconv>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
@@ -1349,6 +1350,61 @@ void ServerNetwork::HandleMessagePacket(HSteamNetConnection incoming, const void
         if (msg == "RESPAWN") {
             if (playerId != 0) {
                 (void)m_playerManager.requestRespawn(playerId);
+            }
+            return;
+        }
+
+        constexpr std::string_view kChunkResyncPrefix = "CHUNK_RESYNC|";
+        if (
+            msg.size() > kChunkResyncPrefix.size() &&
+            msg.compare(0, kChunkResyncPrefix.size(), kChunkResyncPrefix.data(), kChunkResyncPrefix.size()) == 0
+        ) {
+            const std::string_view payload(msg.data() + kChunkResyncPrefix.size(), msg.size() - kChunkResyncPrefix.size());
+            const size_t firstSep = payload.find('|');
+            const size_t secondSep = (firstSep == std::string_view::npos)
+                ? std::string_view::npos
+                : payload.find('|', firstSep + 1);
+            if (firstSep == std::string_view::npos || secondSep == std::string_view::npos) {
+                return;
+            }
+
+            const std::string_view sx = payload.substr(0, firstSep);
+            const std::string_view sy = payload.substr(firstSep + 1, secondSep - firstSep - 1);
+            const std::string_view sz = payload.substr(secondSep + 1);
+
+            auto parseI32 = [](std::string_view text, int32_t& out) -> bool {
+                if (text.empty()) {
+                    return false;
+                }
+                const char* begin = text.data();
+                const char* end = text.data() + text.size();
+                const auto parseResult = std::from_chars(begin, end, out);
+                return parseResult.ec == std::errc{} && parseResult.ptr == end;
+            };
+
+            int32_t cx = 0;
+            int32_t cy = 0;
+            int32_t cz = 0;
+            if (!parseI32(sx, cx) || !parseI32(sy, cy) || !parseI32(sz, cz)) {
+                return;
+            }
+
+            const glm::ivec3 chunkPos(cx, cy, cz);
+            if (!m_chunkManager.inBounds(chunkPos)) {
+                return;
+            }
+
+            const ChunkCoord coord{ cx, cy, cz };
+            if (m_chunkManager.getChunkIfExists(chunkPos) == nullptr) {
+                (void)PrepareChunkForStreaming(coord);
+            }
+            if (SendChunkData(incoming, coord)) {
+                std::lock_guard<std::mutex> lk(m_mutex);
+                auto it = m_clients.find(incoming);
+                if (it != m_clients.end()) {
+                    it->second.pendingChunkData.erase(coord);
+                    it->second.streamedChunks.insert(coord);
+                }
             }
             return;
         }
