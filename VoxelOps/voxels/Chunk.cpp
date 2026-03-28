@@ -54,3 +54,18 @@ BlockID Chunk::removeBlock(int x, int y, int z) {
     dirty = true;
     return old;
 }
+
+void Chunk::copyBlocks(std::array<BlockID, CHUNK_VOLUME>& out) const noexcept {
+    out = blocks;
+}
+
+void Chunk::overwriteBlocks(const std::array<BlockID, CHUNK_VOLUME>& in) noexcept {
+    blocks = in;
+    nonAirCount = 0;
+    for (const BlockID block : blocks) {
+        if (block != BlockID::Air) {
+            ++nonAirCount;
+        }
+    }
+    dirty = false;
+}

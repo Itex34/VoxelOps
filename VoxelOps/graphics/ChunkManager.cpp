@@ -70,7 +70,6 @@ uint32_t fnv1a32(const uint8_t* data, size_t size)
 
 constexpr double kChunkMeshBuildLogThresholdMs = 2.0;
 constexpr double kChunkMeshUploadLogThresholdMs = 2.0;
-constexpr double kChunkMeshTotalLogThresholdMs = 6.0;
 constexpr double kRegionRebuildLogThresholdMs = 10.0;
 constexpr bool kEnableRegionLifecycleLogs = false;
 constexpr bool kEnableMissingChunkUnloadLogs = false;
@@ -163,18 +162,62 @@ void ChunkManager::markChunkDirty(const glm::ivec3& pos) {
 
 void ChunkManager::updateDirtyChunks(size_t maxChunksPerCall, int64_t maxBudgetUs) {
     const auto start = std::chrono::steady_clock::now();
-    size_t processed = 0;
-    while (!m_dirtyChunkQueue.empty()) {
-        if (maxChunksPerCall > 0 && processed >= maxChunksPerCall) {
-            break;
-        }
+    size_t scheduled = 0;
+    const auto outOfBudget = [&]() {
         if (maxBudgetUs > 0) {
             const int64_t elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - start
             ).count();
             if (elapsedUs >= maxBudgetUs) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    while (!outOfBudget()) {
+        ChunkMeshBuildResult ready;
+        {
+            std::lock_guard<std::mutex> lock(m_readyChunkMeshesMutex);
+            if (m_readyChunkMeshes.empty()) {
                 break;
             }
+            ready = std::move(m_readyChunkMeshes.front());
+            m_readyChunkMeshes.pop_front();
+        }
+
+        auto it = chunkMap.find(ready.chunkPos);
+        if (it != chunkMap.end()) {
+            const auto ticketIt = m_chunkBuildTickets.find(ready.chunkPos);
+            if (ticketIt == m_chunkBuildTickets.end() || ticketIt->second != ready.buildTicket) {
+                continue;
+            }
+
+            Chunk& chunk = it->second;
+            chunk.building = false;
+
+            if (!chunk.dirty.load(std::memory_order_acquire)) {
+                const auto uploadStart = std::chrono::steady_clock::now();
+                uploadChunkMesh(ready.chunkPos, ready.vertices, ready.indices);
+                const auto uploadEnd = std::chrono::steady_clock::now();
+                const double uploadMs = std::chrono::duration<double, std::milli>(uploadEnd - uploadStart).count();
+                if (uploadMs >= kChunkMeshUploadLogThresholdMs) {
+                    std::cerr
+                        << "[chunk/mesh] slow uploadMs=" << uploadMs
+                        << " verts=" << ready.vertices.size()
+                        << " idx=" << ready.indices.size()
+                        << " chunk=(" << ready.chunkPos.x << "," << ready.chunkPos.y << "," << ready.chunkPos.z << ")\n";
+                }
+            }
+            else if (m_dirtyChunkPending.insert(ready.chunkPos).second) {
+                m_dirtyChunkQueue.push_back(ready.chunkPos);
+            }
+        }
+    }
+
+    while (!m_dirtyChunkQueue.empty() && !outOfBudget()) {
+        if (maxChunksPerCall > 0 && scheduled >= maxChunksPerCall) {
+            break;
         }
 
         const glm::ivec3 pos = m_dirtyChunkQueue.front();
@@ -182,11 +225,22 @@ void ChunkManager::updateDirtyChunks(size_t maxChunksPerCall, int64_t maxBudgetU
         m_dirtyChunkPending.erase(pos);
 
         auto it = chunkMap.find(pos);
-        if (it == chunkMap.end()) continue;
-        if (!it->second.dirty) continue;
+        if (it == chunkMap.end()) {
+            continue;
+        }
+        if (!it->second.dirty.load(std::memory_order_acquire)) {
+            continue;
+        }
 
-        updateDirtyChunkAt(pos);
-        ++processed;
+        if (!requestChunkRebuild(pos)) {
+            auto chunkIt = chunkMap.find(pos);
+            if (chunkIt != chunkMap.end() &&
+                chunkIt->second.dirty.load(std::memory_order_acquire) &&
+                m_dirtyChunkPending.insert(pos).second) {
+                m_dirtyChunkQueue.push_back(pos);
+            }
+        }
+        ++scheduled;
     }
 }
 
@@ -239,6 +293,7 @@ void ChunkManager::updateChunks(const glm::ivec3& playerWorldPos, int renderDist
         columnsToRefresh.insert(glm::ivec2(pos.x, pos.z));
         chunkMap.erase(pos);
         m_networkChunkVersions.erase(pos);
+        m_chunkBuildTickets.erase(pos);
         chunkMeshes.erase(pos);
         m_dirtyChunkPending.erase(pos);
     }
@@ -381,6 +436,7 @@ bool ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
 
     removeChunkMesh(chunkPos);
     chunkMap.erase(chunkPos);
+    m_chunkBuildTickets.erase(chunkPos);
     auto [chunkIt, inserted] = chunkMap.try_emplace(chunkPos, chunkPos);
     (void)inserted;
   
@@ -529,6 +585,7 @@ void ChunkManager::applyNetworkChunkUnload(const ChunkUnload& packet) {
     auto it = chunkMap.find(chunkPos);
     if (it == chunkMap.end()) {
         m_networkChunkVersions.erase(chunkPos);
+        m_chunkBuildTickets.erase(chunkPos);
         if (kEnableMissingChunkUnloadLogs) {
             static uint64_t missingChunkUnloadCount = 0;
             ++missingChunkUnloadCount;
@@ -544,6 +601,7 @@ void ChunkManager::applyNetworkChunkUnload(const ChunkUnload& packet) {
 
     chunkMap.erase(it);
     m_networkChunkVersions.erase(chunkPos);
+    m_chunkBuildTickets.erase(chunkPos);
     removeChunkMesh(chunkPos);
     m_dirtyChunkPending.erase(chunkPos);
     rebuildColumnSunCache(chunkPos.x, chunkPos.z);
@@ -751,7 +809,7 @@ void ChunkManager::playerBreakBlockAt(const glm::ivec3& blockCoords) {
 
     if (!changed) return;
 
-    updateDirtyChunkAt(chunkPos);
+    markChunkDirty(chunkPos);
 
     // order matches isEdgeBlock: { x==0, x==15, y==0, y==15, z==0, z==15 }
     const std::array<glm::ivec3, 6> neighborOffsets = {
@@ -769,11 +827,10 @@ void ChunkManager::playerBreakBlockAt(const glm::ivec3& blockCoords) {
         glm::ivec3 neighborChunk = chunkPos + neighborOffsets[i];
 
         if (chunkMap.find(neighborChunk) != chunkMap.end()) {
-            updateDirtyChunkAt(neighborChunk);
+            markChunkDirty(neighborChunk);
         }
     }
 
-    debugMemoryEstimate();
 }
 
 void ChunkManager::playerPlaceBlockAt(glm::ivec3 blockCoords, int faceNormal, BlockID blockType) {
@@ -806,87 +863,147 @@ void ChunkManager::playerPlaceBlockAt(glm::ivec3 blockCoords, int faceNormal, Bl
     }
 
     for (const auto& pos : chunksToRebuild) {
-        updateDirtyChunkAt(pos);
+        markChunkDirty(pos);
     }
 }
 
 
 
 void ChunkManager::updateDirtyChunkAt(const glm::ivec3& chunkPos) {
-    auto it = chunkMap.find(chunkPos);
-    if (it == chunkMap.end()) return;
+    markChunkDirty(chunkPos);
+    (void)requestChunkRebuild(chunkPos);
+}
+
+
+
+
+bool ChunkManager::requestChunkRebuild(const glm::ivec3& pos) {
+    auto it = chunkMap.find(pos);
+    if (it == chunkMap.end()) {
+        return false;
+    }
 
     Chunk& chunk = it->second;
-
-    auto findChunk = [&](const glm::ivec3& pos) -> const Chunk* {
-        auto it = chunkMap.find(pos);
-        return (it != chunkMap.end()) ? &it->second : nullptr;
-        };
-
-    const Chunk* neighbors[6] = {};
-
-    constexpr glm::ivec3 offsets[6] = {
-        {1,0,0},{-1,0,0},
-        {0,1,0},{0,-1,0},
-        {0,0,1},{0,0,-1}
-    };
-
-    for (int i = 0; i < 6; ++i)
-        neighbors[i] = findChunk(chunkPos + offsets[i]);
-    const auto totalStart = std::chrono::steady_clock::now();
-
-    auto built = builder.buildChunkMesh(
-        chunk, neighbors, chunkPos, atlas, enableAO, enableShadows,
-        [this](int wx, int wz) { return this->getColumnTopOccluderY(wx, wz); }
-    );
-
-    const auto buildEnd = std::chrono::steady_clock::now();
-
-    uploadChunkMesh(chunkPos, built.vertices, built.indices);
-
-    const auto totalEnd = std::chrono::steady_clock::now();
-    const double buildMs = std::chrono::duration<double, std::milli>(buildEnd - totalStart).count();
-    const double uploadMs = std::chrono::duration<double, std::milli>(totalEnd - buildEnd).count();
-    const double totalMs = std::chrono::duration<double, std::milli>(totalEnd - totalStart).count();
-    if (buildMs >= kChunkMeshBuildLogThresholdMs ||
-        uploadMs >= kChunkMeshUploadLogThresholdMs ||
-        totalMs >= kChunkMeshTotalLogThresholdMs) {
-        std::cerr
-            << "[chunk/mesh] slow buildMs=" << buildMs
-            << " uploadMs=" << uploadMs
-            << " totalMs=" << totalMs
-            << " verts=" << built.vertices.size()
-            << " idx=" << built.indices.size()
-            << " chunk=(" << chunkPos.x << "," << chunkPos.y << "," << chunkPos.z << ")\n";
+    bool expected = false;
+    if (!chunk.building.compare_exchange_strong(expected, true)) {
+        return false;
     }
 
     chunk.dirty = false;
-}
 
+    ChunkMeshBuildJob job;
+    job.chunkPos = pos;
+    job.buildTicket = m_nextChunkBuildTicket.fetch_add(1, std::memory_order_relaxed);
+    m_chunkBuildTickets[pos] = job.buildTicket;
+    job.enableAO = enableAO;
+    job.enableShadows = enableShadows;
+    job.chunkWorldMinX = pos.x * CHUNK_SIZE;
+    job.chunkWorldMinZ = pos.z * CHUNK_SIZE;
+    chunk.copyBlocks(job.centerBlocks);
 
-
-
-void ChunkManager::requestChunkRebuild(const glm::ivec3& pos) {
-    auto it = chunkMap.find(pos);
-    if (it == chunkMap.end()) return;
-
-    Chunk& chunk = it->second;
-
-    bool expected = false;
-    if (!chunk.building.compare_exchange_strong(expected, true))
-        return;  // already building ? skip duplicate builds
-
-    // enqueue CPU mesh build
-    meshPool.enqueue([this, pos] {
-        this->buildChunkMeshWorker(pos);
-        });
-}
-
-
-void ChunkManager::buildChunkMeshWorker(glm::ivec3 pos) {
-    std::thread{
-
+    constexpr glm::ivec3 offsets[6] = {
+        {1, 0, 0}, {-1, 0, 0},
+        {0, 1, 0}, {0, -1, 0},
+        {0, 0, 1}, {0, 0, -1}
     };
+
+    for (int i = 0; i < 6; ++i) {
+        auto neighborIt = chunkMap.find(pos + offsets[i]);
+        if (neighborIt == chunkMap.end()) {
+            continue;
+        }
+        job.neighborPresent[static_cast<size_t>(i)] = 1;
+        neighborIt->second.copyBlocks(job.neighborBlocks[static_cast<size_t>(i)]);
+    }
+
+    if (!job.enableShadows) {
+        job.sunTopY.fill(static_cast<int16_t>(WORLD_MIN_Y - 1));
+    }
+    else {
+        for (int z = ChunkMeshBuildJob::SunGridMin; z <= ChunkMeshBuildJob::SunGridMax; ++z) {
+            for (int x = ChunkMeshBuildJob::SunGridMin; x <= ChunkMeshBuildJob::SunGridMax; ++x) {
+                const int sx = x - ChunkMeshBuildJob::SunGridMin;
+                const int sz = z - ChunkMeshBuildJob::SunGridMin;
+                const size_t index = static_cast<size_t>(sz * ChunkMeshBuildJob::SunGridSize + sx);
+                const int worldX = job.chunkWorldMinX + x;
+                const int worldZ = job.chunkWorldMinZ + z;
+                job.sunTopY[index] = static_cast<int16_t>(getColumnTopOccluderY(worldX, worldZ));
+            }
+        }
+    }
+
+    meshPool.enqueue([this, job = std::move(job)]() mutable {
+        this->buildChunkMeshWorker(std::move(job));
+    });
+    return true;
+}
+
+
+void ChunkManager::buildChunkMeshWorker(ChunkMeshBuildJob job) {
+    thread_local ChunkMeshBuilder workerBuilder;
+
+    Chunk center(job.chunkPos);
+    center.overwriteBlocks(job.centerBlocks);
+
+    constexpr glm::ivec3 offsets[6] = {
+        {1, 0, 0}, {-1, 0, 0},
+        {0, 1, 0}, {0, -1, 0},
+        {0, 0, 1}, {0, 0, -1}
+    };
+
+    std::array<std::optional<Chunk>, 6> neighborStorage;
+    const Chunk* neighbors[6] = {};
+    for (int i = 0; i < 6; ++i) {
+        if (job.neighborPresent[static_cast<size_t>(i)] == 0) {
+            continue;
+        }
+
+        neighborStorage[static_cast<size_t>(i)].emplace(job.chunkPos + offsets[i]);
+        neighborStorage[static_cast<size_t>(i)]->overwriteBlocks(job.neighborBlocks[static_cast<size_t>(i)]);
+        neighbors[i] = &neighborStorage[static_cast<size_t>(i)].value();
+    }
+
+    const auto buildStart = std::chrono::steady_clock::now();
+    auto built = workerBuilder.buildChunkMesh(
+        center,
+        neighbors,
+        job.chunkPos,
+        atlas,
+        job.enableAO,
+        job.enableShadows,
+        [&job](int wx, int wz) -> int {
+            const int localX = wx - job.chunkWorldMinX;
+            const int localZ = wz - job.chunkWorldMinZ;
+            if (localX < ChunkMeshBuildJob::SunGridMin || localX > ChunkMeshBuildJob::SunGridMax ||
+                localZ < ChunkMeshBuildJob::SunGridMin || localZ > ChunkMeshBuildJob::SunGridMax) {
+                return WORLD_MIN_Y - 1;
+            }
+
+            const int sx = localX - ChunkMeshBuildJob::SunGridMin;
+            const int sz = localZ - ChunkMeshBuildJob::SunGridMin;
+            const size_t index = static_cast<size_t>(sz * ChunkMeshBuildJob::SunGridSize + sx);
+            return static_cast<int>(job.sunTopY[index]);
+        }
+    );
+    const auto buildEnd = std::chrono::steady_clock::now();
+    const double buildMs = std::chrono::duration<double, std::milli>(buildEnd - buildStart).count();
+    if (buildMs >= kChunkMeshBuildLogThresholdMs) {
+        std::cerr
+            << "[chunk/mesh] slow workerBuildMs=" << buildMs
+            << " verts=" << built.vertices.size()
+            << " idx=" << built.indices.size()
+            << " chunk=(" << job.chunkPos.x << "," << job.chunkPos.y << "," << job.chunkPos.z << ")\n";
+    }
+
+    ChunkMeshBuildResult ready;
+    ready.chunkPos = job.chunkPos;
+    ready.buildTicket = job.buildTicket;
+    ready.vertices = std::move(built.vertices);
+    ready.indices = std::move(built.indices);
+    {
+        std::lock_guard<std::mutex> lock(m_readyChunkMeshesMutex);
+        m_readyChunkMeshes.push_back(std::move(ready));
+    }
 }
 
 
@@ -1157,6 +1274,10 @@ ChunkColumn& ChunkManager::getOrCreateColumn(int colX, int colZ) {
 }
 
 int ChunkManager::getColumnTopOccluderY(int worldX, int worldZ) const {
+    if (!enableShadows) {
+        return WORLD_MIN_Y - 1;
+    }
+
     const int colX = floorDiv(worldX, CHUNK_SIZE);
     const int colZ = floorDiv(worldZ, CHUNK_SIZE);
     const int lx = mod(worldX, CHUNK_SIZE);
@@ -1170,6 +1291,10 @@ int ChunkManager::getColumnTopOccluderY(int worldX, int worldZ) const {
 }
 
 void ChunkManager::rebuildColumnSunCache(int colChunkX, int colChunkZ) {
+    if (!enableShadows) {
+        return;
+    }
+
     ChunkColumn& col = getOrCreateColumn(colChunkX, colChunkZ);
 
     for (int lx = 0; lx < CHUNK_SIZE; ++lx) {
@@ -1191,6 +1316,10 @@ void ChunkManager::rebuildColumnSunCache(int colChunkX, int colChunkZ) {
 }
 
 void ChunkManager::updateColumnSunCacheForBlockChange(int worldX, int worldY, int worldZ, BlockID oldId, BlockID newId) {
+    if (!enableShadows) {
+        return;
+    }
+
     const int colX = floorDiv(worldX, CHUNK_SIZE);
     const int colZ = floorDiv(worldZ, CHUNK_SIZE);
     const int lx = mod(worldX, CHUNK_SIZE);
@@ -1249,6 +1378,10 @@ void ChunkManager::updateColumnSunCacheForBlockChange(int worldX, int worldY, in
 }
 
 void ChunkManager::rebuildSunlightAffectedColumnChunks(int colChunkX, int colChunkZ, int oldTopY, int newTopY) {
+    if (!enableShadows) {
+        return;
+    }
+
     if (oldTopY == newTopY) {
         return;
     }
@@ -1258,7 +1391,7 @@ void ChunkManager::rebuildSunlightAffectedColumnChunks(int colChunkX, int colChu
     const int maxChunkY = floorDiv(maxAffectedY, CHUNK_SIZE);
 
     for (int chunkY = minChunkY; chunkY <= maxChunkY; ++chunkY) {
-        updateDirtyChunkAt(glm::ivec3(colChunkX, chunkY, colChunkZ));
+        markChunkDirty(glm::ivec3(colChunkX, chunkY, colChunkZ));
     }
 }
 

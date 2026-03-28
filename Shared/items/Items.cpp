@@ -7,6 +7,7 @@ namespace Items {
 		ItemData{ "Orange Berry", ItemType::Consumable, kMaxBerryStack, 0.1f },
 		ItemData{ "Red Berry", ItemType::Consumable, kMaxBerryStack, 0.1f },
 		ItemData{ "Pistol Ammo", ItemType::Ammo, kMaxAmmoStack, 0.05f },
+		ItemData{ "Dirt Block", ItemType::Block, kMaxBlockStack, 1.0f },
 	};
 
 }

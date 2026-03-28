@@ -38,6 +38,8 @@ constexpr size_t kMaxChunkUnloadQueueDepth = 256;
 constexpr size_t kMaxKillFeedQueueDepth = 64;
 constexpr size_t kMaxScoreboardQueueDepth = 16;
 constexpr size_t kMaxWorldItemSnapshotQueueDepth = 8;
+constexpr size_t kMaxBlockPlaceResultQueueDepth = 128;
+constexpr size_t kMaxBlockBreakResultQueueDepth = 128;
 constexpr size_t kMaxMessagesPerPoll = 128;
 constexpr int64_t kMessagePollBudgetUs = 2000;
 constexpr const char* kClientIdentityFileName = "client_identity.txt";
@@ -596,6 +598,34 @@ bool ParseWorldItemSnapshotPacket(const uint8_t* data, size_t size, WorldItemSna
     return true;
 }
 
+bool ParseBlockPlaceResultPacket(const uint8_t* data, size_t size, BlockPlaceResult& out)
+{
+    if (!data || size < 1) {
+        return false;
+    }
+    const std::vector<uint8_t> bytes(data, data + size);
+    const std::optional<BlockPlaceResult> parsed = BlockPlaceResult::deserialize(bytes);
+    if (!parsed.has_value()) {
+        return false;
+    }
+    out = *parsed;
+    return true;
+}
+
+bool ParseBlockBreakResultPacket(const uint8_t* data, size_t size, BlockBreakResult& out)
+{
+    if (!data || size < 1) {
+        return false;
+    }
+    const std::vector<uint8_t> bytes(data, data + size);
+    const std::optional<BlockBreakResult> parsed = BlockBreakResult::deserialize(bytes);
+    if (!parsed.has_value()) {
+        return false;
+    }
+    out = *parsed;
+    return true;
+}
+
 bool ResolveHostToAddress(std::string_view host, uint16_t port, SteamNetworkingIPAddr& outAddr)
 {
     if (host.empty()) {
@@ -972,6 +1002,36 @@ bool ClientNetwork::SendInventoryActionRequest(const InventoryActionRequest& req
     return (r == k_EResultOK);
 }
 
+bool ClientNetwork::SendBlockPlaceRequest(const BlockPlaceRequest& request)
+{
+    if (!IsConnected()) return false;
+
+    const std::vector<uint8_t> out = request.serialize();
+    const EResult r = SteamNetworkingSockets()->SendMessageToConnection(
+        m_conn,
+        out.data(),
+        static_cast<uint32_t>(out.size()),
+        k_nSteamNetworkingSend_Reliable,
+        nullptr
+    );
+    return (r == k_EResultOK);
+}
+
+bool ClientNetwork::SendBlockBreakRequest(const BlockBreakRequest& request)
+{
+    if (!IsConnected()) return false;
+
+    const std::vector<uint8_t> out = request.serialize();
+    const EResult r = SteamNetworkingSockets()->SendMessageToConnection(
+        m_conn,
+        out.data(),
+        static_cast<uint32_t>(out.size()),
+        k_nSteamNetworkingSend_Reliable,
+        nullptr
+    );
+    return (r == k_EResultOK);
+}
+
 bool ClientNetwork::SendChunkRequest(const glm::ivec3& centerChunk, uint16_t viewDistance)
 {
     if (!IsConnected()) return false;
@@ -1125,6 +1185,8 @@ void ClientNetwork::Shutdown() {
         m_inventoryActionResultQueue.clear();
         m_inventorySnapshotQueue.clear();
         m_worldItemSnapshotQueue.clear();
+        m_blockPlaceResultQueue.clear();
+        m_blockBreakResultQueue.clear();
         m_killFeedQueue.clear();
         m_scoreboardQueue.clear();
     }
@@ -1377,6 +1439,34 @@ void ClientNetwork::OnMessage(const uint8_t* data, uint32_t size) {
         }
         return;
     }
+
+    if (static_cast<PacketType>(t) == PacketType::BlockPlaceResult) {
+        BlockPlaceResult result;
+        if (!ParseBlockPlaceResultPacket(data, size, result)) {
+            std::cerr << "[net] malformed BlockPlaceResult\n";
+            return;
+        }
+        {
+            std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+            m_blockPlaceResultQueue.push_back(std::move(result));
+            TrimQueueToDepth(m_blockPlaceResultQueue, kMaxBlockPlaceResultQueueDepth);
+        }
+        return;
+    }
+
+    if (static_cast<PacketType>(t) == PacketType::BlockBreakResult) {
+        BlockBreakResult result;
+        if (!ParseBlockBreakResultPacket(data, size, result)) {
+            std::cerr << "[net] malformed BlockBreakResult\n";
+            return;
+        }
+        {
+            std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+            m_blockBreakResultQueue.push_back(std::move(result));
+            TrimQueueToDepth(m_blockBreakResultQueue, kMaxBlockBreakResultQueueDepth);
+        }
+        return;
+    }
 }
 
 
@@ -1540,6 +1630,28 @@ bool ClientNetwork::PopWorldItemSnapshot(WorldItemSnapshot& out)
     }
     out = std::move(m_worldItemSnapshotQueue.front());
     m_worldItemSnapshotQueue.pop_front();
+    return true;
+}
+
+bool ClientNetwork::PopBlockPlaceResult(BlockPlaceResult& out)
+{
+    std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+    if (m_blockPlaceResultQueue.empty()) {
+        return false;
+    }
+    out = std::move(m_blockPlaceResultQueue.front());
+    m_blockPlaceResultQueue.pop_front();
+    return true;
+}
+
+bool ClientNetwork::PopBlockBreakResult(BlockBreakResult& out)
+{
+    std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
+    if (m_blockBreakResultQueue.empty()) {
+        return false;
+    }
+    out = std::move(m_blockBreakResultQueue.front());
+    m_blockBreakResultQueue.pop_front();
     return true;
 }
 

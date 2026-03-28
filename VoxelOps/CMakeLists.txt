@@ -51,7 +51,13 @@ add_executable(VoxelOps
     "graphics/Backend.cpp"
     "graphics/Sky.cpp" 
     "graphics/PostProcessor.cpp"
-    "ui/debug/DebugUi.cpp" "ui/player/InventoryUI.cpp" "ui/player/Crosshair.cpp" "commands/CommandParser.cpp" "ui/player/SettingsUI.cpp" "ui/player/MainMenu.cpp")
+    "ui/debug/DebugUi.cpp"
+    "ui/player/InventoryUI.cpp"
+    "ui/player/Crosshair.cpp"
+    "commands/CommandParser.cpp"
+    "ui/player/SettingsUI.cpp"
+    "ui/player/MainMenu.cpp"
+)
 
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)

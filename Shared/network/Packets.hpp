@@ -18,7 +18,7 @@ constexpr uint8_t kPlayerInputFlagSprint = 1u << 5;
 constexpr uint8_t kPlayerInputFlagFlyUp = 1u << 6;
 constexpr uint8_t kPlayerInputFlagFlyDown = 1u << 7;
 
-constexpr uint16_t kVoxelOpsProtocolVersion = 8;
+constexpr uint16_t kVoxelOpsProtocolVersion = 10;
 constexpr size_t kMaxConnectIdentityChars = 64;
 constexpr size_t kMaxConnectUsernameChars = 32;
 constexpr size_t kMaxConnectMessageChars = 120;
@@ -182,6 +182,89 @@ struct ChunkUnload {
 
     std::vector<uint8_t> serialize() const;
     static std::optional<ChunkUnload> deserialize(const std::vector<uint8_t>& buf);
+};
+
+constexpr size_t kMaxBlockPlaceEditsPerRequest = 64;
+
+struct BlockPlaceEdit {
+    int32_t worldX = 0;
+    int32_t worldY = 0;
+    int32_t worldZ = 0;
+    uint8_t blockId = 0;
+};
+
+enum class BlockPlaceRejectReason : uint8_t {
+    None = 0,
+    InvalidPacket = 1,
+    Unregistered = 2,
+    OutOfBounds = 3,
+    PlayerOccupied = 4,
+    ServerError = 5
+};
+
+struct BlockPlaceRequest {
+    uint32_t requestId = 0;
+    std::vector<BlockPlaceEdit> edits;
+
+    std::vector<uint8_t> serialize() const;
+    static std::optional<BlockPlaceRequest> deserialize(const std::vector<uint8_t>& buf);
+};
+
+struct BlockPlaceChunkCoord {
+    int32_t chunkX = 0;
+    int32_t chunkY = 0;
+    int32_t chunkZ = 0;
+};
+
+struct BlockPlaceResult {
+    uint32_t requestId = 0;
+    uint8_t accepted = 0;
+    BlockPlaceRejectReason rejectReason = BlockPlaceRejectReason::None;
+    std::vector<BlockPlaceChunkCoord> correctiveChunks;
+
+    std::vector<uint8_t> serialize() const;
+    static std::optional<BlockPlaceResult> deserialize(const std::vector<uint8_t>& buf);
+};
+
+constexpr size_t kMaxBlockBreakEditsPerRequest = 64;
+
+struct BlockBreakEdit {
+    int32_t worldX = 0;
+    int32_t worldY = 0;
+    int32_t worldZ = 0;
+};
+
+enum class BlockBreakRejectReason : uint8_t {
+    None = 0,
+    InvalidPacket = 1,
+    Unregistered = 2,
+    OutOfBounds = 3,
+    PlayerOccupied = 4,
+    ServerError = 5
+};
+
+struct BlockBreakRequest {
+    uint32_t requestId = 0;
+    std::vector<BlockBreakEdit> edits;
+
+    std::vector<uint8_t> serialize() const;
+    static std::optional<BlockBreakRequest> deserialize(const std::vector<uint8_t>& buf);
+};
+
+struct BlockBreakChunkCoord {
+    int32_t chunkX = 0;
+    int32_t chunkY = 0;
+    int32_t chunkZ = 0;
+};
+
+struct BlockBreakResult {
+    uint32_t requestId = 0;
+    uint8_t accepted = 0;
+    BlockBreakRejectReason rejectReason = BlockBreakRejectReason::None;
+    std::vector<BlockBreakChunkCoord> correctiveChunks;
+
+    std::vector<uint8_t> serialize() const;
+    static std::optional<BlockBreakResult> deserialize(const std::vector<uint8_t>& buf);
 };
 
 struct InventoryActionRequest {

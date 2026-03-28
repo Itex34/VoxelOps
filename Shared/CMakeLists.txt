@@ -11,7 +11,9 @@ add_library(Shared STATIC
     "player/MeshHitCache.cpp"
     "runtime/Paths.cpp"
     "player/Inventory.cpp"
- "items/Items.cpp")
+    "items/Items.cpp"
+    "player/BlockPlace.cpp"
+)
 
 target_include_directories(Shared PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}   # so headers are found as "Shared/network/Packets.hpp"

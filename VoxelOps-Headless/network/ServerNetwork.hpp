@@ -83,6 +83,8 @@ private:
     void HandleMessagePacket(HSteamNetConnection incoming, const void* data, uint32_t size);
     void HandlePlayerInputPacket(HSteamNetConnection incoming, const void* data, uint32_t size, uint64_t& playerInputPacketsThisLoop);
     void HandleChunkRequestPacket(HSteamNetConnection incoming, const void* data, uint32_t size, uint64_t& chunkRequestPacketsThisLoop);
+    void HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, const void* data, uint32_t size);
+    void HandleBlockBreakRequestPacket(HSteamNetConnection incoming, const void* data, uint32_t size);
     void HandleShootRequestPacket(HSteamNetConnection incoming, const void* data, uint32_t size);
     void HandleInventoryActionRequestPacket(HSteamNetConnection incoming, const void* data, uint32_t size);
     void SpawnDroppedItem(PlayerID dropperId, uint16_t itemId, uint16_t quantity);

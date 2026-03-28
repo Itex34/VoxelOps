@@ -175,6 +175,7 @@ public:
     void updateDirtyChunks(size_t maxChunksPerCall = 0, int64_t maxBudgetUs = 0);
     void updateChunks(const glm::ivec3& playerWorldPos, int renderDistance);
     void updateDirtyChunkAt(const glm::ivec3& chunkPos);
+    void markChunkDirty(const glm::ivec3& pos);
 
     void playerPlaceBlockAt(glm::ivec3 blockCoords, int faceNormal, BlockID blockType);
     void playerBreakBlockAt(const glm::ivec3& blockCoords);
@@ -213,6 +214,30 @@ private:
     friend class WorldGen;
     friend class ChunkRenderSystem;
 
+    struct ChunkMeshBuildJob {
+        static constexpr int SunGridMin = -2;
+        static constexpr int SunGridMax = CHUNK_SIZE + 1;
+        static constexpr int SunGridSize = SunGridMax - SunGridMin + 1;
+
+        glm::ivec3 chunkPos{ 0 };
+        uint64_t buildTicket = 0;
+        bool enableAO = false;
+        bool enableShadows = false;
+        int chunkWorldMinX = 0;
+        int chunkWorldMinZ = 0;
+        std::array<BlockID, CHUNK_VOLUME> centerBlocks{};
+        std::array<std::array<BlockID, CHUNK_VOLUME>, 6> neighborBlocks{};
+        std::array<uint8_t, 6> neighborPresent{};
+        std::array<int16_t, SunGridSize * SunGridSize> sunTopY{};
+    };
+
+    struct ChunkMeshBuildResult {
+        glm::ivec3 chunkPos{ 0 };
+        uint64_t buildTicket = 0;
+        std::vector<VoxelVertex> vertices;
+        std::vector<uint16_t> indices;
+    };
+
     std::unordered_map<glm::ivec3, Region, IVec3Hash> regions;
 
 
@@ -224,6 +249,10 @@ private:
 
     std::deque<glm::ivec3> m_dirtyChunkQueue;
     std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> m_dirtyChunkPending;
+    std::deque<ChunkMeshBuildResult> m_readyChunkMeshes;
+    std::mutex m_readyChunkMeshesMutex;
+    std::unordered_map<glm::ivec3, uint64_t, IVec3Hash> m_chunkBuildTickets;
+    std::atomic<uint64_t> m_nextChunkBuildTicket{ 1 };
 
 
 
@@ -258,9 +287,8 @@ private:
     void appendChunkMesh();
 
 
-    void markChunkDirty(const glm::ivec3& pos);
-    void requestChunkRebuild(const glm::ivec3& pos);
-    void buildChunkMeshWorker(glm::ivec3 pos);
+    bool requestChunkRebuild(const glm::ivec3& pos);
+    void buildChunkMeshWorker(ChunkMeshBuildJob job);
 
 
 

@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cmath>
 #include <algorithm>
+#include <limits>
 
 namespace {
 
@@ -534,6 +535,196 @@ std::optional<ChunkUnload> ChunkUnload::deserialize(const std::vector<uint8_t>& 
     if (!read_i32(buf, off, p.chunkY)) return std::nullopt;
     if (!read_i32(buf, off, p.chunkZ)) return std::nullopt;
     return p;
+}
+
+// -------------------- BlockPlaceRequest --------------------
+std::vector<uint8_t> BlockPlaceRequest::serialize() const {
+    const size_t editCount = std::min(edits.size(), kMaxBlockPlaceEditsPerRequest);
+    std::vector<uint8_t> out;
+    out.reserve(1 + 4 + 2 + (editCount * (4 + 4 + 4 + 1)));
+    write_u8(out, static_cast<uint8_t>(PacketType::BlockPlaceRequest));
+    write_u32(out, requestId);
+    write_u16(out, static_cast<uint16_t>(editCount));
+    for (size_t i = 0; i < editCount; ++i) {
+        const BlockPlaceEdit& edit = edits[i];
+        write_i32(out, edit.worldX);
+        write_i32(out, edit.worldY);
+        write_i32(out, edit.worldZ);
+        write_u8(out, edit.blockId);
+    }
+    return out;
+}
+
+std::optional<BlockPlaceRequest> BlockPlaceRequest::deserialize(const std::vector<uint8_t>& buf) {
+    size_t off = 0;
+    uint8_t type = 0;
+    uint16_t editCount = 0;
+    if (!read_u8(buf, off, type)) return std::nullopt;
+    if (type != static_cast<uint8_t>(PacketType::BlockPlaceRequest)) return std::nullopt;
+
+    BlockPlaceRequest request{};
+    if (!read_u32(buf, off, request.requestId)) return std::nullopt;
+    if (!read_u16(buf, off, editCount)) return std::nullopt;
+    if (editCount > kMaxBlockPlaceEditsPerRequest) return std::nullopt;
+    if (editCount > ((buf.size() - off) / 13)) return std::nullopt;
+
+    request.edits.clear();
+    request.edits.reserve(editCount);
+    for (uint16_t i = 0; i < editCount; ++i) {
+        BlockPlaceEdit edit{};
+        if (!read_i32(buf, off, edit.worldX)) return std::nullopt;
+        if (!read_i32(buf, off, edit.worldY)) return std::nullopt;
+        if (!read_i32(buf, off, edit.worldZ)) return std::nullopt;
+        if (!read_u8(buf, off, edit.blockId)) return std::nullopt;
+        request.edits.push_back(edit);
+    }
+    if (off != buf.size()) return std::nullopt;
+    return request;
+}
+
+// -------------------- BlockPlaceResult --------------------
+std::vector<uint8_t> BlockPlaceResult::serialize() const {
+    const size_t chunkCount = std::min<size_t>(correctiveChunks.size(), std::numeric_limits<uint16_t>::max());
+    std::vector<uint8_t> out;
+    out.reserve(1 + 4 + 1 + 1 + 2 + (chunkCount * 12));
+    write_u8(out, static_cast<uint8_t>(PacketType::BlockPlaceResult));
+    write_u32(out, requestId);
+    write_u8(out, accepted ? 1u : 0u);
+    write_u8(out, static_cast<uint8_t>(rejectReason));
+    write_u16(out, static_cast<uint16_t>(chunkCount));
+    for (size_t i = 0; i < chunkCount; ++i) {
+        const BlockPlaceChunkCoord& chunk = correctiveChunks[i];
+        write_i32(out, chunk.chunkX);
+        write_i32(out, chunk.chunkY);
+        write_i32(out, chunk.chunkZ);
+    }
+    return out;
+}
+
+std::optional<BlockPlaceResult> BlockPlaceResult::deserialize(const std::vector<uint8_t>& buf) {
+    size_t off = 0;
+    uint8_t type = 0;
+    uint8_t accepted = 0;
+    uint8_t rejectRaw = 0;
+    uint16_t chunkCount = 0;
+    if (!read_u8(buf, off, type)) return std::nullopt;
+    if (type != static_cast<uint8_t>(PacketType::BlockPlaceResult)) return std::nullopt;
+
+    BlockPlaceResult result{};
+    if (!read_u32(buf, off, result.requestId)) return std::nullopt;
+    if (!read_u8(buf, off, accepted)) return std::nullopt;
+    if (!read_u8(buf, off, rejectRaw)) return std::nullopt;
+    if (!read_u16(buf, off, chunkCount)) return std::nullopt;
+    if (rejectRaw > static_cast<uint8_t>(BlockPlaceRejectReason::ServerError)) return std::nullopt;
+    if (chunkCount > ((buf.size() - off) / 12)) return std::nullopt;
+
+    result.accepted = accepted ? 1u : 0u;
+    result.rejectReason = static_cast<BlockPlaceRejectReason>(rejectRaw);
+    result.correctiveChunks.clear();
+    result.correctiveChunks.reserve(chunkCount);
+    for (uint16_t i = 0; i < chunkCount; ++i) {
+        BlockPlaceChunkCoord chunk{};
+        if (!read_i32(buf, off, chunk.chunkX)) return std::nullopt;
+        if (!read_i32(buf, off, chunk.chunkY)) return std::nullopt;
+        if (!read_i32(buf, off, chunk.chunkZ)) return std::nullopt;
+        result.correctiveChunks.push_back(chunk);
+    }
+    if (off != buf.size()) return std::nullopt;
+    return result;
+}
+
+// -------------------- BlockBreakRequest --------------------
+std::vector<uint8_t> BlockBreakRequest::serialize() const {
+    const size_t editCount = std::min(edits.size(), kMaxBlockBreakEditsPerRequest);
+    std::vector<uint8_t> out;
+    out.reserve(1 + 4 + 2 + (editCount * (4 + 4 + 4)));
+    write_u8(out, static_cast<uint8_t>(PacketType::BlockBreakRequest));
+    write_u32(out, requestId);
+    write_u16(out, static_cast<uint16_t>(editCount));
+    for (size_t i = 0; i < editCount; ++i) {
+        const BlockBreakEdit& edit = edits[i];
+        write_i32(out, edit.worldX);
+        write_i32(out, edit.worldY);
+        write_i32(out, edit.worldZ);
+    }
+    return out;
+}
+
+std::optional<BlockBreakRequest> BlockBreakRequest::deserialize(const std::vector<uint8_t>& buf) {
+    size_t off = 0;
+    uint8_t type = 0;
+    uint16_t editCount = 0;
+    if (!read_u8(buf, off, type)) return std::nullopt;
+    if (type != static_cast<uint8_t>(PacketType::BlockBreakRequest)) return std::nullopt;
+
+    BlockBreakRequest request{};
+    if (!read_u32(buf, off, request.requestId)) return std::nullopt;
+    if (!read_u16(buf, off, editCount)) return std::nullopt;
+    if (editCount > kMaxBlockBreakEditsPerRequest) return std::nullopt;
+    if (editCount > ((buf.size() - off) / 12)) return std::nullopt;
+
+    request.edits.clear();
+    request.edits.reserve(editCount);
+    for (uint16_t i = 0; i < editCount; ++i) {
+        BlockBreakEdit edit{};
+        if (!read_i32(buf, off, edit.worldX)) return std::nullopt;
+        if (!read_i32(buf, off, edit.worldY)) return std::nullopt;
+        if (!read_i32(buf, off, edit.worldZ)) return std::nullopt;
+        request.edits.push_back(edit);
+    }
+    if (off != buf.size()) return std::nullopt;
+    return request;
+}
+
+// -------------------- BlockBreakResult --------------------
+std::vector<uint8_t> BlockBreakResult::serialize() const {
+    const size_t chunkCount = std::min<size_t>(correctiveChunks.size(), std::numeric_limits<uint16_t>::max());
+    std::vector<uint8_t> out;
+    out.reserve(1 + 4 + 1 + 1 + 2 + (chunkCount * 12));
+    write_u8(out, static_cast<uint8_t>(PacketType::BlockBreakResult));
+    write_u32(out, requestId);
+    write_u8(out, accepted ? 1u : 0u);
+    write_u8(out, static_cast<uint8_t>(rejectReason));
+    write_u16(out, static_cast<uint16_t>(chunkCount));
+    for (size_t i = 0; i < chunkCount; ++i) {
+        const BlockBreakChunkCoord& chunk = correctiveChunks[i];
+        write_i32(out, chunk.chunkX);
+        write_i32(out, chunk.chunkY);
+        write_i32(out, chunk.chunkZ);
+    }
+    return out;
+}
+
+std::optional<BlockBreakResult> BlockBreakResult::deserialize(const std::vector<uint8_t>& buf) {
+    size_t off = 0;
+    uint8_t type = 0;
+    uint8_t accepted = 0;
+    uint8_t rejectRaw = 0;
+    uint16_t chunkCount = 0;
+    if (!read_u8(buf, off, type)) return std::nullopt;
+    if (type != static_cast<uint8_t>(PacketType::BlockBreakResult)) return std::nullopt;
+
+    BlockBreakResult result{};
+    if (!read_u32(buf, off, result.requestId)) return std::nullopt;
+    if (!read_u8(buf, off, accepted)) return std::nullopt;
+    if (!read_u8(buf, off, rejectRaw)) return std::nullopt;
+    if (!read_u16(buf, off, chunkCount)) return std::nullopt;
+    if (rejectRaw > static_cast<uint8_t>(BlockBreakRejectReason::ServerError)) return std::nullopt;
+    if (chunkCount > ((buf.size() - off) / 12)) return std::nullopt;
+
+    result.accepted = accepted ? 1u : 0u;
+    result.rejectReason = static_cast<BlockBreakRejectReason>(rejectRaw);
+    result.correctiveChunks.clear();
+    result.correctiveChunks.reserve(chunkCount);
+    for (uint16_t i = 0; i < chunkCount; ++i) {
+        BlockBreakChunkCoord chunk{};
+        if (!read_i32(buf, off, chunk.chunkX)) return std::nullopt;
+        if (!read_i32(buf, off, chunk.chunkY)) return std::nullopt;
+        if (!read_i32(buf, off, chunk.chunkZ)) return std::nullopt;
+        result.correctiveChunks.push_back(chunk);
+    }
+    if (off != buf.size()) return std::nullopt;
+    return result;
 }
 
 // -------------------- InventoryActionRequest --------------------

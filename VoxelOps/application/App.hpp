@@ -77,5 +77,6 @@ private:
     bool m_WasXPressed = false;
     bool m_WasEscapePressed = false;
     bool m_WasF10Pressed = false;
+    bool m_WasWorldInteractPressed = false;
     std::array<bool, kHotbarSlots> m_WasHotbarSelectPressed{};
 };

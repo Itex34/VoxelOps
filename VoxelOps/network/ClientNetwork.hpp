@@ -76,6 +76,8 @@ public:
     bool SendRespawnRequest();
     bool SendChunkResyncRequest(const glm::ivec3& chunkPos);
     bool SendInventoryActionRequest(const InventoryActionRequest& request);
+    bool SendBlockPlaceRequest(const BlockPlaceRequest& request);
+    bool SendBlockBreakRequest(const BlockBreakRequest& request);
     // Legacy state packet (kept for compatibility while migrating handlers).
     bool SendPosition(uint32_t seq, const glm::vec3& pos, const glm::vec3& vel);
     bool SendChunkRequest(const glm::ivec3& centerChunk, uint16_t viewDistance);
@@ -106,6 +108,8 @@ public:
     bool PopInventoryActionResult(InventoryActionResult& out);
     bool PopInventorySnapshot(InventorySnapshot& out);
     bool PopWorldItemSnapshot(WorldItemSnapshot& out);
+    bool PopBlockPlaceResult(BlockPlaceResult& out);
+    bool PopBlockBreakResult(BlockBreakResult& out);
     bool PopKillFeedEvent(KillFeedEvent& out);
     bool PopScoreboardSnapshot(ScoreboardSnapshot& out);
     ChunkQueueDepths GetChunkQueueDepths();
@@ -143,6 +147,8 @@ private:
     std::deque<InventoryActionResult> m_inventoryActionResultQueue;
     std::deque<InventorySnapshot> m_inventorySnapshotQueue;
     std::deque<WorldItemSnapshot> m_worldItemSnapshotQueue;
+    std::deque<BlockPlaceResult> m_blockPlaceResultQueue;
+    std::deque<BlockBreakResult> m_blockBreakResultQueue;
     std::deque<KillFeedEvent> m_killFeedQueue;
     std::deque<ScoreboardSnapshot> m_scoreboardQueue;
 };

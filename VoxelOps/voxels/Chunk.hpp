@@ -36,6 +36,9 @@ public:
 
     BlockID removeBlock(int x, int y, int z);
 
+    void copyBlocks(std::array<BlockID, CHUNK_VOLUME>& out) const noexcept;
+    void overwriteBlocks(const std::array<BlockID, CHUNK_VOLUME>& in) noexcept;
+
     bool isCompletelyAir() const noexcept { return nonAirCount == 0; }
 
     glm::ivec3 position;

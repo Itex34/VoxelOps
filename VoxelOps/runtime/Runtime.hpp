@@ -21,6 +21,7 @@
 #include "../../Shared/player/PlayerData.hpp"
 #include "../../Shared/runtime/Paths.hpp"
 
+#include <cstdint>
 
 
 struct CallbackContext {
@@ -106,6 +107,29 @@ struct Runtime {
     bool wasEndpointPasteShortcutPressed = false;
     std::string usernamePromptError;
     uint32_t nextClientShotId = 1;
+    struct PendingBlockPlaceEdit {
+        glm::ivec3 worldPos{ 0 };
+        uint8_t oldBlockId = 0;
+        uint8_t newBlockId = 0;
+    };
+    struct PendingBlockPlaceRequest {
+        std::vector<glm::ivec3> affectedChunks;
+        std::vector<PendingBlockPlaceEdit> edits;
+        double createdAt = 0.0;
+    };
+    struct PendingBlockBreakEdit {
+        glm::ivec3 worldPos{ 0 };
+        uint8_t oldBlockId = 0;
+    };
+    struct PendingBlockBreakRequest {
+        std::vector<glm::ivec3> affectedChunks;
+        std::vector<PendingBlockBreakEdit> edits;
+        double createdAt = 0.0;
+    };
+    std::unordered_map<uint32_t, PendingBlockPlaceRequest> pendingBlockPlaceRequests;
+    uint32_t nextBlockPlaceRequestId = 1;
+    std::unordered_map<uint32_t, PendingBlockBreakRequest> pendingBlockBreakRequests;
+    uint32_t nextBlockBreakRequestId = 1;
     double shootSendInterval = 1.0 / 8.0;
     uint16_t activeHotbarSlot = 0;
     GunType equippedGunType = kDefaultGunType;
@@ -139,6 +163,8 @@ struct Runtime {
     static constexpr size_t MaxChunkMeshBuildsPerFrameUnderInputPressure = 3;
     static constexpr int64_t ChunkMeshBuildBudgetUs = 6000;
     static constexpr int64_t ChunkMeshBuildBudgetUsUnderInputPressure = 2000;
+    static constexpr size_t MaxBlockPlaceResultsPerFrame = 32;
+    static constexpr size_t MaxBlockBreakResultsPerFrame = 32;
     double lastChunkCoverageLogTime = 0.0;
     glm::ivec3 lastChunkRequestCenter{ 0 };
     bool hasLastChunkRequestCenter = false;

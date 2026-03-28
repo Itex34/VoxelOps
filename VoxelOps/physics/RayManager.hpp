@@ -14,6 +14,7 @@
 struct RayResult {
 	bool hit;
 	glm::ivec3 hitBlockWorld;
+	glm::ivec3 adjacentAirBlockWorld;
 	glm::ivec3 hitChunk;
 	float distance;
 };

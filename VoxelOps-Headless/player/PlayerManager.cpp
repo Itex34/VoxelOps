@@ -248,6 +248,7 @@ PlayerID PlayerManager::onPlayerConnect(std::shared_ptr<ConnectionHandle> conn, 
     (void)p.inventory.appendItems(static_cast<uint16_t>(ITEM_PISTOL), 1);
     (void)p.inventory.appendItems(static_cast<uint16_t>(ITEM_SNIPER), 1);
     (void)p.inventory.appendItems(static_cast<uint16_t>(ITEM_PISTOL_AMMO), 48);
+    (void)p.inventory.appendItems(static_cast<uint16_t>(ITEM_DIRT_BLOCK), 256);
 
     playersOrder.push_back(id);
     auto it = std::prev(playersOrder.end());

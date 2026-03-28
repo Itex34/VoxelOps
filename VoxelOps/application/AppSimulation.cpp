@@ -32,6 +32,54 @@ std::optional<GunType> GunTypeFromInventoryItemId(uint16_t itemId)
     default: return std::nullopt;
     }
 }
+
+std::optional<BlockID> BlockTypeFromInventoryItemId(uint16_t itemId)
+{
+    switch (itemId) {
+    case static_cast<uint16_t>(ITEM_DIRT_BLOCK): return BlockID::Dirt;
+    default: return std::nullopt;
+    }
+}
+
+void MarkChunkAndEdgeNeighborsDirty(ChunkManager& chunkManager, const glm::ivec3& worldPos)
+{
+    const glm::ivec3 chunkPos = chunkManager.worldToChunkPos(worldPos);
+    const glm::ivec3 localPos = chunkManager.worldToLocalPos(worldPos);
+    chunkManager.markChunkDirty(chunkPos);
+    if (localPos.x == 0) chunkManager.markChunkDirty(chunkPos + glm::ivec3(-1, 0, 0));
+    if (localPos.x == CHUNK_SIZE - 1) chunkManager.markChunkDirty(chunkPos + glm::ivec3(1, 0, 0));
+    if (localPos.y == 0) chunkManager.markChunkDirty(chunkPos + glm::ivec3(0, -1, 0));
+    if (localPos.y == CHUNK_SIZE - 1) chunkManager.markChunkDirty(chunkPos + glm::ivec3(0, 1, 0));
+    if (localPos.z == 0) chunkManager.markChunkDirty(chunkPos + glm::ivec3(0, 0, -1));
+    if (localPos.z == CHUNK_SIZE - 1) chunkManager.markChunkDirty(chunkPos + glm::ivec3(0, 0, 1));
+}
+
+std::vector<glm::ivec3> CollectChunkAndEdgeNeighbors(const ChunkManager& chunkManager, const glm::ivec3& worldPos)
+{
+    std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> chunks;
+    const auto tryInsert = [&](const glm::ivec3& chunkPos) {
+        if (chunkManager.inBounds(chunkPos)) {
+            chunks.insert(chunkPos);
+        }
+    };
+    const glm::ivec3 chunkPos = chunkManager.worldToChunkPos(worldPos);
+    const glm::ivec3 localPos = chunkManager.worldToLocalPos(worldPos);
+
+    tryInsert(chunkPos);
+    if (localPos.x == 0) tryInsert(chunkPos + glm::ivec3(-1, 0, 0));
+    if (localPos.x == CHUNK_SIZE - 1) tryInsert(chunkPos + glm::ivec3(1, 0, 0));
+    if (localPos.y == 0) tryInsert(chunkPos + glm::ivec3(0, -1, 0));
+    if (localPos.y == CHUNK_SIZE - 1) tryInsert(chunkPos + glm::ivec3(0, 1, 0));
+    if (localPos.z == 0) tryInsert(chunkPos + glm::ivec3(0, 0, -1));
+    if (localPos.z == CHUNK_SIZE - 1) tryInsert(chunkPos + glm::ivec3(0, 0, 1));
+
+    std::vector<glm::ivec3> out;
+    out.reserve(chunks.size());
+    for (const glm::ivec3& c : chunks) {
+        out.push_back(c);
+    }
+    return out;
+}
 }
 
 void App::updateDebugCamera(Runtime& runtime) {
@@ -180,28 +228,119 @@ void App::syncEquippedGunFromInventory(Runtime& runtime) {
 
 
 void App::processWorldInteraction(Runtime& runtime) {
+    const bool rightPressed = glfwGetMouseButton(m_Window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+    const bool rightClicked = rightPressed && !m_WasWorldInteractPressed;
+    m_WasWorldInteractPressed = rightPressed;
+
     if (!runtime.localPlayerAlive || GameData::cursorEnabled || IsImGuiTextInputActive()) {
         return;
     }
 
-    if (glfwGetKey(m_Window, GLFW_KEY_H) == GLFW_PRESS) {
-        Ray ray(runtime.player->getCamera().position, runtime.player->getCamera().front);
-        const RayResult hitResult = runtime.rayManager.rayHasBlockIntersectSingle(
-            ray, *runtime.chunkManager, runtime.player->maxReach
-        );
-        if (hitResult.hit) {
-            runtime.chunkManager->playerBreakBlockAt(hitResult.hitBlockWorld);
+    if (!rightClicked) {
+        return;
+    }
+
+    Slot activeSlot{};
+    bool hasActiveItem = false;
+    ItemType activeItemType = ItemType::Other;
+    std::optional<BlockID> activeBlockType = std::nullopt;
+    if (
+        runtime.inventoryUi &&
+        runtime.inventoryUi->hasSnapshot() &&
+        runtime.activeHotbarSlot < static_cast<uint16_t>(kHotbarSlots)
+    ) {
+        activeSlot = runtime.inventoryUi->slots()[runtime.activeHotbarSlot];
+        hasActiveItem = !Inventory::IsEmpty(activeSlot) && Inventory::IsValidItemId(activeSlot.itemId);
+        if (hasActiveItem) {
+            activeItemType = Items::ItemDatabase[activeSlot.itemId].type;
+            activeBlockType = BlockTypeFromInventoryItemId(activeSlot.itemId);
+            if (activeItemType == ItemType::Block && !activeBlockType.has_value()) {
+                activeBlockType = BlockID::Dirt;
+            }
         }
     }
 
-    if (glfwGetKey(m_Window, GLFW_KEY_G) == GLFW_PRESS) {
-        Ray ray(runtime.player->getCamera().position, runtime.player->getCamera().front);
-        const RayResult hitResult = runtime.rayManager.rayHasBlockIntersectSingle(
-            ray, *runtime.chunkManager, runtime.player->maxReach + 100.05f
-        );
-        if (hitResult.hit) {
-            runtime.chunkManager->playerPlaceBlockAt(hitResult.hitBlockWorld, 0, BlockID::Dirt);
+    if (hasActiveItem && activeItemType == ItemType::Gun) {
+        return;
+    }
+
+    Ray ray(runtime.player->getCamera().position, runtime.player->getCamera().front);
+    const RayResult hitResult = runtime.rayManager.rayHasBlockIntersectSingle(
+        ray, *runtime.chunkManager, runtime.player->maxReach
+    );
+    if (!hitResult.hit) {
+        return;
+    }
+
+    if (hasActiveItem && activeItemType == ItemType::Block && activeBlockType.has_value()) {
+        const glm::ivec3 placePos = hitResult.adjacentAirBlockWorld;
+        const BlockID previousBlock = runtime.chunkManager->getBlockGlobal(placePos.x, placePos.y, placePos.z);
+        if (previousBlock != BlockID::Air) {
+            return;
         }
+
+        if (!runtime.clientNet.IsConnected()) {
+            runtime.chunkManager->setBlockGlobal(placePos.x, placePos.y, placePos.z, *activeBlockType);
+            MarkChunkAndEdgeNeighborsDirty(*runtime.chunkManager, placePos);
+            return;
+        }
+
+        BlockPlaceRequest request{};
+        request.requestId = runtime.nextBlockPlaceRequestId++;
+        request.edits.push_back(BlockPlaceEdit{
+            placePos.x,
+            placePos.y,
+            placePos.z,
+            static_cast<uint8_t>(*activeBlockType)
+        });
+
+        if (runtime.clientNet.SendBlockPlaceRequest(request)) {
+            runtime.chunkManager->setBlockGlobal(placePos.x, placePos.y, placePos.z, *activeBlockType);
+            MarkChunkAndEdgeNeighborsDirty(*runtime.chunkManager, placePos);
+
+            Runtime::PendingBlockPlaceRequest pending{};
+            pending.createdAt = glfwGetTime();
+            pending.affectedChunks = CollectChunkAndEdgeNeighbors(*runtime.chunkManager, placePos);
+            pending.edits.push_back(Runtime::PendingBlockPlaceEdit{
+                placePos,
+                static_cast<uint8_t>(previousBlock),
+                static_cast<uint8_t>(*activeBlockType)
+            });
+            runtime.pendingBlockPlaceRequests[request.requestId] = std::move(pending);
+        }
+        return;
+    }
+
+    if (!runtime.clientNet.IsConnected()) {
+        runtime.chunkManager->playerBreakBlockAt(hitResult.hitBlockWorld);
+        return;
+    }
+
+    const glm::ivec3 breakPos = hitResult.hitBlockWorld;
+    const BlockID previousBlock = runtime.chunkManager->getBlockGlobal(breakPos.x, breakPos.y, breakPos.z);
+    if (previousBlock == BlockID::Air) {
+        return;
+    }
+
+    BlockBreakRequest request{};
+    request.requestId = runtime.nextBlockBreakRequestId++;
+    request.edits.push_back(BlockBreakEdit{
+        breakPos.x,
+        breakPos.y,
+        breakPos.z
+    });
+
+    if (runtime.clientNet.SendBlockBreakRequest(request)) {
+        runtime.chunkManager->playerBreakBlockAt(breakPos);
+
+        Runtime::PendingBlockBreakRequest pending{};
+        pending.createdAt = glfwGetTime();
+        pending.affectedChunks = CollectChunkAndEdgeNeighbors(*runtime.chunkManager, breakPos);
+        pending.edits.push_back(Runtime::PendingBlockBreakEdit{
+            breakPos,
+            static_cast<uint8_t>(previousBlock)
+        });
+        runtime.pendingBlockBreakRequests[request.requestId] = std::move(pending);
     }
 }
 
@@ -486,6 +625,10 @@ void App::processMovementNetworking(Runtime& runtime) {
 
     if (!runtime.clientNet.IsConnected()) {
         runtime.pendingInputs.clear();
+        runtime.pendingBlockPlaceRequests.clear();
+        runtime.nextBlockPlaceRequestId = 1;
+        runtime.pendingBlockBreakRequests.clear();
+        runtime.nextBlockBreakRequestId = 1;
         runtime.killFeedEntries.clear();
         runtime.matchRemainingSeconds = 600;
         runtime.matchStarted = false;
@@ -635,10 +778,10 @@ void App::processChunkStreaming(Runtime& runtime, bool prioritizeMovement) {
     constexpr double kChunkResyncCooldownSec = 0.25;
     static std::unordered_map<glm::ivec3, double, IVec3Hash> s_chunkResyncCooldownUntil;
 
-    const auto requestChunkResync = [&](const glm::ivec3& chunkPos) {
+    const auto requestChunkResync = [&](const glm::ivec3& chunkPos, bool force) {
         const double nowSec = glfwGetTime();
         auto it = s_chunkResyncCooldownUntil.find(chunkPos);
-        if (it != s_chunkResyncCooldownUntil.end() && nowSec < it->second) {
+        if (!force && it != s_chunkResyncCooldownUntil.end() && nowSec < it->second) {
             return;
         }
         s_chunkResyncCooldownUntil[chunkPos] = nowSec + kChunkResyncCooldownSec;
@@ -683,7 +826,7 @@ void App::processChunkStreaming(Runtime& runtime, bool prioritizeMovement) {
             deltaResult == NetworkChunkDeltaApplyResult::MissingBaseChunk ||
             deltaResult == NetworkChunkDeltaApplyResult::VersionGap
         ) {
-            requestChunkResync(glm::ivec3(chunkDelta.chunkX, chunkDelta.chunkY, chunkDelta.chunkZ));
+            requestChunkResync(glm::ivec3(chunkDelta.chunkX, chunkDelta.chunkY, chunkDelta.chunkZ), false);
         }
         ++chunkDeltaApplied;
     }
@@ -697,6 +840,126 @@ void App::processChunkStreaming(Runtime& runtime, bool prioritizeMovement) {
     ) {
         runtime.chunkManager->applyNetworkChunkUnload(chunkUnload);
         ++chunkUnloadApplied;
+    }
+
+    BlockPlaceResult blockPlaceResult;
+    size_t blockPlaceResultsApplied = 0;
+    while (
+        blockPlaceResultsApplied < Runtime::MaxBlockPlaceResultsPerFrame &&
+        runtime.clientNet.PopBlockPlaceResult(blockPlaceResult)
+    ) {
+        auto pendingIt = runtime.pendingBlockPlaceRequests.find(blockPlaceResult.requestId);
+        if (blockPlaceResult.accepted == 0) {
+            if (pendingIt != runtime.pendingBlockPlaceRequests.end()) {
+                for (const Runtime::PendingBlockPlaceEdit& edit : pendingIt->second.edits) {
+                    const BlockID predictedId = static_cast<BlockID>(edit.newBlockId);
+                    const BlockID rollbackId = static_cast<BlockID>(edit.oldBlockId);
+                    if (
+                        runtime.chunkManager->getBlockGlobal(edit.worldPos.x, edit.worldPos.y, edit.worldPos.z) ==
+                        predictedId
+                    ) {
+                        runtime.chunkManager->setBlockGlobal(
+                            edit.worldPos.x,
+                            edit.worldPos.y,
+                            edit.worldPos.z,
+                            rollbackId
+                        );
+                        MarkChunkAndEdgeNeighborsDirty(*runtime.chunkManager, edit.worldPos);
+                    }
+                }
+            }
+
+            std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> chunksToResync;
+            if (pendingIt != runtime.pendingBlockPlaceRequests.end()) {
+                for (const glm::ivec3& chunkPos : pendingIt->second.affectedChunks) {
+                    chunksToResync.insert(chunkPos);
+                }
+            }
+            else {
+                for (const BlockPlaceChunkCoord& coord : blockPlaceResult.correctiveChunks) {
+                    chunksToResync.insert(glm::ivec3(coord.chunkX, coord.chunkY, coord.chunkZ));
+                }
+            }
+
+            for (const glm::ivec3& chunkPos : chunksToResync) {
+                requestChunkResync(chunkPos, true);
+            }
+        }
+
+        if (pendingIt != runtime.pendingBlockPlaceRequests.end()) {
+            runtime.pendingBlockPlaceRequests.erase(pendingIt);
+        }
+        ++blockPlaceResultsApplied;
+    }
+
+    const double nowSec = glfwGetTime();
+    for (auto it = runtime.pendingBlockPlaceRequests.begin(); it != runtime.pendingBlockPlaceRequests.end();) {
+        if ((nowSec - it->second.createdAt) > 1.5) {
+            for (const glm::ivec3& chunkPos : it->second.affectedChunks) {
+                requestChunkResync(chunkPos, true);
+            }
+            it = runtime.pendingBlockPlaceRequests.erase(it);
+        }
+        else {
+            ++it;
+        }
+    }
+
+    BlockBreakResult blockBreakResult;
+    size_t blockBreakResultsApplied = 0;
+    while (
+        blockBreakResultsApplied < Runtime::MaxBlockBreakResultsPerFrame &&
+        runtime.clientNet.PopBlockBreakResult(blockBreakResult)
+    ) {
+        auto pendingIt = runtime.pendingBlockBreakRequests.find(blockBreakResult.requestId);
+        if (blockBreakResult.accepted == 0) {
+            if (pendingIt != runtime.pendingBlockBreakRequests.end()) {
+                for (const Runtime::PendingBlockBreakEdit& edit : pendingIt->second.edits) {
+                    if (runtime.chunkManager->getBlockGlobal(edit.worldPos.x, edit.worldPos.y, edit.worldPos.z) == BlockID::Air) {
+                        runtime.chunkManager->setBlockGlobal(
+                            edit.worldPos.x,
+                            edit.worldPos.y,
+                            edit.worldPos.z,
+                            static_cast<BlockID>(edit.oldBlockId)
+                        );
+                        MarkChunkAndEdgeNeighborsDirty(*runtime.chunkManager, edit.worldPos);
+                    }
+                }
+            }
+
+            std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> chunksToResync;
+            if (pendingIt != runtime.pendingBlockBreakRequests.end()) {
+                for (const glm::ivec3& chunkPos : pendingIt->second.affectedChunks) {
+                    chunksToResync.insert(chunkPos);
+                }
+            }
+            else {
+                for (const BlockBreakChunkCoord& coord : blockBreakResult.correctiveChunks) {
+                    chunksToResync.insert(glm::ivec3(coord.chunkX, coord.chunkY, coord.chunkZ));
+                }
+            }
+
+            for (const glm::ivec3& chunkPos : chunksToResync) {
+                requestChunkResync(chunkPos, true);
+            }
+        }
+
+        if (pendingIt != runtime.pendingBlockBreakRequests.end()) {
+            runtime.pendingBlockBreakRequests.erase(pendingIt);
+        }
+        ++blockBreakResultsApplied;
+    }
+
+    for (auto it = runtime.pendingBlockBreakRequests.begin(); it != runtime.pendingBlockBreakRequests.end();) {
+        if ((nowSec - it->second.createdAt) > 1.5) {
+            for (const glm::ivec3& chunkPos : it->second.affectedChunks) {
+                requestChunkResync(chunkPos, true);
+            }
+            it = runtime.pendingBlockBreakRequests.erase(it);
+        }
+        else {
+            ++it;
+        }
     }
 
     const size_t maxChunkMeshBuilds = prioritizeMovement

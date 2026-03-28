@@ -8,11 +8,16 @@ RayManager::RayManager() {
 RayResult RayManager::rayHasBlockIntersectSingle(const Ray& ray, const ChunkManager& chunkManager, float maxDistance) {
     RayResult result{};
     result.hit = false;
+    result.hitBlockWorld = glm::ivec3(0);
+    result.adjacentAirBlockWorld = glm::ivec3(0);
+    result.hitChunk = glm::ivec3(0);
     result.distance = maxDistance;
     
     glm::vec3 rayDir = glm::normalize(ray.direction);
     //// ====== 1. Setup DDA for block traversal ======
     glm::ivec3 currentBlock = glm::floor(ray.origin); // starting voxel
+    glm::ivec3 previousBlock = currentBlock;
+    bool hasPreviousBlock = false;
 
     glm::ivec3 step = glm::sign(rayDir); // step: -1, 0, or +1
 
@@ -55,6 +60,7 @@ RayResult RayManager::rayHasBlockIntersectSingle(const Ray& ray, const ChunkMana
                 if (block != BlockID::Air) {
                     result.hit = true;
                     result.hitBlockWorld = currentBlock;
+                    result.adjacentAirBlockWorld = hasPreviousBlock ? previousBlock : (currentBlock - step);
                     result.hitChunk = chunkCoords;
                     result.distance = traveled;
                     return result;
@@ -63,6 +69,8 @@ RayResult RayManager::rayHasBlockIntersectSingle(const Ray& ray, const ChunkMana
         }
 
         // ====== Step to next block ======
+        previousBlock = currentBlock;
+        hasPreviousBlock = true;
         if (tMax.x < tMax.y) {
             if (tMax.x < tMax.z) {
                 currentBlock.x += step.x;

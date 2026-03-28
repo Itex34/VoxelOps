@@ -3,7 +3,7 @@
 
 
 enum class PacketType : uint8_t {
-    Message = 0,  // optional: text chat, server->client or client->server
+    Message = 0,  // text chat, server->client or client->server
     ConnectRequest = 1,  // client -> server: protocolVersion + identity + requested username
     ConnectResponse = 2,  // server -> client: okFlag + reject reason + protocolVersion + assigned username
     ClientConnect = 3,  // server broadcast: new client joined (username)
@@ -25,5 +25,10 @@ enum class PacketType : uint8_t {
     InventoryActionResult = 25,  // server -> client: command accept/reject + revision
     InventorySnapshot = 26,      // server -> client: authoritative inventory state
 
-    WorldItemSnapshot = 27       // server -> client: authoritative nearby dropped items
+    WorldItemSnapshot = 27,      // server -> client: authoritative nearby dropped items
+
+    BlockPlaceRequest = 28,      // client -> server: request one or more block placements
+    BlockPlaceResult = 29,       // server -> client: authoritative accept/reject for block placement
+    BlockBreakRequest = 30,      // client -> server: request one or more block breaks
+    BlockBreakResult = 31        // server -> client: authoritative accept/reject for block breaks
 };
