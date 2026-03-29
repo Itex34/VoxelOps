@@ -446,7 +446,7 @@ bool Player::checkCollision(const glm::vec3& pos) const {
                 const glm::ivec3 worldPos(x, y, z);
                 const glm::ivec3 chunkPos = chunkManager.worldToChunkPos(worldPos);
                 if (chunkManager.inBounds(chunkPos) && !chunkManager.hasChunkLoaded(chunkPos)) {
-                    if (kClientBlockOnMissingCollisionChunk) {
+                    if (kClientBlockOnMissingCollisionChunk && m_treatMissingCollisionAsSolid) {
                         // Optional conservative mode near stream edges.
                         return true;
                     }
@@ -538,6 +538,11 @@ void Player::setFlyModeAllowed(bool allowed) noexcept {
     if (!m_flyModeAllowed) {
         flyMode = false;
     }
+}
+
+void Player::setTreatMissingCollisionAsSolid(bool enabled) noexcept
+{
+    m_treatMissingCollisionAsSolid = enabled;
 }
 
 void Player::simulateFromNetworkInput(const NetworkInputState& input, double deltaTime, bool updateFov) {

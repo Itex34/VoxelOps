@@ -417,6 +417,12 @@ void App::processMovementNetworking(Runtime& runtime) {
     }
 
     const double now = glfwGetTime();
+    runtime.justRespawned = false;
+    runtime.player->setTreatMissingCollisionAsSolid(now >= runtime.respawnMissingChunkGraceUntil);
+    if (runtime.rbDiagActive && now >= runtime.rbDiagUntil) {
+        runtime.rbDiagActive = false;
+        std::cout << "[rbdiag/client] end window\n";
+    }
     const ClientNetwork::ConnectionState connState = runtime.clientNet.GetConnectionState();
     if (connState == ClientNetwork::ConnectionState::Disconnected) {
         if (runtime.clientNet.ShouldAutoReconnect() && now >= runtime.nextReconnectAttemptTime) {
@@ -614,6 +620,23 @@ void App::processMovementNetworking(Runtime& runtime) {
         snapshot.jumpBufferTimer = newestServerJumpBufferTimer;
         runtime.reconciler.Apply(runtime, snapshot);
         runtime.localHealth = newestServerHealth;
+        if (runtime.justRespawned) {
+            runtime.respawnMissingChunkGraceUntil = now + Runtime::RespawnMissingChunkGraceSeconds;
+            runtime.player->setTreatMissingCollisionAsSolid(false);
+            // Respawn teleports can shift chunk center instantly.
+            runtime.hasLastChunkRequestCenter = false;
+            runtime.lastChunkRequestSendTime = 0.0;
+            runtime.rbDiagActive = true;
+            runtime.rbDiagUntil = now + Runtime::RespawnDiagDurationSeconds;
+            runtime.rbDiagNextHeartbeatAt = now;
+            std::cout
+                << "[rbdiag/client] respawn start"
+                << " serverTick=" << runtime.lastAppliedServerTick
+                << " ackedInputTick=" << runtime.lastAckedInputTick
+                << " pos=(" << newestServerPos.x << "," << newestServerPos.y << "," << newestServerPos.z << ")"
+                << " vel=(" << newestServerVel.x << "," << newestServerVel.y << "," << newestServerVel.z << ")"
+                << "\n";
+        }
         if (runtime.renderStateNeedsResync) {
             const Player::SimulationState state = runtime.player->captureSimulationState();
             runtime.renderPrevSimState = state;
@@ -651,7 +674,15 @@ void App::processMovementNetworking(Runtime& runtime) {
         runtime.inputTickCounter = 1;
         runtime.lastAckedInputTick = 0;
         runtime.lastInputSendTime = glfwGetTime();
+        runtime.lastChunkRequestSendTime = 0.0;
+        runtime.hasLastChunkRequestCenter = false;
         runtime.renderStateNeedsResync = false;
+        runtime.justRespawned = false;
+        runtime.respawnMissingChunkGraceUntil = 0.0;
+        runtime.player->setTreatMissingCollisionAsSolid(true);
+        runtime.rbDiagActive = false;
+        runtime.rbDiagUntil = 0.0;
+        runtime.rbDiagNextHeartbeatAt = 0.0;
         runtime.hasRenderSimState = false;
         runtime.hasSmoothedPlayerCameraPos = false;
         m_ForceCursorEnabled = false;
@@ -659,6 +690,32 @@ void App::processMovementNetworking(Runtime& runtime) {
             runtime.inventoryUi->reset();
         }
         return;
+    }
+
+    if (runtime.rbDiagActive && now >= runtime.rbDiagNextHeartbeatAt) {
+        runtime.rbDiagNextHeartbeatAt = now + 1.0;
+        const Player::SimulationState simState = runtime.player->captureSimulationState();
+        const ClientNetwork::ChunkQueueDepths queueDepths = runtime.clientNet.GetChunkQueueDepths();
+        const int32_t unackedTicks = static_cast<int32_t>(runtime.inputTickCounter - runtime.lastAckedInputTick);
+        std::cout
+            << "[rbdiag/client] heartbeat"
+            << " serverTick=" << runtime.lastAppliedServerTick
+            << " ackedInputTick=" << runtime.lastAckedInputTick
+            << " inputTickCounter=" << runtime.inputTickCounter
+            << " unackedTicks=" << unackedTicks
+            << " pendingInputs=" << runtime.pendingInputs.size()
+            << " alive=" << (runtime.localPlayerAlive ? 1 : 0)
+            << " respawnSeconds=" << runtime.localRespawnSeconds
+            << " health=" << runtime.localHealth
+            << " pos=(" << simState.position.x << "," << simState.position.y << "," << simState.position.z << ")"
+            << " vel=(" << simState.velocity.x << "," << simState.velocity.y << "," << simState.velocity.z << ")"
+            << " onGround=" << (simState.onGround ? 1 : 0)
+            << " missingChunkSolid=" << (runtime.player->isTreatMissingCollisionAsSolid() ? 1 : 0)
+            << " queue(data/delta/unload)=("
+            << queueDepths.chunkData << "/"
+            << queueDepths.chunkDelta << "/"
+            << queueDepths.chunkUnload << ")"
+            << "\n";
     }
 
     const bool respawnClickDown = (glfwGetMouseButton(m_Window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS);

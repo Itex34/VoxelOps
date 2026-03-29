@@ -153,7 +153,7 @@ struct Runtime {
     static constexpr float RenderIdleSettleHz = 28.0f;
     static constexpr size_t InputRedundancyCopies = 1;
     static constexpr double ChunkRequestSendInterval = 0.5; // 2 Hz baseline + immediate on center changes
-    static constexpr double ChunkRequestCenterChangeMinInterval = 1.0 / 30.0; // up to 30 Hz on border crossings
+    static constexpr double ChunkRequestCenterChangeMinInterval = 1.0 / 8.0; // cap center-change churn during correction jitter
     static constexpr size_t MaxChunkDataApplyPerFrame = 12;
     static constexpr size_t MaxChunkDeltaApplyPerFrame = 48;
     static constexpr size_t MaxChunkUnloadApplyPerFrame = 64;
@@ -165,10 +165,17 @@ struct Runtime {
     static constexpr int64_t ChunkMeshBuildBudgetUsUnderInputPressure = 2000;
     static constexpr size_t MaxBlockPlaceResultsPerFrame = 32;
     static constexpr size_t MaxBlockBreakResultsPerFrame = 32;
+    static constexpr double RespawnMissingChunkGraceSeconds = 1.25;
+    static constexpr double RespawnDiagDurationSeconds = 10.0;
     double lastChunkCoverageLogTime = 0.0;
     glm::ivec3 lastChunkRequestCenter{ 0 };
     bool hasLastChunkRequestCenter = false;
     bool renderStateNeedsResync = false;
+    bool justRespawned = false;
+    double respawnMissingChunkGraceUntil = 0.0;
+    bool rbDiagActive = false;
+    double rbDiagUntil = 0.0;
+    double rbDiagNextHeartbeatAt = 0.0;
     Player::SimulationState renderPrevSimState{};
     Player::SimulationState renderCurrSimState{};
     bool hasRenderSimState = false;

@@ -231,6 +231,9 @@ private:
     // connection -> client session
     std::unordered_map<HSteamNetConnection, ClientSession> m_clients;
     std::unordered_map<PlayerID, MatchScore> m_matchScores;
+    std::unordered_map<PlayerID, bool> m_lastAliveByPlayerId;
+    std::unordered_map<PlayerID, std::chrono::steady_clock::time_point> m_respawnDiagUntilByPlayer;
+    std::unordered_map<PlayerID, std::chrono::steady_clock::time_point> m_respawnDiagNextLogAtByPlayer;
     std::unordered_map<uint64_t, WorldItemEntity> m_worldItems;
     uint64_t m_nextWorldItemId = 1;
     PlayerManager m_playerManager;

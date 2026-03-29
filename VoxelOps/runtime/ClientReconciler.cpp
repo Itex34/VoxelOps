@@ -4,6 +4,7 @@
 #include "Runtime.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <iostream>
 
@@ -50,6 +51,7 @@ bool ClientReconciler::Apply(Runtime& runtime, const ServerSnapshot& snapshot)
         return false;
     }
 
+    runtime.justRespawned = false;
     const bool wasAlive = runtime.localPlayerAlive;
     runtime.localPlayerAlive = snapshot.alive;
     runtime.localRespawnSeconds = snapshot.respawnSeconds;
@@ -64,6 +66,7 @@ bool ClientReconciler::Apply(Runtime& runtime, const ServerSnapshot& snapshot)
         runtime.renderStateNeedsResync = true;
         runtime.hasSmoothedPlayerCameraPos = false;
         runtime.localDeathKiller.clear();
+        runtime.justRespawned = true;
     }
 
     runtime.hasAppliedServerTick = true;
@@ -146,6 +149,43 @@ bool ClientReconciler::Apply(Runtime& runtime, const ServerSnapshot& snapshot)
 
     const glm::vec3 effectiveCorrection = finalState.position - predictedPos;
     const float effectiveCorrectionLenSq = glm::dot(effectiveCorrection, effectiveCorrection);
+    if (runtime.rbDiagActive) {
+        static auto s_lastRbDiagLogAt = std::chrono::steady_clock::time_point{};
+        const auto now = std::chrono::steady_clock::now();
+        const float effectiveCorrectionLen = std::sqrt(std::max(0.0f, effectiveCorrectionLenSq));
+        const bool correctionLarge = effectiveCorrectionLen >= 0.35f;
+        const bool inputBacklogHigh = runtime.pendingInputs.size() >= 20;
+        if (
+            (correctionLarge || inputBacklogHigh) &&
+            (s_lastRbDiagLogAt == std::chrono::steady_clock::time_point{} ||
+             (now - s_lastRbDiagLogAt) >= std::chrono::milliseconds(120))
+        ) {
+            s_lastRbDiagLogAt = now;
+            const ClientNetwork::ChunkQueueDepths queueDepths = runtime.clientNet.GetChunkQueueDepths();
+            const int32_t unackedTicks = static_cast<int32_t>(runtime.inputTickCounter - snapshot.ackedInputTick);
+            std::cerr
+                << "[rbdiag/client/reconcile]"
+                << " serverTick=" << snapshot.serverTick
+                << " ackedInputTick=" << snapshot.ackedInputTick
+                << " unackedTicks=" << unackedTicks
+                << " replayCount=" << replayCount
+                << " pendingInputs=" << runtime.pendingInputs.size()
+                << " corrLen=" << effectiveCorrectionLen
+                << " corr=(" << effectiveCorrection.x << "," << effectiveCorrection.y << "," << effectiveCorrection.z << ")"
+                << " predictedPos=(" << predictedPos.x << "," << predictedPos.y << "," << predictedPos.z << ")"
+                << " serverPos=(" << snapshot.position.x << "," << snapshot.position.y << "," << snapshot.position.z << ")"
+                << " serverVel=(" << snapshot.velocity.x << "," << snapshot.velocity.y << "," << snapshot.velocity.z << ")"
+                << " onGround(pred/server/final)=("
+                << (predictedState.onGround ? 1 : 0) << "/"
+                << (snapshot.onGround ? 1 : 0) << "/"
+                << (finalState.onGround ? 1 : 0) << ")"
+                << " queue(data/delta/unload)=("
+                << queueDepths.chunkData << "/"
+                << queueDepths.chunkDelta << "/"
+                << queueDepths.chunkUnload << ")"
+                << "\n";
+        }
+    }
     const float microDeadzone =
         Runtime::BasicAuthReconcileDeadzone * (0.60f + (0.40f * latencyBlend));
     const float microDeadzoneSq = microDeadzone * microDeadzone;

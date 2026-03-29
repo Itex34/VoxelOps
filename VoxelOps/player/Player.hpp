@@ -115,6 +115,8 @@ public:
     void simulateFromNetworkInput(const NetworkInputState& input, double deltaTime, bool updateFov = false);
     void setFlyModeAllowed(bool allowed) noexcept;
     [[nodiscard]] bool isFlyModeAllowed() const noexcept { return m_flyModeAllowed; }
+    void setTreatMissingCollisionAsSolid(bool enabled) noexcept;
+    [[nodiscard]] bool isTreatMissingCollisionAsSolid() const noexcept { return m_treatMissingCollisionAsSolid; }
 
     // Camera is exposed read-only; you can provide further accessors if necessary
     const Camera& getCamera() const noexcept { return camera; }
@@ -181,6 +183,7 @@ private:
     // Internal helper
     bool onGround = false;
     bool m_flyModeAllowed = false;
+    bool m_treatMissingCollisionAsSolid = true;
 
     bool m_jumpPressedLastTick = false;
     float m_timeSinceGrounded = 0.0f;

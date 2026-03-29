@@ -18,6 +18,8 @@ namespace {
 constexpr size_t kMaxBufferedInputs = 256;
 constexpr int32_t kMaxInputLeadTicks = 120;
 constexpr int32_t kMaxInputGapTicks = 8;
+constexpr int kRespawnCollisionPrewarmRadiusXZ = 2;
+constexpr int kRespawnCollisionPrewarmRadiusY = 1;
 constexpr int64_t kSlowPlayerManagerUpdateUs = 4000;
 std::atomic<uint64_t> g_playerManagerSlowUpdateCount{ 0 };
 constexpr bool kServerBlockOnMissingCollisionChunk = true;
@@ -149,6 +151,32 @@ std::vector<uint8_t> BuildSnapshotFrameBytes(
     out.insert(out.end(), playersPayload.begin(), playersPayload.end());
     return out;
 }
+
+void PrewarmRespawnCollisionChunks(ChunkManager& chunkManager, const glm::vec3& respawnPos)
+{
+    const glm::ivec3 respawnWorldPos(
+        static_cast<int>(std::floor(respawnPos.x)),
+        static_cast<int>(std::floor(respawnPos.y)),
+        static_cast<int>(std::floor(respawnPos.z))
+    );
+    const glm::ivec3 centerChunk = chunkManager.worldToChunkPos(respawnWorldPos);
+
+    for (int dx = -kRespawnCollisionPrewarmRadiusXZ; dx <= kRespawnCollisionPrewarmRadiusXZ; ++dx) {
+        for (int dz = -kRespawnCollisionPrewarmRadiusXZ; dz <= kRespawnCollisionPrewarmRadiusXZ; ++dz) {
+            for (int dy = -kRespawnCollisionPrewarmRadiusY; dy <= kRespawnCollisionPrewarmRadiusY; ++dy) {
+                const glm::ivec3 chunkPos(
+                    centerChunk.x + dx,
+                    centerChunk.y + dy,
+                    centerChunk.z + dz
+                );
+                if (!chunkManager.inBounds(chunkPos) || chunkManager.hasChunkLoaded(chunkPos)) {
+                    continue;
+                }
+                chunkManager.generateTerrainChunkAt(chunkPos);
+            }
+        }
+    }
+}
 }
 
 PlayerManager::PlayerManager() = default;
@@ -218,6 +246,8 @@ void PlayerManager::respawnPlayerLocked(ServerPlayer& player, const glm::vec3& p
     player.timeSinceGrounded = 0.0f;
     player.jumpBufferTimer = 0.0f;
     player.pendingInputs.clear();
+    player.hasReceivedInput = false;
+    player.lastProcessedInputTick = 0;
     player.health = player.maxHealth;
     player.isAlive = true;
     player.respawnAt = Clock::time_point{};
@@ -292,6 +322,25 @@ bool PlayerManager::enqueuePlayerInput(PlayerID id, const PlayerInput& input) {
     }
     const int32_t leadTicks = static_cast<int32_t>(input.inputTick - p.lastProcessedInputTick);
     if (leadTicks > kMaxInputLeadTicks) {
+        // Recover from prolonged stalls/respawns where client input ticks can run far ahead.
+        // Dropping forever would freeze ack at an old tick and cause permanent rubberbanding.
+        p.pendingInputs.clear();
+        p.lastProcessedInputTick = (input.inputTick > 0) ? (input.inputTick - 1) : 0;
+        p.hasReceivedInput = true;
+        p.pendingInputs[input.inputTick] = input;
+        const auto now = Clock::now();
+        p.lastHeartbeat = now;
+        p.lastInputReceived = now;
+        static uint32_t s_inputRebaseLogCount = 0;
+        ++s_inputRebaseLogCount;
+        if (s_inputRebaseLogCount <= 30 || (s_inputRebaseLogCount % 100) == 0) {
+            std::cerr
+                << "[input] rebase player=" << id
+                << " inputTick=" << input.inputTick
+                << " lead=" << leadTicks
+                << " maxLead=" << kMaxInputLeadTicks
+                << "\n";
+        }
         return true;
     }
 
@@ -401,6 +450,7 @@ void PlayerManager::update(double deltaSeconds, ChunkManager& chunkManager) {
                     now >= player.respawnAt
                 ) {
                     const glm::vec3 respawnPos = chooseRespawnPositionLocked(player.id);
+                    PrewarmRespawnCollisionChunks(chunkManager, respawnPos);
                     respawnPlayerLocked(player, respawnPos);
                     player.lastInputReceived = now;
                 }
@@ -759,6 +809,8 @@ bool PlayerManager::applyDamage(PlayerID id, float damage, float& outHealthAfter
         target.timeSinceGrounded = 0.0f;
         target.jumpBufferTimer = 0.0f;
         target.pendingInputs.clear();
+        target.hasReceivedInput = false;
+        target.lastProcessedInputTick = 0;
         outHealthAfter = 0.0f;
     }
     return true;
