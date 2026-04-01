@@ -8,6 +8,14 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
 
+set(PBRSKY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../PbrSkyLibOpenGL")
+if(NOT EXISTS "${PBRSKY_ROOT}/CMakeLists.txt")
+    message(FATAL_ERROR "PbrSkyLibOpenGL not found at ${PBRSKY_ROOT}")
+endif()
+
+set(SKYATMOS_BUILD_SAMPLE OFF CACHE BOOL "" FORCE)
+set(SKYATMOS_FETCH_DEPS OFF CACHE BOOL "" FORCE)
+add_subdirectory("${PBRSKY_ROOT}" "${CMAKE_BINARY_DIR}/pbrsky")
 
 add_executable(VoxelOps 
     "main.cpp"  
@@ -50,6 +58,11 @@ add_executable(VoxelOps
     "graphics/WorldGen.cpp"
     "graphics/Backend.cpp"
     "graphics/Sky.cpp" 
+    "graphics/ISkyBackend.hpp"
+    "graphics/RealisticSkyBackend.hpp"
+    "graphics/RealisticSkyBackend.cpp"
+    "graphics/ShaderSkyBackend.hpp"
+    "graphics/ShaderSkyBackend.cpp"
     "graphics/PostProcessor.cpp"
     "ui/debug/DebugUi.cpp"
     "ui/player/InventoryUI.cpp"
@@ -75,6 +88,7 @@ target_link_libraries(VoxelOps PRIVATE GameNetworkingSockets::shared GameNetwork
 target_link_libraries(VoxelOps PRIVATE Shared)
 target_link_libraries(VoxelOps PRIVATE lz4::lz4)
 target_link_libraries(VoxelOps PRIVATE imgui::imgui)
+target_link_libraries(VoxelOps PRIVATE VoxelOps::SkyAtmosphereRenderer)
 
 target_include_directories(VoxelOps PRIVATE ${Stb_INCLUDE_DIR})
 target_include_directories(VoxelOps PRIVATE ../Shared)

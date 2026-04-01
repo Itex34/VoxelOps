@@ -103,6 +103,38 @@ private:
         uint64_t& playerInputPacketsThisLoop,
         uint64_t& chunkRequestPacketsThisLoop
     );
+    void RunInboundMessagePhase(
+        uint64_t& msgPacketsThisLoop,
+        uint64_t& playerInputPacketsThisLoop,
+        uint64_t& chunkRequestPacketsThisLoop,
+        double& messageDrainUs
+    );
+    void RunConnectionCleanupPhase();
+    uint64_t RunSimulationPhase(
+        double& simAccumulator,
+        uint32_t& serverTick,
+        double& simUs,
+        bool& simBacklog
+    );
+    void RunRespawnDiagnosticsPhase(uint64_t simTicksThisLoop, uint32_t serverTick);
+    double RunSnapshotPhase(
+        uint32_t serverTick,
+        std::chrono::steady_clock::time_point& lastSnapshotTime,
+        const std::chrono::duration<double>& snapshotInterval
+    );
+    bool RunScoreboardPhase(std::chrono::steady_clock::time_point& nextScoreboardBroadcastAt);
+    size_t RunChunkInterestPhase(bool simBacklog, double& chunkInterestUs);
+    size_t RunChunkSendPhase(
+        bool simBacklog,
+        std::chrono::steady_clock::time_point& nextChunkSendFlushAt,
+        double& chunkSendUs
+    );
+    size_t RunCollisionPrewarmPhase(
+        bool simBacklog,
+        std::chrono::steady_clock::time_point& nextCollisionPrewarmAt,
+        double& collisionPrewarmUs
+    );
+    void ApplyLoopPacingPhase(bool simBacklog);
 
     // Callback bridge: Steam expects a free function pointer; we implement a static
     // bridge function that calls the instance method.

@@ -241,6 +241,9 @@ static void process_console_command(const std::string& rawCommand, ServerNetwork
     print_console_help();
 }
 
+
+
+
 int main(int argc, char** argv) {
     Shared::RuntimePaths::Initialize((argc > 0 && argv != nullptr) ? argv[0] : "");
 

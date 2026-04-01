@@ -35,7 +35,7 @@ void App::renderRemotePlayerGuns(Runtime& runtime, const Camera& activeCamera) {
 
     runtime.gunShader->use();
     runtime.gunShader->setInt("diffuseTexture", 0);
-    runtime.gunShader->setVec3("lightDir", glm::normalize(runtime.sky.getSunDir()));
+    runtime.gunShader->setVec3("lightDir", glm::normalize(runtime.sky->getSunDir()));
     runtime.gunShader->setVec3("lightColor", glm::vec3(1.0f, 0.98f, 0.96f));
     runtime.gunShader->setVec3("ambientColor", glm::vec3(0.36f, 0.40f, 0.46f));
     runtime.gunShader->setMat4("view", view);
@@ -168,7 +168,7 @@ void App::renderHeldGun(Runtime& runtime, const Camera& activeCamera) {
 
     runtime.gunShader->use();
     runtime.gunShader->setInt("diffuseTexture", 0);
-    runtime.gunShader->setVec3("lightDir", glm::normalize(runtime.sky.getSunDir()));
+    runtime.gunShader->setVec3("lightDir", glm::normalize(runtime.sky->getSunDir()));
     runtime.gunShader->setVec3("lightColor", glm::vec3(1.0f, 0.98f, 0.96f));
     runtime.gunShader->setVec3("ambientColor", glm::vec3(0.42f, 0.44f, 0.47f));
     runtime.gunShader->setMat4("view", view);

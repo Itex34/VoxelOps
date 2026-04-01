@@ -49,7 +49,7 @@ void WorldItemRenderer::render(const Runtime& runtime, const Camera& activeCamer
         return;
     }
 
-    const glm::mat4 projection = glm::perspective(glm::radians(GameData::FOV), aspect, 0.1f, 1000.0f);
+    const glm::mat4 projection = glm::perspective(glm::radians(GameData::FOV), aspect, 0.1f, 100000.0f);
     const glm::mat4 view = activeCamera.getViewMatrix();
     const float now = static_cast<float>(glfwGetTime());
 

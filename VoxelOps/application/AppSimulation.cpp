@@ -1294,15 +1294,17 @@ void App::processFrame(Runtime& runtime) {
         .frustum = runtime.frustum,
         .player = *runtime.player,
         .activeCamera = activeCamera,
-        .sky = runtime.sky,
+        .sky = *runtime.sky,
         .toggleWireframe = m_ToggleWireframe,
         .toggleChunkBorders = m_ToggleChunkBorders,
         .toggleDebugFrustum = m_ToggleDebugFrustum,
-        .chunkUniformsInitialized = &runtime.chunkUniformsInitialized
+        .chunkUniformsInitialized = &runtime.chunkUniformsInitialized,
+        .renderOpaqueOverlayPasses = [&]() {
+            renderWorldItems(runtime, activeCamera);
+            renderRemotePlayerGuns(runtime, activeCamera);
+        }
     };
     runtime.renderer.renderFrame(frameParams);
-    renderWorldItems(runtime, activeCamera);
-    renderRemotePlayerGuns(runtime, activeCamera);
     if (!m_UseDebugCamera && runtime.localPlayerAlive) {
         renderHeldGun(runtime, runtime.interpolatedPlayerCamera);
     }

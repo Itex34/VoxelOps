@@ -81,7 +81,7 @@ int Backend::getMaxSupportedGLVersionMinor() const {
 }
 
 GraphicsBackend Backend::chooseBackend() const {
-    if (isMDIUsable()) {
+    if (isAtLeast(OpenGLVersionMajor, OpenGLVersionMinor, 4, 3)) {
         return GraphicsBackend::Realistic;
     }
 

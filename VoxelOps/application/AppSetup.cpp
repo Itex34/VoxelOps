@@ -3,6 +3,8 @@
 
 #include "App.hpp"
 #include "AppHelpers.hpp"
+#include "../graphics/RealisticSkyBackend.hpp"
+#include "../graphics/ShaderSkyBackend.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -11,7 +13,33 @@
 #include <string>
 #include <utility>
 
+#include <glm/glm.hpp>
+
 using namespace AppHelpers;
+
+namespace {
+constexpr SkyAtmospherePreset kDefaultRealisticAtmospherePreset = SkyAtmospherePreset::Hazy;
+const glm::vec3 kDefaultSunDirection = glm::normalize(glm::vec3(0.0f, 0.43496552f, 0.90044713f));
+
+std::unique_ptr<ISkyBackend> createSkyBackendForTier(
+    GraphicsBackend backendTier,
+    const std::string& skyVertPath,
+    const std::string& skyFragPath)
+{
+    switch (backendTier) {
+    case GraphicsBackend::Realistic:
+        std::cout << "[App] Sky backend: realistic PBR sky.\n";
+        return std::make_unique<RealisticSkyBackend>();
+    case GraphicsBackend::Performance:
+        std::cout << "[App] Sky backend: shader sky (performance).\n";
+        return std::make_unique<ShaderSkyBackend>(skyVertPath, skyFragPath);
+    case GraphicsBackend::Potato:
+    default:
+        std::cout << "[App] Sky backend: shader sky (potato fallback).\n";
+        return std::make_unique<ShaderSkyBackend>(skyVertPath, skyFragPath);
+    }
+}
+}
 
 void App::configureBackendPolicy(Runtime& runtime) {
     const Backend& backendInfo = runtime.renderer.getBackend();
@@ -149,6 +177,7 @@ bool App::equipGun(Runtime& runtime, GunType gunType) {
 void App::initCallbacks(Runtime& runtime) {
     runtime.callbackContext = CallbackContext{
         .inputCallbacks = runtime.inputCallbacks.get(),
+        .skyBackend = runtime.sky.get(),
         .useDebugCamera = &m_UseDebugCamera
     };
 
@@ -156,6 +185,9 @@ void App::initCallbacks(Runtime& runtime) {
     glfwSetFramebufferSizeCallback(m_Window, [](GLFWwindow* w, int width, int height) {
         auto* context = static_cast<CallbackContext*>(glfwGetWindowUserPointer(w));
         context->inputCallbacks->framebuffer_size_callback(w, width, height);
+        if (context->skyBackend) {
+            context->skyBackend->resize(width, height);
+        }
     });
     glfwSetCursorPosCallback(m_Window, [](GLFWwindow* w, double x, double y) {
         auto* context = static_cast<CallbackContext*>(glfwGetWindowUserPointer(w));
@@ -198,10 +230,14 @@ void App::initRenderResources(Runtime& runtime) {
         playerVertPath.c_str(),
         playerFragPath.c_str()
     );
-    runtime.sky.initialize(
-        skyVertPath.c_str(),
-        skyFragPath.c_str()
-    );
+    runtime.sky = createSkyBackendForTier(runtime.renderer.getActiveBackend(), skyVertPath, skyFragPath);
+    runtime.sky->initialize();
+    runtime.sky->setSunDir(kDefaultSunDirection);
+    if (runtime.sky->supportsAtmospherePresets()) {
+        runtime.sky->setAtmospherePreset(kDefaultRealisticAtmospherePreset);
+    }
+    runtime.sky->resize(GameData::screenWidth, GameData::screenHeight);
+    runtime.callbackContext.skyBackend = runtime.sky.get();
 
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);

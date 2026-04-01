@@ -58,3 +58,12 @@ struct ServerPlayer {
     // For fast O(1) removal from order list (set by PlayerManager)
     std::list<PlayerID>::iterator orderIt;
 };
+
+struct ServerPlayerCombatSnapshot {
+    PlayerID id = 0;
+    glm::vec3 position{ 0.0f };
+    float yaw = 0.0f;
+    float height = 2.56f;
+    float radius = 0.3f;
+    bool isAlive = false;
+};

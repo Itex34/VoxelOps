@@ -134,6 +134,16 @@ void ChunkManager::renderChunks(
     ChunkRenderSystem::renderChunks(*this, shader, frustum, viewPosition, maxRenderDistance);
 }
 
+void ChunkManager::renderChunksDepthPass(
+    GLuint shadowProgram,
+    const glm::mat4& lightViewProj,
+    const glm::vec3& viewPosition,
+    int maxRenderDistance
+)
+{
+    ChunkRenderSystem::renderChunksDepthPass(*this, shadowProgram, lightViewProj, viewPosition, maxRenderDistance);
+}
+
 
 
 

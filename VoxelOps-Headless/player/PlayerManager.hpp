@@ -47,6 +47,7 @@ public:
     // Lookup
     std::optional<ServerPlayer> getPlayerCopy(PlayerID id);
     std::vector<ServerPlayer> getAllPlayersCopy();
+    std::vector<ServerPlayerCombatSnapshot> getAllCombatSnapshotsCopy(bool aliveOnly = false);
     bool applyDamage(PlayerID id, float damage, float& outHealthAfter, bool& outKilled);
     bool requestRespawn(PlayerID id);
     bool applyInventoryAction(

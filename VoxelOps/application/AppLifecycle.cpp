@@ -17,7 +17,11 @@ void App::shutdown(Runtime& runtime) {
     }
     runtime.inventoryUi.reset();
 
-    runtime.sky.shutdown();
+    if (runtime.sky) {
+        runtime.sky->shutdown();
+        runtime.sky.reset();
+    }
+    runtime.renderer.shutdown();
 
     if (m_Window) {
         glfwDestroyWindow(m_Window);

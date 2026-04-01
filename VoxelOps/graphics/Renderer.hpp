@@ -1,6 +1,8 @@
 #pragma once
 #include <glad/glad.h>
 #include <iostream>
+#include <glm/mat4x4.hpp>
+#include <functional>
 
 
 #include "Model.hpp"
@@ -58,7 +60,7 @@ class ChunkManager;
 class Frustum;
 class Player;
 class Camera;
-class Sky;
+class ISkyBackend;
 
 struct RenderFrameParams {
 	Shader& chunkShader;
@@ -67,11 +69,12 @@ struct RenderFrameParams {
 	Frustum& frustum;
 	Player& player;
 	const Camera& activeCamera;
-	Sky& sky;
+	ISkyBackend& sky;
 	bool toggleWireframe = false;
 	bool toggleChunkBorders = false;
 	bool toggleDebugFrustum = false;
 	bool* chunkUniformsInitialized = nullptr;
+	std::function<void()> renderOpaqueOverlayPasses;
 };
 
 
@@ -84,13 +87,39 @@ public:
 	GraphicsBackend getActiveBackend() const noexcept;
 	std::string_view getActiveBackendName() const noexcept;
 	bool isMDIUsable() const noexcept;
+	void shutdown();
 
 	void beginFrame();
 	void endFrame();
 	void renderFrame(RenderFrameParams& params);
 
 private:
+	bool ensureSceneCaptureResources(int width, int height);
+	void releaseSceneCaptureResources();
+	bool ensureDepthLinearizeProgram();
+	void runDepthLinearizePass(const glm::mat4& projection);
+	bool ensureSunShadowResources();
+	void releaseSunShadowResources();
+	bool renderSunShadowMap(
+		RenderFrameParams& params,
+		const glm::mat4& projection,
+		const glm::mat4& view,
+		glm::mat4& outShadowViewProj);
+
 	Backend m_ActiveBackend;
+	GLuint m_SceneFbo = 0;
+	GLuint m_SceneColorTex = 0;
+	GLuint m_SceneDepthTex = 0;
+	GLuint m_SceneLinearDepthTex = 0;
+	GLuint m_DepthLinearizeProgram = 0;
+	GLuint m_FullscreenTriangleVao = 0;
+	GLuint m_SunShadowFbo = 0;
+	GLuint m_SunShadowDepthTex = 0;
+	GLuint m_SunShadowProgram = 0;
+	glm::mat4 m_LastSunShadowViewProjVoxel = glm::mat4(1.0f);
+	int m_SceneWidth = 0;
+	int m_SceneHeight = 0;
+	int m_SunShadowMapSize = 4096;
 };
 
 

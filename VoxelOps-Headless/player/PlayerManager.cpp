@@ -771,6 +771,27 @@ std::vector<ServerPlayer> PlayerManager::getAllPlayersCopy() {
     return players;
 }
 
+std::vector<ServerPlayerCombatSnapshot> PlayerManager::getAllCombatSnapshotsCopy(bool aliveOnly) {
+    std::lock_guard<std::mutex> lock(mtx);
+    std::vector<ServerPlayerCombatSnapshot> players;
+    players.reserve(playersById.size());
+    for (const auto& kv : playersById) {
+        const ServerPlayer& src = kv.second;
+        if (aliveOnly && !src.isAlive) {
+            continue;
+        }
+        ServerPlayerCombatSnapshot snapshot;
+        snapshot.id = src.id;
+        snapshot.position = src.position;
+        snapshot.yaw = src.yaw;
+        snapshot.height = src.height;
+        snapshot.radius = src.radius;
+        snapshot.isAlive = src.isAlive;
+        players.push_back(snapshot);
+    }
+    return players;
+}
+
 bool PlayerManager::applyDamage(PlayerID id, float damage, float& outHealthAfter, bool& outKilled) {
     outHealthAfter = 0.0f;
     outKilled = false;

@@ -165,6 +165,12 @@ public:
         const glm::vec3& viewPosition,
         int maxRenderDistance
     );
+    void renderChunksDepthPass(
+        GLuint shadowProgram,
+        const glm::mat4& lightViewProj,
+        const glm::vec3& viewPosition,
+        int maxRenderDistance
+    );
 
     void renderChunkBorders(glm::mat4& view, glm::mat4& projection);
     void setBlockInWorld(const glm::ivec3& worldPos, BlockID blockID);

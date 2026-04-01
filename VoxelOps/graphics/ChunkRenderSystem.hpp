@@ -21,6 +21,14 @@ public:
         glm::mat4& view,
         glm::mat4& projection
     );
+
+    static void renderChunksDepthPass(
+        ChunkManager& cm,
+        GLuint shadowProgram,
+        const glm::mat4& lightViewProj,
+        const glm::vec3& viewPosition,
+        int maxRenderDistance
+    );
 };
 
 

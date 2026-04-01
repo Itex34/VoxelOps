@@ -4,6 +4,8 @@
 
 #include <glm/gtc/matrix_inverse.hpp>
 
+Sky::Sky() = default;
+
 Sky::~Sky()
 {
     shutdown();

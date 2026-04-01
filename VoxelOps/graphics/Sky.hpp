@@ -9,7 +9,7 @@ class Shader;
 
 class Sky {
 public:
-    Sky() = default;
+    Sky();
     ~Sky();
 
     Sky(const Sky&) = delete;

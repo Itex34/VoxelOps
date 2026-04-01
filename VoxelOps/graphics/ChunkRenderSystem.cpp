@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <glm/gtc/type_ptr.hpp>
 
 void ChunkRenderSystem::renderChunks(
     ChunkManager& cm,
@@ -71,6 +72,7 @@ void ChunkRenderSystem::renderChunks(
             ++drawnCount;
         }
     }
+
 }
 
 void ChunkRenderSystem::renderChunkBorders(
@@ -102,3 +104,66 @@ void ChunkRenderSystem::renderChunkBorders(
         }
     }
 }
+
+void ChunkRenderSystem::renderChunksDepthPass(
+    ChunkManager& cm,
+    GLuint shadowProgram,
+    const glm::mat4& lightViewProj,
+    const glm::vec3& viewPosition,
+    int maxRenderDistance
+)
+{
+    if (shadowProgram == 0) {
+        return;
+    }
+
+    const glm::ivec3 playerBlockPos(
+        static_cast<int>(std::floor(viewPosition.x)),
+        static_cast<int>(std::floor(viewPosition.y)),
+        static_cast<int>(std::floor(viewPosition.z))
+    );
+    const glm::ivec3 playerChunkPos = cm.worldToChunkPos(playerBlockPos);
+    const int shadowCullDistance = std::max(1, maxRenderDistance + 2);
+    const int64_t radius2 =
+        static_cast<int64_t>(shadowCullDistance) * static_cast<int64_t>(shadowCullDistance);
+
+
+    const GLint lightVpLoc = glGetUniformLocation(shadowProgram, "uLightViewProj");
+    const GLint modelLoc = glGetUniformLocation(shadowProgram, "uModel");
+    if (lightVpLoc < 0 || modelLoc < 0) {
+        return;
+    }
+
+    glUseProgram(shadowProgram);
+    glUniformMatrix4fv(lightVpLoc, 1, GL_FALSE, glm::value_ptr(lightViewProj));
+
+    for (auto& [regionPos, region] : cm.regions) {
+        (void)regionPos;
+        RegionMeshBuffer& gpu = *region.gpu;
+        for (const auto& [chunkPos, mesh] : region.chunks) {
+            if (!mesh.valid) {
+                continue;
+            }
+            glm::ivec3 d = chunkPos - playerChunkPos;
+            const int64_t dist2 =
+                static_cast<int64_t>(d.x) * static_cast<int64_t>(d.x) +
+                static_cast<int64_t>(d.z) * static_cast<int64_t>(d.z);
+            if (dist2 > radius2) {
+                continue;
+            }
+
+            glm::vec3 min = glm::vec3(chunkPos * CHUNK_SIZE);
+            glm::mat4 model(1.0f);
+            model[3] = glm::vec4(min, 1.0f);
+            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+            gpu.drawChunkMesh(mesh);
+        }
+    }
+
+    glUseProgram(0);
+}
+
+
+
+
+

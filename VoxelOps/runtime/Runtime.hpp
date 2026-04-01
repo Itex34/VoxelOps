@@ -4,9 +4,9 @@
 #include "../graphics/Camera.hpp"
 #include "../graphics/ChunkManager.hpp"
 #include "../graphics/Frustum.hpp"
+#include "../graphics/ISkyBackend.hpp"
 #include "../graphics/Renderer.hpp"
 #include "../graphics/Shader.hpp"
-#include "../graphics/Sky.hpp"
 #include "../gun/Gun.hpp"
 #include "../input/InputCallbacks.hpp"
 #include "../network/ClientNetwork.hpp"
@@ -26,6 +26,7 @@
 
 struct CallbackContext {
     InputCallbacks* inputCallbacks = nullptr;
+    ISkyBackend* skyBackend = nullptr;
     bool* useDebugCamera = nullptr;
 };
 
@@ -43,7 +44,7 @@ struct Runtime {
     std::unique_ptr<Shader> chunkShader;
     std::unique_ptr<Shader> dbgShader;
     std::unique_ptr<Shader> gunShader;
-    Sky sky;
+    std::unique_ptr<ISkyBackend> sky;
     std::unique_ptr<DebugUi> debugUi;
     std::unique_ptr<InventoryUI> inventoryUi;
 
