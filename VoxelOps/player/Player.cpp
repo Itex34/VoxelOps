@@ -10,7 +10,7 @@
 #include "../../Shared/player/MovementSimulation.hpp"
 #include "../../Shared/runtime/Paths.hpp"
 
-#include <GLFW/glfw3.h> // only in .cpp
+#include <SDL3/SDL.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <imgui.h>
@@ -320,13 +320,19 @@ Player::Player(const glm::vec3& startPos, ChunkManager& inChunkManager, const st
     jumpVelocity = movement.jumpVelocity;
     playerHeight = movement.collisionHeight;
     playerRadius = movement.collisionRadius;
+    const bool hasOpenGlContext = (SDL_GL_GetCurrentContext() != nullptr);
 
-    // load model
-    try {
-        playerModel = std::make_shared<Model>(playerModelPath);
+    if (hasOpenGlContext) {
+        // load model
+        try {
+            playerModel = std::make_shared<Model>(playerModelPath);
+        }
+        catch (const std::exception& e) {
+            std::cerr << "Model load exception: " << e.what() << "\n";
+            playerModel.reset();
+        }
     }
-    catch (const std::exception& e) {
-        std::cerr << "Model load exception: " << e.what() << "\n";
+    else {
         playerModel.reset();
     }
 
@@ -360,15 +366,20 @@ Player::Player(const glm::vec3& startPos, ChunkManager& inChunkManager, const st
 
     syncCameraToBody();
 
-    try {
-        const std::string playerVertPath =
-            Shared::RuntimePaths::ResolveVoxelOpsPath("shaders/player.vert").generic_string();
-        const std::string playerFragPath =
-            Shared::RuntimePaths::ResolveVoxelOpsPath("shaders/player.frag").generic_string();
-        playerShader = std::make_shared<Shader>(playerVertPath.c_str(), playerFragPath.c_str());
+    if (hasOpenGlContext) {
+        try {
+            const std::string playerVertPath =
+                Shared::RuntimePaths::ResolveVoxelOpsPath("shaders/player.vert").generic_string();
+            const std::string playerFragPath =
+                Shared::RuntimePaths::ResolveVoxelOpsPath("shaders/player.frag").generic_string();
+            playerShader = std::make_shared<Shader>(playerVertPath.c_str(), playerFragPath.c_str());
+        }
+        catch (const std::exception& e) {
+            std::cerr << "Shader load exception: " << e.what() << "\n";
+            playerShader.reset();
+        }
     }
-    catch (const std::exception& e) {
-        std::cerr << "Shader load exception: " << e.what() << "\n";
+    else {
         playerShader.reset();
     }
 
@@ -630,10 +641,17 @@ void Player::simulateMovement(const NetworkInputState& input, float dt, bool upd
 
 
 // update (called each frame)
-void Player::update(GLFWwindow* window, double deltaTime) {
+void Player::update(SDL_Window* window, double deltaTime) {
+    (void)window;
+    int keyCount = 0;
+    const bool* keys = SDL_GetKeyboardState(&keyCount);
+    const auto keyDown = [keys, keyCount](SDL_Scancode scancode) -> bool {
+        return keys != nullptr && scancode < keyCount && keys[scancode];
+    };
+
     static bool f8PressedLast = false;
     const bool allowGameplayInput = GameData::gameplayInputEnabled && !IsImGuiTextInputActive();
-    const bool f8Pressed = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_F8) == GLFW_PRESS);
+    const bool f8Pressed = allowGameplayInput && keyDown(SDL_SCANCODE_F8);
     if (m_flyModeAllowed && f8Pressed && !f8PressedLast) {
         flyMode = !flyMode;
         std::cout << (flyMode ? "Fly mode ON\n" : "Fly mode OFF\n");
@@ -648,13 +666,13 @@ void Player::update(GLFWwindow* window, double deltaTime) {
     }
     f8PressedLast = f8Pressed;
 
-    const bool keyW = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS);
-    const bool keyS = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS);
-    const bool keyA = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS);
-    const bool keyD = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS);
-    const bool keyShift = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS);
-    const bool keySpace = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS);
-    const bool keyCtrl = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS);
+    const bool keyW = allowGameplayInput && keyDown(SDL_SCANCODE_W);
+    const bool keyS = allowGameplayInput && keyDown(SDL_SCANCODE_S);
+    const bool keyA = allowGameplayInput && keyDown(SDL_SCANCODE_A);
+    const bool keyD = allowGameplayInput && keyDown(SDL_SCANCODE_D);
+    const bool keyShift = allowGameplayInput && keyDown(SDL_SCANCODE_LSHIFT);
+    const bool keySpace = allowGameplayInput && keyDown(SDL_SCANCODE_SPACE);
+    const bool keyCtrl = allowGameplayInput && keyDown(SDL_SCANCODE_LCTRL);
 
     const glm::vec2 localMove(
         (keyD ? 1.0f : 0.0f) - (keyA ? 1.0f : 0.0f),
@@ -691,18 +709,25 @@ void Player::update(GLFWwindow* window, double deltaTime) {
 
 
 
-NetworkInputState Player::captureCurrentInput(GLFWwindow* window) const noexcept {
+NetworkInputState Player::captureCurrentInput(SDL_Window* window) const noexcept {
+    (void)window;
+    int keyCount = 0;
+    const bool* keys = SDL_GetKeyboardState(&keyCount);
+    const auto keyDown = [keys, keyCount](SDL_Scancode scancode) -> bool {
+        return keys != nullptr && scancode < keyCount && keys[scancode];
+    };
+
     NetworkInputState input;
     
     const bool allowGameplayInput = GameData::gameplayInputEnabled && !IsImGuiTextInputActive();
     
-    const bool keyW = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS);
-    const bool keyS = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS);
-    const bool keyA = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS);
-    const bool keyD = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS);
-    const bool keyShift = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS);
-    const bool keySpace = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS);
-    const bool keyCtrl = allowGameplayInput && (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS);
+    const bool keyW = allowGameplayInput && keyDown(SDL_SCANCODE_W);
+    const bool keyS = allowGameplayInput && keyDown(SDL_SCANCODE_S);
+    const bool keyA = allowGameplayInput && keyDown(SDL_SCANCODE_A);
+    const bool keyD = allowGameplayInput && keyDown(SDL_SCANCODE_D);
+    const bool keyShift = allowGameplayInput && keyDown(SDL_SCANCODE_LSHIFT);
+    const bool keySpace = allowGameplayInput && keyDown(SDL_SCANCODE_SPACE);
+    const bool keyCtrl = allowGameplayInput && keyDown(SDL_SCANCODE_LCTRL);
 
     const glm::vec2 localMove(
         (keyD ? 1.0f : 0.0f) - (keyA ? 1.0f : 0.0f),
@@ -820,6 +845,8 @@ void Player::renderRemotePlayers(const glm::mat4& viewMat, const glm::mat4& proj
     if (!playerShader || !playerModel || connectedPlayers.empty()) {
         return;
     }
+    constexpr float kLocalGhostRejectDistance = 2.0f;
+    const float localGhostRejectDistanceSq = kLocalGhostRejectDistance * kLocalGhostRejectDistance;
 
     glDisable(GL_CULL_FACE);
 
@@ -842,6 +869,12 @@ void Player::renderRemotePlayers(const glm::mat4& viewMat, const glm::mat4& proj
 
     for (const auto& [id, state] : connectedPlayers) {
         (void)id;
+        const glm::vec3 toLocal = state.position - position;
+        const float localDistSq = glm::dot(toLocal, toLocal);
+        if (!std::isfinite(localDistSq) || localDistSq < localGhostRejectDistanceSq) {
+            // Ignore accidental self-echo snapshots in remote render pass.
+            continue;
+        }
         const glm::vec3 scaled = state.scale * uniformFitToCollision;
         const glm::vec3 anchoredPos = state.position + glm::vec3(0.0f, -modelMinY * scaled.y, 0.0f);
         playerModel->draw(anchoredPos, state.rotation, scaled, *playerShader);

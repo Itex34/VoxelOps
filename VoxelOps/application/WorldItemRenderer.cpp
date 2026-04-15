@@ -1,7 +1,8 @@
 #include <glad/glad.h>
-#include <GLFW/glfw3.h>
+#include <SDL3/SDL.h>
 
 #include "WorldItemRenderer.hpp"
+#include "AppHelpers.hpp"
 
 #include "../graphics/Camera.hpp"
 #include "../runtime/Runtime.hpp"
@@ -51,7 +52,7 @@ void WorldItemRenderer::render(const Runtime& runtime, const Camera& activeCamer
 
     const glm::mat4 projection = glm::perspective(glm::radians(GameData::FOV), aspect, 0.1f, 100000.0f);
     const glm::mat4 view = activeCamera.getViewMatrix();
-    const float now = static_cast<float>(glfwGetTime());
+    const float now = static_cast<float>(AppHelpers::GetTimeSeconds());
 
     runtime.dbgShader->use();
     runtime.dbgShader->setMat4("view", view);

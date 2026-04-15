@@ -1,7 +1,9 @@
 #ifndef MODEL_HPP
 #define MODEL_HPP
 
+#ifndef GLM_ENABLE_EXPERIMENTAL
 #define GLM_ENABLE_EXPERIMENTAL
+#endif
 
 #include <iostream>
 #include <vector>

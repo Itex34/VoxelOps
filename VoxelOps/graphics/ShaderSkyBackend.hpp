@@ -18,6 +18,8 @@ public:
 
     void setSunDir(const glm::vec3& sunDir) override;
     const glm::vec3& getSunDir() const noexcept override;
+    void setExposure(float exposure) override;
+    float getExposure() const noexcept override;
     bool encodesOutputToSrgb() const noexcept override;
     bool requiresExternalSceneTextures() const noexcept override;
     void setExternalSceneTextures(unsigned int sceneColorTex, unsigned int sceneLinearDepthTex) override;

@@ -21,11 +21,13 @@ public:
 
     void setSunDir(const glm::vec3& sunDir);
     const glm::vec3& getSunDir() const noexcept;
+    void setExposure(float exposure) noexcept;
+    float getExposure() const noexcept;
 
 private:
     std::unique_ptr<Shader> m_Shader;
     glm::vec3 m_SunDir = glm::normalize(glm::vec3(1.0f, 0.01f, 0.0f));
-    float m_Exposure = 1.0f;
+    float m_Exposure = 4.2f;
     GLuint m_VAO = 0;
     GLuint m_VBO = 0;
 };

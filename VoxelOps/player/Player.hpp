@@ -19,7 +19,7 @@ using PlayerID = uint64_t;
 
 class Shader;
 class ChunkManager;
-struct GLFWwindow; // forward-declare to avoid including GLFW in header
+struct SDL_Window; // forward-declare to avoid including SDL in header
 
 
 
@@ -78,7 +78,7 @@ public:
     Player& operator=(const Player&) = delete;
 
     // Update movement, physics, and camera (window pointer is opaque here)
-    void update(GLFWwindow* window, double deltaTime);
+    void update(SDL_Window* window, double deltaTime);
 
     void renderRemotePlayers(const glm::mat4& viewMat, const glm::mat4& projMat,
         const glm::vec3& lightDir, const glm::vec3& lightColor, const glm::vec3& ambientColor) const;
@@ -111,7 +111,7 @@ public:
 
     [[nodiscard]] glm::vec3 getFront() const noexcept { return front; }
     [[nodiscard]] const NetworkInputState& getNetworkInputState() const noexcept { return m_networkInput; }
-    [[nodiscard]] NetworkInputState captureCurrentInput(GLFWwindow* window) const noexcept;  // Capture fresh input directly (no 1-frame delay)
+    [[nodiscard]] NetworkInputState captureCurrentInput(SDL_Window* window) const noexcept;  // Capture fresh input directly (no 1-frame delay)
     void simulateFromNetworkInput(const NetworkInputState& input, double deltaTime, bool updateFov = false);
     void setFlyModeAllowed(bool allowed) noexcept;
     [[nodiscard]] bool isFlyModeAllowed() const noexcept { return m_flyModeAllowed; }

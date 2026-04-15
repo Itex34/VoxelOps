@@ -16,19 +16,19 @@
 //        "../../../../VoxelOps/shaders/debugFrag.frag"
 //    );
 //
-//    window = glfwCreateWindow(GameData::screenWidth, GameData::screenHeight, "Voxel Ops", nullptr, nullptr);
+//    window = SDL_CreateWindow(GameData::screenWidth, GameData::screenHeight, "Voxel Ops", nullptr, nullptr);
 //}
 //
-//void App::updateFPSCounter(GLFWwindow* window) {
+//void App::updateFPSCounter(SDL_Window* window) {
 //    GameData::frameCount++;
-//    double currentTime = glfwGetTime();
+//    double currentTime = SDL_GetTicksNS();
 //    double elapsedTime = currentTime - GameData::fpsTime;
 //
 //    if (elapsedTime >= 1.0f) {
 //        double fps = GameData::frameCount / elapsedTime;
 //        std::stringstream ss;
 //        ss << "Voxel Ops - FPS: " << fps;
-//        glfwSetWindowTitle(window, ss.str().c_str());
+//        SDL_SetWindowTitle(window, ss.str().c_str());
 //
 //        GameData::frameCount = 0;
 //        GameData::fpsTime = currentTime;
@@ -40,7 +40,7 @@
 //}
 //
 //void App::renderDebug() {
-//    bool F2_isPressed = glfwGetKey(window, GLFW_KEY_F2) == GLFW_PRESS;
+//    bool F2_isPressed = SDL_GetKeyboardState(window, SDL_SCANCODE_F2) == true;
 //
 //    if (F2_isPressed && !wasF2Pressed) {
 //        toggleChunkBorders = !toggleChunkBorders;
@@ -56,7 +56,7 @@
 //
 //
 //
-//    bool F3_isPressed = glfwGetKey(window, GLFW_KEY_F3) == GLFW_PRESS;
+//    bool F3_isPressed = SDL_GetKeyboardState(window, SDL_SCANCODE_F3) == true;
 //
 //
 //    if (F3_isPressed && !wasF3Pressed) {
@@ -76,3 +76,4 @@
 //
 //    }
 //}
+

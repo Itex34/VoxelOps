@@ -8,7 +8,6 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
-#include "Renderer.hpp"
 #include "Shader.hpp"
 
 

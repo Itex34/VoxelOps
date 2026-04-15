@@ -51,6 +51,16 @@ const glm::vec3& ShaderSkyBackend::getSunDir() const noexcept
     return m_Sky.getSunDir();
 }
 
+void ShaderSkyBackend::setExposure(float exposure)
+{
+    m_Sky.setExposure(exposure);
+}
+
+float ShaderSkyBackend::getExposure() const noexcept
+{
+    return m_Sky.getExposure();
+}
+
 bool ShaderSkyBackend::encodesOutputToSrgb() const noexcept
 {
     return false;

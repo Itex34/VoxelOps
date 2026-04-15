@@ -2,7 +2,9 @@
 #include <glad/glad.h>
 #include <iostream>
 #include <glm/mat4x4.hpp>
+#include <glm/vec3.hpp>
 #include <functional>
+#include <array>
 
 
 #include "Model.hpp"
@@ -69,10 +71,15 @@ struct RenderFrameParams {
 	Frustum& frustum;
 	Player& player;
 	const Camera& activeCamera;
+	const Camera* cullingCamera = nullptr;
 	ISkyBackend& sky;
 	bool toggleWireframe = false;
 	bool toggleChunkBorders = false;
 	bool toggleDebugFrustum = false;
+	glm::vec3 sunShadowDirectionalBias = glm::vec3(0.0f); // x=+Y, y=side, z=-Y
+	float sunShadowLowSunBiasBoost = 1.0f;
+	bool sunShadowFrontFaceCullAtLowSun = false;
+	float sunShadowFrontFaceCullGrazingThreshold = 0.78f;
 	bool* chunkUniformsInitialized = nullptr;
 	std::function<void()> renderOpaqueOverlayPasses;
 };
@@ -100,7 +107,8 @@ private:
 	void runDepthLinearizePass(const glm::mat4& projection);
 	bool ensureSunShadowResources();
 	void releaseSunShadowResources();
-	bool renderSunShadowMap(
+	bool runSunShadowMomentsBlurPass();
+	bool renderSunShadowMaps(
 		RenderFrameParams& params,
 		const glm::mat4& projection,
 		const glm::mat4& view,
@@ -113,13 +121,22 @@ private:
 	GLuint m_SceneLinearDepthTex = 0;
 	GLuint m_DepthLinearizeProgram = 0;
 	GLuint m_FullscreenTriangleVao = 0;
-	GLuint m_SunShadowFbo = 0;
-	GLuint m_SunShadowDepthTex = 0;
+	static constexpr int kSunShadowCascadeCount = 2;
+	std::array<GLuint, kSunShadowCascadeCount> m_SunShadowFbo = {};
+	std::array<GLuint, kSunShadowCascadeCount> m_SunShadowDepthTex = {};
+	GLuint m_SunShadowMomentsTex = 0;
+	GLuint m_SunShadowMomentsTempTex = 0;
+	GLuint m_SunShadowMomentsFbo = 0;
 	GLuint m_SunShadowProgram = 0;
-	glm::mat4 m_LastSunShadowViewProjVoxel = glm::mat4(1.0f);
+	GLuint m_SunShadowMomentsBlurProgram = 0;
+	std::array<glm::mat4, kSunShadowCascadeCount> m_LastSunShadowViewProjVoxel = {
+		glm::mat4(1.0f),
+		glm::mat4(1.0f)
+	};
+	std::array<float, kSunShadowCascadeCount> m_SunShadowCascadeFarMeters = { 0.0f, 0.0f };
 	int m_SceneWidth = 0;
 	int m_SceneHeight = 0;
-	int m_SunShadowMapSize = 4096;
+	int m_SunShadowMapSize = 2048;
 };
 
 

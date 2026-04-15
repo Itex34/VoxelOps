@@ -1,6 +1,7 @@
 #include "TextureAtlas.hpp"
 #include "../../Shared/runtime/Paths.hpp"
 #include <stb_image.h>
+#include <SDL3/SDL.h>
 
 #include <cstdint>
 #include <cstring>
@@ -184,24 +185,6 @@ GLuint createTextureArrayFromAtlasImage(const LoadedImage& atlasImage) {
 }
 
 TextureAtlas::TextureAtlas(){
-    const std::string atlasPath =
-        Shared::RuntimePaths::ResolveVoxelOpsPath("assets/textures/textureAtlas.png").generic_string();
-
-    LoadedImage atlasImage;
-    if (!loadImageFlipped(atlasPath.c_str(), atlasImage)) {
-        throw std::runtime_error("Failed to load texture atlas image data");
-    }
-
-    atlasTextureID = createTexture2DFromImage(atlasImage);
-    if (!atlasTextureID) {
-        throw std::runtime_error("Failed to create 2D texture atlas");
-    }
-
-    atlasTextureArrayID = createTextureArrayFromAtlasImage(atlasImage);
-    if (!atlasTextureArrayID) {
-        throw std::runtime_error("Failed to create texture array from atlas");
-    }
-
     tileMap["dirt"] = { 0, 0 };
     tileMap["grass_side"] = { 1, 0 };
     tileMap["grass_top"] = { 2, 0 };
@@ -233,9 +216,38 @@ TextureAtlas::TextureAtlas(){
     tileMap["cactus_side"] = { 4, 3 };
     tileMap["ruby_block"] = { 5, 6 };
     tileMap["sapphire_block"] = { 6, 6 };
+
+    if (SDL_GL_GetCurrentContext() == nullptr) {
+        return;
+    }
+
+    const std::string atlasPath =
+        Shared::RuntimePaths::ResolveVoxelOpsPath("assets/textures/textureAtlas.png").generic_string();
+
+    LoadedImage atlasImage;
+    if (!loadImageFlipped(atlasPath.c_str(), atlasImage)) {
+        throw std::runtime_error("Failed to load texture atlas image data");
+    }
+
+    atlasTextureID = createTexture2DFromImage(atlasImage);
+    if (!atlasTextureID) {
+        throw std::runtime_error("Failed to create 2D texture atlas");
+    }
+
+    atlasTextureArrayID = createTextureArrayFromAtlasImage(atlasImage);
+    if (!atlasTextureArrayID) {
+        throw std::runtime_error("Failed to create texture array from atlas");
+    }
+
 }
 
 TextureAtlas::~TextureAtlas() {
+    if (SDL_GL_GetCurrentContext() == nullptr) {
+        atlasTextureArrayID = 0;
+        atlasTextureID = 0;
+        return;
+    }
+
     if (atlasTextureArrayID != 0) {
         glDeleteTextures(1, &atlasTextureArrayID);
         atlasTextureArrayID = 0;

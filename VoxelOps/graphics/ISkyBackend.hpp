@@ -23,6 +23,8 @@ public:
 
     virtual void setSunDir(const glm::vec3& sunDir) = 0;
     virtual const glm::vec3& getSunDir() const noexcept = 0;
+    virtual void setExposure(float exposure) = 0;
+    virtual float getExposure() const noexcept = 0;
     virtual bool encodesOutputToSrgb() const noexcept = 0;
     virtual bool requiresExternalSceneTextures() const noexcept = 0;
     virtual void setExternalSceneTextures(unsigned int sceneColorTex, unsigned int sceneLinearDepthTex) = 0;

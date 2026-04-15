@@ -3,10 +3,12 @@
 #include <array>
 #include <cstdint>
 #include <string>
+#include <SDL3/SDL.h>
+#include <glm/vec3.hpp>
 #include "../runtime/Runtime.hpp"
+#include "../graphics/RenderDeviceFactory.hpp"
 #include "WorldItemRenderer.hpp"
 class Camera;
-struct GLFWwindow;
 enum class GunType : uint16_t;
 
 class App {
@@ -49,11 +51,15 @@ private:
     void renderRemotePlayerGuns(Runtime& runtime, const Camera& activeCamera);
     void renderHeldGun(Runtime& runtime, const Camera& activeCamera);
     void applyMouseInputModes();
+    void pollEvents(Runtime& runtime);
 
     void updateFPSCounter();
-    void toggleFullscreen(GLFWwindow* window);
+    void toggleFullscreen(SDL_Window* window);
     
-    GLFWwindow* m_Window = nullptr;
+    SDL_Window* m_Window = nullptr;
+    SDL_GLContext m_GlContext = nullptr;
+    RenderApi m_RenderApi = RenderApi::OpenGL;
+    bool m_ShouldQuit = false;
     bool m_UseDebugCamera = false;
 
     bool m_IsFullscreen = false;
@@ -64,6 +70,12 @@ private:
     bool m_ShowInventoryUi = false;
     bool m_ForceCursorEnabled = false;
     bool m_EnableRawMouseInput = true;
+    float m_SkyExposure = 4.2f;
+    glm::vec3 m_SunDirection = glm::vec3(0.0f, 0.43496552f, 0.90044713f);
+    glm::vec3 m_SunShadowDirectionalBias = glm::vec3(0.00067f, 0.000115f, 0.0f); // x=+Y, y=side, z=-Y
+    float m_SunShadowLowSunBiasBoost = 5.8f;
+    bool m_SunShadowFrontFaceCullAtLowSun = true;
+    float m_SunShadowFrontFaceCullGrazingThreshold = 0.78f;
     WorldItemRenderer m_worldItemRenderer;
 
     std::string m_ServerIp = "variety-reduction.gl.at.ply.gg:20047";

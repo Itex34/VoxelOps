@@ -1,5 +1,4 @@
 #pragma once
-
 #include "Raycast.hpp"
 #include "../graphics/ChunkManager.hpp"
 #include "../player/Hitbox.hpp"
@@ -7,7 +6,10 @@
 #include <glm/glm.hpp>
 #include <glm/fwd.hpp>
 #include <list>
+#include <vector>
 #include <iostream>
+
+class Player;
 
 
 

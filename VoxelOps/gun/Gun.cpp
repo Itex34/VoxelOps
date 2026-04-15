@@ -1,5 +1,7 @@
 #include "Gun.hpp"
 
+#include <SDL3/SDL.h>
+
 #include <iostream>
 #include <stdexcept>
 
@@ -101,6 +103,11 @@ void Gun::reload() noexcept {
 }
 
 bool Gun::loadModel(const std::string& path) {
+    if (SDL_GL_GetCurrentContext() == nullptr) {
+        gunModel.reset();
+        return false;
+    }
+
     try {
         auto m = std::make_unique<Model>(path);
         gunModel = std::move(m);

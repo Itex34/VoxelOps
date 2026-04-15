@@ -24,6 +24,8 @@ namespace GameData {
 	bool firstMouse = true;
 	bool cursorEnabled = false;
 	bool gameplayInputEnabled = true;
+	int giTracingBackendPreference = 0;
+	int giNrdDebugView = 0;
 
 
 	float xPos = 0.0f;

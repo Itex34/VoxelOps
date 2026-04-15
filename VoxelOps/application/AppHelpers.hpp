@@ -17,6 +17,7 @@ namespace AppHelpers {
 
 bool IsImGuiTextInputActive();
 float LatencyCorrectionBlend(const ClientNetwork& net);
+double GetTimeSeconds() noexcept;
 
 struct GunDefinition {
     GunType type = GunType::Pistol;

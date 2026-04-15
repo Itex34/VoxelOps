@@ -1,5 +1,5 @@
 #include <glad/glad.h>
-#include <GLFW/glfw3.h>
+#include <SDL3/SDL.h>
 
 #include "App.hpp"
 #include "AppHelpers.hpp"
@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <iostream>
 #include <string>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -20,10 +21,23 @@
 
 using namespace AppHelpers;
 
+namespace {
+bool IsScancodeDown(SDL_Scancode scancode) {
+    int keyCount = 0;
+    const bool* keys = SDL_GetKeyboardState(&keyCount);
+    return keys != nullptr && scancode < keyCount && keys[scancode];
+}
+}
+
 void App::renderRemotePlayerGuns(Runtime& runtime, const Camera& activeCamera) {
     if (!runtime.gunShader || runtime.preloadedGuns.empty() || runtime.player->connectedPlayers.empty()) {
         return;
     }
+    constexpr float kLocalGhostRejectDistance = 2.0f;
+    const float localGhostRejectDistanceSq = kLocalGhostRejectDistance * kLocalGhostRejectDistance;
+    constexpr float kMinRemoteGunDistanceFromCamera = 2.5f;
+    const float minRemoteGunDistanceSq =
+        kMinRemoteGunDistanceFromCamera * kMinRemoteGunDistanceFromCamera;
 
     const float aspect = static_cast<float>(GameData::screenWidth) / static_cast<float>(GameData::screenHeight);
     if (!std::isfinite(aspect) || aspect <= 0.0f) {
@@ -42,6 +56,13 @@ void App::renderRemotePlayerGuns(Runtime& runtime, const Camera& activeCamera) {
     runtime.gunShader->setMat4("projection", projection);
 
     for (const auto& [_, remoteState] : runtime.player->connectedPlayers) {
+        const glm::vec3 toLocal = remoteState.position - runtime.player->getPosition();
+        const float localDistSq = glm::dot(toLocal, toLocal);
+        if (!std::isfinite(localDistSq) || localDistSq < localGhostRejectDistanceSq) {
+            // Ignore accidental self-echo snapshots in remote gun pass.
+            continue;
+        }
+
         const uint16_t weaponId = remoteState.weaponId;
         auto gunIt = runtime.preloadedGuns.find(weaponId);
         if (gunIt == runtime.preloadedGuns.end() || !gunIt->second) {
@@ -57,6 +78,12 @@ void App::renderRemotePlayerGuns(Runtime& runtime, const Camera& activeCamera) {
             remoteState.position + (remoteState.rotation * kRemoteGunRightHandAnchorOffset);
         const glm::vec3 worldOffset = definition->worldOffset * remoteState.scale;
         const glm::vec3 gunPos = handAnchorPos + (remoteState.rotation * worldOffset);
+        const glm::vec3 toCamera = gunPos - activeCamera.position;
+        const float distSq = glm::dot(toCamera, toCamera);
+        if (!std::isfinite(distSq) || distSq < minRemoteGunDistanceSq) {
+            // Guard against invalid/self snapshots producing a remote gun at the local camera.
+            continue;
+        }
 
         const glm::quat yawOffset = glm::angleAxis(
             glm::radians(definition->worldEulerDeg.y),
@@ -95,6 +122,7 @@ void App::renderHeldGun(Runtime& runtime, const Camera& activeCamera) {
     if (!runtime.gunShader || !runtime.equippedGun) {
         return;
     }
+    const uint16_t heldWeaponId = runtime.equippedGun->getWeaponId();
 
     const float frontLenSq = glm::dot(activeCamera.front, activeCamera.front);
     if (!std::isfinite(frontLenSq) || frontLenSq < 1e-8f) {
@@ -175,6 +203,32 @@ void App::renderHeldGun(Runtime& runtime, const Camera& activeCamera) {
     runtime.gunShader->setMat4("projection", projection);
     runtime.equippedGun->render(gunPos, gunRot, runtime.equippedGunViewScale, *runtime.gunShader);
 
+    {
+        unsigned int firstError = GL_NO_ERROR;
+        int count = 0;
+        for (;;) {
+            const unsigned int err = glGetError();
+            if (err == GL_NO_ERROR) {
+                break;
+            }
+            if (count == 0) {
+                firstError = err;
+            }
+            ++count;
+        }
+        if (count > 0) {
+            static int s_heldGunErrorLogCount = 0;
+            if (s_heldGunErrorLogCount < 24) {
+                std::cerr
+                    << "[gun] GL error(s) during held-gun render: count=" << count
+                    << " first=0x" << std::hex << firstError << std::dec
+                    << " weapon=" << heldWeaponId
+                    << "\n";
+                ++s_heldGunErrorLogCount;
+            }
+        }
+    }
+
     glDepthFunc(static_cast<GLenum>(previousDepthFunc));
     glDepthMask(previousDepthMask);
     glCullFace(static_cast<GLenum>(previousCullFaceMode));
@@ -225,11 +279,15 @@ void App::drawConnectionPrompt(Runtime& runtime) {
         if (m_Window == nullptr) {
             return false;
         }
-        const char* clipboardText = glfwGetClipboardString(m_Window);
+        char* clipboardText = SDL_GetClipboardText();
         if (clipboardText == nullptr || clipboardText[0] == '\0') {
+            if (clipboardText != nullptr) {
+                SDL_free(clipboardText);
+            }
             return false;
         }
         const std::string endpoint = TrimAscii(clipboardText);
+        SDL_free(clipboardText);
         if (endpoint.empty()) {
             return false;
         }
@@ -259,15 +317,15 @@ void App::drawConnectionPrompt(Runtime& runtime) {
     bool pasteShortcutPressed = false;
     if (endpointFieldActive && !isConnecting) {
         const bool ctrlDown =
-            (glfwGetKey(m_Window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) ||
-            (glfwGetKey(m_Window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS) ||
-            (glfwGetKey(m_Window, GLFW_KEY_LEFT_SUPER) == GLFW_PRESS) ||
-            (glfwGetKey(m_Window, GLFW_KEY_RIGHT_SUPER) == GLFW_PRESS);
+            IsScancodeDown(SDL_SCANCODE_LCTRL) ||
+            IsScancodeDown(SDL_SCANCODE_RCTRL) ||
+            IsScancodeDown(SDL_SCANCODE_LGUI) ||
+            IsScancodeDown(SDL_SCANCODE_RGUI);
         const bool shiftDown =
-            (glfwGetKey(m_Window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) ||
-            (glfwGetKey(m_Window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
-        const bool pasteCtrlV = ctrlDown && (glfwGetKey(m_Window, GLFW_KEY_V) == GLFW_PRESS);
-        const bool pasteShiftInsert = shiftDown && (glfwGetKey(m_Window, GLFW_KEY_INSERT) == GLFW_PRESS);
+            IsScancodeDown(SDL_SCANCODE_LSHIFT) ||
+            IsScancodeDown(SDL_SCANCODE_RSHIFT);
+        const bool pasteCtrlV = ctrlDown && IsScancodeDown(SDL_SCANCODE_V);
+        const bool pasteShiftInsert = shiftDown && IsScancodeDown(SDL_SCANCODE_INSERT);
         pasteShortcutPressed = pasteCtrlV || pasteShiftInsert;
         if (pasteShortcutPressed && !runtime.wasEndpointPasteShortcutPressed) {
             if (!pasteEndpointFromClipboard()) {
@@ -364,7 +422,7 @@ void App::drawConnectionPrompt(Runtime& runtime) {
             if (!beginConnectionAttempt(runtime)) {
                 runtime.usernamePromptError = "Failed to start connection. Check server reachability and retry.";
             }
-            runtime.nextReconnectAttemptTime = glfwGetTime() + 1.0;
+            runtime.nextReconnectAttemptTime = GetTimeSeconds() + 1.0;
         }
     }
 
@@ -387,7 +445,7 @@ void App::drawKillFeed(Runtime& runtime) {
         return;
     }
 
-    const double now = glfwGetTime();
+    const double now = GetTimeSeconds();
     while (!runtime.killFeedEntries.empty() && runtime.killFeedEntries.back().expiresAt <= now) {
         runtime.killFeedEntries.pop_back();
     }
@@ -431,7 +489,7 @@ void App::drawScoreboard(Runtime& runtime) {
     }
 
     const bool showScoreboard =
-        (glfwGetKey(m_Window, GLFW_KEY_TAB) == GLFW_PRESS) || runtime.matchEnded;
+        IsScancodeDown(SDL_SCANCODE_TAB) || runtime.matchEnded;
     if (!showScoreboard) {
         return;
     }

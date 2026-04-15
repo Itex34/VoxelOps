@@ -4,8 +4,8 @@
 #include "../graphics/Camera.hpp"
 #include "../graphics/ChunkManager.hpp"
 #include "../graphics/Frustum.hpp"
+#include "../graphics/IRenderDevice.hpp"
 #include "../graphics/ISkyBackend.hpp"
-#include "../graphics/Renderer.hpp"
 #include "../graphics/Shader.hpp"
 #include "../gun/Gun.hpp"
 #include "../input/InputCallbacks.hpp"
@@ -22,6 +22,7 @@
 #include "../../Shared/runtime/Paths.hpp"
 
 #include <cstdint>
+#include <memory>
 
 
 struct CallbackContext {
@@ -31,7 +32,7 @@ struct CallbackContext {
 };
 
 struct Runtime {
-    Renderer renderer;
+    std::unique_ptr<IRenderDevice> renderer;
     std::unique_ptr<ChunkManager> chunkManager;
     std::unique_ptr<Player> player;
     std::unique_ptr<InputCallbacks> inputCallbacks;
@@ -56,6 +57,8 @@ struct Runtime {
     bool chunkUniformsInitialized = false;
 
     uint32_t inputTickCounter = 1;
+    uint64_t localPlayerId = 0;
+    bool hasLocalPlayerId = false;
     uint32_t lastAckedInputTick = 0;
     uint32_t lastAppliedServerTick = 0;
     bool hasAppliedServerTick = false;

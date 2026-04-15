@@ -5,12 +5,77 @@
 #include <cmath>
 
 #include <imgui.h>
-#include <imgui_impl_glfw.h>
-#include <imgui_impl_opengl3.h>
+#if __has_include(<imgui_impl_sdl3.h>)
+#define VOXELOPS_IMGUI_SDL_BACKEND_AVAILABLE 1
+#include <imgui_impl_sdl3.h>
+#else
+#define VOXELOPS_IMGUI_SDL_BACKEND_AVAILABLE 0
+#endif
 
-bool DebugUi::initialize(GLFWwindow* window, const char* glslVersion) {
+#if __has_include(<imgui_impl_opengl3.h>)
+#define VOXELOPS_IMGUI_OPENGL_BACKEND_AVAILABLE 1
+#include <imgui_impl_opengl3.h>
+#else
+#define VOXELOPS_IMGUI_OPENGL_BACKEND_AVAILABLE 0
+#endif
+
+#if __has_include(<imgui_impl_vulkan.h>)
+#define VOXELOPS_IMGUI_VULKAN_BACKEND_AVAILABLE 1
+#include <imgui_impl_vulkan.h>
+#else
+#define VOXELOPS_IMGUI_VULKAN_BACKEND_AVAILABLE 0
+#endif
+
+bool DebugUi::initialize(SDL_Window* window, SDL_GLContext glContext, const char* glslVersion) {
     if (m_initialized) {
         return true;
+    }
+
+#if !VOXELOPS_IMGUI_SDL_BACKEND_AVAILABLE || !VOXELOPS_IMGUI_OPENGL_BACKEND_AVAILABLE
+    (void)window;
+    (void)glContext;
+    (void)glslVersion;
+    return false;
+#else
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+
+    ImGui::StyleColorsDark();
+
+    if (!ImGui_ImplSDL3_InitForOpenGL(window, glContext)) {
+        ImGui::DestroyContext();
+        return false;
+    }
+    if (!ImGui_ImplOpenGL3_Init(glslVersion)) {
+        ImGui_ImplSDL3_Shutdown();
+        ImGui::DestroyContext();
+        return false;
+    }
+
+    m_initialized = true;
+    m_backendType = BackendType::OpenGL;
+    return true;
+#endif
+}
+
+bool DebugUi::initializeForVulkan(SDL_Window* window, const UiVulkanInitInfo& initInfo) {
+    if (m_initialized) {
+        return true;
+    }
+
+#if !VOXELOPS_IMGUI_SDL_BACKEND_AVAILABLE || !VOXELOPS_IMGUI_VULKAN_BACKEND_AVAILABLE
+    (void)window;
+    (void)initInfo;
+    return false;
+#else
+    if (window == nullptr || initInfo.instance == VK_NULL_HANDLE || initInfo.physicalDevice == VK_NULL_HANDLE ||
+        initInfo.device == VK_NULL_HANDLE || initInfo.queue == VK_NULL_HANDLE ||
+        initInfo.renderPass == VK_NULL_HANDLE || initInfo.imageCount < 2) {
+        return false;
     }
 
     IMGUI_CHECKVERSION();
@@ -21,36 +86,93 @@ bool DebugUi::initialize(GLFWwindow* window, const char* glslVersion) {
 
     ImGui::StyleColorsDark();
 
-    if (!ImGui_ImplGlfw_InitForOpenGL(window, true)) {
+    if (!ImGui_ImplSDL3_InitForVulkan(window)) {
         ImGui::DestroyContext();
         return false;
     }
-    if (!ImGui_ImplOpenGL3_Init(glslVersion)) {
-        ImGui_ImplGlfw_Shutdown();
+
+    ImGui_ImplVulkan_InitInfo backendInfo{};
+    backendInfo.ApiVersion = initInfo.apiVersion;
+    backendInfo.Instance = initInfo.instance;
+    backendInfo.PhysicalDevice = initInfo.physicalDevice;
+    backendInfo.Device = initInfo.device;
+    backendInfo.QueueFamily = initInfo.queueFamily;
+    backendInfo.Queue = initInfo.queue;
+    backendInfo.DescriptorPool = VK_NULL_HANDLE;
+    backendInfo.DescriptorPoolSize = 256;
+    backendInfo.MinImageCount = std::max(2u, initInfo.minImageCount);
+    backendInfo.ImageCount = std::max(backendInfo.MinImageCount, initInfo.imageCount);
+    backendInfo.PipelineCache = VK_NULL_HANDLE;
+    backendInfo.PipelineInfoMain.RenderPass = initInfo.renderPass;
+    backendInfo.PipelineInfoMain.Subpass = 0;
+    backendInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    backendInfo.UseDynamicRendering = false;
+    backendInfo.Allocator = nullptr;
+    backendInfo.CheckVkResultFn = nullptr;
+    backendInfo.MinAllocationSize = 1024 * 1024;
+
+    if (!ImGui_ImplVulkan_Init(&backendInfo)) {
+        ImGui_ImplSDL3_Shutdown();
         ImGui::DestroyContext();
         return false;
     }
 
     m_initialized = true;
+    m_backendType = BackendType::Vulkan;
     return true;
+#endif
 }
 
 void DebugUi::shutdown() {
     if (!m_initialized) {
         return;
     }
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
+#if VOXELOPS_IMGUI_OPENGL_BACKEND_AVAILABLE
+    if (m_backendType == BackendType::OpenGL) {
+        ImGui_ImplOpenGL3_Shutdown();
+    }
+#endif
+#if VOXELOPS_IMGUI_VULKAN_BACKEND_AVAILABLE
+    if (m_backendType == BackendType::Vulkan) {
+        ImGui_ImplVulkan_Shutdown();
+    }
+#endif
+#if VOXELOPS_IMGUI_SDL_BACKEND_AVAILABLE
+    ImGui_ImplSDL3_Shutdown();
+#endif
     ImGui::DestroyContext();
     m_initialized = false;
+    m_backendType = BackendType::None;
+}
+
+void DebugUi::processEvent(const SDL_Event& event) {
+    if (!m_initialized) {
+        return;
+    }
+#if VOXELOPS_IMGUI_SDL_BACKEND_AVAILABLE
+    ImGui_ImplSDL3_ProcessEvent(&event);
+#else
+    (void)event;
+#endif
 }
 
 void DebugUi::beginFrame() {
     if (!m_initialized) {
         return;
     }
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
+#if VOXELOPS_IMGUI_OPENGL_BACKEND_AVAILABLE
+    if (m_backendType == BackendType::OpenGL) {
+        ImGui_ImplOpenGL3_NewFrame();
+    }
+#endif
+#if VOXELOPS_IMGUI_VULKAN_BACKEND_AVAILABLE
+    if (m_backendType == BackendType::Vulkan) {
+        ImGui_ImplVulkan_NewFrame();
+    }
+#endif
+#if VOXELOPS_IMGUI_SDL_BACKEND_AVAILABLE
+    ImGui_ImplSDL3_NewFrame();
+#endif
     ImGui::NewFrame();
 }
 
@@ -170,6 +292,42 @@ void DebugUi::drawMainWindow(const UiFrameData& data, UiMutableState& state) {
             data.perfPresentMs,
             data.perfChunkStreamingMs
         );
+
+        if (data.vulkanTimingValid) {
+            ImGui::Separator();
+            ImGui::TextUnformatted("Vulkan CPU");
+            ImGui::Text(
+                "record %.3f | chunk-pass %.3f | model-pass %.3f | ui-pass %.3f",
+                data.vkCpuCommandRecordMs,
+                data.vkCpuChunkPassMs,
+                data.vkCpuModelPassMs,
+                data.vkCpuUiPassMs
+            );
+            ImGui::Text(
+                "mesh-sync %.3f | frame-build %.3f",
+                data.vkCpuMeshSyncMs,
+                data.vkCpuFrameBuildMs
+            );
+            ImGui::Text(
+                "gi integrate %.3f | probes %u | rays %llu | gi luma %.3f",
+                data.vkCpuGiIntegrateMs,
+                data.vkGiProbesUpdated,
+                static_cast<unsigned long long>(data.vkGiRaysCast),
+                data.vkGiAverageIrradianceLuma
+            );
+        }
+        if (data.vkGpuTimingValid) {
+            ImGui::Separator();
+            ImGui::TextUnformatted("Vulkan GPU");
+            ImGui::Text(
+                "frame %.3f | chunk-pass %.3f | model-pass %.3f | ui-pass %.3f | gi %.3f",
+                data.vkGpuFrameMs,
+                data.vkGpuChunkPassMs,
+                data.vkGpuModelPassMs,
+                data.vkGpuUiPassMs,
+                data.vkGpuGiIntegrateMs
+            );
+        }
     }
 
     ImGui::Separator();
@@ -200,6 +358,95 @@ void DebugUi::drawMainWindow(const UiFrameData& data, UiMutableState& state) {
     }
     if (state.toggleDebugFrustum != nullptr) {
         ImGui::Checkbox("Debug Frustum (F3)", state.toggleDebugFrustum);
+    }
+    if (state.skyExposure != nullptr) {
+        ImGui::SliderFloat("Sky Exposure", state.skyExposure, 0.05f, 8.0f, "%.2f");
+    }
+    if (state.sunDirection != nullptr) {
+        ImGui::SliderFloat("Sun Dir X", &state.sunDirection->x, -1.0f, 1.0f, "%.3f");
+        ImGui::SliderFloat("Sun Dir Y", &state.sunDirection->y, -1.0f, 1.0f, "%.3f");
+        ImGui::SliderFloat("Sun Dir Z", &state.sunDirection->z, -1.0f, 1.0f, "%.3f");
+    }
+    if (state.giTracingBackendPreference != nullptr) {
+        int mode = std::clamp(*state.giTracingBackendPreference, 0, 2);
+        const char* labels[] = { "Auto", "Software DDA", "Hardware RT" };
+        if (ImGui::Combo("GI Tracing Path", &mode, labels, IM_ARRAYSIZE(labels))) {
+            *state.giTracingBackendPreference = mode;
+        }
+        if (data.vulkanTimingValid) {
+            ImGui::Text(
+                "Active GI backend: %s | RT support: %s | RT scene: %s",
+                (data.vkGiTracingBackend == 1) ? "Hardware RT" : "Software DDA",
+                data.vkGiHardwareRtSupported ? "yes" : "no",
+                data.vkGiRtSceneReady ? "ready" : "not ready"
+            );
+            ImGui::Text(
+                "NRD bootstrap: %s | Dispatches: %u",
+                data.vkNrdBootstrapActive ? "active" : "inactive",
+                data.vkNrdBootstrapDispatchCount
+            );
+            if (mode == 2 && (!data.vkGiHardwareRtSupported || !data.vkGiRtSceneReady)) {
+                ImGui::TextUnformatted("Requested Hardware RT is unavailable; using Software DDA fallback.");
+            }
+        }
+    }
+    if (state.giNrdDebugView != nullptr) {
+        int viewMode = std::clamp(*state.giNrdDebugView, 0, 5);
+        const char* labels[] = {
+            "Off",
+            "Diff Radiance",
+            "Hit Distance",
+            "Normal",
+            "Motion",
+            "ViewZ"
+        };
+        if (ImGui::Combo("NRD Input Debug", &viewMode, labels, IM_ARRAYSIZE(labels))) {
+            *state.giNrdDebugView = viewMode;
+        }
+    }
+
+    ImGui::Separator();
+    if (ImGui::CollapsingHeader("Sun Shadow Bias")) {
+        ImGui::TextUnformatted("Directional receiver bias (depth compare).");
+        ImGui::TextUnformatted("Axes: +Y = upward faces, Side = vertical faces, -Y = downward faces.");
+
+        if (state.sunShadowDirectionalBias != nullptr) {
+            ImGui::SliderFloat("Bias +Y", &state.sunShadowDirectionalBias->x, 0.0f, 0.00080f, "%.6f");
+            ImGui::SliderFloat("Bias Side", &state.sunShadowDirectionalBias->y, 0.0f, 0.00030f, "%.6f");
+            ImGui::SliderFloat("Bias -Y", &state.sunShadowDirectionalBias->z, 0.0f, 0.00030f, "%.6f");
+            if (state.sunShadowLowSunBiasBoost != nullptr) {
+                ImGui::SliderFloat("Low Sun Bias Boost", state.sunShadowLowSunBiasBoost, 0.0f, 8.0f, "%.2f");
+            }
+            if (state.sunShadowFrontFaceCullAtLowSun != nullptr) {
+                ImGui::Checkbox("Two-Sided Casters @ Low Sun", state.sunShadowFrontFaceCullAtLowSun);
+            }
+            if (state.sunShadowFrontFaceCullAtLowSun != nullptr &&
+                *state.sunShadowFrontFaceCullAtLowSun &&
+                state.sunShadowFrontFaceCullGrazingThreshold != nullptr) {
+                ImGui::SliderFloat(
+                    "Two-Sided Start (grazing)",
+                    state.sunShadowFrontFaceCullGrazingThreshold,
+                    0.50f,
+                    0.98f,
+                    "%.2f");
+            }
+
+            if (ImGui::Button("Reset Shadow Bias")) {
+                *state.sunShadowDirectionalBias = glm::vec3(0.000670f, 0.000115f, 0.0f);
+                if (state.sunShadowLowSunBiasBoost != nullptr) {
+                    *state.sunShadowLowSunBiasBoost = 1.8f;
+                }
+                if (state.sunShadowFrontFaceCullAtLowSun != nullptr) {
+                    *state.sunShadowFrontFaceCullAtLowSun = true;
+                }
+                if (state.sunShadowFrontFaceCullGrazingThreshold != nullptr) {
+                    *state.sunShadowFrontFaceCullGrazingThreshold = 0.78f;
+                }
+            }
+        }
+        else {
+            ImGui::TextUnformatted("Shadow bias controls unavailable.");
+        }
     }
 
     ImGui::Separator();
@@ -270,7 +517,11 @@ void DebugUi::render() {
         return;
     }
     ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+#if VOXELOPS_IMGUI_OPENGL_BACKEND_AVAILABLE
+    if (m_backendType == BackendType::OpenGL) {
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    }
+#endif
 }
 
 void DebugUi::setVisible(bool visible) noexcept {

@@ -1,5 +1,5 @@
 #include <glad/glad.h>
-#include <GLFW/glfw3.h>
+#include <SDL3/SDL.h>
 
 #include "../graphics/Renderer.hpp"
 #include "../graphics/Model.hpp"
@@ -24,7 +24,7 @@ public:
 	void Exit(){}
 
 
-	void updateFPSCounter(GLFWwindow* window);
+	void updateFPSCounter(SDL_Window* window);
 private:
 	float windowWidth = 640;
 	float windowHeight = 480;
@@ -51,7 +51,7 @@ private:
 
 
 
-	GLFWwindow* window;
+	SDL_Window* window;
 
 
 

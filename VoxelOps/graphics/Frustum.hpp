@@ -2,7 +2,6 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_access.hpp>
-#include <glm/gtx/string_cast.hpp>
 #include <vector>
 #include <glad/glad.h>
 #include "../voxels/Chunk.hpp" // For AABB
@@ -17,7 +16,7 @@ class Frustum {
 public:
     Plane planes[6];
 
-    void extractPlanes(const glm::mat4& viewProj) {
+    void extractPlanes(const glm::mat4& viewProj, bool depthZeroToOne = false) {
         glm::vec4 rowX = glm::row(viewProj, 0);
         glm::vec4 rowY = glm::row(viewProj, 1);
         glm::vec4 rowZ = glm::row(viewProj, 2);
@@ -27,7 +26,9 @@ public:
         planes[1] = normalizePlane(rowW - rowX); // Right
         planes[2] = normalizePlane(rowW + rowY); // Bottom
         planes[3] = normalizePlane(rowW - rowY); // Top
-        planes[4] = normalizePlane(rowW + rowZ); // Near
+        // Near/Far extraction depends on clip-space depth convention:
+        // OpenGL: z in [-w, +w], Vulkan/D3D: z in [0, +w].
+        planes[4] = depthZeroToOne ? normalizePlane(rowZ) : normalizePlane(rowW + rowZ); // Near
         planes[5] = normalizePlane(rowW - rowZ); // Far
     }
 

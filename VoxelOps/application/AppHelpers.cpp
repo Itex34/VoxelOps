@@ -5,6 +5,7 @@
 #include "../../Shared/runtime/Paths.hpp"
 
 #include <imgui.h>
+#include <SDL3/SDL.h>
 
 #include <algorithm>
 #include <array>
@@ -66,6 +67,10 @@ float LatencyCorrectionBlend(const ClientNetwork& net) {
     }
     // Blend from 0..1 over roughly 35ms -> 155ms.
     return std::clamp((static_cast<float>(pingMs) - 35.0f) / 120.0f, 0.0f, 1.0f);
+}
+
+double GetTimeSeconds() noexcept {
+    return static_cast<double>(SDL_GetTicksNS()) / 1'000'000'000.0;
 }
 
 std::span<const GunDefinition> GetGunDefinitions() {

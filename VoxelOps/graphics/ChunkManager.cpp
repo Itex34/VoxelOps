@@ -20,6 +20,7 @@ static ProcessMemoryStatsMB getProcessMemoryMB() {
 #include "ChunkManager.hpp"
 #include "WorldGen.hpp"
 #include "ChunkRenderSystem.hpp"
+#include "IRenderDevice.hpp"
 #include "../network/DecompressChunk.hpp"
 #include "../../Shared/runtime/Paths.hpp"
 
@@ -27,6 +28,7 @@ static ProcessMemoryStatsMB getProcessMemoryMB() {
 #include <cstring>
 #include <cstdint>
 #include <string>
+#include <iostream>
 
 namespace {
 bool readI32LE(const std::vector<uint8_t>& data, size_t& offset, int32_t& out)
@@ -94,7 +96,18 @@ float cubeVertices[] = {
 
 
 
-ChunkManager::ChunkManager(Renderer& renderer_) : renderer(renderer_){
+ChunkManager::ChunkManager(IRenderDevice& renderer_) : renderer(renderer_){
+    m_usesOpenGLBuffers = (renderer.getApiName() == "OpenGL");
+
+    if (!m_usesOpenGLBuffers) {
+        noise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
+        noise.SetFrequency(0.009f);
+        std::srand(static_cast<unsigned int>(std::time(nullptr)));
+        noise.SetSeed(std::rand());
+        ChunkMeshBuilder::resetProfileSnapshot();
+        return;
+    }
+
     // wireframe/VBO/VAO
     glGenVertexArrays(1, &wireVAO);
     glGenBuffers(1, &wireVBO);
@@ -305,6 +318,7 @@ void ChunkManager::updateChunks(const glm::ivec3& playerWorldPos, int renderDist
         m_networkChunkVersions.erase(pos);
         m_chunkBuildTickets.erase(pos);
         chunkMeshes.erase(pos);
+        m_cpuChunkMeshes.erase(pos);
         m_dirtyChunkPending.erase(pos);
     }
 
@@ -905,8 +919,10 @@ bool ChunkManager::requestChunkRebuild(const glm::ivec3& pos) {
     job.chunkPos = pos;
     job.buildTicket = m_nextChunkBuildTicket.fetch_add(1, std::memory_order_relaxed);
     m_chunkBuildTickets[pos] = job.buildTicket;
-    job.enableAO = enableAO;
-    job.enableShadows = enableShadows;
+    // Vulkan path uses shader-side GI/lighting, so keep chunk meshing to pure greedy geometry.
+    const bool meshBakedLightingEnabled = m_usesOpenGLBuffers;
+    job.enableAO = meshBakedLightingEnabled && enableAO;
+    job.enableShadows = meshBakedLightingEnabled && enableShadows;
     job.chunkWorldMinX = pos.x * CHUNK_SIZE;
     job.chunkWorldMinZ = pos.z * CHUNK_SIZE;
     chunk.copyBlocks(job.centerBlocks);
@@ -1058,6 +1074,23 @@ void ChunkManager::uploadChunkMesh(
     const std::vector<VoxelVertex>& vertices,
     const std::vector<uint16_t>& indices)
 {
+    if (vertices.empty() || indices.empty()) {
+        m_cpuChunkMeshes.erase(chunkPos);
+        if (!m_usesOpenGLBuffers) {
+            return;
+        }
+    }
+    else {
+        CpuChunkMesh& cpuMesh = m_cpuChunkMeshes[chunkPos];
+        cpuMesh.vertices = vertices;
+        cpuMesh.indices = indices;
+        cpuMesh.revision = m_nextCpuChunkMeshRevision++;
+    }
+
+    if (!m_usesOpenGLBuffers) {
+        return;
+    }
+
     Region& region = getOrCreateRegion(chunkPos);
 
     // remove old mesh if present
@@ -1096,6 +1129,11 @@ void ChunkManager::uploadChunkMesh(
 
 
 void ChunkManager::removeChunkMesh(const glm::ivec3& chunkPos) {
+    m_cpuChunkMeshes.erase(chunkPos);
+    if (!m_usesOpenGLBuffers) {
+        return;
+    }
+
     glm::ivec3 regionPos = chunkToRegionPos(chunkPos);
 
     auto regionIt = regions.find(regionPos);

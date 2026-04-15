@@ -1,8 +1,10 @@
 #include <glad/glad.h>
-#include <GLFW/glfw3.h>
+#include <SDL3/SDL.h>
 
 #include "App.hpp"
 #include "AppHelpers.hpp"
+#include "../graphics/Renderer.hpp"
+#include "../graphics/VulkanRenderDevice.hpp"
 
 #include "../../Shared/items/Items.hpp"
 #include "../../Shared/player/Inventory.hpp"
@@ -24,6 +26,16 @@
 using namespace AppHelpers;
 
 namespace {
+bool IsScancodeDown(SDL_Scancode scancode) {
+    int keyCount = 0;
+    const bool* keys = SDL_GetKeyboardState(&keyCount);
+    return keys != nullptr && scancode < keyCount && keys[scancode];
+}
+
+bool IsMouseButtonDown(uint8_t button) {
+    return (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_MASK(button)) != 0;
+}
+
 std::optional<GunType> GunTypeFromInventoryItemId(uint16_t itemId)
 {
     switch (itemId) {
@@ -37,6 +49,7 @@ std::optional<BlockID> BlockTypeFromInventoryItemId(uint16_t itemId)
 {
     switch (itemId) {
     case static_cast<uint16_t>(ITEM_DIRT_BLOCK): return BlockID::Dirt;
+    case static_cast<uint16_t>(ITEM_SAPPHIRE_BLOCK): return BlockID::SapphireBlock;
     default: return std::nullopt;
     }
 }
@@ -82,18 +95,91 @@ std::vector<glm::ivec3> CollectChunkAndEdgeNeighbors(const ChunkManager& chunkMa
 }
 }
 
+void App::pollEvents(Runtime& runtime) {
+    SDL_Event event;
+    const SDL_WindowID windowId = (m_Window != nullptr) ? SDL_GetWindowID(m_Window) : 0;
+    while (SDL_PollEvent(&event)) {
+        if (runtime.debugUi) {
+            runtime.debugUi->processEvent(event);
+        }
+
+        switch (event.type) {
+        case SDL_EVENT_QUIT:
+            m_ShouldQuit = true;
+            break;
+        case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+            if (event.window.windowID == windowId) {
+                m_ShouldQuit = true;
+            }
+            break;
+        case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+        case SDL_EVENT_WINDOW_RESIZED:
+            if (event.window.windowID == windowId && runtime.inputCallbacks) {
+                runtime.inputCallbacks->framebuffer_size_callback(m_Window, event.window.data1, event.window.data2);
+                if (m_RenderApi == RenderApi::Vulkan) {
+                    if (auto* vulkanDevice = dynamic_cast<VulkanRenderDevice*>(runtime.renderer.get())) {
+                        vulkanDevice->onWindowResized(event.window.data1, event.window.data2);
+                    }
+                }
+                if (runtime.sky) {
+                    runtime.sky->resize(event.window.data1, event.window.data2);
+                }
+            }
+            break;
+        case SDL_EVENT_MOUSE_MOTION:
+            if (event.motion.windowID == windowId && runtime.inputCallbacks) {
+                runtime.inputCallbacks->mouse_motion_callback(
+                    m_Window,
+                    event.motion.x,
+                    event.motion.y,
+                    event.motion.xrel,
+                    event.motion.yrel,
+                    m_UseDebugCamera
+                );
+            }
+            break;
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+            if (event.button.windowID == windowId && runtime.inputCallbacks) {
+                runtime.inputCallbacks->mouse_button_callback(
+                    m_Window,
+                    event.button.button,
+                    event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
+                );
+            }
+            break;
+        default:
+            break;
+        }
+    }
+}
+
 void App::updateDebugCamera(Runtime& runtime) {
-    glfwGetCursorPos(m_Window, &runtime.xpos, &runtime.ypos);
+    if (m_UseDebugCamera && m_Window && SDL_GetWindowRelativeMouseMode(m_Window)) {
+        float mouseDx = 0.0f;
+        float mouseDy = 0.0f;
+        SDL_GetRelativeMouseState(&mouseDx, &mouseDy);
+        runtime.yaw += (mouseDx * 0.1f);
+        runtime.pitch -= (mouseDy * 0.1f);
+        runtime.pitch = glm::clamp(runtime.pitch, -89.0f, 89.0f);
+    }
+    else {
+        float mouseX = 0.0f;
+        float mouseY = 0.0f;
+        SDL_GetMouseState(&mouseX, &mouseY);
+        runtime.xpos = mouseX;
+        runtime.ypos = mouseY;
+    }
 
     const bool keyboardBlockedByUi = IsImGuiTextInputActive();
     glm::vec3 moveDir(0.0f);
     if (!keyboardBlockedByUi) {
-        if (glfwGetKey(m_Window, GLFW_KEY_U) == GLFW_PRESS) moveDir += runtime.debugCamera.XZfront;
-        if (glfwGetKey(m_Window, GLFW_KEY_J) == GLFW_PRESS) moveDir -= runtime.debugCamera.XZfront;
-        if (glfwGetKey(m_Window, GLFW_KEY_H) == GLFW_PRESS) moveDir -= glm::normalize(glm::cross(runtime.debugCamera.front, runtime.debugCamera.up));
-        if (glfwGetKey(m_Window, GLFW_KEY_K) == GLFW_PRESS) moveDir += glm::normalize(glm::cross(runtime.debugCamera.front, runtime.debugCamera.up));
-        if (glfwGetKey(m_Window, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS) moveDir += runtime.debugCamera.up;
-        if (glfwGetKey(m_Window, GLFW_KEY_V) == GLFW_PRESS) moveDir -= runtime.debugCamera.up;
+        if (IsScancodeDown(SDL_SCANCODE_U)) moveDir += runtime.debugCamera.XZfront;
+        if (IsScancodeDown(SDL_SCANCODE_J)) moveDir -= runtime.debugCamera.XZfront;
+        if (IsScancodeDown(SDL_SCANCODE_H)) moveDir -= glm::normalize(glm::cross(runtime.debugCamera.front, runtime.debugCamera.up));
+        if (IsScancodeDown(SDL_SCANCODE_K)) moveDir += glm::normalize(glm::cross(runtime.debugCamera.front, runtime.debugCamera.up));
+        if (IsScancodeDown(SDL_SCANCODE_RALT)) moveDir += runtime.debugCamera.up;
+        if (IsScancodeDown(SDL_SCANCODE_V)) moveDir -= runtime.debugCamera.up;
     }
 
     if (glm::length(moveDir) > 0.0f) {
@@ -101,7 +187,7 @@ void App::updateDebugCamera(Runtime& runtime) {
     }
     runtime.debugCamera.position += moveDir * 10.0f * static_cast<float>(GameData::deltaTime);
 
-    if (m_UseDebugCamera) {
+    if (m_UseDebugCamera && (!m_Window || !SDL_GetWindowRelativeMouseMode(m_Window))) {
         const double xoffset = runtime.xpos - runtime.lastX;
         const double yoffset = runtime.ypos - runtime.lastY;
         runtime.lastX = runtime.xpos;
@@ -127,31 +213,31 @@ void App::updateToggleStates(Runtime& runtime) {
         applyMouseInputModes();
     };
 
-    const bool isF1Pressed = glfwGetKey(m_Window, GLFW_KEY_F1) == GLFW_PRESS;
+    const bool isF1Pressed = IsScancodeDown(SDL_SCANCODE_F1);
     if (!keyboardBlockedByUi && isF1Pressed && !m_WasF1Pressed) {
         m_UseDebugCamera = !m_UseDebugCamera;
     }
     m_WasF1Pressed = isF1Pressed;
 
-    const bool isTPressed = glfwGetKey(m_Window, GLFW_KEY_T) == GLFW_PRESS;
+    const bool isTPressed = IsScancodeDown(SDL_SCANCODE_T);
     if (!keyboardBlockedByUi && isTPressed && !m_WasTPressed) {
         m_ToggleWireframe = !m_ToggleWireframe;
     }
     m_WasTPressed = isTPressed;
 
-    const bool isF2Pressed = glfwGetKey(m_Window, GLFW_KEY_F2) == GLFW_PRESS;
+    const bool isF2Pressed = IsScancodeDown(SDL_SCANCODE_F2);
     if (!keyboardBlockedByUi && isF2Pressed && !m_WasF2Pressed) {
         m_ToggleChunkBorders = !m_ToggleChunkBorders;
     }
     m_WasF2Pressed = isF2Pressed;
 
-    const bool isF3Pressed = glfwGetKey(m_Window, GLFW_KEY_F3) == GLFW_PRESS;
+    const bool isF3Pressed = IsScancodeDown(SDL_SCANCODE_F3);
     if (!keyboardBlockedByUi && isF3Pressed && !m_WasF3Pressed) {
         m_ToggleDebugFrustum = !m_ToggleDebugFrustum;
     }
     m_WasF3Pressed = isF3Pressed;
 
-    const bool isF10Pressed = glfwGetKey(m_Window, GLFW_KEY_F10) == GLFW_PRESS;
+    const bool isF10Pressed = IsScancodeDown(SDL_SCANCODE_F10);
     if (!keyboardBlockedByUi && isF10Pressed && !m_WasF10Pressed) {
         m_ShowDebugUi = !m_ShowDebugUi;
         if (runtime.debugUi) {
@@ -161,7 +247,7 @@ void App::updateToggleStates(Runtime& runtime) {
     }
     m_WasF10Pressed = isF10Pressed;
 
-    const bool isXPressed = glfwGetKey(m_Window, GLFW_KEY_X) == GLFW_PRESS;
+    const bool isXPressed = IsScancodeDown(SDL_SCANCODE_X);
     if (!textInputBlocked && isXPressed && !m_WasXPressed) {
         m_ShowInventoryUi = !m_ShowInventoryUi;
         if (runtime.inventoryUi) {
@@ -171,7 +257,7 @@ void App::updateToggleStates(Runtime& runtime) {
     }
     m_WasXPressed = isXPressed;
 
-    const bool isEscapePressed = glfwGetKey(m_Window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+    const bool isEscapePressed = IsScancodeDown(SDL_SCANCODE_ESCAPE);
     if (!textInputBlocked && isEscapePressed && !m_WasEscapePressed) {
         m_ForceCursorEnabled = !m_ForceCursorEnabled;
         refreshCursorState();
@@ -183,7 +269,7 @@ void App::updateToggleStates(Runtime& runtime) {
         !m_ShowDebugUi &&
         !m_ShowInventoryUi &&
         m_ForceCursorEnabled;
-    const bool primaryMouseDown = glfwGetMouseButton(m_Window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    const bool primaryMouseDown = IsMouseButtonDown(SDL_BUTTON_LEFT);
     if (canRecaptureCursor && primaryMouseDown && !textInputBlocked) {
         m_ForceCursorEnabled = false;
         refreshCursorState();
@@ -193,8 +279,8 @@ void App::updateToggleStates(Runtime& runtime) {
 void App::processHotbarSelection(Runtime& runtime) {
     const bool keyboardBlockedByUi = IsImGuiTextInputActive();
     for (uint16_t i = 0; i < static_cast<uint16_t>(kHotbarSlots); ++i) {
-        const int glfwKey = GLFW_KEY_1 + static_cast<int>(i);
-        const bool pressed = glfwGetKey(m_Window, glfwKey) == GLFW_PRESS;
+        const SDL_Scancode scancode = static_cast<SDL_Scancode>(SDL_SCANCODE_1 + static_cast<int>(i));
+        const bool pressed = IsScancodeDown(scancode);
         if (!keyboardBlockedByUi && pressed && !m_WasHotbarSelectPressed[i]) {
             runtime.activeHotbarSlot = i;
         }
@@ -203,6 +289,11 @@ void App::processHotbarSelection(Runtime& runtime) {
 }
 
 void App::syncEquippedGunFromInventory(Runtime& runtime) {
+    if (m_RenderApi == RenderApi::Vulkan) {
+        runtime.equippedGun = nullptr;
+        return;
+    }
+
     if (!runtime.inventoryUi || !runtime.inventoryUi->hasSnapshot()) {
         return;
     }
@@ -228,7 +319,7 @@ void App::syncEquippedGunFromInventory(Runtime& runtime) {
 
 
 void App::processWorldInteraction(Runtime& runtime) {
-    const bool rightPressed = glfwGetMouseButton(m_Window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+    const bool rightPressed = IsMouseButtonDown(SDL_BUTTON_RIGHT);
     const bool rightClicked = rightPressed && !m_WasWorldInteractPressed;
     m_WasWorldInteractPressed = rightPressed;
 
@@ -254,9 +345,6 @@ void App::processWorldInteraction(Runtime& runtime) {
         if (hasActiveItem) {
             activeItemType = Items::ItemDatabase[activeSlot.itemId].type;
             activeBlockType = BlockTypeFromInventoryItemId(activeSlot.itemId);
-            if (activeItemType == ItemType::Block && !activeBlockType.has_value()) {
-                activeBlockType = BlockID::Dirt;
-            }
         }
     }
 
@@ -299,7 +387,7 @@ void App::processWorldInteraction(Runtime& runtime) {
             MarkChunkAndEdgeNeighborsDirty(*runtime.chunkManager, placePos);
 
             Runtime::PendingBlockPlaceRequest pending{};
-            pending.createdAt = glfwGetTime();
+            pending.createdAt = GetTimeSeconds();
             pending.affectedChunks = CollectChunkAndEdgeNeighbors(*runtime.chunkManager, placePos);
             pending.edits.push_back(Runtime::PendingBlockPlaceEdit{
                 placePos,
@@ -334,7 +422,7 @@ void App::processWorldInteraction(Runtime& runtime) {
         runtime.chunkManager->playerBreakBlockAt(breakPos);
 
         Runtime::PendingBlockBreakRequest pending{};
-        pending.createdAt = glfwGetTime();
+        pending.createdAt = GetTimeSeconds();
         pending.affectedChunks = CollectChunkAndEdgeNeighbors(*runtime.chunkManager, breakPos);
         pending.edits.push_back(Runtime::PendingBlockBreakEdit{
             breakPos,
@@ -360,12 +448,12 @@ void App::processShooting(Runtime& runtime) {
         return;
     }
 
-    const bool triggerPressed = (glfwGetMouseButton(m_Window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS);
+    const bool triggerPressed = IsMouseButtonDown(SDL_BUTTON_LEFT);
     if (!triggerPressed) {
         return;
     }
 
-    const double now = glfwGetTime();
+    const double now = GetTimeSeconds();
     if ((now - runtime.lastShootSendTime) < runtime.shootSendInterval) {
         return;
     }
@@ -416,7 +504,7 @@ void App::processMovementNetworking(Runtime& runtime) {
         }
     }
 
-    const double now = glfwGetTime();
+    const double now = GetTimeSeconds();
     runtime.justRespawned = false;
     runtime.player->setTreatMissingCollisionAsSolid(now >= runtime.respawnMissingChunkGraceUntil);
     if (runtime.rbDiagActive && now >= runtime.rbDiagUntil) {
@@ -520,6 +608,7 @@ void App::processMovementNetworking(Runtime& runtime) {
     }
 
     bool hasNewestSelfSnapshot = false;
+    uint64_t newestSelfPlayerId = 0;
     uint32_t newestServerTick = 0;
     uint32_t newestAckedInputTick = 0;
     glm::vec3 newestServerPos(0.0f);
@@ -562,8 +651,11 @@ void App::processMovementNetworking(Runtime& runtime) {
 
         runtime.hasReceivedSelfSnapshotTick = true;
         runtime.lastReceivedSelfSnapshotTick = frame.serverTick;
+        runtime.localPlayerId = frame.selfPlayerId;
+        runtime.hasLocalPlayerId = true;
 
         hasNewestSelfSnapshot = true;
+        newestSelfPlayerId = frame.selfPlayerId;
         newestServerTick = frame.serverTick;
         newestAckedInputTick = frame.lastProcessedInputTick;
         newestServerPos = glm::vec3(localSnapshot->px, localSnapshot->py, localSnapshot->pz);
@@ -587,6 +679,12 @@ void App::processMovementNetworking(Runtime& runtime) {
         std::unordered_map<PlayerID, PlayerState> newestRemotePlayers;
         newestRemotePlayers.reserve(interpolated.size());
         for (const SnapshotInterpolator::InterpolatedPlayer& snapshot : interpolated) {
+            if (runtime.hasLocalPlayerId && snapshot.id == runtime.localPlayerId) {
+                continue;
+            }
+            if (hasNewestSelfSnapshot && snapshot.id == newestSelfPlayerId) {
+                continue;
+            }
             PlayerState remoteState;
             remoteState.position = snapshot.position;
             remoteState.rotation = glm::angleAxis(
@@ -669,11 +767,13 @@ void App::processMovementNetworking(Runtime& runtime) {
         runtime.lastWorldItemSnapshotTick = 0;
         runtime.activeHotbarSlot = 0;
         runtime.snapshotInterpolator.Clear();
+        runtime.hasLocalPlayerId = false;
+        runtime.localPlayerId = 0;
         runtime.hasAppliedServerTick = false;
         runtime.hasReceivedSelfSnapshotTick = false;
         runtime.inputTickCounter = 1;
         runtime.lastAckedInputTick = 0;
-        runtime.lastInputSendTime = glfwGetTime();
+        runtime.lastInputSendTime = GetTimeSeconds();
         runtime.lastChunkRequestSendTime = 0.0;
         runtime.hasLastChunkRequestCenter = false;
         runtime.renderStateNeedsResync = false;
@@ -718,7 +818,7 @@ void App::processMovementNetworking(Runtime& runtime) {
             << "\n";
     }
 
-    const bool respawnClickDown = (glfwGetMouseButton(m_Window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS);
+    const bool respawnClickDown = IsMouseButtonDown(SDL_BUTTON_LEFT);
     if (!runtime.localPlayerAlive && runtime.localRespawnSeconds <= 0.0f) {
         if (respawnClickDown && !runtime.wasRespawnClickDown) {
             (void)runtime.clientNet.SendRespawnRequest();
@@ -836,7 +936,7 @@ void App::processChunkStreaming(Runtime& runtime, bool prioritizeMovement) {
     static std::unordered_map<glm::ivec3, double, IVec3Hash> s_chunkResyncCooldownUntil;
 
     const auto requestChunkResync = [&](const glm::ivec3& chunkPos, bool force) {
-        const double nowSec = glfwGetTime();
+        const double nowSec = GetTimeSeconds();
         auto it = s_chunkResyncCooldownUntil.find(chunkPos);
         if (!force && it != s_chunkResyncCooldownUntil.end() && nowSec < it->second) {
             return;
@@ -949,7 +1049,7 @@ void App::processChunkStreaming(Runtime& runtime, bool prioritizeMovement) {
         ++blockPlaceResultsApplied;
     }
 
-    const double nowSec = glfwGetTime();
+    const double nowSec = GetTimeSeconds();
     for (auto it = runtime.pendingBlockPlaceRequests.begin(); it != runtime.pendingBlockPlaceRequests.end();) {
         if ((nowSec - it->second.createdAt) > 1.5) {
             for (const glm::ivec3& chunkPos : it->second.affectedChunks) {
@@ -1027,7 +1127,7 @@ void App::processChunkStreaming(Runtime& runtime, bool prioritizeMovement) {
         : Runtime::ChunkMeshBuildBudgetUs;
     runtime.chunkManager->updateDirtyChunks(maxChunkMeshBuilds, chunkMeshBuildBudgetUs);
 
-    const double now = glfwGetTime();
+    const double now = GetTimeSeconds();
     if (kEnableChunkDiagnostics && now - runtime.lastChunkCoverageLogTime >= 1.0) {
         runtime.lastChunkCoverageLogTime = now;
         const ClientNetwork::ChunkQueueDepths queueDepths = runtime.clientNet.GetChunkQueueDepths();
@@ -1106,7 +1206,7 @@ void App::processFrame(Runtime& runtime) {
         ) * 0.001f;
     };
 
-    const double frameNow = glfwGetTime();
+    const double frameNow = GetTimeSeconds();
     double frameDeltaSeconds = frameNow - GameData::lastFrame;
     if (!std::isfinite(frameDeltaSeconds) || frameDeltaSeconds < 0.0) {
         frameDeltaSeconds = 0.0;
@@ -1286,27 +1386,50 @@ void App::processFrame(Runtime& runtime) {
     const Camera& activeCamera = m_UseDebugCamera
         ? runtime.debugCamera
         : runtime.interpolatedPlayerCamera;
-
-    RenderFrameParams frameParams{
-        .chunkShader = *runtime.chunkShader,
-        .debugShader = *runtime.dbgShader,
-        .chunkManager = *runtime.chunkManager,
-        .frustum = runtime.frustum,
-        .player = *runtime.player,
-        .activeCamera = activeCamera,
-        .sky = *runtime.sky,
-        .toggleWireframe = m_ToggleWireframe,
-        .toggleChunkBorders = m_ToggleChunkBorders,
-        .toggleDebugFrustum = m_ToggleDebugFrustum,
-        .chunkUniformsInitialized = &runtime.chunkUniformsInitialized,
-        .renderOpaqueOverlayPasses = [&]() {
-            renderWorldItems(runtime, activeCamera);
-            renderRemotePlayerGuns(runtime, activeCamera);
+    const Camera& cullingCamera = runtime.interpolatedPlayerCamera;
+    VulkanRenderDevice* vulkanDevice = nullptr;
+    if (m_RenderApi == RenderApi::Vulkan) {
+        vulkanDevice = dynamic_cast<VulkanRenderDevice*>(runtime.renderer.get());
+    }
+    else {
+        const float sunDirLenSq = glm::dot(m_SunDirection, m_SunDirection);
+        if (!std::isfinite(sunDirLenSq) || sunDirLenSq <= 1e-8f) {
+            m_SunDirection = glm::vec3(0.0f, 1.0f, 0.0f);
         }
-    };
-    runtime.renderer.renderFrame(frameParams);
-    if (!m_UseDebugCamera && runtime.localPlayerAlive) {
-        renderHeldGun(runtime, runtime.interpolatedPlayerCamera);
+        runtime.sky->setSunDir(m_SunDirection);
+        m_SunDirection = runtime.sky->getSunDir();
+        runtime.sky->setExposure(m_SkyExposure);
+
+        RenderFrameParams frameParams{
+            .chunkShader = *runtime.chunkShader,
+            .debugShader = *runtime.dbgShader,
+            .chunkManager = *runtime.chunkManager,
+            .frustum = runtime.frustum,
+            .player = *runtime.player,
+            .activeCamera = activeCamera,
+            .cullingCamera = &cullingCamera,
+            .sky = *runtime.sky,
+            .toggleWireframe = m_ToggleWireframe,
+            .toggleChunkBorders = m_ToggleChunkBorders,
+            .toggleDebugFrustum = m_ToggleDebugFrustum,
+            .sunShadowDirectionalBias = m_SunShadowDirectionalBias,
+            .sunShadowLowSunBiasBoost = m_SunShadowLowSunBiasBoost,
+            .sunShadowFrontFaceCullAtLowSun = m_SunShadowFrontFaceCullAtLowSun,
+            .sunShadowFrontFaceCullGrazingThreshold = m_SunShadowFrontFaceCullGrazingThreshold,
+            .chunkUniformsInitialized = &runtime.chunkUniformsInitialized,
+            .renderOpaqueOverlayPasses = [&]() {
+                renderWorldItems(runtime, activeCamera);
+                // Keep remote gun overlays out of first-person scene capture to avoid
+                // self-echo/near-camera artifacts that can mask terrain.
+                if (m_UseDebugCamera) {
+                    renderRemotePlayerGuns(runtime, activeCamera);
+                }
+            }
+        };
+        runtime.renderer->renderFrame(frameParams);
+        if (!m_UseDebugCamera && runtime.localPlayerAlive) {
+            renderHeldGun(runtime, runtime.interpolatedPlayerCamera);
+        }
     }
 
     if (runtime.debugUi) {
@@ -1330,8 +1453,8 @@ void App::processFrame(Runtime& runtime) {
             frameData.chunkDataQueueDepth = queueDepths.chunkData;
             frameData.chunkDeltaQueueDepth = queueDepths.chunkDelta;
             frameData.chunkUnloadQueueDepth = queueDepths.chunkUnload;
-            frameData.backendName = runtime.renderer.getActiveBackendName();
-            frameData.mdiUsable = runtime.renderer.isMDIUsable();
+            frameData.backendName = runtime.renderer->getActiveBackendName();
+            frameData.mdiUsable = runtime.renderer->isMDIUsable();
             frameData.perfFrameCpuMs = runtime.perfFrameCpuMs;
             frameData.perfInputMs = runtime.perfInputMs;
             frameData.perfNetworkMs = runtime.perfNetworkMs;
@@ -1340,6 +1463,32 @@ void App::processFrame(Runtime& runtime) {
             frameData.perfRenderCpuMs = runtime.perfRenderCpuMs;
             frameData.perfPresentMs = runtime.perfPresentMs;
             frameData.perfChunkStreamingMs = runtime.perfChunkStreamingMs;
+            if (vulkanDevice != nullptr) {
+                const VulkanRenderDevice::TimingSnapshot& vkTimings = vulkanDevice->getLastTimingSnapshot();
+                frameData.vulkanTimingValid = true;
+                frameData.vkCpuCommandRecordMs = vkTimings.cpuCommandRecordMs;
+                frameData.vkCpuChunkPassMs = vkTimings.cpuChunkPassMs;
+                frameData.vkCpuModelPassMs = vkTimings.cpuModelPassMs;
+                frameData.vkCpuUiPassMs = vkTimings.cpuUiPassMs;
+                frameData.vkCpuMeshSyncMs = vkTimings.cpuMeshSyncMs;
+                frameData.vkCpuFrameBuildMs = vkTimings.cpuFrameBuildMs;
+                frameData.vkCpuGiIntegrateMs = vkTimings.cpuGiIntegrateMs;
+                frameData.vkGiProbesUpdated = vkTimings.giProbesUpdated;
+                frameData.vkGiRaysCast = vkTimings.giRaysCast;
+                frameData.vkGiAverageIrradianceLuma = vkTimings.giAverageIrradianceLuma;
+                frameData.vkGpuTimingValid = vkTimings.gpuValid;
+                frameData.vkGpuFrameMs = vkTimings.gpuFrameMs;
+                frameData.vkGpuChunkPassMs = vkTimings.gpuChunkPassMs;
+                frameData.vkGpuModelPassMs = vkTimings.gpuModelPassMs;
+                frameData.vkGpuUiPassMs = vkTimings.gpuUiPassMs;
+                frameData.vkGpuGiIntegrateMs = vkTimings.gpuGiIntegrateMs;
+                frameData.vkGiHardwareRtSupported = vkTimings.giHardwareRtSupported;
+                frameData.vkGiRtSceneReady = vkTimings.giRtSceneReady;
+                frameData.vkGiTracingBackend =
+                    (vkTimings.giTracingBackend == GiTracingBackend::HardwareRt) ? 1 : 0;
+                frameData.vkNrdBootstrapActive = vkTimings.nrdBootstrapActive;
+                frameData.vkNrdBootstrapDispatchCount = vkTimings.nrdBootstrapDispatchCount;
+            }
 
             UiMutableState mutableState;
             mutableState.useDebugCamera = &m_UseDebugCamera;
@@ -1349,10 +1498,20 @@ void App::processFrame(Runtime& runtime) {
             mutableState.renderDistance = &runtime.player->renderDistance;
             mutableState.cursorEnabled = &GameData::cursorEnabled;
             mutableState.rawMouseInputEnabled = &m_EnableRawMouseInput;
-            mutableState.rawMouseInputSupported = glfwRawMouseMotionSupported();
+            mutableState.rawMouseInputSupported = true;
             mutableState.gunViewOffset = &runtime.equippedGunViewOffset;
             mutableState.gunViewScale = &runtime.equippedGunViewScale;
             mutableState.gunViewEulerDeg = &runtime.equippedGunViewEulerDeg;
+            mutableState.sunDirection = &m_SunDirection;
+            mutableState.sunShadowDirectionalBias = &m_SunShadowDirectionalBias;
+            mutableState.sunShadowLowSunBiasBoost = &m_SunShadowLowSunBiasBoost;
+            mutableState.sunShadowFrontFaceCullAtLowSun = &m_SunShadowFrontFaceCullAtLowSun;
+            mutableState.sunShadowFrontFaceCullGrazingThreshold = &m_SunShadowFrontFaceCullGrazingThreshold;
+            mutableState.skyExposure = &m_SkyExposure;
+            mutableState.giTracingBackendPreference =
+                (vulkanDevice != nullptr) ? &GameData::giTracingBackendPreference : nullptr;
+            mutableState.giNrdDebugView =
+                (vulkanDevice != nullptr) ? &GameData::giNrdDebugView : nullptr;
 
             runtime.debugUi->drawMainWindow(frameData, mutableState);
         }
@@ -1380,9 +1539,25 @@ void App::processFrame(Runtime& runtime) {
         runtime.debugUi->render();
     }
 
+    if (vulkanDevice != nullptr) {
+        glm::vec3 safeSunDir = m_SunDirection;
+        const float safeSunLen2 = glm::dot(safeSunDir, safeSunDir);
+        if (!(std::isfinite(safeSunLen2)) || safeSunLen2 <= 1.0e-8f) {
+            safeSunDir = glm::vec3(0.25f, 0.85f, 0.42f);
+        }
+        safeSunDir = glm::normalize(safeSunDir);
+        vulkanDevice->renderFrameVulkan(
+            *runtime.chunkManager,
+            activeCamera,
+            cullingCamera,
+            *runtime.player,
+            safeSunDir
+        );
+    }
+
     static bool f11PressedLastFrame = false;
 
-    bool f11PressedNow = glfwGetKey(m_Window, GLFW_KEY_F11) == GLFW_PRESS;
+    bool f11PressedNow = IsScancodeDown(SDL_SCANCODE_F11);
 
     if (f11PressedNow && !f11PressedLastFrame)
     {
@@ -1395,8 +1570,10 @@ void App::processFrame(Runtime& runtime) {
     runtime.perfRenderCpuMs = toMs(perfRenderStart, perfRenderEnd);
 
     const auto perfPresentStart = std::chrono::steady_clock::now();
-    glfwSwapBuffers(m_Window);
-    glfwPollEvents();
+    if (m_RenderApi == RenderApi::OpenGL) {
+        SDL_GL_SwapWindow(m_Window);
+    }
+    pollEvents(runtime);
     const auto perfPresentEnd = std::chrono::steady_clock::now();
     runtime.perfPresentMs = toMs(perfPresentStart, perfPresentEnd);
 
@@ -1415,3 +1592,4 @@ void App::processFrame(Runtime& runtime) {
     const auto perfFrameEnd = std::chrono::steady_clock::now();
     runtime.perfFrameCpuMs = toMs(perfFrameStart, perfFrameEnd);
 }
+

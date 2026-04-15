@@ -1,10 +1,11 @@
 #include <glad/glad.h>
-#include <GLFW/glfw3.h>
+#include <SDL3/SDL.h>
 
 #include "App.hpp"
 #include "AppHelpers.hpp"
 #include "../graphics/RealisticSkyBackend.hpp"
 #include "../graphics/ShaderSkyBackend.hpp"
+#include "../graphics/VulkanRenderDevice.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -42,12 +43,11 @@ std::unique_ptr<ISkyBackend> createSkyBackendForTier(
 }
 
 void App::configureBackendPolicy(Runtime& runtime) {
-    const Backend& backendInfo = runtime.renderer.getBackend();
-    const GraphicsBackend backendTier = runtime.renderer.getActiveBackend();
+    const GraphicsBackend backendTier = runtime.renderer->getActiveBackend();
 
     runtime.supportsGL43Shaders =
-        (backendInfo.getOpenGLVersionMajor() > 4) ||
-        (backendInfo.getOpenGLVersionMajor() == 4 && backendInfo.getOpenGLVersionMinor() >= 3);
+        (runtime.renderer->getOpenGLVersionMajor() > 4) ||
+        (runtime.renderer->getOpenGLVersionMajor() == 4 && runtime.renderer->getOpenGLVersionMinor() >= 3);
 
     switch (backendTier) {
     case GraphicsBackend::Realistic:
@@ -66,8 +66,9 @@ void App::configureBackendPolicy(Runtime& runtime) {
     }
 
     std::cout
-        << "[App] Backend tier: " << runtime.renderer.getActiveBackendName()
-        << " | MDI usable: " << (runtime.renderer.isMDIUsable() ? "yes" : "no")
+        << "[App] Render API: " << runtime.renderer->getApiName()
+        << " | Backend tier: " << runtime.renderer->getActiveBackendName()
+        << " | MDI usable: " << (runtime.renderer->isMDIUsable() ? "yes" : "no")
         << " | AO: " << (runtime.chunkManager->enableAO ? "on" : "off")
         << " | Shadows: " << (runtime.chunkManager->enableShadows ? "on" : "off")
         << " | Chunk shader profile: " << (runtime.supportsGL43Shaders ? "GL43" : "GL33")
@@ -76,7 +77,7 @@ void App::configureBackendPolicy(Runtime& runtime) {
 
 
 void App::initGameplay(Runtime& runtime) {
-    runtime.chunkManager = std::make_unique<ChunkManager>(runtime.renderer);
+    runtime.chunkManager = std::make_unique<ChunkManager>(*runtime.renderer);
     configureBackendPolicy(runtime);
 
     const std::string playerModelPath =
@@ -89,8 +90,14 @@ void App::initGameplay(Runtime& runtime) {
     );
     runtime.interpolatedPlayerCamera = runtime.player->getCamera();
     runtime.inputCallbacks = std::make_unique<InputCallbacks>(*runtime.player);
-    preloadGuns(runtime);
-    (void)equipGun(runtime, kDefaultGunType);
+    if (m_RenderApi == RenderApi::OpenGL) {
+        preloadGuns(runtime);
+        (void)equipGun(runtime, kDefaultGunType);
+    }
+    else {
+        runtime.preloadedGuns.clear();
+        runtime.equippedGun = nullptr;
+    }
 }
 
 
@@ -111,6 +118,11 @@ void App::preloadGuns(Runtime& runtime) {
 
 
 bool App::equipGun(Runtime& runtime, GunType gunType) {
+    if (m_RenderApi == RenderApi::Vulkan) {
+        runtime.equippedGun = nullptr;
+        return false;
+    }
+
     const GunDefinition* definition = FindGunDefinition(gunType);
     if (definition == nullptr) {
         std::cerr << "[gun] missing definition for weapon id=" << ToWeaponId(gunType) << "\n";
@@ -161,7 +173,7 @@ bool App::equipGun(Runtime& runtime, GunType gunType) {
             while (runtime.pendingInputs.size() > Runtime::MaxPendingInputs) {
                 runtime.pendingInputs.pop_front();
             }
-            runtime.lastInputSendTime = glfwGetTime();
+            runtime.lastInputSendTime = GetTimeSeconds();
         }
     }
 
@@ -180,28 +192,23 @@ void App::initCallbacks(Runtime& runtime) {
         .skyBackend = runtime.sky.get(),
         .useDebugCamera = &m_UseDebugCamera
     };
-
-    glfwSetWindowUserPointer(m_Window, &runtime.callbackContext);
-    glfwSetFramebufferSizeCallback(m_Window, [](GLFWwindow* w, int width, int height) {
-        auto* context = static_cast<CallbackContext*>(glfwGetWindowUserPointer(w));
-        context->inputCallbacks->framebuffer_size_callback(w, width, height);
-        if (context->skyBackend) {
-            context->skyBackend->resize(width, height);
-        }
-    });
-    glfwSetCursorPosCallback(m_Window, [](GLFWwindow* w, double x, double y) {
-        auto* context = static_cast<CallbackContext*>(glfwGetWindowUserPointer(w));
-        context->inputCallbacks->mouse_callback(w, x, y, *context->useDebugCamera);
-    });
-    glfwSetMouseButtonCallback(m_Window, [](GLFWwindow* w, int button, int action, int mods) {
-        auto* context = static_cast<CallbackContext*>(glfwGetWindowUserPointer(w));
-        context->inputCallbacks->mouse_button_callback(w, button, action, mods);
-    });
     applyMouseInputModes();
 }
 
 
 void App::initRenderResources(Runtime& runtime) {
+    if (m_RenderApi == RenderApi::Vulkan) {
+        runtime.chunkShader.reset();
+        runtime.dbgShader.reset();
+        runtime.gunShader.reset();
+        runtime.sky.reset();
+        runtime.callbackContext.skyBackend = nullptr;
+        runtime.chunkUniformsInitialized = false;
+        runtime.supportsGL43Shaders = false;
+        std::cout << "[App] Vulkan path: skipping OpenGL shader/sky initialization.\n";
+        return;
+    }
+
     const std::string chunkVertPath = runtime.supportsGL43Shaders
         ? Shared::RuntimePaths::ResolveVoxelOpsPath("shaders/allLightingPack.vert").generic_string()
         : Shared::RuntimePaths::ResolveVoxelOpsPath("shaders/allLightingPack33.vert").generic_string();
@@ -230,11 +237,13 @@ void App::initRenderResources(Runtime& runtime) {
         playerVertPath.c_str(),
         playerFragPath.c_str()
     );
-    runtime.sky = createSkyBackendForTier(runtime.renderer.getActiveBackend(), skyVertPath, skyFragPath);
+    runtime.sky = createSkyBackendForTier(runtime.renderer->getActiveBackend(), skyVertPath, skyFragPath);
     runtime.sky->initialize();
     runtime.sky->setSunDir(kDefaultSunDirection);
+    m_SunDirection = runtime.sky->getSunDir();
+    m_SkyExposure = runtime.sky->getExposure();
     if (runtime.sky->supportsAtmospherePresets()) {
-        runtime.sky->setAtmospherePreset(kDefaultRealisticAtmospherePreset);
+        runtime.sky->setAtmospherePreset(SkyAtmospherePreset::Clear);
     }
     runtime.sky->resize(GameData::screenWidth, GameData::screenHeight);
     runtime.callbackContext.skyBackend = runtime.sky.get();
@@ -248,8 +257,48 @@ void App::initRenderResources(Runtime& runtime) {
 
 
 void App::initUi(Runtime& runtime) {
+    if (m_RenderApi == RenderApi::Vulkan) {
+        runtime.debugUi = std::make_unique<DebugUi>();
+        runtime.inventoryUi = std::make_unique<InventoryUI>();
+
+        bool initialized = false;
+        if (auto* vulkanDevice = dynamic_cast<VulkanRenderDevice*>(runtime.renderer.get())) {
+            UiVulkanInitInfo initInfo{};
+            initInfo.instance = vulkanDevice->getVkInstanceHandle();
+            initInfo.physicalDevice = vulkanDevice->getVkPhysicalDeviceHandle();
+            initInfo.device = vulkanDevice->getVkDeviceHandle();
+            initInfo.queueFamily = vulkanDevice->getVkGraphicsQueueFamily();
+            initInfo.queue = vulkanDevice->getVkGraphicsQueueHandle();
+            initInfo.renderPass = vulkanDevice->getVkRenderPassHandle();
+            initInfo.imageCount = vulkanDevice->getVkSwapchainImageCount();
+            initInfo.minImageCount = 2;
+            initialized = runtime.debugUi->initializeForVulkan(m_Window, initInfo);
+        }
+
+        if (!initialized) {
+            std::cerr << "[App] Failed to initialize ImGui Vulkan backend.\n";
+            runtime.debugUi.reset();
+            runtime.inventoryUi.reset();
+            m_ShowDebugUi = false;
+            m_ShowInventoryUi = false;
+            m_ForceCursorEnabled = false;
+            GameData::cursorEnabled = false;
+            applyMouseInputModes();
+            return;
+        }
+
+        runtime.debugUi->setVisible(m_ShowDebugUi);
+        runtime.inventoryUi->setVisible(m_ShowInventoryUi);
+        if (m_ShowDebugUi || m_ShowInventoryUi) {
+            GameData::cursorEnabled = true;
+        }
+        std::cout << "[App] Vulkan path: ImGui/Inventory UI initialized.\n";
+        applyMouseInputModes();
+        return;
+    }
+
     runtime.debugUi = std::make_unique<DebugUi>();
-    if (!runtime.debugUi->initialize(m_Window, "#version 330")) {
+    if (!runtime.debugUi->initialize(m_Window, m_GlContext, "#version 330")) {
         std::cerr << "Failed to initialize ImGui debug UI.\n";
         runtime.debugUi.reset();
         return;
@@ -266,7 +315,7 @@ void App::initUi(Runtime& runtime) {
 
 
 void App::initNetworking(Runtime& runtime) {
-    const double now = glfwGetTime();
+    const double now = GetTimeSeconds();
     runtime.lastInputSendTime = now;
     runtime.lastChunkRequestSendTime = now;
     runtime.lastShootSendTime = now - runtime.shootSendInterval;

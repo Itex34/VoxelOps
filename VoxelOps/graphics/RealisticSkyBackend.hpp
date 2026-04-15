@@ -18,6 +18,8 @@ public:
 
     void setSunDir(const glm::vec3& sunDir) override;
     const glm::vec3& getSunDir() const noexcept override;
+    void setExposure(float exposure) override;
+    float getExposure() const noexcept override;
     bool encodesOutputToSrgb() const noexcept override;
     bool requiresExternalSceneTextures() const noexcept override;
     void setExternalSceneTextures(unsigned int sceneColorTex, unsigned int sceneLinearDepthTex) override;
@@ -38,6 +40,7 @@ private:
 
     mutable pbrsky::SkyAtmosphereRenderer m_Renderer;
     glm::vec3 m_SunDir = glm::normalize(glm::vec3(1.0f, 0.00f, 0.0f));
+    float m_Exposure = 4.2f;
     pbrsky::AtmosphereInfo m_BaseAtmosphereInfo = {};
     SkyAtmospherePreset m_AtmospherePreset = SkyAtmospherePreset::Hazy;
     bool m_Initialized = false;

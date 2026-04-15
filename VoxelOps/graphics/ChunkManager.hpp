@@ -144,9 +144,16 @@ struct ChunkRange {
     bool alive = true;
 };
 
+struct CpuChunkMesh {
+    std::vector<VoxelVertex> vertices;
+    std::vector<uint16_t> indices;
+    uint64_t revision = 0;
+};
+
 
 class WorldGen;
 class ChunkRenderSystem;
+class IRenderDevice;
 
 enum class NetworkChunkDeltaApplyResult {
     Applied = 0,
@@ -157,7 +164,7 @@ enum class NetworkChunkDeltaApplyResult {
 
 class ChunkManager{
 public:
-    ChunkManager(Renderer& renderer_);
+    ChunkManager(IRenderDevice& renderer_);
 
     void renderChunks(
         Shader& shader,
@@ -198,6 +205,9 @@ public:
     }
 
     [[nodiscard]] bool hasChunkLoaded(const glm::ivec3& chunkPos) const;
+    [[nodiscard]] const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash>& getCpuChunkMeshes() const noexcept {
+        return m_cpuChunkMeshes;
+    }
 
 
 
@@ -252,6 +262,8 @@ private:
 
 
     std::unordered_map<glm::ivec3, ChunkMesh, IVec3Hash> chunkMeshes; //deprecated
+    std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> m_cpuChunkMeshes;
+    uint64_t m_nextCpuChunkMeshRevision = 1;
 
     std::deque<glm::ivec3> m_dirtyChunkQueue;
     std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> m_dirtyChunkPending;
@@ -315,7 +327,8 @@ private:
 
     ChunkMeshBuilder builder;
 
-    GLuint wireVAO, wireVBO;
+    GLuint wireVAO = 0;
+    GLuint wireVBO = 0;
 
     std::optional<Shader> debugShader;
 
@@ -366,7 +379,8 @@ private:
         return r;
     }
 
-    Renderer& renderer;
+    IRenderDevice& renderer;
+    bool m_usesOpenGLBuffers = true;
 };
 
 

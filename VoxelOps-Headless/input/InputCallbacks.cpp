@@ -1,13 +1,14 @@
 #include "InputCallbacks.hpp"
 
 
-void InputCallbacks::framebuffer_size_callback(GLFWwindow* window, int width, int height) {
+void InputCallbacks::framebuffer_size_callback(SDL_Window* window, int width, int height) {
 	GameData::screenWidth = width;
 	GameData::screenHeight = height;
 	glViewport(0, 0, width, height);
+	(void)window;
 }
 
-void InputCallbacks::mouse_callback(GLFWwindow* window, double xpos, double ypos, bool dbgCam) {
+void InputCallbacks::mouse_callback(SDL_Window* window, float xpos, float ypos, bool dbgCam) {
 	if (GameData::cursorEnabled) return;
 	(void)window;
 	(void)xpos;
@@ -15,20 +16,26 @@ void InputCallbacks::mouse_callback(GLFWwindow* window, double xpos, double ypos
 	(void)dbgCam;
 }
 
-void InputCallbacks::mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
-	if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-		glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+void InputCallbacks::mouse_button_callback(SDL_Window* window, uint8_t button, bool pressed) {
+	if (button == SDL_BUTTON_LEFT && pressed && window != nullptr) {
+		SDL_SetWindowRelativeMouseMode(window, true);
 		GameData::cursorEnabled = false;
 	}
+	(void)window;
 }
 
-void InputCallbacks::processInput(GLFWwindow* window) {
-	double currentFrame = glfwGetTime();
+void InputCallbacks::processInput(SDL_Window* window) {
+	const double currentFrame = static_cast<double>(SDL_GetTicksNS()) / 1'000'000'000.0;
 	GameData::deltaTime = currentFrame - GameData::lastFrame;
 	GameData::lastFrame = currentFrame;
 
-	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+	int keyCount = 0;
+	const bool* keys = SDL_GetKeyboardState(&keyCount);
+	const bool escapePressed = keys != nullptr && SDL_SCANCODE_ESCAPE < keyCount && keys[SDL_SCANCODE_ESCAPE];
+	if (escapePressed) {
 		GameData::cursorEnabled = true;
-		glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+		if (window != nullptr) {
+			SDL_SetWindowRelativeMouseMode(window, false);
+		}
 	}
 }

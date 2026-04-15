@@ -3,6 +3,7 @@
 #include "Shader.hpp"
 
 #include <glm/gtc/matrix_inverse.hpp>
+#include <algorithm>
 
 Sky::Sky() = default;
 
@@ -79,4 +80,14 @@ void Sky::setSunDir(const glm::vec3& sunDir)
 const glm::vec3& Sky::getSunDir() const noexcept
 {
     return m_SunDir;
+}
+
+void Sky::setExposure(float exposure) noexcept
+{
+    m_Exposure = std::clamp(exposure, 0.05f, 8.0f);
+}
+
+float Sky::getExposure() const noexcept
+{
+    return m_Exposure;
 }

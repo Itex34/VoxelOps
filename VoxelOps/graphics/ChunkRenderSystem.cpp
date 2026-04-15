@@ -16,6 +16,34 @@ void ChunkRenderSystem::renderChunks(
     const glm::vec3& viewPosition,
     int maxRenderDistance
 ) {
+    const auto drainChunkErrors = [](const char* stage, const glm::ivec3& chunkPos) {
+        unsigned int firstError = GL_NO_ERROR;
+        int count = 0;
+        for (;;) {
+            const unsigned int err = glGetError();
+            if (err == GL_NO_ERROR) {
+                break;
+            }
+            if (count == 0) {
+                firstError = err;
+            }
+            ++count;
+        }
+        if (count > 0) {
+            static int s_chunkRenderErrorLogCount = 0;
+            if (s_chunkRenderErrorLogCount < 32) {
+                std::cerr
+                    << "[chunk] GL error during " << stage
+                    << ": count=" << count
+                    << " first=0x" << std::hex << firstError << std::dec
+                    << " chunk=(" << chunkPos.x << "," << chunkPos.y << "," << chunkPos.z << ")"
+                    << "\n";
+                ++s_chunkRenderErrorLogCount;
+            }
+        }
+        return count;
+    };
+
     const glm::vec3 playerPos = viewPosition;
     const glm::ivec3 playerBlockPos(
         static_cast<int>(std::floor(playerPos.x)),
@@ -67,7 +95,15 @@ void ChunkRenderSystem::renderChunks(
 
             glm::mat4 model(1.0f);
             model[3] = glm::vec4(min, 1.0f);
+            GLint currentProgram = 0;
+            glGetIntegerv(GL_CURRENT_PROGRAM, &currentProgram);
+            if (static_cast<GLuint>(currentProgram) != shader.ID) {
+                shader.use();
+            }
             shader.setMat4("model", model);
+            if (drainChunkErrors("set model uniform", chunkPos) > 0) {
+                continue;
+            }
             gpu.drawChunkMesh(mesh);
             ++drawnCount;
         }
@@ -123,7 +159,7 @@ void ChunkRenderSystem::renderChunksDepthPass(
         static_cast<int>(std::floor(viewPosition.z))
     );
     const glm::ivec3 playerChunkPos = cm.worldToChunkPos(playerBlockPos);
-    const int shadowCullDistance = std::max(1, maxRenderDistance + 2);
+    const int shadowCullDistance = std::max(1, maxRenderDistance + 4);
     const int64_t radius2 =
         static_cast<int64_t>(shadowCullDistance) * static_cast<int64_t>(shadowCullDistance);
 

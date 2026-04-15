@@ -2,6 +2,7 @@
 
 #include "Camera.hpp"
 
+#include <glad/glad.h>
 #include <glm/gtc/type_ptr.hpp>
 
 #include <algorithm>
@@ -43,6 +44,31 @@ const char* presetName(SkyAtmospherePreset preset)
     default: return "unknown";
     }
 }
+
+void drainPendingGlErrors(const char* stageTag)
+{
+    unsigned int firstError = GL_NO_ERROR;
+    int count = 0;
+    for (;;) {
+        const unsigned int err = glGetError();
+        if (err == GL_NO_ERROR) {
+            break;
+        }
+        if (count == 0) {
+            firstError = err;
+        }
+        ++count;
+    }
+
+    if (count > 0) {
+        static int loggedCount = 0;
+        if (loggedCount < 12) {
+            std::cerr << "[Sky] Cleared " << count << " pending GL error(s) before " << stageTag
+                      << " (first=0x" << std::hex << firstError << std::dec << ").\n";
+            ++loggedCount;
+        }
+    }
+}
 }
 
 void RealisticSkyBackend::initialize()
@@ -65,14 +91,10 @@ void RealisticSkyBackend::initialize()
     m_Renderer.setRayMarchMinSpp(8);
     m_Renderer.setRayMarchMaxSpp(24);
     m_Renderer.setColoredTransmittance(true);
-    m_Renderer.setAutoExposureEnabled(true);
-    m_Renderer.setUseHistogramAutoExposure(true);
-    m_Renderer.setAutoExposureHistogramLowPercent(60.0f);
-    m_Renderer.setAutoExposureHistogramHighPercent(96.0f);
-    m_Renderer.setAutoExposureKey(0.115f);
-    m_Renderer.setSunAngleExposureBiasEnabled(true);
-    m_Renderer.setSunAngleExposureBiasAtHorizonEv(-0.70f);
-    m_Renderer.setSunAngleExposureBiasAtNoonEv(0.70f);
+    // Temporary baseline: disable automatic exposure/adaptation for easier tuning.
+    m_Renderer.setAutoExposureEnabled(false);
+    m_Renderer.setUseHistogramAutoExposure(false);
+    m_Renderer.setSunAngleExposureBiasEnabled(false);
 
     m_BaseAtmosphereInfo = m_Renderer.getAtmosphereInfo();
     applyAtmospherePresetToRenderer();
@@ -128,6 +150,9 @@ void RealisticSkyBackend::render(const glm::mat4& projection, const glm::mat4& v
     if (!m_Initialized) {
         return;
     }
+    // PbrSky's compute pass checks glGetError() after dispatch without clearing old errors first.
+    // Drain stale errors from previous world passes so dispatch diagnostics are accurate.
+    drainPendingGlErrors("realistic sky render");
     m_Renderer.render();
 }
 
@@ -146,6 +171,19 @@ void RealisticSkyBackend::setSunDir(const glm::vec3& sunDir)
 const glm::vec3& RealisticSkyBackend::getSunDir() const noexcept
 {
     return m_SunDir;
+}
+
+void RealisticSkyBackend::setExposure(float exposure)
+{
+    m_Exposure = std::clamp(exposure, 0.05f, 8.0f);
+    if (m_Initialized) {
+        applySunToRenderer();
+    }
+}
+
+float RealisticSkyBackend::getExposure() const noexcept
+{
+    return m_Exposure;
 }
 
 bool RealisticSkyBackend::encodesOutputToSrgb() const noexcept
@@ -248,7 +286,7 @@ void RealisticSkyBackend::applySunToRenderer()
     toPbrYawPitch(m_SunDir, sunYawRad, sunPitchRad);
     m_Renderer.setSunYaw(sunYawRad);
     m_Renderer.setSunPitch(sunPitchRad);
-    m_Renderer.setSunIlluminanceScale(1.0f);
+    m_Renderer.setSunIlluminanceScale(1.12f * m_Exposure);
 }
 
 void RealisticSkyBackend::applyAtmospherePresetToRenderer()

@@ -22,6 +22,7 @@ enum ItemID : uint16_t {
     ITEM_RED_BERRY,
     ITEM_PISTOL_AMMO,
     ITEM_DIRT_BLOCK,
+    ITEM_SAPPHIRE_BLOCK,
     ITEM_COUNT
 };
 

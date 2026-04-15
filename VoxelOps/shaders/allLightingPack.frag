@@ -38,39 +38,68 @@ uniform int uOutputHdrLinear;
 uniform float uHdrTerrainExposureScale;
 uniform float uAerialDepthScaleKm;
 uniform vec3 cameraPos;
-uniform sampler2DShadow uSunShadowTex;
-uniform mat4 uSunShadowViewProj;
-uniform vec2 uSunShadowTexelSize;
+uniform sampler2DShadow uSunShadowTexNear;
+uniform sampler2DShadow uSunShadowTexFar;
+uniform sampler2D uSunShadowMomentsNear;
+uniform mat4 uSunShadowViewProjNear;
+uniform mat4 uSunShadowViewProjFar;
+uniform vec2 uSunShadowTexelSizeNear;
+uniform vec2 uSunShadowTexelSizeFar;
+uniform float uSunShadowSplitDepthKm;
+uniform float uSunShadowBlendKm;
 uniform int uUseSunShadowMap;
+uniform int uUseSunShadowMomentsNear;
 uniform int uUseBakedSunChannel;
+uniform vec3 uSunShadowDirectionalBias; // x=+Y, y=side, z=-Y
+uniform float uSunShadowLowSunBiasBoost;
 
 // --- Shadow control uniforms (added) ---
 uniform float shadowDarkness;   // 0..1. 1 = no extra darkening, 0.6..0.85 recommended
 uniform float shadowContrast;   // >= 1.0. 1.0 = linear, >1 emphasizes shadows (1.2..1.5)
 
-float sampleSunShadowVisibility(vec3 worldPos, vec3 normalWs, vec3 lightDirWs)
+float sampleSunShadowCompareNear(vec3 uvz)
 {
-    if (uUseSunShadowMap == 0) {
-        return 1.0;
-    }
+    return texture(uSunShadowTexNear, uvz);
+}
 
-    vec4 shadowClip = uSunShadowViewProj * vec4(worldPos, 1.0);
-    vec3 shadowNdc = shadowClip.xyz / max(shadowClip.w, 1e-6);
-    vec2 shadowUv = shadowNdc.xy * 0.5 + 0.5;
-    float shadowDepth = shadowNdc.z * 0.5 + 0.5;
-    if (shadowUv.x <= 0.0 || shadowUv.x >= 1.0 || shadowUv.y <= 0.0 || shadowUv.y >= 1.0 || shadowDepth <= 0.0 || shadowDepth >= 1.0) {
-        return 1.0;
-    }
+float sampleSunShadowCompareFar(vec3 uvz)
+{
+    return texture(uSunShadowTexFar, uvz);
+}
 
-    float nl = clamp(dot(normalize(normalWs), normalize(lightDirWs)), 0.0, 1.0);
-    // Receiver-plane + normal bias: reduce acne without introducing excessive peter-panning.
-    float receiverSlope = max(abs(dFdx(shadowDepth)), abs(dFdy(shadowDepth)));
-    float texelBias = 0.5 * max(uSunShadowTexelSize.x, uSunShadowTexelSize.y);
-    float slopeBias = mix(0.00045, 0.00010, nl);
-    float normalBias = (1.0 - nl) * 0.00035;
-    float bias = min(slopeBias + normalBias + receiverSlope * 1.0 + texelBias, 0.004);
-    float compareDepth = shadowDepth - bias;
+float chebyshevUpperBound(float mean, float meanSq, float t)
+{
+    float variance = max(meanSq - mean * mean, 1e-6);
+    float d = t - mean;
+    return clamp(variance / (variance + d * d), 0.0, 1.0);
+}
 
+float reduceLightBleeding(float pMax, float amount)
+{
+    return clamp((pMax - amount) / max(1.0 - amount, 1e-4), 0.0, 1.0);
+}
+
+float sampleSunShadowNearEvsmVisibility(vec2 shadowUv, float compareDepth)
+{
+    const float kEvsmPosExponent = 4.2;
+    const float kEvsmNegExponent = 4.2;
+    const float kLightBleedReduction = 0.22;
+
+    vec4 moments = texture(uSunShadowMomentsNear, shadowUv);
+    float depthNdc = clamp(compareDepth * 2.0 - 1.0, -1.0, 1.0);
+    float warpedPos = exp(kEvsmPosExponent * depthNdc);
+    float warpedNeg = -exp(-kEvsmNegExponent * depthNdc);
+
+    float pPos = (warpedPos <= moments.x) ? 1.0 : chebyshevUpperBound(moments.x, moments.y, warpedPos);
+    float pNeg = (warpedNeg <= moments.z) ? 1.0 : chebyshevUpperBound(moments.z, moments.w, warpedNeg);
+
+    float vis = min(pPos, pNeg);
+    return reduceLightBleeding(vis, kLightBleedReduction);
+}
+
+float sampleSunShadowNearPcf12(vec2 uv, float compareDepth, vec2 texelSize)
+{
+    vec2 safeTexel = max(texelSize, vec2(1e-6));
     const vec2 poisson[12] = vec2[12](
         vec2(-0.326212, -0.405810),
         vec2(-0.840144, -0.073580),
@@ -86,13 +115,182 @@ float sampleSunShadowVisibility(vec3 worldPos, vec3 normalWs, vec3 lightDirWs)
         vec2(-0.791559, -0.597710)
     );
 
-    float vis = 0.0;
-    const float radiusTexels = mix(1.9, 1.2, nl);
+    float visibility = 0.0;
     for (int i = 0; i < 12; ++i) {
-        vec2 tapUv = shadowUv + poisson[i] * (uSunShadowTexelSize * radiusTexels);
-        vis += texture(uSunShadowTex, vec3(tapUv, compareDepth));
+        vec2 sampleUv = uv + poisson[i] * safeTexel * 1.7;
+        visibility += sampleSunShadowCompareNear(vec3(sampleUv, compareDepth));
     }
-    return vis / 12.0;
+    return visibility * (1.0 / 12.0);
+}
+
+float sampleSunShadowFarPcf12(vec2 uv, float compareDepth, vec2 texelSize)
+{
+    vec2 safeTexel = max(texelSize, vec2(1e-6));
+    const vec2 poisson[12] = vec2[12](
+        vec2(-0.326212, -0.405810),
+        vec2(-0.840144, -0.073580),
+        vec2(-0.695914,  0.457137),
+        vec2(-0.203345,  0.620716),
+        vec2( 0.962340, -0.194983),
+        vec2( 0.473434, -0.480026),
+        vec2( 0.519456,  0.767022),
+        vec2( 0.185461, -0.893124),
+        vec2( 0.507431,  0.064425),
+        vec2( 0.896420,  0.412458),
+        vec2(-0.321940, -0.932615),
+        vec2(-0.791559, -0.597710)
+    );
+
+    float visibility = 0.0;
+    for (int i = 0; i < 12; ++i) {
+        vec2 sampleUv = uv + poisson[i] * safeTexel * 2.1;
+        visibility += sampleSunShadowCompareFar(vec3(sampleUv, compareDepth));
+    }
+    return visibility * (1.0 / 12.0);
+}
+
+float sampleSunShadowVisibilityFarPcf(
+    vec3 worldPos,
+    vec3 normalWs,
+    vec3 lightDirWs,
+    mat4 shadowViewProj,
+    vec2 shadowTexelSize);
+
+float sampleSunShadowVisibilityNearPcf(
+    vec3 worldPos,
+    vec3 normalWs,
+    vec3 lightDirWs)
+{
+    vec3 n = normalize(normalWs);
+    vec3 l = normalize(lightDirWs);
+    float sunGrazing = 1.0 - clamp(abs(l.y), 0.0, 1.0);
+    float lowSunBoost = 1.0 + sunGrazing * sunGrazing * clamp(uSunShadowLowSunBiasBoost, 0.0, 4.0);
+    float dotNl = dot(n, l);
+    float absNl = clamp(abs(dotNl), 0.0, 1.0);
+    float upFacing = clamp(n.y, 0.0, 1.0);
+    float downFacing = clamp(-n.y, 0.0, 1.0);
+    float sideFacing = 1.0 - clamp(abs(n.y), 0.0, 1.0);
+    vec3 dirBiasWeights = vec3(upFacing, sideFacing, downFacing);
+    float directionalBias = max(dot(max(uSunShadowDirectionalBias, vec3(0.0)), dirBiasWeights), 0.0) *
+        mix(1.0, lowSunBoost, sideFacing);
+    float skyFacing = smoothstep(0.10, 0.95, clamp(n.y, 0.0, 1.0));
+    float receiverNormalOffset =
+        (0.00008 * mix(1.0, 0.45, absNl) + skyFacing * 0.00003) *
+        mix(1.0, lowSunBoost, 0.72);
+    vec3 receiverPos = worldPos + n * receiverNormalOffset;
+
+    vec4 shadowClip = uSunShadowViewProjNear * vec4(receiverPos, 1.0);
+    vec3 shadowNdc = shadowClip.xyz / max(shadowClip.w, 1e-6);
+    vec2 shadowUv = shadowNdc.xy * 0.5 + 0.5;
+    float shadowDepth = shadowNdc.z * 0.5 + 0.5;
+    if (shadowUv.x <= 0.0 || shadowUv.x >= 1.0 || shadowUv.y <= 0.0 || shadowUv.y >= 1.0 || shadowDepth <= 0.0 || shadowDepth >= 1.0) {
+        // If the near cascade doesn't cover this fragment, use far cascade instead
+        // so nearby shadows do not pop in abruptly at near-cascade bounds.
+        return sampleSunShadowVisibilityFarPcf(
+            worldPos,
+            normalWs,
+            lightDirWs,
+            uSunShadowViewProjFar,
+            uSunShadowTexelSizeFar);
+    }
+
+    float receiverSlope = max(abs(dFdx(shadowDepth)), abs(dFdy(shadowDepth)));
+    float texelBias = 0.14 * max(uSunShadowTexelSizeNear.x, uSunShadowTexelSizeNear.y) * lowSunBoost;
+    float slopeBias = mix(0.00013, 0.00007, absNl) * mix(1.0, lowSunBoost, 0.9);
+    float normalBias = (1.0 - absNl) * 0.00007 * mix(1.0, lowSunBoost, 0.7);
+    float skyBias = skyFacing * (0.45 * texelBias + 0.00002 + (1.0 - absNl) * 0.00003);
+    float lowSunExtraBias = sunGrazing * sunGrazing * mix(0.00008, 0.00020, sideFacing);
+    float maxBias = mix(0.00110, 0.00250, clamp((lowSunBoost - 1.0) / 4.0, 0.0, 1.0));
+    float bias = min(
+        slopeBias + normalBias + skyBias + directionalBias + lowSunExtraBias +
+            receiverSlope * (0.022 * mix(1.0, lowSunBoost, 0.8)),
+        maxBias);
+    float compareDepth = shadowDepth - bias;
+
+    if (uUseSunShadowMomentsNear != 0) {
+        return sampleSunShadowNearEvsmVisibility(shadowUv, compareDepth);
+    }
+    return sampleSunShadowCompareNear(vec3(shadowUv, compareDepth));
+}
+
+float sampleSunShadowVisibilityFarPcf(
+    vec3 worldPos,
+    vec3 normalWs,
+    vec3 lightDirWs,
+    mat4 shadowViewProj,
+    vec2 shadowTexelSize)
+{
+    vec3 n = normalize(normalWs);
+    vec3 l = normalize(lightDirWs);
+    float sunGrazing = 1.0 - clamp(abs(l.y), 0.0, 1.0);
+    float lowSunBoost = 1.0 + sunGrazing * sunGrazing * clamp(uSunShadowLowSunBiasBoost, 0.0, 4.0);
+    float dotNl = dot(n, l);
+    float absNl = clamp(abs(dotNl), 0.0, 1.0);
+    float upFacing = clamp(n.y, 0.0, 1.0);
+    float downFacing = clamp(-n.y, 0.0, 1.0);
+    float sideFacing = 1.0 - clamp(abs(n.y), 0.0, 1.0);
+    vec3 dirBiasWeights = vec3(upFacing, sideFacing, downFacing);
+    float directionalBias = max(dot(max(uSunShadowDirectionalBias, vec3(0.0)), dirBiasWeights), 0.0) *
+        (1.35 * mix(1.0, lowSunBoost, sideFacing));
+    float skyFacing = smoothstep(0.10, 0.95, clamp(n.y, 0.0, 1.0));
+    float receiverNormalOffset =
+        (0.0002 * mix(1.0, 0.35, absNl) + skyFacing * 0.00006) *
+        mix(1.0, lowSunBoost, 0.8);
+    vec3 receiverPos = worldPos + n * receiverNormalOffset;
+
+    vec4 shadowClip = shadowViewProj * vec4(receiverPos, 1.0);
+    vec3 shadowNdc = shadowClip.xyz / max(shadowClip.w, 1e-6);
+    vec2 shadowUv = shadowNdc.xy * 0.5 + 0.5;
+    float shadowDepth = shadowNdc.z * 0.5 + 0.5;
+    if (shadowUv.x <= 0.0 || shadowUv.x >= 1.0 || shadowUv.y <= 0.0 || shadowUv.y >= 1.0 || shadowDepth <= 0.0 || shadowDepth >= 1.0) {
+        return 1.0;
+    }
+
+    // Receiver-plane + normal bias: reduce acne without introducing excessive peter-panning.
+    float receiverSlope = max(abs(dFdx(shadowDepth)), abs(dFdy(shadowDepth)));
+    float texelBias = 0.18 * max(shadowTexelSize.x, shadowTexelSize.y) * lowSunBoost;
+    float slopeBias = mix(0.00015, 0.00008, absNl) * mix(1.0, lowSunBoost, 0.9);
+    float normalBias = (1.0 - absNl) * 0.00009 * mix(1.0, lowSunBoost, 0.7);
+    float skyBias = skyFacing * (0.55 * texelBias + 0.00003 + (1.0 - absNl) * 0.00005);
+    float lowSunExtraBias = sunGrazing * sunGrazing * mix(0.00014, 0.00030, sideFacing);
+    float maxBias = mix(0.00180, 0.00410, clamp((lowSunBoost - 1.0) / 4.0, 0.0, 1.0));
+    float bias = min(
+        slopeBias + normalBias + skyBias + directionalBias + lowSunExtraBias +
+            receiverSlope * (0.026 * mix(1.0, lowSunBoost, 0.85)),
+        maxBias);
+    float compareDepth = shadowDepth - bias;
+
+    return sampleSunShadowCompareFar(vec3(shadowUv, compareDepth));
+}
+
+float sampleSunShadowVisibility(vec3 worldPos, vec3 normalWs, vec3 lightDirWs, float depthKm)
+{
+    if (uUseSunShadowMap == 0) {
+        return 1.0;
+    }
+
+    const float blendKm = max(uSunShadowBlendKm, 0.001);
+    const float splitKm = max(uSunShadowSplitDepthKm, blendKm);
+    const float blendStartKm = splitKm - blendKm;
+    const float blendEndKm = splitKm + blendKm;
+
+    float nearVis = sampleSunShadowVisibilityNearPcf(worldPos, normalWs, lightDirWs);
+    if (depthKm <= blendStartKm) {
+        return nearVis;
+    }
+
+    float farVis = sampleSunShadowVisibilityFarPcf(
+        worldPos,
+        normalWs,
+        lightDirWs,
+        uSunShadowViewProjFar,
+        uSunShadowTexelSizeFar);
+    if (depthKm >= blendEndKm) {
+        return farVis;
+    }
+
+    float t = clamp((depthKm - blendStartKm) / max(blendEndKm - blendStartKm, 1e-4), 0.0, 1.0);
+    return mix(nearVis, farVis, t);
 }
 
 void main() {
@@ -122,7 +320,10 @@ void main() {
     float ambientFactor = ambientStrength * (minAmbient + (1.0 - minAmbient) * aoRaw);
     vec3 ambientTerm = albedo * ambientTint * ambientFactor;
 
-    float sunShadowVis = sampleSunShadowVisibility(Position, N, L);
+    vec3 toCamera = cameraPos - Position;
+    float depthKm = max(length(toCamera) * 0.001 * max(uAerialDepthScaleKm, 0.001), 0.0);
+    float shadowDepthKm = depthKm;
+    float sunShadowVis = sampleSunShadowVisibility(Position, N, L, shadowDepthKm);
 
     // Diffuse: modulate with AO, baked sunlight and dynamic shadow map.
     float NdotL = max(dot(N, L), 0.0);
@@ -138,16 +339,18 @@ void main() {
     float sd = clamp(shadowDarkness, 0.0, 1.0);
     float shadowFactor = mix(1.0, sd, shadowMask);
 
-    // Apply shadow to ambient (primary) and a milder effect to diffuse for stronger silhouette
-    ambientTerm *= shadowFactor;
+    // Keep shadows on all faces; only soften side-face aliasing instead of removing shading.
+    float ndotlAbs = abs(dot(N, L));
+    float ambientShadowWeight = mix(0.45, 1.0, smoothstep(0.04, 0.22, ndotlAbs));
+    ambientTerm *= mix(1.0, shadowFactor, ambientShadowWeight);
     diffuseTerm *= mix(1.0, sd, shadowMask * 0.5);
 
     // Combine lighting (AO applied here as originally)
     vec3 lit = (ambientTerm + diffuseTerm) * aoMul;
 
-    vec3 color = lit;
+    vec3 color = max(lit * max(uHdrTerrainExposureScale, 0.0), vec3(0.0));
     if (uOutputHdrLinear != 0) {
-        color = max(color * uHdrTerrainExposureScale, vec3(0.0));
+        color = max(color, vec3(0.0));
     }
     else {
         // Legacy LDR look for performance/potato path.
@@ -159,8 +362,7 @@ void main() {
         color = clamp(color, 0.0, 1.0);
     }
     
-
-    FragLinearDepthKm = (uOutputHdrLinear != 0) ? max(length(cameraPos - Position) * 0.001 * max(uAerialDepthScaleKm, 0.001), 0.0) : 0.0;
+    FragLinearDepthKm = (uOutputHdrLinear != 0) ? depthKm : 0.0;
     FragColor = vec4(color, tex.a);
 }
 
