@@ -38,6 +38,7 @@ bool ServerNetwork::Start(uint16_t port) {
     {
         std::lock_guard<std::mutex> lk(m_mutex);
         m_matchScores.clear();
+        m_connectionByPlayerId.clear();
     }
     {
         std::lock_guard<std::mutex> shutdownLock(m_shutdownMutex);
@@ -126,6 +127,7 @@ void ServerNetwork::ShutdownNetworking() {
             sessions.push_back(kv);
         }
         m_clients.clear();
+        m_connectionByPlayerId.clear();
         m_matchScores.clear();
         m_worldItems.clear();
         m_nextWorldItemId = 1;
@@ -135,16 +137,7 @@ void ServerNetwork::ShutdownNetworking() {
     }
 
     for (const auto &[conn, session] : sessions) {
-        ClearChunkPipelineForConnection(conn);
-        if (session.playerId != 0) {
-            {
-                std::lock_guard<std::mutex> lk(m_mutex);
-                m_matchScores.erase(session.playerId);
-            }
-            m_playerManager.removePlayer(session.playerId);
-            InvalidateCombatSnapshotCache();
-        }
-        SteamNetworkingSockets()->CloseConnection(conn, 0, "server shutting down", false);
+        TeardownClientSession(conn, session, "server shutting down", true);
     }
 
     if (m_listenSock != k_HSteamListenSocket_Invalid) {

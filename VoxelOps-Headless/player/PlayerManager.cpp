@@ -17,7 +17,7 @@
 namespace {
 constexpr int64_t kSlowPlayerManagerUpdateUs = 4000;
 std::atomic<uint64_t> g_playerManagerSlowUpdateCount{0};
-std::atomic<bool> g_enablePlayerManagerPerfDiagnostics{true};
+std::atomic<bool> g_enablePlayerManagerPerfDiagnostics{false};
 } // namespace
 
 PlayerManager::PlayerManager() = default;

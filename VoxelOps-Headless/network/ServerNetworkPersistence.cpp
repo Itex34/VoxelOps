@@ -1,37 +1,9 @@
 #include "ServerNetwork.hpp"
-
-#include <cctype>
+#include "ValidationSystem.hpp"
 
 namespace {
-bool IsValidIdentityChar(char c) {
-    return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
-}
-
-std::string NormalizeIdentity(std::string value) {
-    std::string out;
-    out.reserve(value.size());
-    for (char c : value) {
-        const char lower = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        if (IsValidIdentityChar(lower)) {
-            out.push_back(lower);
-        }
-    }
-    if (out.size() > kMaxConnectIdentityChars) {
-        out.resize(kMaxConnectIdentityChars);
-    }
-    return out;
-}
-
 bool IsLikelyIdentityToken(const std::string &value) {
-    if (value.empty() || value.size() > kMaxConnectIdentityChars) {
-        return false;
-    }
-    for (char c : value) {
-        if (!IsValidIdentityChar(c)) {
-            return false;
-        }
-    }
-    return true;
+    return NetValidation::IsValidIdentity(value);
 }
 } // namespace
 
@@ -108,7 +80,7 @@ void ServerNetwork::LoadAdminsFromFile() {
         if (line.empty()) {
             continue;
         }
-        const std::string identity = NormalizeIdentity(line);
+        const std::string identity = NetValidation::NormalizeIdentity(line);
         if (!IsLikelyIdentityToken(identity)) {
             continue;
         }
@@ -129,9 +101,9 @@ bool ServerNetwork::SetAdminByUsername(const std::string &target, bool isAdmin) 
     const std::string trimmedTarget = target;
     std::string requestedIdentity;
     if (trimmedTarget.rfind("id:", 0) == 0) {
-        requestedIdentity = NormalizeIdentity(trimmedTarget.substr(3));
+        requestedIdentity = NetValidation::NormalizeIdentity(trimmedTarget.substr(3));
     } else {
-        requestedIdentity = NormalizeIdentity(trimmedTarget);
+        requestedIdentity = NetValidation::NormalizeIdentity(trimmedTarget);
     }
 
     bool changed = false;
@@ -190,7 +162,7 @@ bool ServerNetwork::IsAdminUsername(const std::string &usernameOrIdentity) {
     if (identity.rfind("id:", 0) == 0) {
         identity = identity.substr(3);
     }
-    identity = NormalizeIdentity(identity);
+    identity = NetValidation::NormalizeIdentity(identity);
     std::lock_guard<std::mutex> lk(m_mutex);
     return m_adminIdentities.find(identity) != m_adminIdentities.end();
 }

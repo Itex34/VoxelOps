@@ -1,4 +1,5 @@
 #include "ClientNetwork.hpp"
+#include "../../Shared/network/IdentityValidation.hpp"
 
 #include <algorithm>
 #include <array>
@@ -116,48 +117,12 @@ template <typename T> void TrimQueueToDepth(std::deque<T> &queue, size_t maxDept
     }
 }
 
-std::string TrimAscii(std::string value) {
-    size_t begin = 0;
-    while (begin < value.size() && std::isspace(static_cast<unsigned char>(value[begin])) != 0) {
-        ++begin;
-    }
-    size_t end = value.size();
-    while (end > begin && std::isspace(static_cast<unsigned char>(value[end - 1])) != 0) {
-        --end;
-    }
-    if (begin == 0 && end == value.size()) {
-        return value;
-    }
-    return value.substr(begin, end - begin);
-}
-
-bool IsValidIdentityChar(char c) {
-    return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
-}
-
 std::string NormalizeIdentity(std::string identity) {
-    identity = TrimAscii(std::move(identity));
-    std::string out;
-    out.reserve(identity.size());
-    for (char c : identity) {
-        char lower = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        if (IsValidIdentityChar(lower)) {
-            out.push_back(lower);
-        }
-    }
-    return out;
+    return Shared::NetValidation::NormalizeIdentity(identity);
 }
 
 bool IsValidIdentity(const std::string &identity) {
-    if (identity.empty() || identity.size() > kMaxConnectIdentityChars) {
-        return false;
-    }
-    for (char c : identity) {
-        if (!IsValidIdentityChar(c)) {
-            return false;
-        }
-    }
-    return true;
+    return Shared::NetValidation::IsValidIdentity(identity);
 }
 
 std::filesystem::path ResolveIdentityFilePath() {

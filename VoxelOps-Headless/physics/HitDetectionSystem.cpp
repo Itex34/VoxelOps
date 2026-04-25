@@ -20,7 +20,7 @@
 
 namespace {
 
-constexpr bool kEnableHitboxDiagnostics = true;
+constexpr bool kEnableHitboxDiagnostics = false;
 constexpr float kHitDetectionEarlyOutDistance = 0.05f;
 
 const std::string &SharedHitboxCachePath() {

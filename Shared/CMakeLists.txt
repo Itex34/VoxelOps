@@ -6,6 +6,7 @@ set(CMAKE_CXX_EXTENSIONS ON)
 
 add_library(Shared STATIC
     "network/Packets.cpp"
+    "network/IdentityValidation.cpp"
     "player/PlayerData.cpp"
     "player/HitboxCache.cpp"
     "player/MeshHitCache.cpp"

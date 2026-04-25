@@ -147,8 +147,8 @@ struct ChunkData {
     int32_t chunkY = 0;
     int32_t chunkZ = 0;
     uint64_t version = 0;
-    uint8_t flags = 0; // bit0: compressed
-    std::vector<uint8_t> payload;
+    uint8_t flags = 0; // bit0: compressed, payload encodes raw CHUNK_VOLUME voxel bytes
+    std::vector<uint8_t> payload; // raw voxels when uncompressed; [rawSize:u32][lz4 bytes] when compressed
 
     std::vector<uint8_t> serialize() const;
     static std::optional<ChunkData> deserialize(const std::vector<uint8_t> &buf);

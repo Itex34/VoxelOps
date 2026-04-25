@@ -1058,17 +1058,6 @@ build VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\world\WorldGen.cpp.obj:
   TARGET_PDB = VoxelOps-Headless\VoxelOps-Headless.pdb
   TARGET_SUPPORT_DIR = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir
 
-build VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\physics\Raycast.cpp.obj: CXX_COMPILER__VoxelOps-Headless_unscanned_Release C$:\Users\Sophie\source\repos\VoxelOps\VoxelOps-Headless\physics\Raycast.cpp || cmake_object_order_depends_target_VoxelOps-Headless
-  CONFIG = Release
-  DEFINES = -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS
-  FLAGS = /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc
-  INCLUDES = -IC:\Users\Sophie\source\repos\VoxelOps\Shared -external:IC:\vcpkg\installed\x64-windows\include -external:IC:\vcpkg\installed\x64-windows\include\GameNetworkingSockets -external:W0
-  OBJECT_DIR = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir
-  OBJECT_FILE_DIR = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\physics
-  TARGET_COMPILE_PDB = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\
-  TARGET_PDB = VoxelOps-Headless\VoxelOps-Headless.pdb
-  TARGET_SUPPORT_DIR = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir
-
 build VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\physics\HitDetectionSystem.cpp.obj: CXX_COMPILER__VoxelOps-Headless_unscanned_Release C$:\Users\Sophie\source\repos\VoxelOps\VoxelOps-Headless\physics\HitDetectionSystem.cpp || cmake_object_order_depends_target_VoxelOps-Headless
   CONFIG = Release
   DEFINES = -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS
@@ -1114,6 +1103,17 @@ build VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkGa
   TARGET_SUPPORT_DIR = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir
 
 build VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkLoop.cpp.obj: CXX_COMPILER__VoxelOps-Headless_unscanned_Release C$:\Users\Sophie\source\repos\VoxelOps\VoxelOps-Headless\network\ServerNetworkLoop.cpp || cmake_object_order_depends_target_VoxelOps-Headless
+  CONFIG = Release
+  DEFINES = -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS
+  FLAGS = /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc
+  INCLUDES = -IC:\Users\Sophie\source\repos\VoxelOps\Shared -external:IC:\vcpkg\installed\x64-windows\include -external:IC:\vcpkg\installed\x64-windows\include\GameNetworkingSockets -external:W0
+  OBJECT_DIR = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir
+  OBJECT_FILE_DIR = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network
+  TARGET_COMPILE_PDB = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\
+  TARGET_PDB = VoxelOps-Headless\VoxelOps-Headless.pdb
+  TARGET_SUPPORT_DIR = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir
+
+build VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkSessionLifecycle.cpp.obj: CXX_COMPILER__VoxelOps-Headless_unscanned_Release C$:\Users\Sophie\source\repos\VoxelOps\VoxelOps-Headless\network\ServerNetworkSessionLifecycle.cpp || cmake_object_order_depends_target_VoxelOps-Headless
   CONFIG = Release
   DEFINES = -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS
   FLAGS = /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc
@@ -1289,17 +1289,6 @@ build VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkCh
   TARGET_PDB = VoxelOps-Headless\VoxelOps-Headless.pdb
   TARGET_SUPPORT_DIR = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir
 
-build VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\physics\RayManager.cpp.obj: CXX_COMPILER__VoxelOps-Headless_unscanned_Release C$:\Users\Sophie\source\repos\VoxelOps\VoxelOps-Headless\physics\RayManager.cpp || cmake_object_order_depends_target_VoxelOps-Headless
-  CONFIG = Release
-  DEFINES = -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS
-  FLAGS = /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc
-  INCLUDES = -IC:\Users\Sophie\source\repos\VoxelOps\Shared -external:IC:\vcpkg\installed\x64-windows\include -external:IC:\vcpkg\installed\x64-windows\include\GameNetworkingSockets -external:W0
-  OBJECT_DIR = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir
-  OBJECT_FILE_DIR = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\physics
-  TARGET_COMPILE_PDB = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\
-  TARGET_PDB = VoxelOps-Headless\VoxelOps-Headless.pdb
-  TARGET_SUPPORT_DIR = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir
-
 build VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\player\Hitbox.cpp.obj: CXX_COMPILER__VoxelOps-Headless_unscanned_Release C$:\Users\Sophie\source\repos\VoxelOps\VoxelOps-Headless\player\Hitbox.cpp || cmake_object_order_depends_target_VoxelOps-Headless
   CONFIG = Release
   DEFINES = -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS
@@ -1307,17 +1296,6 @@ build VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\player\Hitbox.cpp.obj: 
   INCLUDES = -IC:\Users\Sophie\source\repos\VoxelOps\Shared -external:IC:\vcpkg\installed\x64-windows\include -external:IC:\vcpkg\installed\x64-windows\include\GameNetworkingSockets -external:W0
   OBJECT_DIR = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir
   OBJECT_FILE_DIR = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\player
-  TARGET_COMPILE_PDB = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\
-  TARGET_PDB = VoxelOps-Headless\VoxelOps-Headless.pdb
-  TARGET_SUPPORT_DIR = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir
-
-build VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\gun\Gun.cpp.obj: CXX_COMPILER__VoxelOps-Headless_unscanned_Release C$:\Users\Sophie\source\repos\VoxelOps\VoxelOps-Headless\gun\Gun.cpp || cmake_object_order_depends_target_VoxelOps-Headless
-  CONFIG = Release
-  DEFINES = -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS
-  FLAGS = /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc
-  INCLUDES = -IC:\Users\Sophie\source\repos\VoxelOps\Shared -external:IC:\vcpkg\installed\x64-windows\include -external:IC:\vcpkg\installed\x64-windows\include\GameNetworkingSockets -external:W0
-  OBJECT_DIR = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir
-  OBJECT_FILE_DIR = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\gun
   TARGET_COMPILE_PDB = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\
   TARGET_PDB = VoxelOps-Headless\VoxelOps-Headless.pdb
   TARGET_SUPPORT_DIR = VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir
@@ -1506,7 +1484,7 @@ build VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\gameplay\spawn\Respawni
 #############################################
 # Link the executable VoxelOps-Headless\VoxelOps-Headless.exe
 
-build VoxelOps-Headless\VoxelOps-Headless.exe: CXX_EXECUTABLE_LINKER__VoxelOps-Headless_Release VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\server_main.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\voxels\Voxel.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\voxels\ServerChunk.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\player\ServerPlayer.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\world\ChunkManager.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\world\WorldGen.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\physics\Raycast.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\physics\HitDetectionSystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetwork.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkBlockEdits.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkGameplay.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkLoop.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\WorldItemPhysics.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkChunkPipeline.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkCallbacks.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkPersistence.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\CompressChunk.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ChunkStore.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\PacketReader.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\PacketValidation.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\PacketParsers.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ValidationSystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\CombatRules.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerDiagnosticsFlags.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkConnection.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkCombat.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkChunkStreaming.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\physics\RayManager.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\player\Hitbox.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\gun\Gun.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\player\PlayerManager.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\player\PlayerLifecycle.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\player\PlayerUpdateSystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\player\inventory\PlayerInventorySystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\gameplay\combat\PlayerCombatSystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\gameplay\combat\LagCompensationSystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\gameplay\combat\ShootValidationSystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\gameplay\combat\DamageSystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\gameplay\combat\CombatFeedbackSystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\gameplay\combat\ShootSystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\snapshots\PlayerSnapshotSerializer.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\snapshots\PlayerSnapshotSystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\player\ServerMovementSimulation.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\PlayerInputBuffer.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\world\WorldRaycast.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\gameplay\spawn\Respawning.cpp.obj | C$:\vcpkg\installed\x64-windows\lib\glm.lib C$:\vcpkg\installed\x64-windows\lib\GameNetworkingSockets_s.lib C$:\vcpkg\installed\x64-windows\lib\GameNetworkingSockets.lib C$:\vcpkg\installed\x64-windows\lib\GameNetworkingSockets_s.lib Shared\Shared.lib C$:\vcpkg\installed\x64-windows\lib\libprotobuf.lib C$:\vcpkg\installed\x64-windows\lib\utf8_validity.lib C$:\vcpkg\installed\x64-windows\lib\abseil_dll.lib C$:\vcpkg\installed\x64-windows\lib\libcrypto.lib C$:\vcpkg\installed\x64-windows\lib\lz4.lib || Shared\Shared.lib
+build VoxelOps-Headless\VoxelOps-Headless.exe: CXX_EXECUTABLE_LINKER__VoxelOps-Headless_Release VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\server_main.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\voxels\Voxel.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\voxels\ServerChunk.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\player\ServerPlayer.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\world\ChunkManager.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\world\WorldGen.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\physics\HitDetectionSystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetwork.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkBlockEdits.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkGameplay.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkLoop.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkSessionLifecycle.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\WorldItemPhysics.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkChunkPipeline.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkCallbacks.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkPersistence.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\CompressChunk.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ChunkStore.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\PacketReader.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\PacketValidation.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\PacketParsers.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ValidationSystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\CombatRules.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerDiagnosticsFlags.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkConnection.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkCombat.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\ServerNetworkChunkStreaming.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\player\Hitbox.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\player\PlayerManager.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\player\PlayerLifecycle.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\player\PlayerUpdateSystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\player\inventory\PlayerInventorySystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\gameplay\combat\PlayerCombatSystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\gameplay\combat\LagCompensationSystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\gameplay\combat\ShootValidationSystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\gameplay\combat\DamageSystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\gameplay\combat\CombatFeedbackSystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\gameplay\combat\ShootSystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\snapshots\PlayerSnapshotSerializer.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\snapshots\PlayerSnapshotSystem.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\player\ServerMovementSimulation.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\network\PlayerInputBuffer.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\world\WorldRaycast.cpp.obj VoxelOps-Headless\CMakeFiles\VoxelOps-Headless.dir\gameplay\spawn\Respawning.cpp.obj | C$:\vcpkg\installed\x64-windows\lib\glm.lib C$:\vcpkg\installed\x64-windows\lib\GameNetworkingSockets_s.lib C$:\vcpkg\installed\x64-windows\lib\GameNetworkingSockets.lib C$:\vcpkg\installed\x64-windows\lib\GameNetworkingSockets_s.lib Shared\Shared.lib C$:\vcpkg\installed\x64-windows\lib\libprotobuf.lib C$:\vcpkg\installed\x64-windows\lib\utf8_validity.lib C$:\vcpkg\installed\x64-windows\lib\abseil_dll.lib C$:\vcpkg\installed\x64-windows\lib\libcrypto.lib C$:\vcpkg\installed\x64-windows\lib\lz4.lib || Shared\Shared.lib
   CONFIG = Release
   FLAGS = /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG
   LINK_FLAGS = /machine:x64 /INCREMENTAL:NO /subsystem:console
@@ -1558,6 +1536,16 @@ build VoxelOps-Headless\rebuild_cache: phony VoxelOps-Headless\CMakeFiles\rebuil
 build cmake_object_order_depends_target_Shared: phony || .
 
 build Shared\CMakeFiles\Shared.dir\network\Packets.cpp.obj: CXX_COMPILER__Shared_unscanned_Release C$:\Users\Sophie\source\repos\VoxelOps\Shared\network\Packets.cpp || cmake_object_order_depends_target_Shared
+  CONFIG = Release
+  FLAGS = /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest
+  INCLUDES = -IC:\Users\Sophie\source\repos\VoxelOps\Shared
+  OBJECT_DIR = Shared\CMakeFiles\Shared.dir
+  OBJECT_FILE_DIR = Shared\CMakeFiles\Shared.dir\network
+  TARGET_COMPILE_PDB = Shared\CMakeFiles\Shared.dir\Shared.pdb
+  TARGET_PDB = Shared\Shared.pdb
+  TARGET_SUPPORT_DIR = Shared\CMakeFiles\Shared.dir
+
+build Shared\CMakeFiles\Shared.dir\network\IdentityValidation.cpp.obj: CXX_COMPILER__Shared_unscanned_Release C$:\Users\Sophie\source\repos\VoxelOps\Shared\network\IdentityValidation.cpp || cmake_object_order_depends_target_Shared
   CONFIG = Release
   FLAGS = /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest
   INCLUDES = -IC:\Users\Sophie\source\repos\VoxelOps\Shared
@@ -1645,7 +1633,7 @@ build Shared\CMakeFiles\Shared.dir\player\BlockPlace.cpp.obj: CXX_COMPILER__Shar
 #############################################
 # Link the static library Shared\Shared.lib
 
-build Shared\Shared.lib: CXX_STATIC_LIBRARY_LINKER__Shared_Release Shared\CMakeFiles\Shared.dir\network\Packets.cpp.obj Shared\CMakeFiles\Shared.dir\player\PlayerData.cpp.obj Shared\CMakeFiles\Shared.dir\player\HitboxCache.cpp.obj Shared\CMakeFiles\Shared.dir\player\MeshHitCache.cpp.obj Shared\CMakeFiles\Shared.dir\runtime\Paths.cpp.obj Shared\CMakeFiles\Shared.dir\player\Inventory.cpp.obj Shared\CMakeFiles\Shared.dir\items\Items.cpp.obj Shared\CMakeFiles\Shared.dir\player\BlockPlace.cpp.obj
+build Shared\Shared.lib: CXX_STATIC_LIBRARY_LINKER__Shared_Release Shared\CMakeFiles\Shared.dir\network\Packets.cpp.obj Shared\CMakeFiles\Shared.dir\network\IdentityValidation.cpp.obj Shared\CMakeFiles\Shared.dir\player\PlayerData.cpp.obj Shared\CMakeFiles\Shared.dir\player\HitboxCache.cpp.obj Shared\CMakeFiles\Shared.dir\player\MeshHitCache.cpp.obj Shared\CMakeFiles\Shared.dir\runtime\Paths.cpp.obj Shared\CMakeFiles\Shared.dir\player\Inventory.cpp.obj Shared\CMakeFiles\Shared.dir\items\Items.cpp.obj Shared\CMakeFiles\Shared.dir\player\BlockPlace.cpp.obj
   CONFIG = Release
   LANGUAGE_COMPILE_FLAGS = /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG
   LINK_FLAGS = /machine:x64

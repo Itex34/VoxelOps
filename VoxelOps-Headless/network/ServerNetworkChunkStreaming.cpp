@@ -50,10 +50,12 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn,
         }
     }
 
-    std::unordered_set<ChunkCoord, ChunkCoordHash> currentlyStreamed;
-    std::unordered_set<ChunkCoord, ChunkCoordHash> pendingPossiblySent;
-    std::unordered_map<ChunkCoord, std::chrono::steady_clock::time_point, ChunkCoordHash>
-        pendingChunkData;
+    std::unordered_set<ChunkCoord, ChunkCoordHash> toUnloadSet;
+    std::unordered_set<ChunkCoord, ChunkCoordHash> retryToLoad;
+    std::vector<ChunkCoord> toLoad;
+    size_t pendingCount = 0;
+    size_t streamedCount = 0;
+    bool hadStreamedChunks = false;
     {
         std::lock_guard<std::mutex> lk(m_mutex);
         auto it = m_clients.find(conn);
@@ -65,44 +67,47 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn,
         it->second.viewDistance = clampedViewDistance;
         it->second.hasChunkInterest = true;
 
-        currentlyStreamed = it->second.streamedChunks;
-        pendingPossiblySent.reserve(it->second.pendingChunkData.size());
-        for (const auto &entry : it->second.pendingChunkData) {
-            pendingPossiblySent.insert(entry.first);
-        }
-
         for (auto pIt = it->second.pendingChunkData.begin();
              pIt != it->second.pendingChunkData.end();) {
             if (desired.find(pIt->first) == desired.end()) {
+                toUnloadSet.insert(pIt->first);
                 pIt = it->second.pendingChunkData.erase(pIt);
             } else {
                 ++pIt;
             }
         }
+        streamedCount = it->second.streamedChunks.size();
+        hadStreamedChunks = streamedCount > 0;
+        pendingCount = it->second.pendingChunkData.size();
+        toLoad.reserve(desired.size());
+        retryToLoad.reserve(it->second.pendingChunkData.size());
+        for (const ChunkCoord &c : desired) {
+            if (it->second.streamedChunks.find(c) != it->second.streamedChunks.end()) {
+                continue;
+            }
 
-        pendingChunkData = it->second.pendingChunkData;
+            const auto pendingIt = it->second.pendingChunkData.find(c);
+            if (pendingIt != it->second.pendingChunkData.end() &&
+                (now - pendingIt->second) < kChunkRetryInterval) {
+                continue;
+            }
+
+            if (pendingIt != it->second.pendingChunkData.end()) {
+                retryToLoad.insert(c);
+            }
+            toLoad.push_back(c);
+        }
+
+        for (const ChunkCoord &c : it->second.streamedChunks) {
+            if (desired.find(c) == desired.end()) {
+                toUnloadSet.insert(c);
+            }
+        }
     }
 
     PruneChunkPipelineForClient(conn, desired);
 
-    std::vector<ChunkCoord> toLoad;
-    toLoad.reserve(desired.size());
-    for (const ChunkCoord &c : desired) {
-        if (currentlyStreamed.find(c) != currentlyStreamed.end()) {
-            continue;
-        }
-
-        auto pendingIt = pendingChunkData.find(c);
-        if (pendingIt != pendingChunkData.end()) {
-            if ((now - pendingIt->second) < kChunkRetryInterval) {
-                continue;
-            }
-        }
-
-        toLoad.push_back(c);
-    }
-
-    const bool isInitialSync = currentlyStreamed.empty();
+    const bool isInitialSync = !hadStreamedChunks;
     int verticalAnchorY = std::clamp(centerChunk.y, minChunkY, maxChunkY);
     if (verticalAnchorY == maxChunkY && maxChunkY > minChunkY) {
         // Top-most chunk layers are often sparse; bias one layer down to prioritize terrain.
@@ -140,31 +145,18 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn,
         return a.z < b.z;
     });
 
-    std::unordered_set<ChunkCoord, ChunkCoordHash> toUnloadSet;
-    toUnloadSet.reserve(currentlyStreamed.size() + pendingPossiblySent.size());
-    for (const ChunkCoord &c : currentlyStreamed) {
-        if (desired.find(c) == desired.end()) {
-            toUnloadSet.insert(c);
-        }
-    }
-    for (const ChunkCoord &c : pendingPossiblySent) {
-        if (desired.find(c) == desired.end()) {
-            toUnloadSet.insert(c);
-        }
-    }
     std::vector<ChunkCoord> toUnload;
     toUnload.reserve(toUnloadSet.size());
     for (const ChunkCoord &c : toUnloadSet) {
         toUnload.push_back(c);
     }
 
-    size_t pendingCount = pendingChunkData.size();
     size_t queuedPrepThisUpdate = 0;
     size_t sentThisUpdate = 0;
     bool stoppedByPendingCap = false;
     bool stoppedByPrepCap = false;
     for (const ChunkCoord &c : toLoad) {
-        const bool isRetry = pendingChunkData.find(c) != pendingChunkData.end();
+        const bool isRetry = retryToLoad.find(c) != retryToLoad.end();
         if (queuedPrepThisUpdate >= kMaxChunkPrepQueuePerUpdate) {
             break;
         }
@@ -202,7 +194,7 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn,
         (now - lastLog) >= std::chrono::seconds(1)) {
         lastLog = now;
         std::cerr << "[chunk/stream] progress conn=" << conn << " desired=" << desired.size()
-                  << " streamed=" << currentlyStreamed.size() << " pending=" << pendingCount
+                  << " streamed=" << streamedCount << " pending=" << pendingCount
                   << " toLoad=" << toLoad.size() << " queuedPrepNow=" << queuedPrepThisUpdate
                   << " sentNow=" << sentThisUpdate
                   << " pendingCapHit=" << (stoppedByPendingCap ? 1 : 0)
@@ -216,7 +208,7 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn,
         !toLoad.empty() && queuedPrepThisUpdate == 0 && sentThisUpdate == 0) {
         std::cerr << "[chunk/stream] stalled load window conn=" << conn
                   << " desired=" << desired.size() << " toLoad=" << toLoad.size()
-                  << " streamed=" << currentlyStreamed.size() << " pending=" << pendingCount
+                  << " streamed=" << streamedCount << " pending=" << pendingCount
                   << " pendingCap=" << kMaxPendingChunkData
                   << " prepQueueCap=" << kMaxChunkPrepQueue << " sendQueue=" << sendQueueDepth
                   << " center=(" << centerChunk.x << "," << centerChunk.y << "," << centerChunk.z

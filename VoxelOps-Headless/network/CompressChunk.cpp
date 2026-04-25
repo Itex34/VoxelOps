@@ -1,5 +1,7 @@
 #include "CompressChunk.hpp"
 
+#include "../../Shared/network/ChunkWireFormat.hpp"
+
 #include <lz4.h>
 
 #include <limits>
@@ -8,13 +10,6 @@ namespace {
 constexpr size_t kMinCompressBytes = 1024;
 constexpr size_t kMinSavingsBytes = 64;
 constexpr size_t kMinSavingsPercent = 8;
-
-inline void WriteU32LE(std::vector<uint8_t> &dst, uint32_t value) {
-    dst.push_back(static_cast<uint8_t>(value & 0xFFu));
-    dst.push_back(static_cast<uint8_t>((value >> 8) & 0xFFu));
-    dst.push_back(static_cast<uint8_t>((value >> 16) & 0xFFu));
-    dst.push_back(static_cast<uint8_t>((value >> 24) & 0xFFu));
-}
 } // namespace
 
 CompressedChunkPayload CompressChunkPayload(const std::vector<uint8_t> &rawPayload) {
@@ -36,18 +31,20 @@ CompressedChunkPayload CompressChunkPayload(const std::vector<uint8_t> &rawPaylo
     }
 
     std::vector<uint8_t> candidate;
-    candidate.reserve(sizeof(uint32_t) + static_cast<size_t>(bound));
-    WriteU32LE(candidate, static_cast<uint32_t>(rawPayload.size()));
-    candidate.resize(sizeof(uint32_t) + static_cast<size_t>(bound));
+    candidate.reserve(Shared::ChunkWireFormat::kCompressedHeaderSize + static_cast<size_t>(bound));
+    Shared::ChunkWireFormat::WriteU32LE(candidate, static_cast<uint32_t>(rawPayload.size()));
+    candidate.resize(Shared::ChunkWireFormat::kCompressedHeaderSize + static_cast<size_t>(bound));
 
     const int compressedSize = LZ4_compress_default(
         reinterpret_cast<const char *>(rawPayload.data()),
-        reinterpret_cast<char *>(candidate.data() + sizeof(uint32_t)), inputSize, bound);
+        reinterpret_cast<char *>(candidate.data() + Shared::ChunkWireFormat::kCompressedHeaderSize),
+        inputSize, bound);
     if (compressedSize <= 0) {
         return result;
     }
 
-    candidate.resize(sizeof(uint32_t) + static_cast<size_t>(compressedSize));
+    candidate.resize(Shared::ChunkWireFormat::kCompressedHeaderSize +
+                     static_cast<size_t>(compressedSize));
 
     const size_t compressedTotal = candidate.size();
     const size_t requiredSavingsByPercent = (rawPayload.size() * kMinSavingsPercent) / 100;

@@ -9,7 +9,7 @@
 #include <shared_mutex>
 
 namespace {
-constexpr bool kEnableChunkMapMutexDiagnostics = true;
+constexpr bool kEnableChunkMapMutexDiagnostics = false;
 constexpr int64_t kSlowChunkMapLockWaitUs = 250;
 constexpr float kCollisionSkin = 0.001f;
 std::atomic<uint64_t> g_chunkMapSlowWaitLogCount{ 0 };
@@ -435,14 +435,35 @@ ServerChunk* ChunkManager::loadOrGenerateChunk(const glm::ivec3& chunkPos) {
     // Streamed chunks should include the same decoration behavior as client world generation.
     generateChunkAt(chunkPos);
 
+    bool needsPostGenerateDecoration = false;
     const auto lockStart = std::chrono::steady_clock::now();
-    std::shared_lock<std::shared_mutex> lk(mapMutex);
-    const auto waitUs = std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::steady_clock::now() - lockStart
-    ).count();
-    MaybeLogSlowChunkMapLock("loadOrGenerateChunk.postGenerateLookup", waitUs);
-    auto it = chunkMap.find(chunkPos);
-    return (it != chunkMap.end()) ? it->second.get() : nullptr;
+    {
+        std::shared_lock<std::shared_mutex> lk(mapMutex);
+        const auto waitUs = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - lockStart
+        ).count();
+        MaybeLogSlowChunkMapLock("loadOrGenerateChunk.postGenerateLookup", waitUs);
+        auto it = chunkMap.find(chunkPos);
+        if (it == chunkMap.end()) {
+            return nullptr;
+        }
+        needsPostGenerateDecoration = (decoratedChunks.find(chunkPos) == decoratedChunks.end());
+    }
+
+    if (needsPostGenerateDecoration) {
+        WorldGen::decorateChunkAt(*this, chunkPos);
+    }
+
+    {
+        const auto finalLookupStart = std::chrono::steady_clock::now();
+        std::shared_lock<std::shared_mutex> lk(mapMutex);
+        const auto waitUs = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - finalLookupStart
+        ).count();
+        MaybeLogSlowChunkMapLock("loadOrGenerateChunk.finalLookup", waitUs);
+        auto it = chunkMap.find(chunkPos);
+        return (it != chunkMap.end()) ? it->second.get() : nullptr;
+    }
 }
 
 

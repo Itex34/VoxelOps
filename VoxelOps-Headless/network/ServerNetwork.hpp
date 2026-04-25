@@ -68,6 +68,8 @@ class ServerNetwork {
                       HSteamNetConnection except = k_HSteamNetConnection_Invalid);
 
   private:
+    struct ClientSession;
+
     // Internal helpers
     void MainLoop();
     void ShutdownNetworking();
@@ -118,6 +120,15 @@ class ServerNetwork {
                                     std::chrono::steady_clock::time_point &nextCollisionPrewarmAt,
                                     double &collisionPrewarmUs);
     void ApplyLoopPacingPhase(bool simBacklog);
+    bool TryGetRegisteredPlayerId(HSteamNetConnection incoming, PlayerID &outPlayerId);
+    bool IsAnyAlivePlayerOccupyingBlock(const std::vector<ServerPlayer> &players,
+                                        const glm::ivec3 &worldPos) const;
+    bool ApplyBlockEditsAndBuildDeltas(
+        const std::unordered_map<glm::ivec3, BlockID, IVec3Hash, IVec3Eq> &normalizedEdits,
+        std::vector<ChunkDelta> &outboundDeltas);
+    void BroadcastChunkDeltas(const std::vector<ChunkDelta> &outboundDeltas);
+    void TeardownClientSession(HSteamNetConnection conn, const ClientSession &session,
+                               const char *closeReason, bool closeConnection);
 
     // Callback bridge: Steam expects a free function pointer; we implement a static
     // bridge function that calls the instance method.
@@ -235,6 +246,7 @@ class ServerNetwork {
 
     // connection -> client session
     std::unordered_map<HSteamNetConnection, ClientSession> m_clients;
+    std::unordered_map<PlayerID, HSteamNetConnection> m_connectionByPlayerId;
     std::unordered_map<PlayerID, MatchScore> m_matchScores;
     std::unordered_map<PlayerID, bool> m_lastAliveByPlayerId;
     std::unordered_map<PlayerID, std::chrono::steady_clock::time_point> m_respawnDiagUntilByPlayer;

@@ -141,22 +141,7 @@ void ServerNetwork::RunConnectionCleanupPhase() {
     }
     for (const auto &[conn, session] : staleConnections) {
         std::cout << "[cleanup] remove conn=" << conn << " user=" << session.username << "\n";
-        ClearChunkPipelineForConnection(conn);
-        if (session.playerId != 0) {
-            {
-                std::lock_guard<std::mutex> lk(m_mutex);
-                m_matchScores.erase(session.playerId);
-            }
-            m_playerManager.removePlayer(session.playerId);
-            InvalidateCombatSnapshotCache();
-        }
-        if (!session.username.empty()) {
-            std::string out;
-            out.push_back(static_cast<char>(PacketType::ClientDisconnect));
-            out += session.username;
-            BroadcastRaw(out.data(), static_cast<uint32_t>(out.size()), conn);
-        }
-        SteamNetworkingSockets()->CloseConnection(conn, 0, "server cleanup", false);
+        TeardownClientSession(conn, session, "server cleanup", true);
     }
 }
 
@@ -384,21 +369,7 @@ double ServerNetwork::RunSnapshotPhase(uint32_t serverTick,
             }
 
             for (const auto &[conn, session] : removedSessions) {
-                ClearChunkPipelineForConnection(conn);
-                if (session.playerId != 0) {
-                    std::lock_guard<std::mutex> lk(m_mutex);
-                    m_matchScores.erase(session.playerId);
-                }
-                if (session.playerId != 0) {
-                    InvalidateCombatSnapshotCache();
-                }
-                if (!session.username.empty()) {
-                    std::string out;
-                    out.push_back(static_cast<char>(PacketType::ClientDisconnect));
-                    out += session.username;
-                    BroadcastRaw(out.data(), static_cast<uint32_t>(out.size()), conn);
-                }
-                SteamNetworkingSockets()->CloseConnection(conn, 0, "server player timeout", false);
+                TeardownClientSession(conn, session, "server player timeout", true);
             }
         }
     }
@@ -894,17 +865,13 @@ void ServerNetwork::MainLoop() {
 
 // Broadcast raw payload to everyone except `except`
 void ServerNetwork::SetDebugLoggingEnabled(bool enabled) {
-    ServerDiagFlags::g_enableChunkDiagnostics.store(enabled, std::memory_order_release);
-    ServerDiagFlags::g_enableServerPerfDiagnostics.store(enabled, std::memory_order_release);
-    ServerDiagFlags::g_enableRespawnRubberbandDiagnostics.store(enabled, std::memory_order_release);
+    ServerDiagFlags::SetAllEnabled(enabled);
     m_playerManager.SetDebugLoggingEnabled(enabled);
     std::cout << "[debug] diagnostics " << (enabled ? "enabled" : "disabled") << "\n";
 }
 
 bool ServerNetwork::IsDebugLoggingEnabled() {
-    if (ServerDiagFlags::g_enableChunkDiagnostics.load(std::memory_order_acquire) ||
-        ServerDiagFlags::g_enableServerPerfDiagnostics.load(std::memory_order_acquire) ||
-        ServerDiagFlags::g_enableRespawnRubberbandDiagnostics.load(std::memory_order_acquire)) {
+    if (ServerDiagFlags::IsAnyEnabled()) {
         return true;
     }
     return m_playerManager.IsDebugLoggingEnabled();

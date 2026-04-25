@@ -30,32 +30,6 @@ static ProcessMemoryStatsMB getProcessMemoryMB() {
 #include <iostream>
 
 namespace {
-bool readI32LE(const std::vector<uint8_t> &data, size_t &offset, int32_t &out) {
-    if (offset + 4 > data.size()) {
-        return false;
-    }
-    uint32_t u = static_cast<uint32_t>(data[offset]) |
-                 (static_cast<uint32_t>(data[offset + 1]) << 8) |
-                 (static_cast<uint32_t>(data[offset + 2]) << 16) |
-                 (static_cast<uint32_t>(data[offset + 3]) << 24);
-    out = static_cast<int32_t>(u);
-    offset += 4;
-    return true;
-}
-
-bool readI64LE(const std::vector<uint8_t> &data, size_t &offset, int64_t &out) {
-    if (offset + 8 > data.size()) {
-        return false;
-    }
-    uint64_t u = 0;
-    for (int i = 0; i < 8; ++i) {
-        u |= static_cast<uint64_t>(data[offset + i]) << (8 * i);
-    }
-    out = static_cast<int64_t>(u);
-    offset += 8;
-    return true;
-}
-
 uint32_t fnv1a32(const uint8_t *data, size_t size) {
     uint32_t h = 2166136261u;
     for (size_t i = 0; i < size; ++i) {
@@ -304,89 +278,18 @@ bool ChunkManager::applyNetworkChunkData(const ChunkData &packet) {
         return false;
     }
 
-    const std::vector<uint8_t> &payload = decodedPayload;
     const uint32_t payloadHash = fnv1a32(packet.payload.data(), packet.payload.size());
     const size_t rawBlockBytes = CHUNK_VOLUME * sizeof(BlockID);
-    const uint8_t *raw = nullptr;
-    glm::ivec3 chunkPos(packet.chunkX, packet.chunkY, packet.chunkZ);
-    uint64_t incomingVersion = packet.version;
-
-    // payload format mirrors ServerChunk::serializeCompressed():
-    // [cx:i32][cy:i32][cz:i32][version:i64][flags:u8][dataSize:i32][voxel bytes...]
-    {
-        size_t offset = 0;
-        int32_t payloadX = 0;
-        int32_t payloadY = 0;
-        int32_t payloadZ = 0;
-        int64_t payloadVersion = 0;
-        int32_t dataSize = 0;
-
-        bool validWrappedPayload = true;
-        validWrappedPayload = validWrappedPayload && readI32LE(payload, offset, payloadX);
-        validWrappedPayload = validWrappedPayload && readI32LE(payload, offset, payloadY);
-        validWrappedPayload = validWrappedPayload && readI32LE(payload, offset, payloadZ);
-        validWrappedPayload = validWrappedPayload && readI64LE(payload, offset, payloadVersion);
-        if (validWrappedPayload) {
-            if (offset + 1 > payload.size()) {
-                validWrappedPayload = false;
-            } else {
-                const uint8_t flags = payload[offset++];
-                if ((flags & ~0x1u) != 0u) {
-                    validWrappedPayload = false;
-                }
-            }
-        }
-        validWrappedPayload = validWrappedPayload && readI32LE(payload, offset, dataSize);
-        if (validWrappedPayload) {
-            if (dataSize < 0) {
-                validWrappedPayload = false;
-            } else {
-                const size_t size = static_cast<size_t>(dataSize);
-                if (offset + size > payload.size() || size != rawBlockBytes) {
-                    validWrappedPayload = false;
-                }
-            }
-        }
-
-        if (validWrappedPayload) {
-            if (payloadX != packet.chunkX || payloadY != packet.chunkY ||
-                payloadZ != packet.chunkZ) {
-                std::cerr << "[chunk/apply] header mismatch packet=(" << packet.chunkX << ","
-                          << packet.chunkY << "," << packet.chunkZ << ") payload=(" << payloadX
-                          << "," << payloadY << "," << payloadZ << ")\n";
-                return false;
-            }
-
-            if (payloadVersion < 0) {
-                std::cerr << "[chunk/apply] invalid negative payload version chunk=("
-                          << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ << ")"
-                          << " version=" << payloadVersion << "\n";
-                return false;
-            }
-            incomingVersion = static_cast<uint64_t>(payloadVersion);
-            if (incomingVersion != packet.version) {
-                std::cerr << "[chunk/apply] packet version mismatch chunk=(" << packet.chunkX << ","
-                          << packet.chunkY << "," << packet.chunkZ << ")"
-                          << " packetVersion=" << packet.version
-                          << " payloadVersion=" << incomingVersion << "\n";
-                return false;
-            }
-            raw = payload.data() + offset;
-        }
-    }
-
-    if (!raw) {
-        // Backward compatibility for payloads that only contain raw voxels.
-        if (payload.size() != rawBlockBytes) {
-            std::cerr << "[chunk/apply] invalid ChunkData payload size=" << payload.size()
-                      << " expected=" << rawBlockBytes << " chunk=(" << packet.chunkX << ","
-                      << packet.chunkY << "," << packet.chunkZ << ")\n";
-            return false;
-        }
-        std::cerr << "[chunk/apply] using raw fallback payload for chunk=(" << packet.chunkX << ","
+    if (decodedPayload.size() != rawBlockBytes) {
+        std::cerr << "[chunk/apply] invalid ChunkData payload size=" << decodedPayload.size()
+                  << " expected=" << rawBlockBytes << " chunk=(" << packet.chunkX << ","
                   << packet.chunkY << "," << packet.chunkZ << ")\n";
-        raw = payload.data();
+        return false;
     }
+
+    const uint8_t *raw = decodedPayload.data();
+    glm::ivec3 chunkPos(packet.chunkX, packet.chunkY, packet.chunkZ);
+    const uint64_t incomingVersion = packet.version;
 
     auto knownVersionIt = m_networkChunkVersions.find(chunkPos);
     if (knownVersionIt != m_networkChunkVersions.end() &&
@@ -429,7 +332,7 @@ bool ChunkManager::applyNetworkChunkData(const ChunkData &packet) {
         std::cerr << "[chunk/apply] suspicious low nonAir in bottom chunk chunk=(" << chunkPos.x
                   << "," << chunkPos.y << "," << chunkPos.z << ")"
                   << " nonAir=" << nonAirCount << " payloadHash=" << payloadHash
-                  << " payloadBytes=" << payload.size() << "\n";
+                  << " payloadBytes=" << decodedPayload.size() << "\n";
     }
 
     rebuildColumnSunCache(chunkPos.x, chunkPos.z);

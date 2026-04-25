@@ -10,8 +10,7 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
 
 add_executable(VoxelOps-Headless 
     "server_main.cpp"  
-    
-    
+   
     "voxels/Voxel.cpp"
     "voxels/ServerChunk.cpp" 
     
@@ -19,13 +18,13 @@ add_executable(VoxelOps-Headless
     "world/ChunkManager.cpp"
     "world/WorldGen.cpp"
      
-    "physics/Raycast.cpp" 
     "physics/HitDetectionSystem.cpp"
     
     "network/ServerNetwork.cpp"
     "network/ServerNetworkBlockEdits.cpp"
     "network/ServerNetworkGameplay.cpp"
     "network/ServerNetworkLoop.cpp"
+    "network/ServerNetworkSessionLifecycle.cpp"
     "network/WorldItemPhysics.cpp"
     "network/ServerNetworkChunkPipeline.cpp"
     "network/ServerNetworkCallbacks.cpp"
@@ -41,9 +40,7 @@ add_executable(VoxelOps-Headless
     "network/ServerNetworkConnection.cpp"
     "network/ServerNetworkCombat.cpp"
     "network/ServerNetworkChunkStreaming.cpp"
-    "physics/RayManager.cpp" 
     "player/Hitbox.cpp" 
-    "gun/Gun.cpp"
     "player/PlayerManager.cpp"
     "player/PlayerLifecycle.cpp"
     "player/PlayerUpdateSystem.cpp"

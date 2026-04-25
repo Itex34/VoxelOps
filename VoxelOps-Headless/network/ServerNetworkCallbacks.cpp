@@ -76,25 +76,9 @@ void ServerNetwork::OnConnectionStatusChanged(SteamNetConnectionStatusChangedCal
                 m_clients.erase(it);
             }
         }
-        if (session.playerId != 0) {
-            {
-                std::lock_guard<std::mutex> lk(m_mutex);
-                m_matchScores.erase(session.playerId);
-            }
-            m_playerManager.removePlayer(session.playerId);
-            InvalidateCombatSnapshotCache();
-        }
-        ClearChunkPipelineForConnection(hConn);
-        if (!session.username.empty()) {
-            std::string out;
-            out.push_back(static_cast<char>(PacketType::ClientDisconnect));
-            out += session.username;
-            BroadcastRaw(out.data(), (uint32_t)out.size(), hConn);
-        }
+        TeardownClientSession(hConn, session, "closed by server callback", true);
         std::cout << "[callback] conn closed/failed: conn=" << hConn << " reason=" << info.m_eState
                   << "\n";
-        // Safe to CloseConnection here if you want:
-        SteamNetworkingSockets()->CloseConnection(hConn, 0, "closed by server callback", false);
         return;
     }
 

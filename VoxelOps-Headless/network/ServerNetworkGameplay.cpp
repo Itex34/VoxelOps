@@ -39,11 +39,9 @@ void ServerNetwork::SendInventorySnapshotToPlayer(PlayerID playerId) {
     HSteamNetConnection conn = k_HSteamNetConnection_Invalid;
     {
         std::lock_guard<std::mutex> lk(m_mutex);
-        for (const auto &[sessionConn, session] : m_clients) {
-            if (session.playerId == playerId) {
-                conn = sessionConn;
-                break;
-            }
+        const auto connIt = m_connectionByPlayerId.find(playerId);
+        if (connIt != m_connectionByPlayerId.end()) {
+            conn = connIt->second;
         }
     }
     if (conn == k_HSteamNetConnection_Invalid) {
@@ -71,6 +69,13 @@ void ServerNetwork::UpdateWorldItems(double deltaSeconds) {
     std::unordered_set<PlayerID> inventoryChangedPlayers;
 
     const std::vector<ServerPlayer> players = m_playerManager.getAllPlayersCopy();
+    std::vector<const ServerPlayer *> alivePlayers;
+    alivePlayers.reserve(players.size());
+    for (const ServerPlayer &player : players) {
+        if (player.isAlive) {
+            alivePlayers.push_back(&player);
+        }
+    }
 
     for (auto it = m_worldItems.begin(); it != m_worldItems.end();) {
         WorldItemEntity &item = it->second;
@@ -85,21 +90,18 @@ void ServerNetwork::UpdateWorldItems(double deltaSeconds) {
                                      m_chunkManager);
 
         if (item.pickupCooldownSeconds <= 0.0f) {
-            for (const ServerPlayer &player : players) {
-                if (!player.isAlive) {
-                    continue;
-                }
-                const glm::vec3 delta = player.position - item.position;
+            for (const ServerPlayer *player : alivePlayers) {
+                const glm::vec3 delta = player->position - item.position;
                 if (glm::dot(delta, delta) > pickupRadiusSq) {
                     continue;
                 }
 
                 uint16_t acceptedQuantity = 0;
-                if (m_playerManager.appendItemsToInventory(player.id, item.itemId, item.quantity,
+                if (m_playerManager.appendItemsToInventory(player->id, item.itemId, item.quantity,
                                                            acceptedQuantity, nullptr) &&
                     acceptedQuantity > 0) {
                     item.quantity = static_cast<uint16_t>(item.quantity - acceptedQuantity);
-                    inventoryChangedPlayers.insert(player.id);
+                    inventoryChangedPlayers.insert(player->id);
                     if (item.quantity == 0) {
                         break;
                     }
@@ -122,15 +124,22 @@ void ServerNetwork::UpdateWorldItems(double deltaSeconds) {
 
 void ServerNetwork::SendWorldItemSnapshots(
     const std::vector<std::pair<HSteamNetConnection, PlayerID>> &recipients, uint32_t serverTick) {
+    const std::vector<ServerPlayer> players = m_playerManager.getAllPlayersCopy();
+    std::unordered_map<PlayerID, glm::vec3> playerPositions;
+    playerPositions.reserve(players.size());
+    for (const ServerPlayer &player : players) {
+        playerPositions.emplace(player.id, player.position);
+    }
+
     for (const auto &[conn, playerId] : recipients) {
-        const std::optional<ServerPlayer> playerOpt = m_playerManager.getPlayerCopy(playerId);
-        if (!playerOpt.has_value()) {
+        const auto playerIt = playerPositions.find(playerId);
+        if (playerIt == playerPositions.end()) {
             continue;
         }
 
         WorldItemSnapshot snapshot{};
         snapshot.serverTick = serverTick;
-        const glm::vec3 playerPos = playerOpt->position;
+        const glm::vec3 &playerPos = playerIt->second;
         constexpr float kItemReplicateRadius = 40.0f;
         const float radiusSq = kItemReplicateRadius * kItemReplicateRadius;
 

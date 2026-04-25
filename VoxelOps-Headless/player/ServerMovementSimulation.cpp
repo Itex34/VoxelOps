@@ -16,7 +16,7 @@ namespace ServerMovementSimulation {
 namespace {
 constexpr bool kServerBlockOnMissingCollisionChunk = true;
 std::atomic<uint64_t> g_missingChunkCollisionCount{ 0 };
-std::atomic<bool> g_enableMissingChunkCollisionDiagnostics{ true };
+std::atomic<bool> g_enableMissingChunkCollisionDiagnostics{ false };
 
 bool checkCollision(const ServerPlayer& p, const glm::vec3& pos, ChunkManager& chunkManager) {
     if (p.flyMode) return false;

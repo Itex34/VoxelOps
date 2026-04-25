@@ -121,10 +121,27 @@ void WorldGen::generateChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
     // Reuse the client-style two-pass decoration rules for consistency with the client worldgen.
     applyClientDecorationPass(cm, *chunk, pos);
 
+    bool shouldDecorateExisting = false;
+    ServerChunk* existingChunk = nullptr;
     {
         std::lock_guard<std::shared_mutex> lk(cm.mapMutex);
-        cm.chunkMap[pos] = std::move(chunk);
-        cm.chunkMap[pos]->markDirty();
+        auto it = cm.chunkMap.find(pos);
+        if (it == cm.chunkMap.end()) {
+            auto [insertedIt, inserted] = cm.chunkMap.emplace(pos, std::move(chunk));
+            (void)inserted;
+            insertedIt->second->markDirty();
+            cm.decoratedChunks.insert(pos);
+            return;
+        }
+
+        existingChunk = it->second.get();
+        shouldDecorateExisting = (cm.decoratedChunks.find(pos) == cm.decoratedChunks.end());
+    }
+
+    if (shouldDecorateExisting && existingChunk != nullptr) {
+        // Another thread inserted terrain while we were generating; finish decoration in place.
+        applyClientDecorationPass(cm, *existingChunk, pos);
+        std::lock_guard<std::shared_mutex> lk(cm.mapMutex);
         cm.decoratedChunks.insert(pos);
     }
 }
@@ -170,8 +187,14 @@ void WorldGen::generateTerrainChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
 
     {
         std::lock_guard<std::shared_mutex> lk(cm.mapMutex);
-        cm.chunkMap[pos] = std::move(chunk);
-        cm.chunkMap[pos]->markDirty();
+        auto it = cm.chunkMap.find(pos);
+        if (it != cm.chunkMap.end()) {
+            return;
+        }
+
+        auto [insertedIt, inserted] = cm.chunkMap.emplace(pos, std::move(chunk));
+        (void)inserted;
+        insertedIt->second->markDirty();
         cm.decoratedChunks.erase(pos);
     }
 }

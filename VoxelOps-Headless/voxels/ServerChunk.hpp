@@ -92,6 +92,10 @@ class ServerChunk {
         return (unsigned)x < CHUNK_SIZE && (unsigned)y < CHUNK_SIZE && (unsigned)z < CHUNK_SIZE;
     }
 
+
+    void fillRawVoxelBytes(uint8_t *outBuf, size_t bufSize) const;
+    void loadRawVoxelBytes(const uint8_t *data, size_t bufSize);
+
   private:
     // internal index arithmetic (same as client)
     static inline constexpr int idx(int x, int y, int z) noexcept {
@@ -135,7 +139,5 @@ class ServerChunk {
     static std::vector<uint8_t> compressBlob(const uint8_t *data, size_t size);
     static std::vector<uint8_t> decompressBlob(const uint8_t *data, size_t size);
 
-    // only used by (de)serialization to get raw voxel bytes
-    void fillRawVoxelBytes(uint8_t *outBuf, size_t bufSize) const;
-    void loadRawVoxelBytes(const uint8_t *data, size_t bufSize);
+
 };

@@ -198,6 +198,7 @@ void ServerNetwork::HandleConnectRequest(HSteamNetConnection incoming, const voi
             it->second.isAdmin = (m_adminIdentities.find(identity) != m_adminIdentities.end());
             sessionIsAdmin = it->second.isAdmin;
             attached = true;
+            m_connectionByPlayerId[playerId] = incoming;
             m_matchScores[playerId] = MatchScore{};
 
             if (!m_matchStarted) {
