@@ -19,8 +19,8 @@ struct InputState {
 };
 
 struct State {
-    glm::vec3 position{ 0.0f };
-    glm::vec3 velocity{ 0.0f };
+    glm::vec3 position{0.0f};
+    glm::vec3 velocity{0.0f};
     bool onGround = false;
     bool flyMode = false;
     bool jumpPressedLastTick = false;
@@ -39,13 +39,9 @@ inline float Lerp(float a, float b, float t) {
 }
 
 template <typename CollisionFn>
-inline float MoveAndCollide(
-    State& state,
-    const glm::vec3& delta,
-    const PlayerData::MovementSettings& movement,
-    bool allowStepUp,
-    CollisionFn&& collides
-) {
+inline float MoveAndCollide(State &state, const glm::vec3 &delta,
+                            const PlayerData::MovementSettings &movement, bool allowStepUp,
+                            CollisionFn &&collides) {
     float stepUpHeight = 0.0f;
     const bool wasGrounded = state.onGround;
 
@@ -62,7 +58,8 @@ inline float MoveAndCollide(
     if (collides(tryPos)) {
         bool stepped = false;
         if (allowStepUp && state.onGround && std::abs(delta.x) > 1e-6f) {
-            for (float step = movement.stepIncrement; step <= movement.maxStepHeight + 1e-6f; step += movement.stepIncrement) {
+            for (float step = movement.stepIncrement; step <= movement.maxStepHeight + 1e-6f;
+                 step += movement.stepIncrement) {
                 glm::vec3 testPos = xBasePos;
                 testPos.y += step;
                 testPos.x += delta.x;
@@ -89,7 +86,8 @@ inline float MoveAndCollide(
     if (collides(tryPos)) {
         bool stepped = false;
         if (allowStepUp && state.onGround && std::abs(delta.z) > 1e-6f) {
-            for (float step = movement.stepIncrement; step <= movement.maxStepHeight + 1e-6f; step += movement.stepIncrement) {
+            for (float step = movement.stepIncrement; step <= movement.maxStepHeight + 1e-6f;
+                 step += movement.stepIncrement) {
                 glm::vec3 testPos = zBasePos;
                 testPos.y += step;
                 testPos.z += delta.z;
@@ -117,15 +115,13 @@ inline float MoveAndCollide(
         tryPosY.y += delta.y;
         if (!collides(tryPosY)) {
             tryPos = tryPosY;
-        }
-        else {
+        } else {
             if (delta.y < 0.0f) {
                 state.onGround = true;
                 state.velocity.y = 0.0f;
                 if (wasGrounded) {
                     tryPos.y = state.position.y;
-                }
-                else {
+                } else {
                     float lowY = tryPosY.y;
                     float highY = tryPos.y;
                     for (int i = 0; i < 10; ++i) {
@@ -134,37 +130,28 @@ inline float MoveAndCollide(
                         testPos.y = midY;
                         if (collides(testPos)) {
                             lowY = midY;
-                        }
-                        else {
+                        } else {
                             highY = midY;
                         }
                     }
                     tryPos.y = highY;
                 }
-            }
-            else {
+            } else {
                 state.velocity.y = 0.0f;
                 tryPos.y = state.position.y;
             }
         }
-    }
-    else {
+    } else {
         state.onGround = true;
         state.velocity.y = 0.0f;
     }
 
     if (steppedDuringMove && stepUpHeight > 0.0f) {
         // Stepping up should cost horizontal momentum, especially for tall steps.
-        const float heightRatio = std::clamp(
-            stepUpHeight / std::max(movement.maxStepHeight, 1e-4f),
-            0.0f,
-            1.0f
-        );
-        const float slowdown = std::clamp(
-            1.0f - movement.stepUpHorizontalSlowdown * heightRatio,
-            0.2f,
-            1.0f
-        );
+        const float heightRatio =
+            std::clamp(stepUpHeight / std::max(movement.maxStepHeight, 1e-4f), 0.0f, 1.0f);
+        const float slowdown =
+            std::clamp(1.0f - movement.stepUpHorizontalSlowdown * heightRatio, 0.2f, 1.0f);
         // Apply slowdown to this frame's horizontal travel, not only velocity,
         // because ground acceleration can restore velocity immediately on next tick.
         tryPos.x = state.position.x + (tryPos.x - state.position.x) * slowdown;
@@ -178,15 +165,9 @@ inline float MoveAndCollide(
 }
 
 template <typename CollisionFn>
-inline void Simulate(
-    State& state,
-    const InputState& input,
-    float dt,
-    const PlayerData::MovementSettings& movement,
-    const Options& options,
-    CollisionFn&& collides,
-    float* outStepUpHeight = nullptr
-) {
+inline void Simulate(State &state, const InputState &input, float dt,
+                     const PlayerData::MovementSettings &movement, const Options &options,
+                     CollisionFn &&collides, float *outStepUpHeight = nullptr) {
     dt = std::max(0.0f, dt);
 
     state.flyMode = options.allowFlyMode && input.flyMode;
@@ -202,18 +183,15 @@ inline void Simulate(
 
     if (state.flyMode) {
         float verticalInput = 0.0f;
-        if ((input.flags & kPlayerInputFlagFlyUp) != 0) verticalInput += 1.0f;
-        if ((input.flags & kPlayerInputFlagFlyDown) != 0) verticalInput -= 1.0f;
+        if ((input.flags & kPlayerInputFlagFlyUp) != 0)
+            verticalInput += 1.0f;
+        if ((input.flags & kPlayerInputFlagFlyDown) != 0)
+            verticalInput -= 1.0f;
 
         state.velocity = desiredHorizontal;
         state.velocity.y = verticalInput * targetSpeed;
-        const float steppedHeight = MoveAndCollide(
-            state,
-            state.velocity * dt,
-            movement,
-            false,
-            std::forward<CollisionFn>(collides)
-        );
+        const float steppedHeight = MoveAndCollide(state, state.velocity * dt, movement, false,
+                                                   std::forward<CollisionFn>(collides));
         if (outStepUpHeight != nullptr) {
             *outStepUpHeight = steppedHeight;
         }
@@ -227,14 +205,12 @@ inline void Simulate(
     const bool jumpPressed = (input.flags & kPlayerInputFlagJump) != 0;
     if (state.onGround) {
         state.timeSinceGrounded = 0.0f;
-    }
-    else {
+    } else {
         state.timeSinceGrounded += dt;
     }
     if (jumpPressed && !state.jumpPressedLastTick) {
         state.jumpBufferTimer = movement.jumpBufferSec;
-    }
-    else {
+    } else {
         state.jumpBufferTimer = std::max(0.0f, state.jumpBufferTimer - dt);
     }
 
@@ -253,8 +229,8 @@ inline void Simulate(
         const bool hasMoveIntent = glm::length(moveInput) > movement.sprintJumpMinMoveInput;
         const bool useSprintJump = sprint && hasMoveIntent;
         state.velocity.y = useSprintJump
-            ? movement.jumpVelocity * movement.sprintJumpVelocityMultiplier
-            : movement.jumpVelocity;
+                               ? movement.jumpVelocity * movement.sprintJumpVelocityMultiplier
+                               : movement.jumpVelocity;
         state.onGround = false;
         state.timeSinceGrounded = movement.coyoteTimeSec + dt;
         state.jumpBufferTimer = 0.0f;
@@ -263,13 +239,9 @@ inline void Simulate(
 
     const bool allowStepUpForTick =
         options.allowStepUp && (!options.requireSprintForStepUp || sprint);
-    const float steppedHeight = MoveAndCollide(
-        state,
-        state.velocity * dt,
-        movement,
-        allowStepUpForTick,
-        std::forward<CollisionFn>(collides)
-    );
+    const float steppedHeight =
+        MoveAndCollide(state, state.velocity * dt, movement, allowStepUpForTick,
+                       std::forward<CollisionFn>(collides));
     if (outStepUpHeight != nullptr) {
         *outStepUpHeight = steppedHeight;
     }

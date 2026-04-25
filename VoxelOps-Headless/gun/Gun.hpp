@@ -10,16 +10,16 @@
 class Shader; // forward
 
 class Gun {
-public:
+  public:
     // seconds between shots, reload time in seconds
     Gun(float inFireInterval = 0.2f, float inReloadTime = 3.0f) noexcept;
     ~Gun() = default;
 
     // Non-copyable (models usually not copyable). Movable allowed.
-    Gun(const Gun&) = delete;
-    Gun& operator=(const Gun&) = delete;
-    Gun(Gun&&) noexcept = default;
-    Gun& operator=(Gun&&) noexcept = default;
+    Gun(const Gun &) = delete;
+    Gun &operator=(const Gun &) = delete;
+    Gun(Gun &&) noexcept = default;
+    Gun &operator=(Gun &&) noexcept = default;
 
     // Input: call when player presses fire
     void requestFire() noexcept;
@@ -27,10 +27,10 @@ public:
     // Update internal timers and perform fire when allowed.
     // rayOrigin / rayDirection are used when firing.
     // deltaTime is seconds elapsed since last update.
-    void update(const glm::vec3& rayOrigin, const glm::vec3& rayDirection, float deltaTime);
+    void update(const glm::vec3 &rayOrigin, const glm::vec3 &rayDirection, float deltaTime);
 
     // immediate fire (performs raycast / effects). Usually internal.
-    void fire(const glm::vec3& rayOrigin, const glm::vec3& rayDirection);
+    void fire(const glm::vec3 &rayOrigin, const glm::vec3 &rayDirection);
 
     // Render the gun model relative to given transform
 
@@ -38,25 +38,29 @@ public:
     void reload() noexcept;
 
     // Load gun model. Returns true on success.
-    bool loadModel(const std::string& path);
+    bool loadModel(const std::string &path);
 
     // getters
-    unsigned int getCurrentAmmo() const noexcept { return currentAmmo; }
-    unsigned int getMaxAmmo() const noexcept { return maxAmmo; }
-    bool isReloadingNow() const noexcept { return isReloading; }
+    unsigned int getCurrentAmmo() const noexcept {
+        return currentAmmo;
+    }
+    unsigned int getMaxAmmo() const noexcept {
+        return maxAmmo;
+    }
+    bool isReloadingNow() const noexcept {
+        return isReloading;
+    }
 
-public:
+  public:
     glm::vec3 gunCamOffset = glm::vec3(0.08f, -0.05f, -0.12f); // example typical values (meters)
     glm::vec3 hitPoint = glm::vec3(0.0f);
 
     static constexpr float maxShootDistance = 10000.0f;
 
-private:
-
-
+  private:
     // settings
-    float reloadTime;     // seconds
-    float fireInterval;   // seconds per shot
+    float reloadTime;   // seconds
+    float fireInterval; // seconds per shot
 
     // state
     float timeSinceLastShot = 0.0f;
@@ -69,5 +73,5 @@ private:
     unsigned int currentAmmo = maxAmmo;
 
     // internal helper
-    void tryFireIfReady(const glm::vec3& rayOrigin, const glm::vec3& rayDirection);
+    void tryFireIfReady(const glm::vec3 &rayOrigin, const glm::vec3 &rayDirection);
 };

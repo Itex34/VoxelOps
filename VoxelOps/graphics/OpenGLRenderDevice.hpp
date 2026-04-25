@@ -4,7 +4,7 @@
 #include "Renderer.hpp"
 
 class OpenGLRenderDevice final : public IRenderDevice {
-public:
+  public:
     OpenGLRenderDevice() = default;
     ~OpenGLRenderDevice() override = default;
 
@@ -14,11 +14,11 @@ public:
     std::string_view getActiveBackendName() const noexcept override;
     bool isMDIUsable() const noexcept override;
 
-    void renderFrame(RenderFrameParams& params) override;
+    void renderFrame(RenderFrameParams &params) override;
     void shutdown() override;
 
     std::string_view getApiName() const noexcept override;
 
-private:
+  private:
     Renderer m_renderer;
 };

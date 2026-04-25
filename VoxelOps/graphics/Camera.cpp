@@ -2,9 +2,8 @@
 
 Camera::Camera(glm::vec3 startPos)
     : position(startPos), front(glm::vec3(0.0f, 0.0f, -1.0f)),
-    XZfront(glm::vec3(0.0f, 0.0f, -1.0f)),
-    up(glm::vec3(0.0f, 1.0f, 0.0f)), yaw(-90.0f), pitch(0.0f) {
-}
+      XZfront(glm::vec3(0.0f, 0.0f, -1.0f)), up(glm::vec3(0.0f, 1.0f, 0.0f)), yaw(-90.0f),
+      pitch(0.0f) {}
 
 glm::mat4 Camera::getViewMatrix() const {
     return glm::lookAt(position, position + front, up);
@@ -13,8 +12,6 @@ glm::mat4 Camera::getViewMatrix() const {
 void Camera::updateRotation(float newYaw, float newPitch) {
     yaw = newYaw;
     pitch = newPitch;
-
-
 
     direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
     direction.y = sin(glm::radians(pitch));
@@ -31,4 +28,3 @@ float Camera::getYaw() const {
 float Camera::getPitch() const {
     return pitch;
 }
-

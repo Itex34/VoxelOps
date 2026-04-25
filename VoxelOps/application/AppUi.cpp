@@ -24,13 +24,14 @@ using namespace AppHelpers;
 namespace {
 bool IsScancodeDown(SDL_Scancode scancode) {
     int keyCount = 0;
-    const bool* keys = SDL_GetKeyboardState(&keyCount);
+    const bool *keys = SDL_GetKeyboardState(&keyCount);
     return keys != nullptr && scancode < keyCount && keys[scancode];
 }
-}
+} // namespace
 
-void App::renderRemotePlayerGuns(Runtime& runtime, const Camera& activeCamera) {
-    if (!runtime.gunShader || runtime.preloadedGuns.empty() || runtime.player->connectedPlayers.empty()) {
+void App::renderRemotePlayerGuns(Runtime &runtime, const Camera &activeCamera) {
+    if (!runtime.gunShader || runtime.preloadedGuns.empty() ||
+        runtime.player->connectedPlayers.empty()) {
         return;
     }
     constexpr float kLocalGhostRejectDistance = 2.0f;
@@ -39,12 +40,14 @@ void App::renderRemotePlayerGuns(Runtime& runtime, const Camera& activeCamera) {
     const float minRemoteGunDistanceSq =
         kMinRemoteGunDistanceFromCamera * kMinRemoteGunDistanceFromCamera;
 
-    const float aspect = static_cast<float>(GameData::screenWidth) / static_cast<float>(GameData::screenHeight);
+    const float aspect =
+        static_cast<float>(GameData::screenWidth) / static_cast<float>(GameData::screenHeight);
     if (!std::isfinite(aspect) || aspect <= 0.0f) {
         return;
     }
 
-    const glm::mat4 projection = glm::perspective(glm::radians(GameData::FOV), aspect, 0.1f, 100000.0f);
+    const glm::mat4 projection =
+        glm::perspective(glm::radians(GameData::FOV), aspect, 0.1f, 100000.0f);
     const glm::mat4 view = activeCamera.getViewMatrix();
 
     runtime.gunShader->use();
@@ -55,7 +58,7 @@ void App::renderRemotePlayerGuns(Runtime& runtime, const Camera& activeCamera) {
     runtime.gunShader->setMat4("view", view);
     runtime.gunShader->setMat4("projection", projection);
 
-    for (const auto& [_, remoteState] : runtime.player->connectedPlayers) {
+    for (const auto &[_, remoteState] : runtime.player->connectedPlayers) {
         const glm::vec3 toLocal = remoteState.position - runtime.player->getPosition();
         const float localDistSq = glm::dot(toLocal, toLocal);
         if (!std::isfinite(localDistSq) || localDistSq < localGhostRejectDistanceSq) {
@@ -69,7 +72,7 @@ void App::renderRemotePlayerGuns(Runtime& runtime, const Camera& activeCamera) {
             continue;
         }
 
-        const GunDefinition* definition = FindGunDefinitionByWeaponId(weaponId);
+        const GunDefinition *definition = FindGunDefinitionByWeaponId(weaponId);
         if (definition == nullptr) {
             continue;
         }
@@ -85,37 +88,27 @@ void App::renderRemotePlayerGuns(Runtime& runtime, const Camera& activeCamera) {
             continue;
         }
 
-        const glm::quat yawOffset = glm::angleAxis(
-            glm::radians(definition->worldEulerDeg.y),
-            glm::vec3(0.0f, 1.0f, 0.0f)
-        );
+        const glm::quat yawOffset =
+            glm::angleAxis(glm::radians(definition->worldEulerDeg.y), glm::vec3(0.0f, 1.0f, 0.0f));
         const glm::quat ownerYawCorrection = glm::angleAxis(
-            glm::radians(kRemoteGunOwnerYawCorrectionDeg),
-            glm::vec3(0.0f, 1.0f, 0.0f)
-        );
-        const glm::quat pitchOffset = glm::angleAxis(
-            glm::radians(definition->worldEulerDeg.x),
-            glm::vec3(1.0f, 0.0f, 0.0f)
-        );
-        const glm::quat rollOffset = glm::angleAxis(
-            glm::radians(definition->worldEulerDeg.z),
-            glm::vec3(0.0f, 0.0f, 1.0f)
-        );
-        const glm::quat gunRot = glm::normalize(
-            remoteState.rotation * ownerYawCorrection * yawOffset * pitchOffset * rollOffset
-        );
+            glm::radians(kRemoteGunOwnerYawCorrectionDeg), glm::vec3(0.0f, 1.0f, 0.0f));
+        const glm::quat pitchOffset =
+            glm::angleAxis(glm::radians(definition->worldEulerDeg.x), glm::vec3(1.0f, 0.0f, 0.0f));
+        const glm::quat rollOffset =
+            glm::angleAxis(glm::radians(definition->worldEulerDeg.z), glm::vec3(0.0f, 0.0f, 1.0f));
+        const glm::quat gunRot = glm::normalize(remoteState.rotation * ownerYawCorrection *
+                                                yawOffset * pitchOffset * rollOffset);
         const glm::vec3 gunScale = definition->worldScale * remoteState.scale;
 
         gunIt->second->render(gunPos, gunRot, gunScale, *runtime.gunShader);
     }
 }
 
-void App::renderWorldItems(Runtime& runtime, const Camera& activeCamera) {
+void App::renderWorldItems(Runtime &runtime, const Camera &activeCamera) {
     m_worldItemRenderer.render(runtime, activeCamera);
 }
 
-
-void App::renderHeldGun(Runtime& runtime, const Camera& activeCamera) {
+void App::renderHeldGun(Runtime &runtime, const Camera &activeCamera) {
     if (m_UseDebugCamera) {
         return;
     }
@@ -133,8 +126,7 @@ void App::renderHeldGun(Runtime& runtime, const Camera& activeCamera) {
     const float upLenSq = glm::dot(up, up);
     if (!std::isfinite(upLenSq) || upLenSq < 1e-8f) {
         up = glm::vec3(0.0f, 1.0f, 0.0f);
-    }
-    else {
+    } else {
         up = glm::normalize(up);
     }
     glm::vec3 right = glm::cross(forward, up);
@@ -149,30 +141,24 @@ void App::renderHeldGun(Runtime& runtime, const Camera& activeCamera) {
     right = glm::normalize(right);
     up = glm::normalize(glm::cross(right, forward));
 
-    const glm::vec3 gunPos =
-        activeCamera.position +
-        right * runtime.equippedGunViewOffset.x +
-        up * runtime.equippedGunViewOffset.y +
-        forward * runtime.equippedGunViewOffset.z;
+    const glm::vec3 gunPos = activeCamera.position + right * runtime.equippedGunViewOffset.x +
+                             up * runtime.equippedGunViewOffset.y +
+                             forward * runtime.equippedGunViewOffset.z;
 
     const glm::mat4 lookBasis = glm::inverse(glm::lookAt(glm::vec3(0.0f), forward, up));
     glm::quat gunRot = glm::normalize(glm::quat_cast(glm::mat3(lookBasis)));
-    const glm::quat yawOffset = glm::angleAxis(
-        glm::radians(runtime.equippedGunViewEulerDeg.y),
-        glm::vec3(0.0f, 1.0f, 0.0f)
-    );
-    const glm::quat pitchOffset = glm::angleAxis(
-        glm::radians(runtime.equippedGunViewEulerDeg.x),
-        glm::vec3(1.0f, 0.0f, 0.0f)
-    );
-    const glm::quat rollOffset = glm::angleAxis(
-        glm::radians(runtime.equippedGunViewEulerDeg.z),
-        glm::vec3(0.0f, 0.0f, 1.0f)
-    );
+    const glm::quat yawOffset = glm::angleAxis(glm::radians(runtime.equippedGunViewEulerDeg.y),
+                                               glm::vec3(0.0f, 1.0f, 0.0f));
+    const glm::quat pitchOffset = glm::angleAxis(glm::radians(runtime.equippedGunViewEulerDeg.x),
+                                                 glm::vec3(1.0f, 0.0f, 0.0f));
+    const glm::quat rollOffset = glm::angleAxis(glm::radians(runtime.equippedGunViewEulerDeg.z),
+                                                glm::vec3(0.0f, 0.0f, 1.0f));
     gunRot = glm::normalize(gunRot * yawOffset * pitchOffset * rollOffset);
 
-    const float aspect = static_cast<float>(GameData::screenWidth) / static_cast<float>(GameData::screenHeight);
-    const glm::mat4 projection = glm::perspective(glm::radians(GameData::FOV), aspect, 0.02f, 200.0f);
+    const float aspect =
+        static_cast<float>(GameData::screenWidth) / static_cast<float>(GameData::screenHeight);
+    const glm::mat4 projection =
+        glm::perspective(glm::radians(GameData::FOV), aspect, 0.02f, 200.0f);
     const glm::mat4 view = activeCamera.getViewMatrix();
 
     const bool cullFaceWasEnabled = glIsEnabled(GL_CULL_FACE) == GL_TRUE;
@@ -219,11 +205,9 @@ void App::renderHeldGun(Runtime& runtime, const Camera& activeCamera) {
         if (count > 0) {
             static int s_heldGunErrorLogCount = 0;
             if (s_heldGunErrorLogCount < 24) {
-                std::cerr
-                    << "[gun] GL error(s) during held-gun render: count=" << count
-                    << " first=0x" << std::hex << firstError << std::dec
-                    << " weapon=" << heldWeaponId
-                    << "\n";
+                std::cerr << "[gun] GL error(s) during held-gun render: count=" << count
+                          << " first=0x" << std::hex << firstError << std::dec
+                          << " weapon=" << heldWeaponId << "\n";
                 ++s_heldGunErrorLogCount;
             }
         }
@@ -235,33 +219,26 @@ void App::renderHeldGun(Runtime& runtime, const Camera& activeCamera) {
     glFrontFace(static_cast<GLenum>(previousFrontFace));
     if (cullFaceWasEnabled) {
         glEnable(GL_CULL_FACE);
-    }
-    else {
+    } else {
         glDisable(GL_CULL_FACE);
     }
 }
 
-
-void App::drawConnectionPrompt(Runtime& runtime) {
+void App::drawConnectionPrompt(Runtime &runtime) {
     if (!runtime.debugUi || runtime.clientNet.IsConnected()) {
         return;
     }
 
     GameData::cursorEnabled = true;
 
-    ImGuiIO& io = ImGui::GetIO();
+    ImGuiIO &io = ImGui::GetIO();
     const ImVec2 windowSize(460.0f, 0.0f);
     ImGui::SetNextWindowSize(windowSize, ImGuiCond_Always);
-    ImGui::SetNextWindowPos(
-        ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
-        ImGuiCond_Always,
-        ImVec2(0.5f, 0.5f)
-    );
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 
     constexpr ImGuiWindowFlags flags =
-        ImGuiWindowFlags_NoCollapse |
-        ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoMove;
+        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
 
     if (!ImGui::Begin("Connect", nullptr, flags)) {
         ImGui::End();
@@ -269,7 +246,8 @@ void App::drawConnectionPrompt(Runtime& runtime) {
     }
 
     ImGui::TextUnformatted("Server (host:port)");
-    const float pasteButtonWidth = ImGui::CalcTextSize("Paste").x + (ImGui::GetStyle().FramePadding.x * 2.0f);
+    const float pasteButtonWidth =
+        ImGui::CalcTextSize("Paste").x + (ImGui::GetStyle().FramePadding.x * 2.0f);
     const float endpointFieldWidth =
         ImGui::GetContentRegionAvail().x - pasteButtonWidth - ImGui::GetStyle().ItemSpacing.x;
     ImGui::SetNextItemWidth(endpointFieldWidth > 60.0f ? endpointFieldWidth : -1.0f);
@@ -279,7 +257,7 @@ void App::drawConnectionPrompt(Runtime& runtime) {
         if (m_Window == nullptr) {
             return false;
         }
-        char* clipboardText = SDL_GetClipboardText();
+        char *clipboardText = SDL_GetClipboardText();
         if (clipboardText == nullptr || clipboardText[0] == '\0') {
             if (clipboardText != nullptr) {
                 SDL_free(clipboardText);
@@ -291,8 +269,10 @@ void App::drawConnectionPrompt(Runtime& runtime) {
         if (endpoint.empty()) {
             return false;
         }
-        std::memset(runtime.pendingServerEndpointInput.data(), 0, runtime.pendingServerEndpointInput.size());
-        const size_t copyLen = std::min(endpoint.size(), runtime.pendingServerEndpointInput.size() - 1);
+        std::memset(runtime.pendingServerEndpointInput.data(), 0,
+                    runtime.pendingServerEndpointInput.size());
+        const size_t copyLen =
+            std::min(endpoint.size(), runtime.pendingServerEndpointInput.size() - 1);
         std::memcpy(runtime.pendingServerEndpointInput.data(), endpoint.data(), copyLen);
         return true;
     };
@@ -301,12 +281,9 @@ void App::drawConnectionPrompt(Runtime& runtime) {
     if (isConnecting) {
         ImGui::BeginDisabled();
     }
-    if (ImGui::InputText(
-        "##server_endpoint_input",
-        runtime.pendingServerEndpointInput.data(),
-        runtime.pendingServerEndpointInput.size(),
-        ImGuiInputTextFlags_EnterReturnsTrue
-    )) {
+    if (ImGui::InputText("##server_endpoint_input", runtime.pendingServerEndpointInput.data(),
+                         runtime.pendingServerEndpointInput.size(),
+                         ImGuiInputTextFlags_EnterReturnsTrue)) {
         submit = true;
     }
     const bool endpointFieldActive = ImGui::IsItemActive();
@@ -317,13 +294,10 @@ void App::drawConnectionPrompt(Runtime& runtime) {
     bool pasteShortcutPressed = false;
     if (endpointFieldActive && !isConnecting) {
         const bool ctrlDown =
-            IsScancodeDown(SDL_SCANCODE_LCTRL) ||
-            IsScancodeDown(SDL_SCANCODE_RCTRL) ||
-            IsScancodeDown(SDL_SCANCODE_LGUI) ||
-            IsScancodeDown(SDL_SCANCODE_RGUI);
+            IsScancodeDown(SDL_SCANCODE_LCTRL) || IsScancodeDown(SDL_SCANCODE_RCTRL) ||
+            IsScancodeDown(SDL_SCANCODE_LGUI) || IsScancodeDown(SDL_SCANCODE_RGUI);
         const bool shiftDown =
-            IsScancodeDown(SDL_SCANCODE_LSHIFT) ||
-            IsScancodeDown(SDL_SCANCODE_RSHIFT);
+            IsScancodeDown(SDL_SCANCODE_LSHIFT) || IsScancodeDown(SDL_SCANCODE_RSHIFT);
         const bool pasteCtrlV = ctrlDown && IsScancodeDown(SDL_SCANCODE_V);
         const bool pasteShiftInsert = shiftDown && IsScancodeDown(SDL_SCANCODE_INSERT);
         pasteShortcutPressed = pasteCtrlV || pasteShiftInsert;
@@ -354,12 +328,9 @@ void App::drawConnectionPrompt(Runtime& runtime) {
     if (isConnecting) {
         ImGui::BeginDisabled();
     }
-    if (ImGui::InputText(
-        "##username_input",
-        runtime.pendingUsernameInput.data(),
-        runtime.pendingUsernameInput.size(),
-        ImGuiInputTextFlags_EnterReturnsTrue
-    )) {
+    if (ImGui::InputText("##username_input", runtime.pendingUsernameInput.data(),
+                         runtime.pendingUsernameInput.size(),
+                         ImGuiInputTextFlags_EnterReturnsTrue)) {
         submit = true;
     }
     if (isConnecting) {
@@ -370,8 +341,7 @@ void App::drawConnectionPrompt(Runtime& runtime) {
         if (ImGui::Button("Connect")) {
             submit = true;
         }
-    }
-    else {
+    } else {
         ImGui::BeginDisabled();
         ImGui::Button("Connecting...");
         ImGui::EndDisabled();
@@ -390,19 +360,20 @@ void App::drawConnectionPrompt(Runtime& runtime) {
 
         std::string desiredUsername = runtime.pendingUsernameInput.data();
         size_t begin = 0;
-        while (begin < desiredUsername.size() && std::isspace(static_cast<unsigned char>(desiredUsername[begin])) != 0) {
+        while (begin < desiredUsername.size() &&
+               std::isspace(static_cast<unsigned char>(desiredUsername[begin])) != 0) {
             ++begin;
         }
         size_t end = desiredUsername.size();
-        while (end > begin && std::isspace(static_cast<unsigned char>(desiredUsername[end - 1])) != 0) {
+        while (end > begin &&
+               std::isspace(static_cast<unsigned char>(desiredUsername[end - 1])) != 0) {
             --end;
         }
         desiredUsername = desiredUsername.substr(begin, end - begin);
 
         if (desiredUsername.empty()) {
             runtime.usernamePromptError = "Please enter a username.";
-        }
-        else {
+        } else {
             if (desiredUsername.size() > kMaxConnectUsernameChars) {
                 desiredUsername.resize(kMaxConnectUsernameChars);
             }
@@ -410,17 +381,23 @@ void App::drawConnectionPrompt(Runtime& runtime) {
             m_ServerIp = parsedIp;
             m_ServerPort = parsedPort;
             const std::string endpoint = m_ServerIp + ":" + std::to_string(m_ServerPort);
-            std::memset(runtime.pendingServerEndpointInput.data(), 0, runtime.pendingServerEndpointInput.size());
-            const size_t endpointCopyLen = std::min(endpoint.size(), runtime.pendingServerEndpointInput.size() - 1);
-            std::memcpy(runtime.pendingServerEndpointInput.data(), endpoint.data(), endpointCopyLen);
+            std::memset(runtime.pendingServerEndpointInput.data(), 0,
+                        runtime.pendingServerEndpointInput.size());
+            const size_t endpointCopyLen =
+                std::min(endpoint.size(), runtime.pendingServerEndpointInput.size() - 1);
+            std::memcpy(runtime.pendingServerEndpointInput.data(), endpoint.data(),
+                        endpointCopyLen);
 
             m_RequestedUsername = desiredUsername;
-            std::memset(runtime.pendingUsernameInput.data(), 0, runtime.pendingUsernameInput.size());
-            std::memcpy(runtime.pendingUsernameInput.data(), m_RequestedUsername.data(), m_RequestedUsername.size());
+            std::memset(runtime.pendingUsernameInput.data(), 0,
+                        runtime.pendingUsernameInput.size());
+            std::memcpy(runtime.pendingUsernameInput.data(), m_RequestedUsername.data(),
+                        m_RequestedUsername.size());
 
             runtime.usernamePromptError.clear();
             if (!beginConnectionAttempt(runtime)) {
-                runtime.usernamePromptError = "Failed to start connection. Check server reachability and retry.";
+                runtime.usernamePromptError =
+                    "Failed to start connection. Check server reachability and retry.";
             }
             runtime.nextReconnectAttemptTime = GetTimeSeconds() + 1.0;
         }
@@ -428,7 +405,8 @@ void App::drawConnectionPrompt(Runtime& runtime) {
 
     if (!runtime.usernamePromptError.empty()) {
         ImGui::Spacing();
-        ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s", runtime.usernamePromptError.c_str());
+        ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s",
+                           runtime.usernamePromptError.c_str());
     }
 
     ImGui::Spacing();
@@ -439,8 +417,7 @@ void App::drawConnectionPrompt(Runtime& runtime) {
     applyMouseInputModes();
 }
 
-
-void App::drawKillFeed(Runtime& runtime) {
+void App::drawKillFeed(Runtime &runtime) {
     if (ImGui::GetCurrentContext() == nullptr || runtime.killFeedEntries.empty()) {
         return;
     }
@@ -454,23 +431,21 @@ void App::drawKillFeed(Runtime& runtime) {
     }
 
     const std::string localName = runtime.clientNet.GetAssignedUsername();
-    ImGuiIO& io = ImGui::GetIO();
-    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    ImGuiIO &io = ImGui::GetIO();
+    ImDrawList *drawList = ImGui::GetForegroundDrawList();
     float y = 24.0f;
 
-    for (const Runtime::KillFeedEntry& entry : runtime.killFeedEntries) {
-        const std::string line =
-            entry.killer + " [" +
-            std::string(GunTypeName(static_cast<GunType>(entry.weaponId))) +
-            "] " + entry.victim;
+    for (const Runtime::KillFeedEntry &entry : runtime.killFeedEntries) {
+        const std::string line = entry.killer + " [" +
+                                 std::string(GunTypeName(static_cast<GunType>(entry.weaponId))) +
+                                 "] " + entry.victim;
         const ImVec2 textSize = ImGui::CalcTextSize(line.c_str());
         const float x = io.DisplaySize.x - textSize.x - 24.0f;
 
         ImU32 textColor = IM_COL32(232, 232, 232, 255);
         if (!localName.empty() && entry.killer == localName) {
             textColor = IM_COL32(130, 255, 160, 255);
-        }
-        else if (!localName.empty() && entry.victim == localName) {
+        } else if (!localName.empty() && entry.victim == localName) {
             textColor = IM_COL32(255, 120, 120, 255);
         }
 
@@ -482,35 +457,30 @@ void App::drawKillFeed(Runtime& runtime) {
     }
 }
 
-
-void App::drawScoreboard(Runtime& runtime) {
+void App::drawScoreboard(Runtime &runtime) {
     if (ImGui::GetCurrentContext() == nullptr) {
         return;
     }
 
-    const bool showScoreboard =
-        IsScancodeDown(SDL_SCANCODE_TAB) || runtime.matchEnded;
+    const bool showScoreboard = IsScancodeDown(SDL_SCANCODE_TAB) || runtime.matchEnded;
     if (!showScoreboard) {
         return;
     }
 
-    ImGuiIO& io = ImGui::GetIO();
-    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    ImGuiIO &io = ImGui::GetIO();
+    ImDrawList *drawList = ImGui::GetForegroundDrawList();
     const float panelWidth = 560.0f;
     const float rowHeight = ImGui::GetTextLineHeight() + 8.0f;
     const float headerHeight = 66.0f;
     const float tableHeaderHeight = rowHeight;
-    const float panelHeight =
-        headerHeight + tableHeaderHeight + rowHeight * static_cast<float>(runtime.scoreboardEntries.size()) + 14.0f;
+    const float panelHeight = headerHeight + tableHeaderHeight +
+                              rowHeight * static_cast<float>(runtime.scoreboardEntries.size()) +
+                              14.0f;
     const float x = (io.DisplaySize.x - panelWidth) * 0.5f;
     const float y = 72.0f;
 
-    drawList->AddRectFilled(
-        ImVec2(x, y),
-        ImVec2(x + panelWidth, y + panelHeight),
-        IM_COL32(10, 10, 10, 215),
-        8.0f
-    );
+    drawList->AddRectFilled(ImVec2(x, y), ImVec2(x + panelWidth, y + panelHeight),
+                            IM_COL32(10, 10, 10, 215), 8.0f);
 
     const int clampedRemaining = std::max(0, runtime.matchRemainingSeconds);
     const int minutes = clampedRemaining / 60;
@@ -518,8 +488,7 @@ void App::drawScoreboard(Runtime& runtime) {
     char timerLine[64]{};
     if (!runtime.matchStarted) {
         std::snprintf(timerLine, sizeof(timerLine), "Waiting for players");
-    }
-    else {
+    } else {
         std::snprintf(timerLine, sizeof(timerLine), "Time Left: %02d:%02d", minutes, seconds);
     }
 
@@ -533,25 +502,16 @@ void App::drawScoreboard(Runtime& runtime) {
     }
 
     const ImVec2 titleSize = ImGui::CalcTextSize(title.c_str());
-    drawList->AddText(
-        ImVec2(x + (panelWidth - titleSize.x) * 0.5f, y + 12.0f),
-        IM_COL32(245, 245, 245, 255),
-        title.c_str()
-    );
+    drawList->AddText(ImVec2(x + (panelWidth - titleSize.x) * 0.5f, y + 12.0f),
+                      IM_COL32(245, 245, 245, 255), title.c_str());
     const ImVec2 timerSize = ImGui::CalcTextSize(timerLine);
-    drawList->AddText(
-        ImVec2(x + (panelWidth - timerSize.x) * 0.5f, y + 34.0f),
-        IM_COL32(210, 210, 210, 255),
-        timerLine
-    );
+    drawList->AddText(ImVec2(x + (panelWidth - timerSize.x) * 0.5f, y + 34.0f),
+                      IM_COL32(210, 210, 210, 255), timerLine);
 
     const float tableY = y + headerHeight;
-    drawList->AddRectFilled(
-        ImVec2(x + 8.0f, tableY),
-        ImVec2(x + panelWidth - 8.0f, tableY + tableHeaderHeight),
-        IM_COL32(32, 32, 32, 220),
-        4.0f
-    );
+    drawList->AddRectFilled(ImVec2(x + 8.0f, tableY),
+                            ImVec2(x + panelWidth - 8.0f, tableY + tableHeaderHeight),
+                            IM_COL32(32, 32, 32, 220), 4.0f);
 
     const float nameX = x + 24.0f;
     const float killsX = x + 360.0f;
@@ -565,15 +525,12 @@ void App::drawScoreboard(Runtime& runtime) {
     const std::string localName = runtime.clientNet.GetAssignedUsername();
     float rowY = tableY + tableHeaderHeight;
     for (size_t i = 0; i < runtime.scoreboardEntries.size(); ++i) {
-        const ClientNetwork::ScoreboardEntry& entry = runtime.scoreboardEntries[i];
+        const ClientNetwork::ScoreboardEntry &entry = runtime.scoreboardEntries[i];
         const bool oddRow = ((i % 2) != 0);
         if (oddRow) {
-            drawList->AddRectFilled(
-                ImVec2(x + 8.0f, rowY),
-                ImVec2(x + panelWidth - 8.0f, rowY + rowHeight),
-                IM_COL32(20, 20, 20, 145),
-                0.0f
-            );
+            drawList->AddRectFilled(ImVec2(x + 8.0f, rowY),
+                                    ImVec2(x + panelWidth - 8.0f, rowY + rowHeight),
+                                    IM_COL32(20, 20, 20, 145), 0.0f);
         }
 
         ImU32 nameColor = IM_COL32(230, 230, 230, 255);
@@ -581,39 +538,29 @@ void App::drawScoreboard(Runtime& runtime) {
             nameColor = IM_COL32(130, 255, 160, 255);
         }
         drawList->AddText(ImVec2(nameX, rowY + 4.0f), nameColor, entry.username.c_str());
-        drawList->AddText(
-            ImVec2(killsX, rowY + 4.0f),
-            IM_COL32(230, 230, 230, 255),
-            std::to_string(entry.kills).c_str()
-        );
-        drawList->AddText(
-            ImVec2(deathsX, rowY + 4.0f),
-            IM_COL32(230, 230, 230, 255),
-            std::to_string(entry.deaths).c_str()
-        );
-        const std::string pingText = (entry.pingMs >= 0) ? std::to_string(entry.pingMs) : std::string("--");
-        drawList->AddText(
-            ImVec2(pingX, rowY + 4.0f),
-            IM_COL32(230, 230, 230, 255),
-            pingText.c_str()
-        );
+        drawList->AddText(ImVec2(killsX, rowY + 4.0f), IM_COL32(230, 230, 230, 255),
+                          std::to_string(entry.kills).c_str());
+        drawList->AddText(ImVec2(deathsX, rowY + 4.0f), IM_COL32(230, 230, 230, 255),
+                          std::to_string(entry.deaths).c_str());
+        const std::string pingText =
+            (entry.pingMs >= 0) ? std::to_string(entry.pingMs) : std::string("--");
+        drawList->AddText(ImVec2(pingX, rowY + 4.0f), IM_COL32(230, 230, 230, 255),
+                          pingText.c_str());
 
         rowY += rowHeight;
     }
 }
 
-
-void App::drawPingCounter(Runtime& runtime) {
+void App::drawPingCounter(Runtime &runtime) {
     if (ImGui::GetCurrentContext() == nullptr) {
         return;
     }
 
     const int pingMs = runtime.clientNet.GetPingMs();
-    const std::string line = (pingMs >= 0)
-        ? ("Ping: " + std::to_string(pingMs) + " ms")
-        : "Ping: --";
+    const std::string line =
+        (pingMs >= 0) ? ("Ping: " + std::to_string(pingMs) + " ms") : "Ping: --";
 
-    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    ImDrawList *drawList = ImGui::GetForegroundDrawList();
     const float x = 24.0f;
     const float y = 24.0f;
     const ImVec2 textSize = ImGui::CalcTextSize(line.c_str());
@@ -621,8 +568,7 @@ void App::drawPingCounter(Runtime& runtime) {
     ImU32 textColor = IM_COL32(232, 232, 232, 255);
     if (pingMs >= 150) {
         textColor = IM_COL32(255, 120, 120, 255);
-    }
-    else if (pingMs >= 80) {
+    } else if (pingMs >= 80) {
         textColor = IM_COL32(255, 220, 120, 255);
     }
 
@@ -632,13 +578,13 @@ void App::drawPingCounter(Runtime& runtime) {
     drawList->AddText(ImVec2(x, y), textColor, line.c_str());
 }
 
-void App::drawPlayerHud(Runtime& runtime) {
+void App::drawPlayerHud(Runtime &runtime) {
     if (ImGui::GetCurrentContext() == nullptr || !runtime.clientNet.IsConnected()) {
         return;
     }
 
-    ImGuiIO& io = ImGui::GetIO();
-    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    ImGuiIO &io = ImGui::GetIO();
+    ImDrawList *drawList = ImGui::GetForegroundDrawList();
 
     const float health = std::clamp(runtime.localHealth, 0.0f, 100.0f);
     const float healthPct = health / 100.0f;
@@ -650,25 +596,22 @@ void App::drawPlayerHud(Runtime& runtime) {
     const ImVec2 healthMax(healthBarX + healthBarWidth, healthBarY + healthBarHeight);
 
     drawList->AddRectFilled(healthMin, healthMax, IM_COL32(0, 0, 0, 140), 4.0f);
-    const ImU32 healthColor = runtime.localPlayerAlive
-        ? IM_COL32(120, 220, 120, 255)
-        : IM_COL32(220, 80, 80, 255);
+    const ImU32 healthColor =
+        runtime.localPlayerAlive ? IM_COL32(120, 220, 120, 255) : IM_COL32(220, 80, 80, 255);
     drawList->AddRectFilled(
-        healthMin,
-        ImVec2(healthBarX + (healthBarWidth * healthPct), healthBarY + healthBarHeight),
-        healthColor,
-        4.0f
-    );
+        healthMin, ImVec2(healthBarX + (healthBarWidth * healthPct), healthBarY + healthBarHeight),
+        healthColor, 4.0f);
     drawList->AddRect(healthMin, healthMax, IM_COL32(255, 255, 255, 85), 4.0f);
 
     char healthText[64]{};
     if (runtime.localPlayerAlive) {
-        std::snprintf(healthText, sizeof(healthText), "HP %d", static_cast<int>(std::round(health)));
-    }
-    else {
+        std::snprintf(healthText, sizeof(healthText), "HP %d",
+                      static_cast<int>(std::round(health)));
+    } else {
         std::snprintf(healthText, sizeof(healthText), "HP 0");
     }
-    drawList->AddText(ImVec2(healthBarX + 8.0f, healthBarY - 20.0f), IM_COL32(245, 245, 245, 255), healthText);
+    drawList->AddText(ImVec2(healthBarX + 8.0f, healthBarY - 20.0f), IM_COL32(245, 245, 245, 255),
+                      healthText);
 
     constexpr int hotbarCount = kHotbarSlots;
     const float slotWidth = 110.0f;
@@ -679,9 +622,10 @@ void App::drawPlayerHud(Runtime& runtime) {
     const float hotbarY = io.DisplaySize.y - slotHeight - 18.0f;
 
     const bool hasInventorySnapshot = runtime.inventoryUi && runtime.inventoryUi->hasSnapshot();
-    const std::array<Slot, kInventorySlotCount>* slots = hasInventorySnapshot ? &runtime.inventoryUi->slots() : nullptr;
+    const std::array<Slot, kInventorySlotCount> *slots =
+        hasInventorySnapshot ? &runtime.inventoryUi->slots() : nullptr;
 
-    auto hotbarItemName = [](const Slot& slot) -> std::string {
+    auto hotbarItemName = [](const Slot &slot) -> std::string {
         if (Inventory::IsEmpty(slot) || !Inventory::IsValidItemId(slot.itemId)) {
             return "Empty";
         }
@@ -711,54 +655,41 @@ void App::drawPlayerHud(Runtime& runtime) {
         const bool active = (static_cast<uint16_t>(i) == runtime.activeHotbarSlot);
 
         drawList->AddRectFilled(slotMin, slotMax, IM_COL32(8, 8, 8, 170), 6.0f);
-        drawList->AddRect(
-            slotMin,
-            slotMax,
-            active ? IM_COL32(245, 210, 120, 255) : IM_COL32(255, 255, 255, 75),
-            6.0f,
-            0,
-            active ? 2.5f : 1.0f
-        );
+        drawList->AddRect(slotMin, slotMax,
+                          active ? IM_COL32(245, 210, 120, 255) : IM_COL32(255, 255, 255, 75), 6.0f,
+                          0, active ? 2.5f : 1.0f);
 
         const std::string indexText = std::to_string(i + 1);
-        drawList->AddText(ImVec2(x + 6.0f, hotbarY + 4.0f), IM_COL32(210, 210, 210, 220), indexText.c_str());
+        drawList->AddText(ImVec2(x + 6.0f, hotbarY + 4.0f), IM_COL32(210, 210, 210, 220),
+                          indexText.c_str());
 
         const std::string name = hotbarItemName(slot);
         const ImVec2 nameSize = ImGui::CalcTextSize(name.c_str());
-        drawList->AddText(
-            ImVec2(x + (slotWidth - nameSize.x) * 0.5f, hotbarY + 20.0f),
-            empty ? IM_COL32(140, 140, 140, 190) : IM_COL32(240, 240, 240, 255),
-            name.c_str()
-        );
+        drawList->AddText(ImVec2(x + (slotWidth - nameSize.x) * 0.5f, hotbarY + 20.0f),
+                          empty ? IM_COL32(140, 140, 140, 190) : IM_COL32(240, 240, 240, 255),
+                          name.c_str());
 
         if (!empty) {
             const std::string qtyText = "x" + std::to_string(slot.quantity);
             const ImVec2 qtySize = ImGui::CalcTextSize(qtyText.c_str());
             drawList->AddText(
                 ImVec2(x + slotWidth - qtySize.x - 6.0f, hotbarY + slotHeight - qtySize.y - 5.0f),
-                IM_COL32(235, 235, 235, 255),
-                qtyText.c_str()
-            );
+                IM_COL32(235, 235, 235, 255), qtyText.c_str());
         }
     }
 }
 
-
-void App::drawDeathOverlay(Runtime& runtime) {
+void App::drawDeathOverlay(Runtime &runtime) {
     if (ImGui::GetCurrentContext() == nullptr || runtime.localPlayerAlive) {
         return;
     }
 
-    ImGuiIO& io = ImGui::GetIO();
-    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    ImGuiIO &io = ImGui::GetIO();
+    ImDrawList *drawList = ImGui::GetForegroundDrawList();
     const ImVec2 displaySize = io.DisplaySize;
     const ImVec2 center(displaySize.x * 0.5f, displaySize.y * 0.5f);
 
-    drawList->AddRectFilled(
-        ImVec2(0.0f, 0.0f),
-        displaySize,
-        IM_COL32(0, 0, 0, 120)
-    );
+    drawList->AddRectFilled(ImVec2(0.0f, 0.0f), displaySize, IM_COL32(0, 0, 0, 120));
 
     std::string title = "You were killed";
     if (!runtime.localDeathKiller.empty()) {
@@ -770,8 +701,7 @@ void App::drawDeathOverlay(Runtime& runtime) {
     const float secondsRemaining = std::max(0.0f, runtime.localRespawnSeconds);
     if (secondsRemaining > 0.05f) {
         std::snprintf(timerLine, sizeof(timerLine), "Respawning in %.1fs", secondsRemaining);
-    }
-    else {
+    } else {
         std::snprintf(timerLine, sizeof(timerLine), "Click to respawn");
     }
 
@@ -783,15 +713,8 @@ void App::drawDeathOverlay(Runtime& runtime) {
     const ImVec2 bgMax(center.x + blockWidth * 0.5f + 24.0f, center.y + 34.0f);
     drawList->AddRectFilled(bgMin, bgMax, IM_COL32(12, 12, 12, 210), 8.0f);
 
-    drawList->AddText(
-        ImVec2(center.x - titleSize.x * 0.5f, center.y - 24.0f),
-        IM_COL32(255, 210, 210, 255),
-        title.c_str()
-    );
-    drawList->AddText(
-        ImVec2(center.x - timerSize.x * 0.5f, center.y + 2.0f),
-        IM_COL32(235, 235, 235, 255),
-        timerLine
-    );
+    drawList->AddText(ImVec2(center.x - titleSize.x * 0.5f, center.y - 24.0f),
+                      IM_COL32(255, 210, 210, 255), title.c_str());
+    drawList->AddText(ImVec2(center.x - timerSize.x * 0.5f, center.y + 2.0f),
+                      IM_COL32(235, 235, 235, 255), timerLine);
 }
-

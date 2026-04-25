@@ -39,7 +39,7 @@ struct ConnectRequest {
     std::string requestedUsername;
 
     std::vector<uint8_t> serialize() const;
-    static std::optional<ConnectRequest> deserialize(const std::vector<uint8_t>& buf);
+    static std::optional<ConnectRequest> deserialize(const std::vector<uint8_t> &buf);
 };
 
 struct ConnectResponse {
@@ -50,7 +50,7 @@ struct ConnectResponse {
     std::string message;
 
     std::vector<uint8_t> serialize() const;
-    static std::optional<ConnectResponse> deserialize(const std::vector<uint8_t>& buf);
+    static std::optional<ConnectResponse> deserialize(const std::vector<uint8_t> &buf);
 };
 
 struct PlayerInput {
@@ -64,50 +64,47 @@ struct PlayerInput {
     float moveZ = 0.f;
 
     std::vector<uint8_t> serialize() const;
-    static std::optional<PlayerInput> deserialize(const std::vector<uint8_t>& buf);
+    static std::optional<PlayerInput> deserialize(const std::vector<uint8_t> &buf);
 };
 
 struct ShootRequest {
     uint32_t clientShotId = 0;
     uint32_t clientTick = 0;
     uint16_t weaponId = 0;
-    float    posX = 0.f, posY = 0.f, posZ = 0.f;
-    float    dirX = 0.f, dirY = 0.f, dirZ = 0.f;
+    float posX = 0.f, posY = 0.f, posZ = 0.f;
+    float dirX = 0.f, dirY = 0.f, dirZ = 0.f;
     uint32_t seed = 0;
-    uint8_t  inputFlags = 0;
+    uint8_t inputFlags = 0;
 
     std::vector<uint8_t> serialize() const;
-    static std::optional<ShootRequest> deserialize(const std::vector<uint8_t>& buf);
+    static std::optional<ShootRequest> deserialize(const std::vector<uint8_t> &buf);
 };
 
 struct ShootResult {
     uint32_t clientShotId = 0;
     uint32_t serverTick = 0;
-    uint8_t  accepted = 0;
-    uint8_t  didHit = 0;
-    int32_t  hitEntityId = -1;
-    float    hitX = 0.f, hitY = 0.f, hitZ = 0.f;
-    float    normalX = 0.f, normalY = 0.f, normalZ = 0.f;
-    float    damageApplied = 0.f;
+    uint8_t accepted = 0;
+    uint8_t didHit = 0;
+    int32_t hitEntityId = -1;
+    float hitX = 0.f, hitY = 0.f, hitZ = 0.f;
+    float normalX = 0.f, normalY = 0.f, normalZ = 0.f;
+    float damageApplied = 0.f;
     uint16_t newAmmoCount = 0;
     uint32_t serverSeed = 0;
 
     std::vector<uint8_t> serialize() const;
-    static std::optional<ShootResult> deserialize(const std::vector<uint8_t>& buf);
+    static std::optional<ShootResult> deserialize(const std::vector<uint8_t> &buf);
 };
-
-
 
 struct PlayerPosition {
     uint32_t sequenceNumber = 0;
-    float    posX = 0.f, posY = 0.f, posZ = 0.f;
-    float    velX = 0.f, velY = 0.f, velZ = 0.f;
+    float posX = 0.f, posY = 0.f, posZ = 0.f;
+    float velX = 0.f, velY = 0.f, velZ = 0.f;
     std::vector<uint8_t> serialize() const;
-    static std::optional<PlayerPosition> deserialize(const std::vector<uint8_t>& buf);
+    static std::optional<PlayerPosition> deserialize(const std::vector<uint8_t> &buf);
 };
 
-
-struct PlayerSnapshot{
+struct PlayerSnapshot {
     uint64_t id = 0;
     float px = 0.0f, py = 0.0f, pz = 0.0f;
     float vx = 0.0f, vy = 0.0f, vz = 0.0f;
@@ -132,7 +129,7 @@ struct PlayerSnapshotFrame {
     std::vector<PlayerSnapshot> players;
 
     std::vector<uint8_t> serialize() const;
-    static std::optional<PlayerSnapshotFrame> deserialize(const std::vector<uint8_t>& buf);
+    static std::optional<PlayerSnapshotFrame> deserialize(const std::vector<uint8_t> &buf);
 };
 
 struct ChunkRequest {
@@ -142,7 +139,7 @@ struct ChunkRequest {
     uint16_t viewDistance = 0;
 
     std::vector<uint8_t> serialize() const;
-    static std::optional<ChunkRequest> deserialize(const std::vector<uint8_t>& buf);
+    static std::optional<ChunkRequest> deserialize(const std::vector<uint8_t> &buf);
 };
 
 struct ChunkData {
@@ -154,7 +151,7 @@ struct ChunkData {
     std::vector<uint8_t> payload;
 
     std::vector<uint8_t> serialize() const;
-    static std::optional<ChunkData> deserialize(const std::vector<uint8_t>& buf);
+    static std::optional<ChunkData> deserialize(const std::vector<uint8_t> &buf);
 };
 
 struct ChunkDeltaOp {
@@ -172,7 +169,7 @@ struct ChunkDelta {
     std::vector<ChunkDeltaOp> edits;
 
     std::vector<uint8_t> serialize() const;
-    static std::optional<ChunkDelta> deserialize(const std::vector<uint8_t>& buf);
+    static std::optional<ChunkDelta> deserialize(const std::vector<uint8_t> &buf);
 };
 
 struct ChunkUnload {
@@ -181,7 +178,7 @@ struct ChunkUnload {
     int32_t chunkZ = 0;
 
     std::vector<uint8_t> serialize() const;
-    static std::optional<ChunkUnload> deserialize(const std::vector<uint8_t>& buf);
+    static std::optional<ChunkUnload> deserialize(const std::vector<uint8_t> &buf);
 };
 
 constexpr size_t kMaxBlockPlaceEditsPerRequest = 64;
@@ -207,7 +204,7 @@ struct BlockPlaceRequest {
     std::vector<BlockPlaceEdit> edits;
 
     std::vector<uint8_t> serialize() const;
-    static std::optional<BlockPlaceRequest> deserialize(const std::vector<uint8_t>& buf);
+    static std::optional<BlockPlaceRequest> deserialize(const std::vector<uint8_t> &buf);
 };
 
 struct BlockPlaceChunkCoord {
@@ -223,7 +220,7 @@ struct BlockPlaceResult {
     std::vector<BlockPlaceChunkCoord> correctiveChunks;
 
     std::vector<uint8_t> serialize() const;
-    static std::optional<BlockPlaceResult> deserialize(const std::vector<uint8_t>& buf);
+    static std::optional<BlockPlaceResult> deserialize(const std::vector<uint8_t> &buf);
 };
 
 constexpr size_t kMaxBlockBreakEditsPerRequest = 64;
@@ -248,7 +245,7 @@ struct BlockBreakRequest {
     std::vector<BlockBreakEdit> edits;
 
     std::vector<uint8_t> serialize() const;
-    static std::optional<BlockBreakRequest> deserialize(const std::vector<uint8_t>& buf);
+    static std::optional<BlockBreakRequest> deserialize(const std::vector<uint8_t> &buf);
 };
 
 struct BlockBreakChunkCoord {
@@ -264,7 +261,7 @@ struct BlockBreakResult {
     std::vector<BlockBreakChunkCoord> correctiveChunks;
 
     std::vector<uint8_t> serialize() const;
-    static std::optional<BlockBreakResult> deserialize(const std::vector<uint8_t>& buf);
+    static std::optional<BlockBreakResult> deserialize(const std::vector<uint8_t> &buf);
 };
 
 struct InventoryActionRequest {
@@ -273,7 +270,7 @@ struct InventoryActionRequest {
     InventoryAction action{};
 
     std::vector<uint8_t> serialize() const;
-    static std::optional<InventoryActionRequest> deserialize(const std::vector<uint8_t>& buf);
+    static std::optional<InventoryActionRequest> deserialize(const std::vector<uint8_t> &buf);
 };
 
 struct InventoryActionResult {
@@ -284,7 +281,7 @@ struct InventoryActionResult {
     std::vector<uint16_t> changedSlots;
 
     std::vector<uint8_t> serialize() const;
-    static std::optional<InventoryActionResult> deserialize(const std::vector<uint8_t>& buf);
+    static std::optional<InventoryActionResult> deserialize(const std::vector<uint8_t> &buf);
 };
 
 struct InventorySnapshot {
@@ -292,7 +289,7 @@ struct InventorySnapshot {
     std::vector<Slot> slots;
 
     std::vector<uint8_t> serialize() const;
-    static std::optional<InventorySnapshot> deserialize(const std::vector<uint8_t>& buf);
+    static std::optional<InventorySnapshot> deserialize(const std::vector<uint8_t> &buf);
 };
 
 struct WorldItemState {
@@ -312,5 +309,5 @@ struct WorldItemSnapshot {
     std::vector<WorldItemState> items;
 
     std::vector<uint8_t> serialize() const;
-    static std::optional<WorldItemSnapshot> deserialize(const std::vector<uint8_t>& buf);
+    static std::optional<WorldItemSnapshot> deserialize(const std::vector<uint8_t> &buf);
 };

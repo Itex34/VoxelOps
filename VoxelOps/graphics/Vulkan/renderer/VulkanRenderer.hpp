@@ -13,7 +13,7 @@
 #include "graphics/Vulkan/renderer/Pipeline.hpp"
 #include "graphics/Vulkan/renderer/RenderPass.hpp"
 #include "graphics/Vulkan/graphics/Mesh.hpp"
-#include "graphics/Vulkan/graphics/Texture.hpp"
+#include "graphics/Vulkan/graphics/VkTexture.hpp"
 #include "graphics/Vulkan/vulkan/UploadContext.hpp"
 
 #ifndef VOXELOPS_NRD_HEADERS
@@ -24,7 +24,7 @@ class VulkanContext;
 class NrdBootstrap;
 
 class VulkanRenderer final : public IRenderBackend {
-public:
+  public:
     struct FrameTimingStats {
         bool gpuValid = false;
         float gpuFrameMs = 0.0f;
@@ -38,39 +38,35 @@ public:
         float cpuUiPassMs = 0.0f;
     };
 
-
     struct PingPongImageResources {
-        vk::raii::Image image{ nullptr };
-        vk::raii::DeviceMemory memory{ nullptr };
-        vk::raii::ImageView view{ nullptr };
+        vk::raii::Image image{nullptr};
+        vk::raii::DeviceMemory memory{nullptr};
+        vk::raii::ImageView view{nullptr};
     };
 
-    explicit VulkanRenderer(VulkanContext& context);
+    explicit VulkanRenderer(VulkanContext &context);
     ~VulkanRenderer() noexcept;
 
-    VulkanRenderer(const VulkanRenderer&) = delete;
-    VulkanRenderer& operator=(const VulkanRenderer&) = delete;
-    VulkanRenderer(VulkanRenderer&&) = delete;
-    VulkanRenderer& operator=(VulkanRenderer&&) = delete;
+    VulkanRenderer(const VulkanRenderer &) = delete;
+    VulkanRenderer &operator=(const VulkanRenderer &) = delete;
+    VulkanRenderer(VulkanRenderer &&) = delete;
+    VulkanRenderer &operator=(VulkanRenderer &&) = delete;
 
     void init() override;
-    void renderFrame(
-        uint32_t windowWidth,
-        uint32_t windowHeight,
-        const glm::mat4& viewMatrix,
-        const glm::mat4& projectionMatrix,
-        const glm::mat4& viewProjection,
-        const FrameRenderData& frameData
-    ) override;
+    void renderFrame(uint32_t windowWidth, uint32_t windowHeight, const glm::mat4 &viewMatrix,
+                     const glm::mat4 &projectionMatrix, const glm::mat4 &viewProjection,
+                     const FrameRenderData &frameData) override;
     void handleWindowResize(uint32_t windowWidth, uint32_t windowHeight) override;
     void cleanup() override;
     vk::RenderPass getRenderPassHandle() const noexcept;
     uint32_t getSwapchainImageCount() const noexcept;
-    const FrameTimingStats& getLastFrameTimingStats() const noexcept { return m_lastFrameTimingStats; }
+    const FrameTimingStats &getLastFrameTimingStats() const noexcept {
+        return m_lastFrameTimingStats;
+    }
     bool isNrdBootstrapActive() const noexcept;
     uint32_t getNrdBootstrapDispatchCount() const noexcept;
 
-private:
+  private:
     static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 3;
     static constexpr vk::DeviceSize MIN_MODEL_BUFFER_BYTES = sizeof(glm::mat4);
     static constexpr vk::DeviceSize MIN_INDIRECT_BUFFER_BYTES = sizeof(IndexedIndirectCommand);
@@ -97,11 +93,11 @@ private:
     static constexpr uint32_t GI_RT_SCENE_BINDING = GI_CASCADE_BINDINGS + 18;
     static constexpr uint32_t GI_BINDING_COUNT = GI_CASCADE_BINDINGS + 19;
 
-    VulkanContext& m_context;
+    VulkanContext &m_context;
     std::unique_ptr<NrdBootstrap> m_nrdBootstrap;
     bool m_initialized = false;
 
-    vk::raii::CommandPool m_commandPool{ nullptr };
+    vk::raii::CommandPool m_commandPool{nullptr};
     std::vector<vk::raii::CommandBuffer> m_commandBuffers;
     std::vector<vk::raii::Framebuffer> m_framebuffers;
 
@@ -114,39 +110,39 @@ private:
     VkTexture m_fallback2DTexture;
 
     struct PerImageDrawResources {
-        vk::raii::Buffer modelMatrixBuffer{ nullptr };
-        vk::raii::DeviceMemory modelMatrixBufferMemory{ nullptr };
+        vk::raii::Buffer modelMatrixBuffer{nullptr};
+        vk::raii::DeviceMemory modelMatrixBufferMemory{nullptr};
         vk::DeviceSize modelMatrixCapacityBytes = 0;
-        void* modelMatrixMapped = nullptr;
+        void *modelMatrixMapped = nullptr;
 
-        vk::raii::Buffer indirectCommandBuffer{ nullptr };
-        vk::raii::DeviceMemory indirectCommandBufferMemory{ nullptr };
+        vk::raii::Buffer indirectCommandBuffer{nullptr};
+        vk::raii::DeviceMemory indirectCommandBufferMemory{nullptr};
         vk::DeviceSize indirectCommandCapacityBytes = 0;
-        void* indirectCommandMapped = nullptr;
+        void *indirectCommandMapped = nullptr;
 
-        vk::raii::Buffer giParamsBuffer{ nullptr };
-        vk::raii::DeviceMemory giParamsBufferMemory{ nullptr };
-        void* giParamsMapped = nullptr;
+        vk::raii::Buffer giParamsBuffer{nullptr};
+        vk::raii::DeviceMemory giParamsBufferMemory{nullptr};
+        void *giParamsMapped = nullptr;
     };
     std::vector<PerImageDrawResources> m_perImageDrawResources;
 
-    vk::raii::DescriptorSetLayout m_modelDescriptorSetLayout{ nullptr };
-    vk::raii::DescriptorPool m_modelDescriptorPool{ nullptr };
+    vk::raii::DescriptorSetLayout m_modelDescriptorSetLayout{nullptr};
+    vk::raii::DescriptorPool m_modelDescriptorPool{nullptr};
     std::vector<vk::raii::DescriptorSet> m_modelDescriptorSets;
-    vk::raii::DescriptorSetLayout m_giDescriptorSetLayout{ nullptr };
-    vk::raii::DescriptorPool m_giDescriptorPool{ nullptr };
+    vk::raii::DescriptorSetLayout m_giDescriptorSetLayout{nullptr};
+    vk::raii::DescriptorPool m_giDescriptorPool{nullptr};
     std::vector<vk::raii::DescriptorSet> m_giDescriptorSets;
     bool m_giRtDescriptorEnabled = false;
     std::vector<vk::raii::Buffer> m_giFallbackProbeBuffers;
     std::vector<vk::raii::DeviceMemory> m_giFallbackProbeBufferMemory;
-    vk::raii::Buffer m_giFallbackShadowOccupancyBuffer{ nullptr };
-    vk::raii::DeviceMemory m_giFallbackShadowOccupancyBufferMemory{ nullptr };
-    vk::raii::Buffer m_giFallbackMaterialBuffer{ nullptr };
-    vk::raii::DeviceMemory m_giFallbackMaterialBufferMemory{ nullptr };
+    vk::raii::Buffer m_giFallbackShadowOccupancyBuffer{nullptr};
+    vk::raii::DeviceMemory m_giFallbackShadowOccupancyBufferMemory{nullptr};
+    vk::raii::Buffer m_giFallbackMaterialBuffer{nullptr};
+    vk::raii::DeviceMemory m_giFallbackMaterialBufferMemory{nullptr};
     struct RestirDiReservoirResources {
-        vk::raii::Image image{ nullptr };
-        vk::raii::DeviceMemory memory{ nullptr };
-        vk::raii::ImageView view{ nullptr };
+        vk::raii::Image image{nullptr};
+        vk::raii::DeviceMemory memory{nullptr};
+        vk::raii::ImageView view{nullptr};
     };
     std::vector<std::array<RestirDiReservoirResources, 2>> m_restirDiPerImage;
     std::vector<uint32_t> m_restirDiWriteParityPerImage;
@@ -155,29 +151,29 @@ private:
     std::vector<glm::mat4> m_restirDiPrevViewPerImage;
     std::vector<glm::mat4> m_restirDiPrevProjectionPerImage;
     std::vector<bool> m_prevViewProjectionValidPerImage;
-    glm::mat4 m_nrdPrevViewProjection{ 1.0f };
-    glm::mat4 m_nrdPrevView{ 1.0f };
-    glm::mat4 m_nrdPrevProjection{ 1.0f };
+    glm::mat4 m_nrdPrevViewProjection{1.0f};
+    glm::mat4 m_nrdPrevView{1.0f};
+    glm::mat4 m_nrdPrevProjection{1.0f};
     bool m_nrdPrevMatricesValid = false;
-    vk::raii::Sampler m_restirDiSampler{ nullptr };
+    vk::raii::Sampler m_restirDiSampler{nullptr};
     struct RestirValidationResources {
-        vk::raii::Image image{ nullptr };
-        vk::raii::DeviceMemory memory{ nullptr };
-        vk::raii::ImageView view{ nullptr };
+        vk::raii::Image image{nullptr};
+        vk::raii::DeviceMemory memory{nullptr};
+        vk::raii::ImageView view{nullptr};
     };
     std::vector<std::array<RestirValidationResources, 2>> m_restirValidationPerImage;
-    vk::raii::Sampler m_restirValidationSampler{ nullptr };
+    vk::raii::Sampler m_restirValidationSampler{nullptr};
     struct RestirMetaResources {
-        vk::raii::Image image{ nullptr };
-        vk::raii::DeviceMemory memory{ nullptr };
-        vk::raii::ImageView view{ nullptr };
+        vk::raii::Image image{nullptr};
+        vk::raii::DeviceMemory memory{nullptr};
+        vk::raii::ImageView view{nullptr};
     };
     std::vector<std::array<RestirMetaResources, 2>> m_restirMetaPerImage;
-    vk::raii::Sampler m_restirMetaSampler{ nullptr };
+    vk::raii::Sampler m_restirMetaSampler{nullptr};
     std::vector<std::array<RestirDiReservoirResources, 2>> m_restirGiPerImage;
-    vk::raii::Sampler m_restirGiSampler{ nullptr };
+    vk::raii::Sampler m_restirGiSampler{nullptr};
     std::vector<std::array<RestirMetaResources, 2>> m_restirGiMetaPerImage;
-    vk::raii::Sampler m_restirGiMetaSampler{ nullptr };
+    vk::raii::Sampler m_restirGiMetaSampler{nullptr};
     std::vector<std::array<RestirDiReservoirResources, 2>> m_restirGiSpatialPerImage;
     std::vector<std::array<RestirMetaResources, 2>> m_restirGiSpatialMetaPerImage;
     struct NrdPerImageResources {
@@ -192,9 +188,9 @@ private:
     bool m_nrdFallbackReady = false;
     bool m_loggedMissingNrdResources = false;
     std::vector<bool> m_nrdValidPerImage;
-    vk::raii::Sampler m_nrdOutputSampler{ nullptr };
-    vk::raii::Sampler m_nrdNearestSampler{ nullptr };
-    vk::raii::Sampler m_nrdLinearSampler{ nullptr };
+    vk::raii::Sampler m_nrdOutputSampler{nullptr};
+    vk::raii::Sampler m_nrdNearestSampler{nullptr};
+    vk::raii::Sampler m_nrdLinearSampler{nullptr};
 #if VOXELOPS_NRD_HEADERS
     struct NrdRuntimeTexture {
         vk::Format format = vk::Format::eUndefined;
@@ -205,18 +201,18 @@ private:
     struct NrdRuntimePerImage {
         std::vector<NrdRuntimeTexture> permanentPool;
         std::vector<NrdRuntimeTexture> transientPool;
-        vk::raii::Buffer constantBuffer{ nullptr };
-        vk::raii::DeviceMemory constantMemory{ nullptr };
-        void* constantMapped = nullptr;
-        vk::raii::DescriptorPool descriptorPool{ nullptr };
+        vk::raii::Buffer constantBuffer{nullptr};
+        vk::raii::DeviceMemory constantMemory{nullptr};
+        void *constantMapped = nullptr;
+        vk::raii::DescriptorPool descriptorPool{nullptr};
         std::vector<vk::raii::DescriptorSet> resourcesSets;
-        vk::raii::DescriptorSet constantsSet{ nullptr };
+        vk::raii::DescriptorSet constantsSet{nullptr};
     };
     std::vector<NrdRuntimePerImage> m_nrdRuntimePerImage;
     std::vector<vk::raii::Pipeline> m_nrdPipelines;
-    vk::raii::DescriptorSetLayout m_nrdResourcesSetLayout{ nullptr };
-    vk::raii::DescriptorSetLayout m_nrdConstantsSetLayout{ nullptr };
-    vk::raii::PipelineLayout m_nrdPipelineLayout{ nullptr };
+    vk::raii::DescriptorSetLayout m_nrdResourcesSetLayout{nullptr};
+    vk::raii::DescriptorSetLayout m_nrdConstantsSetLayout{nullptr};
+    vk::raii::PipelineLayout m_nrdPipelineLayout{nullptr};
     uint32_t m_nrdTextureBinding = 0;
     uint32_t m_nrdStorageBinding = 0;
     uint32_t m_nrdConstantBinding = 0;
@@ -228,16 +224,17 @@ private:
     uint32_t m_nrdConstantBufferSize = 0;
     bool m_nrdRuntimeReady = false;
 #endif
-    vk::raii::DescriptorSetLayout m_restirGiSpatialDescriptorSetLayout{ nullptr };
-    vk::raii::DescriptorPool m_restirGiSpatialDescriptorPool{ nullptr };
+    vk::raii::DescriptorSetLayout m_restirGiSpatialDescriptorSetLayout{nullptr};
+    vk::raii::DescriptorPool m_restirGiSpatialDescriptorPool{nullptr};
     std::vector<vk::raii::DescriptorSet> m_restirGiSpatialDescriptorSets;
-    vk::raii::PipelineLayout m_restirGiSpatialPipelineLayout{ nullptr };
-    vk::raii::Pipeline m_restirGiSpatialPipeline{ nullptr };
+    vk::raii::PipelineLayout m_restirGiSpatialPipelineLayout{nullptr};
+    vk::raii::Pipeline m_restirGiSpatialPipeline{nullptr};
     uint32_t m_frameCounterLow = 0;
     std::vector<vk::raii::QueryPool> m_timestampQueryPools;
     bool m_timestampQueriesEnabled = false;
     float m_timestampPeriodNanoseconds = 0.0f;
     FrameTimingStats m_lastFrameTimingStats{};
+    vk::Fence m_restirSharedHistoryFence = VK_NULL_HANDLE;
 
     vk::raii::Sampler createSharedRestirSampler();
 
@@ -257,41 +254,34 @@ private:
     void createNrdSignalResources();
     void cleanupNrdSignalResources();
 
-    template<typename T>
-    void createPingPongImagePair(
-        std::vector<std::array<T, 2>>& out,
-        vk::Format format,
-        vk::Extent2D extent,
-        vk::ImageUsageFlags usage,
-        const vk::ClearColorValue& clearValue,
-        vk::raii::CommandBuffer& commandBuffer
-    );
-
+    template <typename T>
+    void createPingPongImagePair(std::vector<std::array<T, 2>> &out, vk::Format format,
+                                 vk::Extent2D extent, vk::ImageUsageFlags usage,
+                                 const vk::ClearColorValue &clearValue,
+                                 vk::raii::CommandBuffer &commandBuffer);
 
 #if VOXELOPS_NRD_HEADERS
     bool createNrdRuntimeResources();
     void cleanupNrdRuntimeResources();
-    void dispatchNrdPass(uint32_t imageIndex, const FrameRenderData& frameData);
+    void dispatchNrdPass(uint32_t imageIndex, const FrameRenderData &frameData);
 #endif
-
 
     void createRestirGiSpatialResources();
     void cleanupRestirGiSpatialResources();
     void updateRestirGiSpatialDescriptorSet(uint32_t imageIndex, uint32_t writeParity);
-    void dispatchRestirGiSpatialPass(uint32_t imageIndex, const FrameRenderData& frameData);
+    void dispatchRestirGiSpatialPass(uint32_t imageIndex, const FrameRenderData &frameData);
     void clearTemporalGiWriteTargets(uint32_t imageIndex);
     void barrierNrdSignalsForCompute(uint32_t imageIndex);
     void createTimestampResources();
     void cleanupTimestampResources();
     void updateGpuTimingStatsForImage(uint32_t imageIndex);
-    void ensurePerImageDrawBufferCapacity(uint32_t imageIndex, vk::DeviceSize modelBytes, vk::DeviceSize indirectBytes);
-    void updatePerImageDrawBuffers(
-        uint32_t imageIndex,
-        const std::vector<glm::mat4>& modelMatrices,
-        const std::vector<IndexedIndirectCommand>& indirectCommands
-    );
+    void ensurePerImageDrawBufferCapacity(uint32_t imageIndex, vk::DeviceSize modelBytes,
+                                          vk::DeviceSize indirectBytes);
+    void updatePerImageDrawBuffers(uint32_t imageIndex, const std::vector<glm::mat4> &modelMatrices,
+                                   const std::vector<IndexedIndirectCommand> &indirectCommands);
     void updateModelDescriptorSet(uint32_t imageIndex);
-    void updateGiDescriptorSet(uint32_t imageIndex, const FrameRenderData& frameData, const glm::mat4& viewProjection);
+    void updateGiDescriptorSet(uint32_t imageIndex, const FrameRenderData &frameData,
+                               const glm::mat4 &viewProjection);
     void cleanupPerImageDrawResources();
     void cleanupModelDescriptorResources();
     void cleanupGiDescriptorResources();
@@ -299,14 +289,7 @@ private:
     void recreateSwapchainDependentResources();
     void cleanupSwapchainDependentResources();
 
-    void recordCommandBuffer(
-        uint32_t imageIndex,
-        const glm::mat4& viewProjection,
-        const FrameRenderData& frameData,
-        float& outChunkCpuMs,
-        float& outModelCpuMs,
-        float& outUiCpuMs
-    );
+    void recordCommandBuffer(uint32_t imageIndex, const glm::mat4 &viewProjection,
+                             const FrameRenderData &frameData, float &outChunkCpuMs,
+                             float &outModelCpuMs, float &outUiCpuMs);
 };
-
-

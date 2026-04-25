@@ -8,23 +8,23 @@
 class Shader;
 
 class Sky {
-public:
+  public:
     Sky();
     ~Sky();
 
-    Sky(const Sky&) = delete;
-    Sky& operator=(const Sky&) = delete;
+    Sky(const Sky &) = delete;
+    Sky &operator=(const Sky &) = delete;
 
-    void initialize(const char* vertexShaderPath, const char* fragmentShaderPath);
+    void initialize(const char *vertexShaderPath, const char *fragmentShaderPath);
     void shutdown();
-    void render(const glm::mat4& projection, const glm::mat4& view) const;
+    void render(const glm::mat4 &projection, const glm::mat4 &view) const;
 
-    void setSunDir(const glm::vec3& sunDir);
-    const glm::vec3& getSunDir() const noexcept;
+    void setSunDir(const glm::vec3 &sunDir);
+    const glm::vec3 &getSunDir() const noexcept;
     void setExposure(float exposure) noexcept;
     float getExposure() const noexcept;
 
-private:
+  private:
     std::unique_ptr<Shader> m_Shader;
     glm::vec3 m_SunDir = glm::normalize(glm::vec3(1.0f, 0.01f, 0.0f));
     float m_Exposure = 4.2f;

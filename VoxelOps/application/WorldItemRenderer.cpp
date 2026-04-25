@@ -14,8 +14,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 namespace {
-glm::vec3 ColorForItem(uint16_t itemId)
-{
+glm::vec3 ColorForItem(uint16_t itemId) {
     if (!Inventory::IsValidItemId(itemId)) {
         return glm::vec3(0.85f, 0.85f, 0.85f);
     }
@@ -32,15 +31,15 @@ glm::vec3 ColorForItem(uint16_t itemId)
     }
     return glm::vec3(0.85f, 0.85f, 0.85f);
 }
-}
+} // namespace
 
-void WorldItemRenderer::render(const Runtime& runtime, const Camera& activeCamera)
-{
+void WorldItemRenderer::render(const Runtime &runtime, const Camera &activeCamera) {
     if (!runtime.dbgShader || runtime.worldItems.empty()) {
         return;
     }
 
-    const float aspect = static_cast<float>(GameData::screenWidth) / static_cast<float>(GameData::screenHeight);
+    const float aspect =
+        static_cast<float>(GameData::screenWidth) / static_cast<float>(GameData::screenHeight);
     if (!std::isfinite(aspect) || aspect <= 0.0f) {
         return;
     }
@@ -50,7 +49,8 @@ void WorldItemRenderer::render(const Runtime& runtime, const Camera& activeCamer
         return;
     }
 
-    const glm::mat4 projection = glm::perspective(glm::radians(GameData::FOV), aspect, 0.1f, 100000.0f);
+    const glm::mat4 projection =
+        glm::perspective(glm::radians(GameData::FOV), aspect, 0.1f, 100000.0f);
     const glm::mat4 view = activeCamera.getViewMatrix();
     const float now = static_cast<float>(AppHelpers::GetTimeSeconds());
 
@@ -66,7 +66,7 @@ void WorldItemRenderer::render(const Runtime& runtime, const Camera& activeCamer
     glDisable(GL_CULL_FACE);
 
     glBindVertexArray(static_cast<GLuint>(m_worldItemVao));
-    for (const auto& [_, item] : runtime.worldItems) {
+    for (const auto &[_, item] : runtime.worldItems) {
         if (!Inventory::IsValidItemId(item.itemId)) {
             continue;
         }
@@ -91,16 +91,14 @@ void WorldItemRenderer::render(const Runtime& runtime, const Camera& activeCamer
 
     if (cullFaceWasEnabled) {
         glEnable(GL_CULL_FACE);
-    }
-    else {
+    } else {
         glDisable(GL_CULL_FACE);
     }
     glCullFace(static_cast<GLenum>(previousCullFaceMode));
     glFrontFace(static_cast<GLenum>(previousFrontFace));
 }
 
-void WorldItemRenderer::shutdown()
-{
+void WorldItemRenderer::shutdown() {
     if (m_worldItemVbo != 0) {
         const GLuint vbo = static_cast<GLuint>(m_worldItemVbo);
         glDeleteBuffers(1, &vbo);
@@ -113,31 +111,29 @@ void WorldItemRenderer::shutdown()
     }
 }
 
-void WorldItemRenderer::ensureCubeMesh()
-{
+void WorldItemRenderer::ensureCubeMesh() {
     if (m_worldItemVao != 0 && m_worldItemVbo != 0) {
         return;
     }
 
     static constexpr float kCubeVertices[] = {
-        -0.5f, -0.5f, -0.5f,  0.5f, -0.5f, -0.5f,  0.5f,  0.5f, -0.5f,
-         0.5f,  0.5f, -0.5f, -0.5f,  0.5f, -0.5f, -0.5f, -0.5f, -0.5f,
+        -0.5f, -0.5f, -0.5f, 0.5f,  -0.5f, -0.5f, 0.5f,  0.5f,  -0.5f,
+        0.5f,  0.5f,  -0.5f, -0.5f, 0.5f,  -0.5f, -0.5f, -0.5f, -0.5f,
 
-        -0.5f, -0.5f,  0.5f,  0.5f, -0.5f,  0.5f,  0.5f,  0.5f,  0.5f,
-         0.5f,  0.5f,  0.5f, -0.5f,  0.5f,  0.5f, -0.5f, -0.5f,  0.5f,
+        -0.5f, -0.5f, 0.5f,  0.5f,  -0.5f, 0.5f,  0.5f,  0.5f,  0.5f,
+        0.5f,  0.5f,  0.5f,  -0.5f, 0.5f,  0.5f,  -0.5f, -0.5f, 0.5f,
 
-        -0.5f,  0.5f,  0.5f, -0.5f,  0.5f, -0.5f, -0.5f, -0.5f, -0.5f,
-        -0.5f, -0.5f, -0.5f, -0.5f, -0.5f,  0.5f, -0.5f,  0.5f,  0.5f,
+        -0.5f, 0.5f,  0.5f,  -0.5f, 0.5f,  -0.5f, -0.5f, -0.5f, -0.5f,
+        -0.5f, -0.5f, -0.5f, -0.5f, -0.5f, 0.5f,  -0.5f, 0.5f,  0.5f,
 
-         0.5f,  0.5f,  0.5f,  0.5f,  0.5f, -0.5f,  0.5f, -0.5f, -0.5f,
-         0.5f, -0.5f, -0.5f,  0.5f, -0.5f,  0.5f,  0.5f,  0.5f,  0.5f,
+        0.5f,  0.5f,  0.5f,  0.5f,  0.5f,  -0.5f, 0.5f,  -0.5f, -0.5f,
+        0.5f,  -0.5f, -0.5f, 0.5f,  -0.5f, 0.5f,  0.5f,  0.5f,  0.5f,
 
-        -0.5f, -0.5f, -0.5f,  0.5f, -0.5f, -0.5f,  0.5f, -0.5f,  0.5f,
-         0.5f, -0.5f,  0.5f, -0.5f, -0.5f,  0.5f, -0.5f, -0.5f, -0.5f,
+        -0.5f, -0.5f, -0.5f, 0.5f,  -0.5f, -0.5f, 0.5f,  -0.5f, 0.5f,
+        0.5f,  -0.5f, 0.5f,  -0.5f, -0.5f, 0.5f,  -0.5f, -0.5f, -0.5f,
 
-        -0.5f,  0.5f, -0.5f,  0.5f,  0.5f, -0.5f,  0.5f,  0.5f,  0.5f,
-         0.5f,  0.5f,  0.5f, -0.5f,  0.5f,  0.5f, -0.5f,  0.5f, -0.5f
-    };
+        -0.5f, 0.5f,  -0.5f, 0.5f,  0.5f,  -0.5f, 0.5f,  0.5f,  0.5f,
+        0.5f,  0.5f,  0.5f,  -0.5f, 0.5f,  0.5f,  -0.5f, 0.5f,  -0.5f};
 
     GLuint vao = 0;
     GLuint vbo = 0;
@@ -147,7 +143,7 @@ void WorldItemRenderer::ensureCubeMesh()
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(kCubeVertices), kCubeVertices, GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 3, reinterpret_cast<void*>(0));
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 3, reinterpret_cast<void *>(0));
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 

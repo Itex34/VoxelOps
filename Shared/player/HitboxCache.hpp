@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace Shared::HitboxCache {
+namespace Shared { namespace HitboxCache {
 
 struct Record {
     float minX = 0.0f;
@@ -16,7 +16,9 @@ struct Record {
     uint8_t region = 0; // 0=Legs, 1=Body, 2=Head
 };
 
-bool Save(const std::string& path, float referenceHeight, float referenceRadius, const std::vector<Record>& records);
-bool Load(const std::string& path, float& outReferenceHeight, float& outReferenceRadius, std::vector<Record>& outRecords);
+bool Save(const std::string &path, float referenceHeight, float referenceRadius,
+          const std::vector<Record> &records);
+bool Load(const std::string &path, float &outReferenceHeight, float &outReferenceRadius,
+          std::vector<Record> &outRecords);
 
-} // namespace Shared::HitboxCache
+} } // namespace Shared::HitboxCache

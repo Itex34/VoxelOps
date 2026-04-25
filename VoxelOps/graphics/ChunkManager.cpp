@@ -1,7 +1,6 @@
 #include <windows.h>
 #include <psapi.h>
 
-
 struct ProcessMemoryStatsMB {
     size_t privateMB = 0;
     size_t workingSetMB = 0;
@@ -10,7 +9,7 @@ struct ProcessMemoryStatsMB {
 static ProcessMemoryStatsMB getProcessMemoryMB() {
     ProcessMemoryStatsMB stats;
     PROCESS_MEMORY_COUNTERS_EX pmc;
-    if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc))) {
+    if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS *)&pmc, sizeof(pmc))) {
         stats.privateMB = size_t(pmc.PrivateUsage / (1024 * 1024));
         stats.workingSetMB = size_t(pmc.WorkingSetSize / (1024 * 1024));
     }
@@ -31,22 +30,20 @@ static ProcessMemoryStatsMB getProcessMemoryMB() {
 #include <iostream>
 
 namespace {
-bool readI32LE(const std::vector<uint8_t>& data, size_t& offset, int32_t& out)
-{
+bool readI32LE(const std::vector<uint8_t> &data, size_t &offset, int32_t &out) {
     if (offset + 4 > data.size()) {
         return false;
     }
     uint32_t u = static_cast<uint32_t>(data[offset]) |
-        (static_cast<uint32_t>(data[offset + 1]) << 8) |
-        (static_cast<uint32_t>(data[offset + 2]) << 16) |
-        (static_cast<uint32_t>(data[offset + 3]) << 24);
+                 (static_cast<uint32_t>(data[offset + 1]) << 8) |
+                 (static_cast<uint32_t>(data[offset + 2]) << 16) |
+                 (static_cast<uint32_t>(data[offset + 3]) << 24);
     out = static_cast<int32_t>(u);
     offset += 4;
     return true;
 }
 
-bool readI64LE(const std::vector<uint8_t>& data, size_t& offset, int64_t& out)
-{
+bool readI64LE(const std::vector<uint8_t> &data, size_t &offset, int64_t &out) {
     if (offset + 8 > data.size()) {
         return false;
     }
@@ -59,8 +56,7 @@ bool readI64LE(const std::vector<uint8_t>& data, size_t& offset, int64_t& out)
     return true;
 }
 
-uint32_t fnv1a32(const uint8_t* data, size_t size)
-{
+uint32_t fnv1a32(const uint8_t *data, size_t size) {
     uint32_t h = 2166136261u;
     for (size_t i = 0; i < size; ++i) {
         h ^= static_cast<uint32_t>(data[i]);
@@ -68,7 +64,7 @@ uint32_t fnv1a32(const uint8_t* data, size_t size)
     }
     return h;
 }
-}
+} // namespace
 
 constexpr double kChunkMeshBuildLogThresholdMs = 2.0;
 constexpr double kChunkMeshUploadLogThresholdMs = 2.0;
@@ -76,27 +72,16 @@ constexpr double kRegionRebuildLogThresholdMs = 10.0;
 constexpr bool kEnableRegionLifecycleLogs = false;
 constexpr bool kEnableMissingChunkUnloadLogs = false;
 
-//positions only cube used for wireframe debug
+// positions only cube used for wireframe debug
 float cubeVertices[] = {
-    0,0,0,  1,0,0,
-    1,0,0,  1,1,0,
-    1,1,0,  0,1,0,
-    0,1,0,  0,0,0,
+    0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0,
 
-    0,0,1,  1,0,1,
-    1,0,1,  1,1,1,
-    1,1,1,  0,1,1,
-    0,1,1,  0,0,1,
+    0, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 0, 1,
 
-    0,0,0,  0,0,1,
-    1,0,0,  1,0,1,
-    1,1,0,  1,1,1,
-    0,1,0,  0,1,1,
+    0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1,
 };
 
-
-
-ChunkManager::ChunkManager(IRenderDevice& renderer_) : renderer(renderer_){
+ChunkManager::ChunkManager(IRenderDevice &renderer_) : renderer(renderer_) {
     m_usesOpenGLBuffers = (renderer.getApiName() == "OpenGL");
 
     if (!m_usesOpenGLBuffers) {
@@ -115,7 +100,7 @@ ChunkManager::ChunkManager(IRenderDevice& renderer_) : renderer(renderer_){
     glBindBuffer(GL_ARRAY_BUFFER, wireVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(cubeVertices), cubeVertices, GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)0);
 
     const std::string debugVertPath =
         Shared::RuntimePaths::ResolveVoxelOpsPath("shaders/debugVert.vert").generic_string();
@@ -130,52 +115,31 @@ ChunkManager::ChunkManager(IRenderDevice& renderer_) : renderer(renderer_){
     noise.SetSeed(std::rand());
     ChunkMeshBuilder::resetProfileSnapshot();
 
-
-    
-    
     // build the chunk storage with positions set using unordered_map keyed by glm::ivec3
-    //chunkMap.clear();
+    // chunkMap.clear();
 }
 
-void ChunkManager::renderChunks(
-    Shader& shader,
-    Frustum& frustum,
-    const glm::vec3& viewPosition,
-    int maxRenderDistance
-)
-{
+void ChunkManager::renderChunks(Shader &shader, Frustum &frustum, const glm::vec3 &viewPosition,
+                                int maxRenderDistance) {
     ChunkRenderSystem::renderChunks(*this, shader, frustum, viewPosition, maxRenderDistance);
 }
 
-void ChunkManager::renderChunksDepthPass(
-    GLuint shadowProgram,
-    const glm::mat4& lightViewProj,
-    const glm::vec3& viewPosition,
-    int maxRenderDistance
-)
-{
-    ChunkRenderSystem::renderChunksDepthPass(*this, shadowProgram, lightViewProj, viewPosition, maxRenderDistance);
+void ChunkManager::renderChunksDepthPass(GLuint shadowProgram, const glm::mat4 &lightViewProj,
+                                         const glm::vec3 &viewPosition, int maxRenderDistance) {
+    ChunkRenderSystem::renderChunksDepthPass(*this, shadowProgram, lightViewProj, viewPosition,
+                                             maxRenderDistance);
 }
 
-
-
-
-
-
-
-
-
-
-void ChunkManager::renderChunkBorders(glm::mat4& view, glm::mat4& projection) {
+void ChunkManager::renderChunkBorders(glm::mat4 &view, glm::mat4 &projection) {
     ChunkRenderSystem::renderChunkBorders(*this, view, projection);
 }
 
-
-
-void ChunkManager::markChunkDirty(const glm::ivec3& pos) {
-    if (!inBounds(pos)) return;
+void ChunkManager::markChunkDirty(const glm::ivec3 &pos) {
+    if (!inBounds(pos))
+        return;
     auto it = chunkMap.find(pos);
-    if (it == chunkMap.end()) return;
+    if (it == chunkMap.end())
+        return;
 
     it->second.dirty = true;
     if (m_dirtyChunkPending.insert(pos).second) {
@@ -189,8 +153,8 @@ void ChunkManager::updateDirtyChunks(size_t maxChunksPerCall, int64_t maxBudgetU
     const auto outOfBudget = [&]() {
         if (maxBudgetUs > 0) {
             const int64_t elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now() - start
-            ).count();
+                                          std::chrono::steady_clock::now() - start)
+                                          .count();
             if (elapsedUs >= maxBudgetUs) {
                 return true;
             }
@@ -216,23 +180,22 @@ void ChunkManager::updateDirtyChunks(size_t maxChunksPerCall, int64_t maxBudgetU
                 continue;
             }
 
-            Chunk& chunk = it->second;
+            Chunk &chunk = it->second;
             chunk.building = false;
 
             if (!chunk.dirty.load(std::memory_order_acquire)) {
                 const auto uploadStart = std::chrono::steady_clock::now();
                 uploadChunkMesh(ready.chunkPos, ready.vertices, ready.indices);
                 const auto uploadEnd = std::chrono::steady_clock::now();
-                const double uploadMs = std::chrono::duration<double, std::milli>(uploadEnd - uploadStart).count();
+                const double uploadMs =
+                    std::chrono::duration<double, std::milli>(uploadEnd - uploadStart).count();
                 if (uploadMs >= kChunkMeshUploadLogThresholdMs) {
-                    std::cerr
-                        << "[chunk/mesh] slow uploadMs=" << uploadMs
-                        << " verts=" << ready.vertices.size()
-                        << " idx=" << ready.indices.size()
-                        << " chunk=(" << ready.chunkPos.x << "," << ready.chunkPos.y << "," << ready.chunkPos.z << ")\n";
+                    std::cerr << "[chunk/mesh] slow uploadMs=" << uploadMs
+                              << " verts=" << ready.vertices.size()
+                              << " idx=" << ready.indices.size() << " chunk=(" << ready.chunkPos.x
+                              << "," << ready.chunkPos.y << "," << ready.chunkPos.z << ")\n";
                 }
-            }
-            else if (m_dirtyChunkPending.insert(ready.chunkPos).second) {
+            } else if (m_dirtyChunkPending.insert(ready.chunkPos).second) {
                 m_dirtyChunkQueue.push_back(ready.chunkPos);
             }
         }
@@ -267,21 +230,15 @@ void ChunkManager::updateDirtyChunks(size_t maxChunksPerCall, int64_t maxBudgetU
     }
 }
 
-
-
-
-
-
-
-void ChunkManager::updateChunks(const glm::ivec3& playerWorldPos, int renderDistance) {
-
+void ChunkManager::updateChunks(const glm::ivec3 &playerWorldPos, int renderDistance) {
 
     std::vector<glm::ivec3> toErase;
     std::unordered_set<glm::ivec2, IVec2Hash> columnsToRefresh;
     std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> desired;
 
     glm::ivec3 playerChunk = worldToChunkPos(playerWorldPos);
-    const int64_t radius2 = static_cast<int64_t>(renderDistance) * static_cast<int64_t>(renderDistance);
+    const int64_t radius2 =
+        static_cast<int64_t>(renderDistance) * static_cast<int64_t>(renderDistance);
 
     const int minY = floorDiv(WORLD_MIN_Y, CHUNK_SIZE);
     const int maxY = floorDiv(WORLD_MAX_Y, CHUNK_SIZE);
@@ -304,15 +261,13 @@ void ChunkManager::updateChunks(const glm::ivec3& playerWorldPos, int renderDist
         }
     }
 
-
-
-    for (auto& [pos, chunk] : chunkMap) {
+    for (auto &[pos, chunk] : chunkMap) {
         if (desired.find(pos) == desired.end()) {
             toErase.push_back(pos);
         }
     }
 
-    for (auto& pos : toErase) {
+    for (auto &pos : toErase) {
         columnsToRefresh.insert(glm::ivec2(pos.x, pos.z));
         chunkMap.erase(pos);
         m_networkChunkVersions.erase(pos);
@@ -322,19 +277,16 @@ void ChunkManager::updateChunks(const glm::ivec3& playerWorldPos, int renderDist
         m_dirtyChunkPending.erase(pos);
     }
 
-    for (const auto& c : columnsToRefresh) {
+    for (const auto &c : columnsToRefresh) {
         rebuildColumnSunCache(c.x, c.y);
     }
 
-    for (auto& pos : desired) {
+    for (auto &pos : desired) {
         if (chunkMap.find(pos) == chunkMap.end()) {
             WorldGen::generateChunkAt(*this, pos);
 
-            static const glm::ivec3 dirs[6] = {
-                { 1, 0, 0}, {-1, 0, 0},
-                { 0, 1, 0}, { 0,-1, 0},
-                { 0, 0, 1}, { 0, 0,-1}
-            };
+            static const glm::ivec3 dirs[6] = {{1, 0, 0},  {-1, 0, 0}, {0, 1, 0},
+                                               {0, -1, 0}, {0, 0, 1},  {0, 0, -1}};
             for (auto d : dirs) {
                 markChunkDirty(pos + d);
             }
@@ -342,20 +294,20 @@ void ChunkManager::updateChunks(const glm::ivec3& playerWorldPos, int renderDist
     }
 }
 
-bool ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
+bool ChunkManager::applyNetworkChunkData(const ChunkData &packet) {
     std::vector<uint8_t> decodedPayload;
     if (!DecompressChunkPayload(packet.flags, packet.payload, decodedPayload)) {
-        std::cerr
-            << "[chunk/apply] failed to decode payload flags=" << static_cast<int>(packet.flags)
-            << " chunk=(" << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ << ")"
-            << " payloadBytes=" << packet.payload.size() << "\n";
+        std::cerr << "[chunk/apply] failed to decode payload flags="
+                  << static_cast<int>(packet.flags) << " chunk=(" << packet.chunkX << ","
+                  << packet.chunkY << "," << packet.chunkZ << ")"
+                  << " payloadBytes=" << packet.payload.size() << "\n";
         return false;
     }
 
-    const std::vector<uint8_t>& payload = decodedPayload;
+    const std::vector<uint8_t> &payload = decodedPayload;
     const uint32_t payloadHash = fnv1a32(packet.payload.data(), packet.payload.size());
     const size_t rawBlockBytes = CHUNK_VOLUME * sizeof(BlockID);
-    const uint8_t* raw = nullptr;
+    const uint8_t *raw = nullptr;
     glm::ivec3 chunkPos(packet.chunkX, packet.chunkY, packet.chunkZ);
     uint64_t incomingVersion = packet.version;
 
@@ -377,8 +329,7 @@ bool ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
         if (validWrappedPayload) {
             if (offset + 1 > payload.size()) {
                 validWrappedPayload = false;
-            }
-            else {
+            } else {
                 const uint8_t flags = payload[offset++];
                 if ((flags & ~0x1u) != 0u) {
                     validWrappedPayload = false;
@@ -389,8 +340,7 @@ bool ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
         if (validWrappedPayload) {
             if (dataSize < 0) {
                 validWrappedPayload = false;
-            }
-            else {
+            } else {
                 const size_t size = static_cast<size_t>(dataSize);
                 if (offset + size > payload.size() || size != rawBlockBytes) {
                     validWrappedPayload = false;
@@ -399,29 +349,26 @@ bool ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
         }
 
         if (validWrappedPayload) {
-            if (payloadX != packet.chunkX || payloadY != packet.chunkY || payloadZ != packet.chunkZ) {
-                std::cerr
-                    << "[chunk/apply] header mismatch packet=("
-                    << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ
-                    << ") payload=("
-                    << payloadX << "," << payloadY << "," << payloadZ << ")\n";
+            if (payloadX != packet.chunkX || payloadY != packet.chunkY ||
+                payloadZ != packet.chunkZ) {
+                std::cerr << "[chunk/apply] header mismatch packet=(" << packet.chunkX << ","
+                          << packet.chunkY << "," << packet.chunkZ << ") payload=(" << payloadX
+                          << "," << payloadY << "," << payloadZ << ")\n";
                 return false;
             }
 
             if (payloadVersion < 0) {
-                std::cerr
-                    << "[chunk/apply] invalid negative payload version chunk=("
-                    << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ << ")"
-                    << " version=" << payloadVersion << "\n";
+                std::cerr << "[chunk/apply] invalid negative payload version chunk=("
+                          << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ << ")"
+                          << " version=" << payloadVersion << "\n";
                 return false;
             }
             incomingVersion = static_cast<uint64_t>(payloadVersion);
             if (incomingVersion != packet.version) {
-                std::cerr
-                    << "[chunk/apply] packet version mismatch chunk=("
-                    << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ << ")"
-                    << " packetVersion=" << packet.version
-                    << " payloadVersion=" << incomingVersion << "\n";
+                std::cerr << "[chunk/apply] packet version mismatch chunk=(" << packet.chunkX << ","
+                          << packet.chunkY << "," << packet.chunkZ << ")"
+                          << " packetVersion=" << packet.version
+                          << " payloadVersion=" << incomingVersion << "\n";
                 return false;
             }
             raw = payload.data() + offset;
@@ -431,29 +378,27 @@ bool ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
     if (!raw) {
         // Backward compatibility for payloads that only contain raw voxels.
         if (payload.size() != rawBlockBytes) {
-            std::cerr
-                << "[chunk/apply] invalid ChunkData payload size="
-                << payload.size() << " expected=" << rawBlockBytes
-                << " chunk=(" << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ << ")\n";
+            std::cerr << "[chunk/apply] invalid ChunkData payload size=" << payload.size()
+                      << " expected=" << rawBlockBytes << " chunk=(" << packet.chunkX << ","
+                      << packet.chunkY << "," << packet.chunkZ << ")\n";
             return false;
         }
-        std::cerr
-            << "[chunk/apply] using raw fallback payload for chunk=("
-            << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ << ")\n";
+        std::cerr << "[chunk/apply] using raw fallback payload for chunk=(" << packet.chunkX << ","
+                  << packet.chunkY << "," << packet.chunkZ << ")\n";
         raw = payload.data();
     }
 
     auto knownVersionIt = m_networkChunkVersions.find(chunkPos);
-    if (knownVersionIt != m_networkChunkVersions.end() && incomingVersion <= knownVersionIt->second) {
+    if (knownVersionIt != m_networkChunkVersions.end() &&
+        incomingVersion <= knownVersionIt->second) {
         static uint64_t staleChunkDataCount = 0;
         ++staleChunkDataCount;
         if (staleChunkDataCount <= 20 || (staleChunkDataCount % 100) == 0) {
-            std::cerr
-                << "[chunk/apply] stale ChunkData ignored chunk=("
-                << chunkPos.x << "," << chunkPos.y << "," << chunkPos.z << ")"
-                << " incomingVersion=" << incomingVersion
-                << " knownVersion=" << knownVersionIt->second
-                << " count=" << staleChunkDataCount << "\n";
+            std::cerr << "[chunk/apply] stale ChunkData ignored chunk=(" << chunkPos.x << ","
+                      << chunkPos.y << "," << chunkPos.z << ")"
+                      << " incomingVersion=" << incomingVersion
+                      << " knownVersion=" << knownVersionIt->second
+                      << " count=" << staleChunkDataCount << "\n";
         }
         return true;
     }
@@ -463,8 +408,8 @@ bool ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
     m_chunkBuildTickets.erase(chunkPos);
     auto [chunkIt, inserted] = chunkMap.try_emplace(chunkPos, chunkPos);
     (void)inserted;
-  
-    Chunk& chunk = chunkIt->second;
+
+    Chunk &chunk = chunkIt->second;
     size_t nonAirCount = 0;
     for (int z = 0; z < CHUNK_SIZE; ++z) {
         for (int y = 0; y < CHUNK_SIZE; ++y) {
@@ -481,23 +426,18 @@ bool ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
 
     const int minChunkY = WORLD_MIN_Y / CHUNK_SIZE;
     if (chunkPos.y == minChunkY && nonAirCount < static_cast<size_t>(CHUNK_SIZE * CHUNK_SIZE)) {
-        std::cerr
-            << "[chunk/apply] suspicious low nonAir in bottom chunk chunk=("
-            << chunkPos.x << "," << chunkPos.y << "," << chunkPos.z << ")"
-            << " nonAir=" << nonAirCount
-            << " payloadHash=" << payloadHash
-            << " payloadBytes=" << payload.size() << "\n";
+        std::cerr << "[chunk/apply] suspicious low nonAir in bottom chunk chunk=(" << chunkPos.x
+                  << "," << chunkPos.y << "," << chunkPos.z << ")"
+                  << " nonAir=" << nonAirCount << " payloadHash=" << payloadHash
+                  << " payloadBytes=" << payload.size() << "\n";
     }
 
     rebuildColumnSunCache(chunkPos.x, chunkPos.z);
     markChunkDirty(chunkPos);
 
-    static const glm::ivec3 dirs[6] = {
-        { 1, 0, 0 }, { -1, 0, 0 },
-        { 0, 1, 0 }, { 0, -1, 0 },
-        { 0, 0, 1 }, { 0, 0, -1 }
-    };
-    for (const glm::ivec3& d : dirs) {
+    static const glm::ivec3 dirs[6] = {{1, 0, 0},  {-1, 0, 0}, {0, 1, 0},
+                                       {0, -1, 0}, {0, 0, 1},  {0, 0, -1}};
+    for (const glm::ivec3 &d : dirs) {
         const glm::ivec3 n = chunkPos + d;
         if (chunkMap.find(n) != chunkMap.end()) {
             markChunkDirty(n);
@@ -508,28 +448,25 @@ bool ChunkManager::applyNetworkChunkData(const ChunkData& packet) {
     return true;
 }
 
-NetworkChunkDeltaApplyResult ChunkManager::applyNetworkChunkDelta(const ChunkDelta& packet) {
+NetworkChunkDeltaApplyResult ChunkManager::applyNetworkChunkDelta(const ChunkDelta &packet) {
     const glm::ivec3 chunkPos(packet.chunkX, packet.chunkY, packet.chunkZ);
     auto it = chunkMap.find(chunkPos);
     if (it == chunkMap.end()) {
         static uint64_t missingChunkDeltaCount = 0;
         ++missingChunkDeltaCount;
         if (missingChunkDeltaCount <= 20 || (missingChunkDeltaCount % 100) == 0) {
-            std::cerr
-                << "[chunk/delta] received delta for missing chunk=("
-                << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ
-                << ") edits=" << packet.edits.size()
-                << " count=" << missingChunkDeltaCount << "\n";
+            std::cerr << "[chunk/delta] received delta for missing chunk=(" << packet.chunkX << ","
+                      << packet.chunkY << "," << packet.chunkZ << ") edits=" << packet.edits.size()
+                      << " count=" << missingChunkDeltaCount << "\n";
         }
         return NetworkChunkDeltaApplyResult::MissingBaseChunk;
     }
 
     const auto versionIt = m_networkChunkVersions.find(chunkPos);
     if (versionIt == m_networkChunkVersions.end()) {
-        std::cerr
-            << "[chunk/delta] missing base version for chunk=("
-            << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ
-            << ") resultingVersion=" << packet.resultingVersion << "\n";
+        std::cerr << "[chunk/delta] missing base version for chunk=(" << packet.chunkX << ","
+                  << packet.chunkY << "," << packet.chunkZ
+                  << ") resultingVersion=" << packet.resultingVersion << "\n";
         return NetworkChunkDeltaApplyResult::MissingBaseChunk;
     }
 
@@ -539,12 +476,10 @@ NetworkChunkDeltaApplyResult ChunkManager::applyNetworkChunkDelta(const ChunkDel
         static uint64_t staleChunkDeltaCount = 0;
         ++staleChunkDeltaCount;
         if (staleChunkDeltaCount <= 20 || (staleChunkDeltaCount % 100) == 0) {
-            std::cerr
-                << "[chunk/delta] stale delta ignored chunk=("
-                << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ
-                << ") knownVersion=" << knownVersion
-                << " incomingVersion=" << incomingVersion
-                << " count=" << staleChunkDeltaCount << "\n";
+            std::cerr << "[chunk/delta] stale delta ignored chunk=(" << packet.chunkX << ","
+                      << packet.chunkY << "," << packet.chunkZ << ") knownVersion=" << knownVersion
+                      << " incomingVersion=" << incomingVersion << " count=" << staleChunkDeltaCount
+                      << "\n";
         }
         return NetworkChunkDeltaApplyResult::StaleVersion;
     }
@@ -553,48 +488,53 @@ NetworkChunkDeltaApplyResult ChunkManager::applyNetworkChunkDelta(const ChunkDel
     const uint64_t maxExpectedVersion =
         knownVersion + static_cast<uint64_t>(packet.edits.size()) + kNoopVersionSlack;
     if (!packet.edits.empty() && incomingVersion > maxExpectedVersion) {
-        std::cerr
-            << "[chunk/delta] version gap detected chunk=("
-            << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ
-            << ") knownVersion=" << knownVersion
-            << " incomingVersion=" << incomingVersion
-            << " edits=" << packet.edits.size() << "\n";
+        std::cerr << "[chunk/delta] version gap detected chunk=(" << packet.chunkX << ","
+                  << packet.chunkY << "," << packet.chunkZ << ") knownVersion=" << knownVersion
+                  << " incomingVersion=" << incomingVersion << " edits=" << packet.edits.size()
+                  << "\n";
         return NetworkChunkDeltaApplyResult::VersionGap;
     }
 
-    Chunk& chunk = it->second;
+    Chunk &chunk = it->second;
     std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> rebuildSet;
     rebuildSet.insert(chunkPos);
 
-    for (const ChunkDeltaOp& op : packet.edits) {
-        if (!Chunk::inBounds(static_cast<int>(op.x), static_cast<int>(op.y), static_cast<int>(op.z))) {
+    for (const ChunkDeltaOp &op : packet.edits) {
+        if (!Chunk::inBounds(static_cast<int>(op.x), static_cast<int>(op.y),
+                             static_cast<int>(op.z))) {
             continue;
         }
 
         const BlockID newId = static_cast<BlockID>(op.blockId);
-        const BlockID oldId = chunk.getBlock(static_cast<int>(op.x), static_cast<int>(op.y), static_cast<int>(op.z));
+        const BlockID oldId =
+            chunk.getBlock(static_cast<int>(op.x), static_cast<int>(op.y), static_cast<int>(op.z));
         if (oldId == newId) {
             continue;
         }
 
-        chunk.setBlock(static_cast<int>(op.x), static_cast<int>(op.y), static_cast<int>(op.z), newId);
+        chunk.setBlock(static_cast<int>(op.x), static_cast<int>(op.y), static_cast<int>(op.z),
+                       newId);
 
-        const glm::ivec3 worldPos = chunk.getWorldPosition() + glm::ivec3(
-            static_cast<int>(op.x),
-            static_cast<int>(op.y),
-            static_cast<int>(op.z)
-        );
+        const glm::ivec3 worldPos =
+            chunk.getWorldPosition() +
+            glm::ivec3(static_cast<int>(op.x), static_cast<int>(op.y), static_cast<int>(op.z));
         updateColumnSunCacheForBlockChange(worldPos.x, worldPos.y, worldPos.z, oldId, newId);
 
-        if (op.x == 0) rebuildSet.insert(chunkPos + glm::ivec3(-1, 0, 0));
-        if (op.x == CHUNK_SIZE - 1) rebuildSet.insert(chunkPos + glm::ivec3(1, 0, 0));
-        if (op.y == 0) rebuildSet.insert(chunkPos + glm::ivec3(0, -1, 0));
-        if (op.y == CHUNK_SIZE - 1) rebuildSet.insert(chunkPos + glm::ivec3(0, 1, 0));
-        if (op.z == 0) rebuildSet.insert(chunkPos + glm::ivec3(0, 0, -1));
-        if (op.z == CHUNK_SIZE - 1) rebuildSet.insert(chunkPos + glm::ivec3(0, 0, 1));
+        if (op.x == 0)
+            rebuildSet.insert(chunkPos + glm::ivec3(-1, 0, 0));
+        if (op.x == CHUNK_SIZE - 1)
+            rebuildSet.insert(chunkPos + glm::ivec3(1, 0, 0));
+        if (op.y == 0)
+            rebuildSet.insert(chunkPos + glm::ivec3(0, -1, 0));
+        if (op.y == CHUNK_SIZE - 1)
+            rebuildSet.insert(chunkPos + glm::ivec3(0, 1, 0));
+        if (op.z == 0)
+            rebuildSet.insert(chunkPos + glm::ivec3(0, 0, -1));
+        if (op.z == CHUNK_SIZE - 1)
+            rebuildSet.insert(chunkPos + glm::ivec3(0, 0, 1));
     }
 
-    for (const glm::ivec3& pos : rebuildSet) {
+    for (const glm::ivec3 &pos : rebuildSet) {
         if (chunkMap.find(pos) != chunkMap.end()) {
             markChunkDirty(pos);
         }
@@ -604,7 +544,7 @@ NetworkChunkDeltaApplyResult ChunkManager::applyNetworkChunkDelta(const ChunkDel
     return NetworkChunkDeltaApplyResult::Applied;
 }
 
-void ChunkManager::applyNetworkChunkUnload(const ChunkUnload& packet) {
+void ChunkManager::applyNetworkChunkUnload(const ChunkUnload &packet) {
     const glm::ivec3 chunkPos(packet.chunkX, packet.chunkY, packet.chunkZ);
     auto it = chunkMap.find(chunkPos);
     if (it == chunkMap.end()) {
@@ -614,10 +554,9 @@ void ChunkManager::applyNetworkChunkUnload(const ChunkUnload& packet) {
             static uint64_t missingChunkUnloadCount = 0;
             ++missingChunkUnloadCount;
             if (missingChunkUnloadCount <= 20 || (missingChunkUnloadCount % 100) == 0) {
-                std::cerr
-                    << "[chunk/unload] unload for missing chunk=("
-                    << packet.chunkX << "," << packet.chunkY << "," << packet.chunkZ
-                    << ") count=" << missingChunkUnloadCount << "\n";
+                std::cerr << "[chunk/unload] unload for missing chunk=(" << packet.chunkX << ","
+                          << packet.chunkY << "," << packet.chunkZ
+                          << ") count=" << missingChunkUnloadCount << "\n";
             }
         }
         return;
@@ -630,12 +569,9 @@ void ChunkManager::applyNetworkChunkUnload(const ChunkUnload& packet) {
     m_dirtyChunkPending.erase(chunkPos);
     rebuildColumnSunCache(chunkPos.x, chunkPos.z);
 
-    static const glm::ivec3 dirs[6] = {
-        { 1, 0, 0 }, { -1, 0, 0 },
-        { 0, 1, 0 }, { 0, -1, 0 },
-        { 0, 0, 1 }, { 0, 0, -1 }
-    };
-    for (const glm::ivec3& d : dirs) {
+    static const glm::ivec3 dirs[6] = {{1, 0, 0},  {-1, 0, 0}, {0, 1, 0},
+                                       {0, -1, 0}, {0, 0, 1},  {0, 0, -1}};
+    for (const glm::ivec3 &d : dirs) {
         const glm::ivec3 n = chunkPos + d;
         if (chunkMap.find(n) != chunkMap.end()) {
             markChunkDirty(n);
@@ -643,57 +579,62 @@ void ChunkManager::applyNetworkChunkUnload(const ChunkUnload& packet) {
     }
 }
 
-
-void ChunkManager::setBlockInWorld(const glm::ivec3& worldPos, BlockID blockID) {
+void ChunkManager::setBlockInWorld(const glm::ivec3 &worldPos, BlockID blockID) {
     glm::ivec3 chunkPos = worldToChunkPos(worldPos);
     glm::ivec3 localPos = worldToLocalPos(worldPos);
 
-    if (!inBounds(chunkPos)) return;
+    if (!inBounds(chunkPos))
+        return;
 
     auto it = chunkMap.find(chunkPos);
-    if (it == chunkMap.end()) return;
+    if (it == chunkMap.end())
+        return;
 
-    Chunk& chunk = it->second;
+    Chunk &chunk = it->second;
     BlockID oldId = chunk.getBlock(localPos.x, localPos.y, localPos.z);
-    if (oldId == blockID) return;
+    if (oldId == blockID)
+        return;
     chunk.setBlock(localPos.x, localPos.y, localPos.z, blockID);
     updateColumnSunCacheForBlockChange(worldPos.x, worldPos.y, worldPos.z, oldId, blockID);
     markChunkDirty(chunkPos);
 
     // mark neighbors if we touched an edge
-    if (localPos.x == 0) markChunkDirty(chunkPos + glm::ivec3(-1, 0, 0));
-    if (localPos.x == CHUNK_SIZE - 1) markChunkDirty(chunkPos + glm::ivec3(1, 0, 0));
-    if (localPos.y == 0) markChunkDirty(chunkPos + glm::ivec3(0, -1, 0));
-    if (localPos.y == CHUNK_SIZE - 1) markChunkDirty(chunkPos + glm::ivec3(0, 1, 0));
-    if (localPos.z == 0) markChunkDirty(chunkPos + glm::ivec3(0, 0, -1));
-    if (localPos.z == CHUNK_SIZE - 1) markChunkDirty(chunkPos + glm::ivec3(0, 0, 1));
+    if (localPos.x == 0)
+        markChunkDirty(chunkPos + glm::ivec3(-1, 0, 0));
+    if (localPos.x == CHUNK_SIZE - 1)
+        markChunkDirty(chunkPos + glm::ivec3(1, 0, 0));
+    if (localPos.y == 0)
+        markChunkDirty(chunkPos + glm::ivec3(0, -1, 0));
+    if (localPos.y == CHUNK_SIZE - 1)
+        markChunkDirty(chunkPos + glm::ivec3(0, 1, 0));
+    if (localPos.z == 0)
+        markChunkDirty(chunkPos + glm::ivec3(0, 0, -1));
+    if (localPos.z == CHUNK_SIZE - 1)
+        markChunkDirty(chunkPos + glm::ivec3(0, 0, 1));
 }
 
-glm::ivec3 ChunkManager::worldToChunkPos(const glm::ivec3& worldPos) const {
+glm::ivec3 ChunkManager::worldToChunkPos(const glm::ivec3 &worldPos) const {
     // floor division to get the chunk indices (works for negatives)
     glm::vec3 f = glm::floor(glm::vec3(worldPos) / float(CHUNK_SIZE));
     return glm::ivec3(static_cast<int>(f.x), static_cast<int>(f.y), static_cast<int>(f.z));
 }
 
-bool ChunkManager::hasChunkLoaded(const glm::ivec3& chunkPos) const {
+bool ChunkManager::hasChunkLoaded(const glm::ivec3 &chunkPos) const {
     return chunkMap.find(chunkPos) != chunkMap.end();
 }
 
-glm::ivec3 ChunkManager::worldToLocalPos(const glm::ivec3& worldPos) const {
+glm::ivec3 ChunkManager::worldToLocalPos(const glm::ivec3 &worldPos) const {
     glm::ivec3 chunkPos = worldToChunkPos(worldPos);
     glm::ivec3 local = worldPos - chunkPos * CHUNK_SIZE;
     return local;
 }
 
-bool ChunkManager::inBounds(const glm::ivec3& pos) const {
+bool ChunkManager::inBounds(const glm::ivec3 &pos) const {
     const int minChunkY = floorDiv(WORLD_MIN_Y, CHUNK_SIZE);
     const int maxChunkY = floorDiv(WORLD_MAX_Y, CHUNK_SIZE);
-    return pos.x >= WORLD_MIN_X && pos.x <= WORLD_MAX_X &&
-        pos.y >= minChunkY && pos.y <= maxChunkY &&
-        pos.z >= WORLD_MIN_Z && pos.z <= WORLD_MAX_Z;
+    return pos.x >= WORLD_MIN_X && pos.x <= WORLD_MAX_X && pos.y >= minChunkY &&
+           pos.y <= maxChunkY && pos.z >= WORLD_MIN_Z && pos.z <= WORLD_MAX_Z;
 }
-
-
 
 void ChunkManager::setBlockGlobal(int worldX, int worldY, int worldZ, BlockID id) {
     glm::ivec3 worldPos(worldX, worldY, worldZ);
@@ -703,7 +644,8 @@ void ChunkManager::setBlockGlobal(int worldX, int worldY, int worldZ, BlockID id
     auto it = chunkMap.find(chunkPos);
     if (it != chunkMap.end()) {
         BlockID oldId = it->second.getBlock(localPos.x, localPos.y, localPos.z);
-        if (oldId == id) return;
+        if (oldId == id)
+            return;
         it->second.setBlock(localPos.x, localPos.y, localPos.z, id);
         updateColumnSunCacheForBlockChange(worldX, worldY, worldZ, oldId, id);
         markChunkDirty(chunkPos);
@@ -722,102 +664,80 @@ BlockID ChunkManager::getBlockGlobal(int worldX, int worldY, int worldZ) {
     return BlockID::Air;
 }
 
-
-
-
-
-
-
-
-
-void ChunkManager::setBlockSafe(Chunk& currentChunk, const glm::ivec3& pos, BlockID id) {
-    if (pos.x >= 0 && pos.x < CHUNK_SIZE &&
-        pos.y >= 0 && pos.y < CHUNK_SIZE &&
-        pos.z >= 0 && pos.z < CHUNK_SIZE) {
+void ChunkManager::setBlockSafe(Chunk &currentChunk, const glm::ivec3 &pos, BlockID id) {
+    if (pos.x >= 0 && pos.x < CHUNK_SIZE && pos.y >= 0 && pos.y < CHUNK_SIZE && pos.z >= 0 &&
+        pos.z < CHUNK_SIZE) {
         BlockID oldId = currentChunk.getBlock(pos.x, pos.y, pos.z);
-        if (oldId == id) return;
+        if (oldId == id)
+            return;
         currentChunk.setBlock(pos.x, pos.y, pos.z, id);
         const glm::ivec3 worldPos = currentChunk.getWorldPosition() + pos;
         updateColumnSunCacheForBlockChange(worldPos.x, worldPos.y, worldPos.z, oldId, id);
-    }
-    else {
+    } else {
         glm::ivec3 worldPos = currentChunk.getWorldPosition() + pos;
         setBlockGlobal(worldPos.x, worldPos.y, worldPos.z, id);
     }
 }
 
-BlockID ChunkManager::getBlockSafe(Chunk& currentChunk, const glm::ivec3& pos) {
-    if (pos.x >= 0 && pos.x < CHUNK_SIZE &&
-        pos.y >= 0 && pos.y < CHUNK_SIZE &&
-        pos.z >= 0 && pos.z < CHUNK_SIZE) {
+BlockID ChunkManager::getBlockSafe(Chunk &currentChunk, const glm::ivec3 &pos) {
+    if (pos.x >= 0 && pos.x < CHUNK_SIZE && pos.y >= 0 && pos.y < CHUNK_SIZE && pos.z >= 0 &&
+        pos.z < CHUNK_SIZE) {
         return currentChunk.getBlock(pos.x, pos.y, pos.z);
-    }
-    else {
+    } else {
         glm::ivec3 worldPos = currentChunk.getWorldPosition() + pos;
         return getBlockGlobal(worldPos.x, worldPos.y, worldPos.z);
     }
 }
 
-
-
-void ChunkManager::debugMemoryEstimate()
-{
+void ChunkManager::debugMemoryEstimate() {
     std::cout << "---- MEMORY ESTIMATE ----\n";
 
     const ProcessMemoryStatsMB mem = getProcessMemoryMB();
-    std::cout << "Process private bytes (MB): "
-        << mem.privateMB << "\n";
-    std::cout << "Process working set (MB): "
-        << mem.workingSetMB << "\n";
+    std::cout << "Process private bytes (MB): " << mem.privateMB << "\n";
+    std::cout << "Process working set (MB): " << mem.workingSetMB << "\n";
 
-    std::cout << "sizeof(Chunk): "
-        << sizeof(Chunk) << " bytes\n";
+    std::cout << "sizeof(Chunk): " << sizeof(Chunk) << " bytes\n";
 
-    std::cout << "chunkMap.size(): "
-        << chunkMap.size() << "\n";
+    std::cout << "chunkMap.size(): " << chunkMap.size() << "\n";
 
-    double chunkMB =
-        chunkMap.size() * sizeof(Chunk) / (1024.0 * 1024.0);
+    double chunkMB = chunkMap.size() * sizeof(Chunk) / (1024.0 * 1024.0);
 
-    std::cout << "estimated raw chunk bytes: "
-        << chunkMB << " MB\n";
+    std::cout << "estimated raw chunk bytes: " << chunkMB << " MB\n";
 
-    std::cout << "chunkMeshes.size(): "
-        << chunkMeshes.size() << "\n";
+    std::cout << "chunkMeshes.size(): " << chunkMeshes.size() << "\n";
 
     const MeshBuildProfileSnapshot p = ChunkMeshBuilder::getProfileSnapshot();
     if (p.chunksMeshed > 0 && p.totalUs > 0) {
         const double invChunks = 1.0 / double(p.chunksMeshed);
         const double avgTotal = double(p.totalUs) * invChunks;
         const auto pct = [&](uint64_t us) { return (100.0 * double(us)) / double(p.totalUs); };
-        const uint64_t profiledUs =
-            p.blockGridUs +
-            p.solidCacheUs +
-            p.sunlightPrepUs +
-            p.aoPrepUs +
-            p.maskTransitionUs +
-            p.maskLightingUs +
-            p.greedyEmitUs;
+        const uint64_t profiledUs = p.blockGridUs + p.solidCacheUs + p.sunlightPrepUs + p.aoPrepUs +
+                                    p.maskTransitionUs + p.maskLightingUs + p.greedyEmitUs;
         const uint64_t otherUs = (p.totalUs > profiledUs) ? (p.totalUs - profiledUs) : 0;
         std::cout << "Mesher profile (" << p.chunksMeshed << " chunks):\n";
         std::cout << "  avg total: " << avgTotal << " us/chunk\n";
-        std::cout << "  block grid: " << (double(p.blockGridUs) * invChunks) << " us (" << pct(p.blockGridUs) << "%)\n";
-        std::cout << "  solid cache: " << (double(p.solidCacheUs) * invChunks) << " us (" << pct(p.solidCacheUs) << "%)\n";
-        std::cout << "  sunlight prep: " << (double(p.sunlightPrepUs) * invChunks) << " us (" << pct(p.sunlightPrepUs) << "%)\n";
-        std::cout << "  AO prep: " << (double(p.aoPrepUs) * invChunks) << " us (" << pct(p.aoPrepUs) << "%)\n";
-        std::cout << "  mask transitions: " << (double(p.maskTransitionUs) * invChunks) << " us (" << pct(p.maskTransitionUs) << "%)\n";
-        std::cout << "  mask lighting: " << (double(p.maskLightingUs) * invChunks) << " us (" << pct(p.maskLightingUs) << "%)\n";
-        std::cout << "  mask build: " << (double(p.maskBuildUs) * invChunks) << " us (" << pct(p.maskBuildUs) << "%)\n";
-        std::cout << "  greedy emit: " << (double(p.greedyEmitUs) * invChunks) << " us (" << pct(p.greedyEmitUs) << "%)\n";
-        std::cout << "  other/unprofiled: " << (double(otherUs) * invChunks) << " us (" << pct(otherUs) << "%)\n";
+        std::cout << "  block grid: " << (double(p.blockGridUs) * invChunks) << " us ("
+                  << pct(p.blockGridUs) << "%)\n";
+        std::cout << "  solid cache: " << (double(p.solidCacheUs) * invChunks) << " us ("
+                  << pct(p.solidCacheUs) << "%)\n";
+        std::cout << "  sunlight prep: " << (double(p.sunlightPrepUs) * invChunks) << " us ("
+                  << pct(p.sunlightPrepUs) << "%)\n";
+        std::cout << "  AO prep: " << (double(p.aoPrepUs) * invChunks) << " us (" << pct(p.aoPrepUs)
+                  << "%)\n";
+        std::cout << "  mask transitions: " << (double(p.maskTransitionUs) * invChunks) << " us ("
+                  << pct(p.maskTransitionUs) << "%)\n";
+        std::cout << "  mask lighting: " << (double(p.maskLightingUs) * invChunks) << " us ("
+                  << pct(p.maskLightingUs) << "%)\n";
+        std::cout << "  mask build: " << (double(p.maskBuildUs) * invChunks) << " us ("
+                  << pct(p.maskBuildUs) << "%)\n";
+        std::cout << "  greedy emit: " << (double(p.greedyEmitUs) * invChunks) << " us ("
+                  << pct(p.greedyEmitUs) << "%)\n";
+        std::cout << "  other/unprofiled: " << (double(otherUs) * invChunks) << " us ("
+                  << pct(otherUs) << "%)\n";
     }
 }
 
-
-
-
-
-void ChunkManager::playerBreakBlockAt(const glm::ivec3& blockCoords) {
+void ChunkManager::playerBreakBlockAt(const glm::ivec3 &blockCoords) {
     glm::ivec3 chunkPos = worldToChunkPos(blockCoords);
     glm::ivec3 localPos = worldToLocalPos(blockCoords);
     bool changed = false;
@@ -826,52 +746,60 @@ void ChunkManager::playerBreakBlockAt(const glm::ivec3& blockCoords) {
     if (it != chunkMap.end()) {
         BlockID oldId = it->second.removeBlock(localPos.x, localPos.y, localPos.z);
         if (oldId != BlockID::Air) {
-            updateColumnSunCacheForBlockChange(blockCoords.x, blockCoords.y, blockCoords.z, oldId, BlockID::Air);
+            updateColumnSunCacheForBlockChange(blockCoords.x, blockCoords.y, blockCoords.z, oldId,
+                                               BlockID::Air);
             changed = true;
         }
     }
 
-    if (!changed) return;
+    if (!changed)
+        return;
 
     markChunkDirty(chunkPos);
 
     // order matches isEdgeBlock: { x==0, x==15, y==0, y==15, z==0, z==15 }
     const std::array<glm::ivec3, 6> neighborOffsets = {
-        glm::ivec3(-1,  0,  0), // x==0 -> neighbor x-1
-        glm::ivec3(+1,  0,  0), // x==15 -> neighbor x+1
-        glm::ivec3(0, -1,  0), // y==0 -> y-1
-        glm::ivec3(0, +1,  0), // y==15 -> y+1
-        glm::ivec3(0,  0, -1), // z==0 -> z-1
-        glm::ivec3(0,  0, +1)  // z==15 -> z+1
+        glm::ivec3(-1, 0, 0), // x==0 -> neighbor x-1
+        glm::ivec3(+1, 0, 0), // x==15 -> neighbor x+1
+        glm::ivec3(0, -1, 0), // y==0 -> y-1
+        glm::ivec3(0, +1, 0), // y==15 -> y+1
+        glm::ivec3(0, 0, -1), // z==0 -> z-1
+        glm::ivec3(0, 0, +1)  // z==15 -> z+1
     };
 
     auto edges = isEdgeBlock(localPos);
     for (size_t i = 0; i < edges.size(); ++i) {
-        if (!edges[i]) continue;
+        if (!edges[i])
+            continue;
         glm::ivec3 neighborChunk = chunkPos + neighborOffsets[i];
 
         if (chunkMap.find(neighborChunk) != chunkMap.end()) {
             markChunkDirty(neighborChunk);
         }
     }
-
 }
 
 void ChunkManager::playerPlaceBlockAt(glm::ivec3 blockCoords, int faceNormal, BlockID blockType) {
     (void)faceNormal;
     std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> chunksToRebuild;
 
-    const auto queueChunkAndEdgeNeighbors = [&](const glm::ivec3& worldPos) {
+    const auto queueChunkAndEdgeNeighbors = [&](const glm::ivec3 &worldPos) {
         const glm::ivec3 chunkPos = worldToChunkPos(worldPos);
         const glm::ivec3 localPos = worldToLocalPos(worldPos);
 
         chunksToRebuild.insert(chunkPos);
-        if (localPos.x == 0) chunksToRebuild.insert(chunkPos + glm::ivec3(-1, 0, 0));
-        if (localPos.x == CHUNK_SIZE - 1) chunksToRebuild.insert(chunkPos + glm::ivec3(1, 0, 0));
-        if (localPos.y == 0) chunksToRebuild.insert(chunkPos + glm::ivec3(0, -1, 0));
-        if (localPos.y == CHUNK_SIZE - 1) chunksToRebuild.insert(chunkPos + glm::ivec3(0, 1, 0));
-        if (localPos.z == 0) chunksToRebuild.insert(chunkPos + glm::ivec3(0, 0, -1));
-        if (localPos.z == CHUNK_SIZE - 1) chunksToRebuild.insert(chunkPos + glm::ivec3(0, 0, 1));
+        if (localPos.x == 0)
+            chunksToRebuild.insert(chunkPos + glm::ivec3(-1, 0, 0));
+        if (localPos.x == CHUNK_SIZE - 1)
+            chunksToRebuild.insert(chunkPos + glm::ivec3(1, 0, 0));
+        if (localPos.y == 0)
+            chunksToRebuild.insert(chunkPos + glm::ivec3(0, -1, 0));
+        if (localPos.y == CHUNK_SIZE - 1)
+            chunksToRebuild.insert(chunkPos + glm::ivec3(0, 1, 0));
+        if (localPos.z == 0)
+            chunksToRebuild.insert(chunkPos + glm::ivec3(0, 0, -1));
+        if (localPos.z == CHUNK_SIZE - 1)
+            chunksToRebuild.insert(chunkPos + glm::ivec3(0, 0, 1));
     };
 
     // Place a 3x3 wall and only queue rebuilds for actually changed blocks.
@@ -886,28 +814,23 @@ void ChunkManager::playerPlaceBlockAt(glm::ivec3 blockCoords, int faceNormal, Bl
         }
     }
 
-    for (const auto& pos : chunksToRebuild) {
+    for (const auto &pos : chunksToRebuild) {
         markChunkDirty(pos);
     }
 }
 
-
-
-void ChunkManager::updateDirtyChunkAt(const glm::ivec3& chunkPos) {
+void ChunkManager::updateDirtyChunkAt(const glm::ivec3 &chunkPos) {
     markChunkDirty(chunkPos);
     (void)requestChunkRebuild(chunkPos);
 }
 
-
-
-
-bool ChunkManager::requestChunkRebuild(const glm::ivec3& pos) {
+bool ChunkManager::requestChunkRebuild(const glm::ivec3 &pos) {
     auto it = chunkMap.find(pos);
     if (it == chunkMap.end()) {
         return false;
     }
 
-    Chunk& chunk = it->second;
+    Chunk &chunk = it->second;
     bool expected = false;
     if (!chunk.building.compare_exchange_strong(expected, true)) {
         return false;
@@ -927,11 +850,8 @@ bool ChunkManager::requestChunkRebuild(const glm::ivec3& pos) {
     job.chunkWorldMinZ = pos.z * CHUNK_SIZE;
     chunk.copyBlocks(job.centerBlocks);
 
-    constexpr glm::ivec3 offsets[6] = {
-        {1, 0, 0}, {-1, 0, 0},
-        {0, 1, 0}, {0, -1, 0},
-        {0, 0, 1}, {0, 0, -1}
-    };
+    constexpr glm::ivec3 offsets[6] = {{1, 0, 0},  {-1, 0, 0}, {0, 1, 0},
+                                       {0, -1, 0}, {0, 0, 1},  {0, 0, -1}};
 
     for (int i = 0; i < 6; ++i) {
         auto neighborIt = chunkMap.find(pos + offsets[i]);
@@ -944,8 +864,7 @@ bool ChunkManager::requestChunkRebuild(const glm::ivec3& pos) {
 
     if (!job.enableShadows) {
         job.sunTopY.fill(static_cast<int16_t>(WORLD_MIN_Y - 1));
-    }
-    else {
+    } else {
         for (int z = ChunkMeshBuildJob::SunGridMin; z <= ChunkMeshBuildJob::SunGridMax; ++z) {
             for (int x = ChunkMeshBuildJob::SunGridMin; x <= ChunkMeshBuildJob::SunGridMax; ++x) {
                 const int sx = x - ChunkMeshBuildJob::SunGridMin;
@@ -958,12 +877,10 @@ bool ChunkManager::requestChunkRebuild(const glm::ivec3& pos) {
         }
     }
 
-    meshPool.enqueue([this, job = std::move(job)]() mutable {
-        this->buildChunkMeshWorker(std::move(job));
-    });
+    meshPool.enqueue(
+        [this, job = std::move(job)]() mutable { this->buildChunkMeshWorker(std::move(job)); });
     return true;
 }
-
 
 void ChunkManager::buildChunkMeshWorker(ChunkMeshBuildJob job) {
     thread_local ChunkMeshBuilder workerBuilder;
@@ -971,32 +888,25 @@ void ChunkManager::buildChunkMeshWorker(ChunkMeshBuildJob job) {
     Chunk center(job.chunkPos);
     center.overwriteBlocks(job.centerBlocks);
 
-    constexpr glm::ivec3 offsets[6] = {
-        {1, 0, 0}, {-1, 0, 0},
-        {0, 1, 0}, {0, -1, 0},
-        {0, 0, 1}, {0, 0, -1}
-    };
+    constexpr glm::ivec3 offsets[6] = {{1, 0, 0},  {-1, 0, 0}, {0, 1, 0},
+                                       {0, -1, 0}, {0, 0, 1},  {0, 0, -1}};
 
     std::array<std::optional<Chunk>, 6> neighborStorage;
-    const Chunk* neighbors[6] = {};
+    const Chunk *neighbors[6] = {};
     for (int i = 0; i < 6; ++i) {
         if (job.neighborPresent[static_cast<size_t>(i)] == 0) {
             continue;
         }
 
         neighborStorage[static_cast<size_t>(i)].emplace(job.chunkPos + offsets[i]);
-        neighborStorage[static_cast<size_t>(i)]->overwriteBlocks(job.neighborBlocks[static_cast<size_t>(i)]);
+        neighborStorage[static_cast<size_t>(i)]->overwriteBlocks(
+            job.neighborBlocks[static_cast<size_t>(i)]);
         neighbors[i] = &neighborStorage[static_cast<size_t>(i)].value();
     }
 
     const auto buildStart = std::chrono::steady_clock::now();
     auto built = workerBuilder.buildChunkMesh(
-        center,
-        neighbors,
-        job.chunkPos,
-        atlas,
-        job.enableAO,
-        job.enableShadows,
+        center, neighbors, job.chunkPos, atlas, job.enableAO, job.enableShadows,
         [&job](int wx, int wz) -> int {
             const int localX = wx - job.chunkWorldMinX;
             const int localZ = wz - job.chunkWorldMinZ;
@@ -1009,16 +919,14 @@ void ChunkManager::buildChunkMeshWorker(ChunkMeshBuildJob job) {
             const int sz = localZ - ChunkMeshBuildJob::SunGridMin;
             const size_t index = static_cast<size_t>(sz * ChunkMeshBuildJob::SunGridSize + sx);
             return static_cast<int>(job.sunTopY[index]);
-        }
-    );
+        });
     const auto buildEnd = std::chrono::steady_clock::now();
     const double buildMs = std::chrono::duration<double, std::milli>(buildEnd - buildStart).count();
     if (buildMs >= kChunkMeshBuildLogThresholdMs) {
-        std::cerr
-            << "[chunk/mesh] slow workerBuildMs=" << buildMs
-            << " verts=" << built.vertices.size()
-            << " idx=" << built.indices.size()
-            << " chunk=(" << job.chunkPos.x << "," << job.chunkPos.y << "," << job.chunkPos.z << ")\n";
+        std::cerr << "[chunk/mesh] slow workerBuildMs=" << buildMs
+                  << " verts=" << built.vertices.size() << " idx=" << built.indices.size()
+                  << " chunk=(" << job.chunkPos.x << "," << job.chunkPos.y << "," << job.chunkPos.z
+                  << ")\n";
     }
 
     ChunkMeshBuildResult ready;
@@ -1032,19 +940,9 @@ void ChunkManager::buildChunkMeshWorker(ChunkMeshBuildJob job) {
     }
 }
 
+// region management
 
-
-
-
-
-
-
-
-
-
-//region management
-
-Region& ChunkManager::getOrCreateRegion(const glm::ivec3& chunkPos) {
+Region &ChunkManager::getOrCreateRegion(const glm::ivec3 &chunkPos) {
     glm::ivec3 regionPos = chunkToRegionPos(chunkPos);
 
     auto it = regions.find(regionPos);
@@ -1053,35 +951,27 @@ Region& ChunkManager::getOrCreateRegion(const glm::ivec3& chunkPos) {
     }
 
     // Create new region
-    auto [newIt, inserted] = regions.emplace(
-        regionPos,
-        Region(regionPos, REGION_VERTEX_BYTES, REGION_INDEX_BYTES)
-    );
+    auto [newIt, inserted] =
+        regions.emplace(regionPos, Region(regionPos, REGION_VERTEX_BYTES, REGION_INDEX_BYTES));
 
     if (kEnableRegionLifecycleLogs) {
-        std::cout << "[ChunkManager] Created region at ("
-            << regionPos.x << ", " << regionPos.y << ", " << regionPos.z << ")\n";
+        std::cout << "[ChunkManager] Created region at (" << regionPos.x << ", " << regionPos.y
+                  << ", " << regionPos.z << ")\n";
     }
 
     return newIt->second;
 }
 
-
-
-
-void ChunkManager::uploadChunkMesh(
-    const glm::ivec3& chunkPos,
-    const std::vector<VoxelVertex>& vertices,
-    const std::vector<uint16_t>& indices)
-{
+void ChunkManager::uploadChunkMesh(const glm::ivec3 &chunkPos,
+                                   const std::vector<VoxelVertex> &vertices,
+                                   const std::vector<uint16_t> &indices) {
     if (vertices.empty() || indices.empty()) {
         m_cpuChunkMeshes.erase(chunkPos);
         if (!m_usesOpenGLBuffers) {
             return;
         }
-    }
-    else {
-        CpuChunkMesh& cpuMesh = m_cpuChunkMeshes[chunkPos];
+    } else {
+        CpuChunkMesh &cpuMesh = m_cpuChunkMeshes[chunkPos];
         cpuMesh.vertices = vertices;
         cpuMesh.indices = indices;
         cpuMesh.revision = m_nextCpuChunkMeshRevision++;
@@ -1091,7 +981,7 @@ void ChunkManager::uploadChunkMesh(
         return;
     }
 
-    Region& region = getOrCreateRegion(chunkPos);
+    Region &region = getOrCreateRegion(chunkPos);
 
     // remove old mesh if present
     auto old = region.chunks.find(chunkPos);
@@ -1104,11 +994,8 @@ void ChunkManager::uploadChunkMesh(
 
     if (mesh.status == ChunkMeshStatus::OutOfMemory) {
         // Rebuild with enough headroom for the incoming mesh.
-        const bool rebuilt = rebuildRegion(
-            chunkToRegionPos(chunkPos),
-            vertices.size(),
-            indices.size()
-        );
+        const bool rebuilt =
+            rebuildRegion(chunkToRegionPos(chunkPos), vertices.size(), indices.size());
         if (!rebuilt) {
             std::cerr << "[FATAL] Region rebuild failed permanently\n";
             return;
@@ -1124,11 +1011,7 @@ void ChunkManager::uploadChunkMesh(
     region.chunks.emplace(chunkPos, mesh);
 }
 
-
-
-
-
-void ChunkManager::removeChunkMesh(const glm::ivec3& chunkPos) {
+void ChunkManager::removeChunkMesh(const glm::ivec3 &chunkPos) {
     m_cpuChunkMeshes.erase(chunkPos);
     if (!m_usesOpenGLBuffers) {
         return;
@@ -1137,9 +1020,10 @@ void ChunkManager::removeChunkMesh(const glm::ivec3& chunkPos) {
     glm::ivec3 regionPos = chunkToRegionPos(chunkPos);
 
     auto regionIt = regions.find(regionPos);
-    if (regionIt == regions.end()) return;
+    if (regionIt == regions.end())
+        return;
 
-    Region& region = regionIt->second;
+    Region &region = regionIt->second;
     auto meshIt = region.chunks.find(chunkPos);
     if (meshIt != region.chunks.end()) {
         region.gpu->destroyChunkMesh(meshIt->second);
@@ -1152,19 +1036,13 @@ void ChunkManager::removeChunkMesh(const glm::ivec3& chunkPos) {
     }
 }
 
-
-
-
-
-
-
-
-bool ChunkManager::rebuildRegion(const glm::ivec3& regionPos, size_t reserveVertices, size_t reserveIndices)
-{
+bool ChunkManager::rebuildRegion(const glm::ivec3 &regionPos, size_t reserveVertices,
+                                 size_t reserveIndices) {
     auto it = regions.find(regionPos);
-    if (it == regions.end()) return false;
+    if (it == regions.end())
+        return false;
 
-    Region& oldRegion = it->second;
+    Region &oldRegion = it->second;
     const auto rebuildStart = std::chrono::steady_clock::now();
     const size_t chunkCount = oldRegion.chunks.size();
 
@@ -1180,32 +1058,28 @@ bool ChunkManager::rebuildRegion(const glm::ivec3& regionPos, size_t reserveVert
     size_t requiredVertices = reserveVertices;
     size_t requiredIndices = reserveIndices;
 
-    for (const auto& [chunkPos, oldMesh] : oldRegion.chunks) {
-        Chunk& chunk = chunkMap.at(chunkPos);
+    for (const auto &[chunkPos, oldMesh] : oldRegion.chunks) {
+        Chunk &chunk = chunkMap.at(chunkPos);
 
-        auto findChunk = [&](const glm::ivec3& pos) -> const Chunk* {
+        auto findChunk = [&](const glm::ivec3 &pos) -> const Chunk * {
             auto it = chunkMap.find(pos);
             return (it != chunkMap.end()) ? &it->second : nullptr;
-            };
-
-        const Chunk* neighbors[6] = {};
-        constexpr glm::ivec3 offsets[6] = {
-            {1,0,0},{-1,0,0},
-            {0,1,0},{0,-1,0},
-            {0,0,1},{0,0,-1}
         };
+
+        const Chunk *neighbors[6] = {};
+        constexpr glm::ivec3 offsets[6] = {{1, 0, 0},  {-1, 0, 0}, {0, 1, 0},
+                                           {0, -1, 0}, {0, 0, 1},  {0, 0, -1}};
 
         for (int i = 0; i < 6; ++i)
             neighbors[i] = findChunk(chunkPos + offsets[i]);
 
         auto built = builder.buildChunkMesh(
             chunk, neighbors, chunkPos, atlas, enableAO, enableShadows,
-            [this](int wx, int wz) { return this->getColumnTopOccluderY(wx, wz); }
-        );
+            [this](int wx, int wz) { return this->getColumnTopOccluderY(wx, wz); });
 
         requiredVertices += built.vertices.size();
         requiredIndices += built.indices.size();
-        rebuiltData.push_back({ chunkPos, std::move(built.vertices), std::move(built.indices) });
+        rebuiltData.push_back({chunkPos, std::move(built.vertices), std::move(built.indices)});
     }
 
     size_t newVertexBytes = oldRegion.vertexBytes;
@@ -1214,9 +1088,7 @@ bool ChunkManager::rebuildRegion(const glm::ivec3& regionPos, size_t reserveVert
     auto vertexCapacityFromBytes = [](size_t bytes) -> size_t {
         return bytes / sizeof(VoxelVertex);
     };
-    auto indexCapacityFromBytes = [](size_t bytes) -> size_t {
-        return bytes / sizeof(uint16_t);
-    };
+    auto indexCapacityFromBytes = [](size_t bytes) -> size_t { return bytes / sizeof(uint16_t); };
 
     while (vertexCapacityFromBytes(newVertexBytes) < requiredVertices) {
         newVertexBytes *= 2;
@@ -1226,17 +1098,17 @@ bool ChunkManager::rebuildRegion(const glm::ivec3& regionPos, size_t reserveVert
     }
 
     if (newVertexBytes != oldRegion.vertexBytes || newIndexBytes != oldRegion.indexBytes) {
-        std::cout
-            << "[ChunkManager] Growing region (" << regionPos.x << "," << regionPos.y << "," << regionPos.z << ") "
-            << "VBO " << oldRegion.vertexBytes << " -> " << newVertexBytes << " bytes, "
-            << "EBO " << oldRegion.indexBytes << " -> " << newIndexBytes << " bytes\n";
+        std::cout << "[ChunkManager] Growing region (" << regionPos.x << "," << regionPos.y << ","
+                  << regionPos.z << ") "
+                  << "VBO " << oldRegion.vertexBytes << " -> " << newVertexBytes << " bytes, "
+                  << "EBO " << oldRegion.indexBytes << " -> " << newIndexBytes << " bytes\n";
     }
 
     auto newGpu = std::make_unique<RegionMeshBuffer>(newVertexBytes, newIndexBytes);
     std::unordered_map<glm::ivec3, ChunkMesh, IVec3Hash> newMeshes;
     newMeshes.reserve(rebuiltData.size());
 
-    for (auto& entry : rebuiltData) {
+    for (auto &entry : rebuiltData) {
         ChunkMesh mesh = newGpu->createChunkMesh(entry.vertices, entry.indices);
         if (!mesh.valid) {
             std::cerr << "[FATAL] Region rebuild failed\n";
@@ -1250,52 +1122,28 @@ bool ChunkManager::rebuildRegion(const glm::ivec3& regionPos, size_t reserveVert
     oldRegion.gpu = std::move(newGpu);
     oldRegion.chunks = std::move(newMeshes);
     const auto rebuildEnd = std::chrono::steady_clock::now();
-    const double rebuildMs = std::chrono::duration<double, std::milli>(rebuildEnd - rebuildStart).count();
+    const double rebuildMs =
+        std::chrono::duration<double, std::milli>(rebuildEnd - rebuildStart).count();
     if (rebuildMs >= kRegionRebuildLogThresholdMs) {
-        std::cerr
-            << "[chunk/region] rebuildMs=" << rebuildMs
-            << " region=(" << regionPos.x << "," << regionPos.y << "," << regionPos.z << ")"
-            << " chunks=" << chunkCount
-            << " verts=" << requiredVertices
-            << " idx=" << requiredIndices
-            << " vboBytes=" << oldRegion.vertexBytes
-            << " eboBytes=" << oldRegion.indexBytes
-            << "\n";
+        std::cerr << "[chunk/region] rebuildMs=" << rebuildMs << " region=(" << regionPos.x << ","
+                  << regionPos.y << "," << regionPos.z << ")"
+                  << " chunks=" << chunkCount << " verts=" << requiredVertices
+                  << " idx=" << requiredIndices << " vboBytes=" << oldRegion.vertexBytes
+                  << " eboBytes=" << oldRegion.indexBytes << "\n";
     }
     return true;
 }
 
-
-
-
-void RegionMeshBuffer::orphanBuffers()
-{
+void RegionMeshBuffer::orphanBuffers() {
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        vertexCapacity * sizeof(VoxelVertex),
-        nullptr,
-        GL_DYNAMIC_DRAW
-    );
+    glBufferData(GL_ARRAY_BUFFER, vertexCapacity * sizeof(VoxelVertex), nullptr, GL_DYNAMIC_DRAW);
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    glBufferData(
-        GL_ELEMENT_ARRAY_BUFFER,
-        indexCapacity * sizeof(uint16_t),
-        nullptr,
-        GL_DYNAMIC_DRAW
-    );
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indexCapacity * sizeof(uint16_t), nullptr,
+                 GL_DYNAMIC_DRAW);
 }
 
-
-
-
-
-
-
-
-
-ChunkColumn& ChunkManager::getOrCreateColumn(int colX, int colZ) {
+ChunkColumn &ChunkManager::getOrCreateColumn(int colX, int colZ) {
     glm::ivec2 pos(colX, colZ);
 
     auto it = chunkColumns.find(pos);
@@ -1304,19 +1152,16 @@ ChunkColumn& ChunkManager::getOrCreateColumn(int colX, int colZ) {
         return it->second;
     }
 
-    ChunkColumn& newCol = chunkColumns[pos];
-
+    ChunkColumn &newCol = chunkColumns[pos];
 
     newCol.chunkX = colX;
     newCol.chunkZ = colZ;
-
 
     for (int x = 0; x < 16; ++x) {
         for (int z = 0; z < 16; ++z) {
             newCol.sunLitBlocksYvalue[x][z] = -128;
         }
     }
-
 
     return newCol;
 }
@@ -1343,7 +1188,7 @@ void ChunkManager::rebuildColumnSunCache(int colChunkX, int colChunkZ) {
         return;
     }
 
-    ChunkColumn& col = getOrCreateColumn(colChunkX, colChunkZ);
+    ChunkColumn &col = getOrCreateColumn(colChunkX, colChunkZ);
 
     for (int lx = 0; lx < CHUNK_SIZE; ++lx) {
         for (int lz = 0; lz < CHUNK_SIZE; ++lz) {
@@ -1363,7 +1208,8 @@ void ChunkManager::rebuildColumnSunCache(int colChunkX, int colChunkZ) {
     }
 }
 
-void ChunkManager::updateColumnSunCacheForBlockChange(int worldX, int worldY, int worldZ, BlockID oldId, BlockID newId) {
+void ChunkManager::updateColumnSunCacheForBlockChange(int worldX, int worldY, int worldZ,
+                                                      BlockID oldId, BlockID newId) {
     if (!enableShadows) {
         return;
     }
@@ -1373,7 +1219,7 @@ void ChunkManager::updateColumnSunCacheForBlockChange(int worldX, int worldY, in
     const int lx = mod(worldX, CHUNK_SIZE);
     const int lz = mod(worldZ, CHUNK_SIZE);
 
-    ChunkColumn& col = getOrCreateColumn(colX, colZ);
+    ChunkColumn &col = getOrCreateColumn(colX, colZ);
     const int oldTop = int(col.sunLitBlocksYvalue[lx][lz]);
     int newTop = oldTop;
     const auto rebuildAffectedColumns = [&](int oldTopY, int newTopY) {
@@ -1384,15 +1230,23 @@ void ChunkManager::updateColumnSunCacheForBlockChange(int worldX, int worldY, in
         const bool minZ = (lz == 0);
         const bool maxZ = (lz == CHUNK_SIZE - 1);
 
-        if (minX) rebuildSunlightAffectedColumnChunks(colX - 1, colZ, oldTopY, newTopY);
-        if (maxX) rebuildSunlightAffectedColumnChunks(colX + 1, colZ, oldTopY, newTopY);
-        if (minZ) rebuildSunlightAffectedColumnChunks(colX, colZ - 1, oldTopY, newTopY);
-        if (maxZ) rebuildSunlightAffectedColumnChunks(colX, colZ + 1, oldTopY, newTopY);
+        if (minX)
+            rebuildSunlightAffectedColumnChunks(colX - 1, colZ, oldTopY, newTopY);
+        if (maxX)
+            rebuildSunlightAffectedColumnChunks(colX + 1, colZ, oldTopY, newTopY);
+        if (minZ)
+            rebuildSunlightAffectedColumnChunks(colX, colZ - 1, oldTopY, newTopY);
+        if (maxZ)
+            rebuildSunlightAffectedColumnChunks(colX, colZ + 1, oldTopY, newTopY);
 
-        if (minX && minZ) rebuildSunlightAffectedColumnChunks(colX - 1, colZ - 1, oldTopY, newTopY);
-        if (minX && maxZ) rebuildSunlightAffectedColumnChunks(colX - 1, colZ + 1, oldTopY, newTopY);
-        if (maxX && minZ) rebuildSunlightAffectedColumnChunks(colX + 1, colZ - 1, oldTopY, newTopY);
-        if (maxX && maxZ) rebuildSunlightAffectedColumnChunks(colX + 1, colZ + 1, oldTopY, newTopY);
+        if (minX && minZ)
+            rebuildSunlightAffectedColumnChunks(colX - 1, colZ - 1, oldTopY, newTopY);
+        if (minX && maxZ)
+            rebuildSunlightAffectedColumnChunks(colX - 1, colZ + 1, oldTopY, newTopY);
+        if (maxX && minZ)
+            rebuildSunlightAffectedColumnChunks(colX + 1, colZ - 1, oldTopY, newTopY);
+        if (maxX && maxZ)
+            rebuildSunlightAffectedColumnChunks(colX + 1, colZ + 1, oldTopY, newTopY);
     };
 
     if (newId != BlockID::Air) {
@@ -1425,7 +1279,8 @@ void ChunkManager::updateColumnSunCacheForBlockChange(int worldX, int worldY, in
     }
 }
 
-void ChunkManager::rebuildSunlightAffectedColumnChunks(int colChunkX, int colChunkZ, int oldTopY, int newTopY) {
+void ChunkManager::rebuildSunlightAffectedColumnChunks(int colChunkX, int colChunkZ, int oldTopY,
+                                                       int newTopY) {
     if (!enableShadows) {
         return;
     }
@@ -1442,8 +1297,3 @@ void ChunkManager::rebuildSunlightAffectedColumnChunks(int colChunkX, int colChu
         markChunkDirty(glm::ivec3(colChunkX, chunkY, colChunkZ));
     }
 }
-
-
-
-
-

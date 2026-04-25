@@ -9,11 +9,8 @@
 #include <stdexcept>
 #include <utility>
 
-void UploadContext::init(
-    const vk::raii::Device& device,
-    uint32_t queueFamilyIndex,
-    const vk::raii::Queue& queue
-) {
+void UploadContext::init(const vk::raii::Device &device, uint32_t queueFamilyIndex,
+                         const vk::raii::Queue &queue) {
     cleanup();
 
     m_device = &device;
@@ -43,7 +40,7 @@ void UploadContext::poll() {
 
     size_t index = 0;
     while (index < m_pendingUploads.size()) {
-        const std::array<vk::Fence, 1> fences = { *m_pendingUploads[index].fence };
+        const std::array<vk::Fence, 1> fences = {*m_pendingUploads[index].fence};
         const vk::Result waitResult = m_device->waitForFences(fences, vk::True, 0);
         if (waitResult == vk::Result::eSuccess) {
             m_pendingUploads.erase(m_pendingUploads.begin() + static_cast<std::ptrdiff_t>(index));
@@ -61,43 +58,34 @@ void UploadContext::waitIdle() {
         return;
     }
 
-    for (auto& upload : m_pendingUploads) {
-        const std::array<vk::Fence, 1> fences = { *upload.fence };
-        const vk::Result waitResult = m_device->waitForFences(
-            fences,
-            vk::True,
-            std::numeric_limits<uint64_t>::max()
-        );
+    for (auto &upload : m_pendingUploads) {
+        const std::array<vk::Fence, 1> fences = {*upload.fence};
+        const vk::Result waitResult =
+            m_device->waitForFences(fences, vk::True, std::numeric_limits<uint64_t>::max());
         if (waitResult != vk::Result::eSuccess) {
-            throw std::runtime_error("UploadContext::waitIdle failed while waiting for upload fence.");
+            throw std::runtime_error(
+                "UploadContext::waitIdle failed while waiting for upload fence.");
         }
     }
 
     m_pendingUploads.clear();
 }
 
-UploadContext::StagingBuffer UploadContext::createStagingBuffer(
-    const vk::raii::PhysicalDevice& physicalDevice,
-    const void* data,
-    vk::DeviceSize size
-) {
+UploadContext::StagingBuffer
+UploadContext::createStagingBuffer(const vk::raii::PhysicalDevice &physicalDevice, const void *data,
+                                   vk::DeviceSize size) {
     if (!m_device) {
         throw std::runtime_error("UploadContext::createStagingBuffer called before init.");
     }
 
     StagingBuffer stagingBuffer{};
     VulkanUtils::createBuffer(
-        *m_device,
-        physicalDevice,
-        size,
-        vk::BufferUsageFlagBits::eTransferSrc,
+        *m_device, physicalDevice, size, vk::BufferUsageFlagBits::eTransferSrc,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        stagingBuffer.buffer,
-        stagingBuffer.memory
-    );
+        stagingBuffer.buffer, stagingBuffer.memory);
 
     if (data && size > 0) {
-        void* mapped = stagingBuffer.memory.mapMemory(0, size);
+        void *mapped = stagingBuffer.memory.mapMemory(0, size);
         std::memcpy(mapped, data, static_cast<size_t>(size));
         stagingBuffer.memory.unmapMemory();
     }
@@ -105,11 +93,8 @@ UploadContext::StagingBuffer UploadContext::createStagingBuffer(
     return stagingBuffer;
 }
 
-void UploadContext::submitCopyBuffer(
-    StagingBuffer&& stagingBuffer,
-    vk::Buffer dstBuffer,
-    vk::DeviceSize size
-) {
+void UploadContext::submitCopyBuffer(StagingBuffer &&stagingBuffer, vk::Buffer dstBuffer,
+                                     vk::DeviceSize size) {
     if (!m_device || !m_queue) {
         throw std::runtime_error("UploadContext::submitCopyBuffer called before init.");
     }
@@ -121,17 +106,14 @@ void UploadContext::submitCopyBuffer(
 
     vk::BufferCopy copyRegion{};
     copyRegion.size = size;
-    const std::array<vk::BufferCopy, 1> copyRegions = { copyRegion };
-    pendingUpload.commandBuffer.copyBuffer(
-        *pendingUpload.stagingBuffers[0].buffer,
-        dstBuffer,
-        copyRegions
-    );
+    const std::array<vk::BufferCopy, 1> copyRegions = {copyRegion};
+    pendingUpload.commandBuffer.copyBuffer(*pendingUpload.stagingBuffers[0].buffer, dstBuffer,
+                                           copyRegions);
 
     submitPendingUpload(std::move(pendingUpload));
 }
 
-void UploadContext::submitCopyBufferBatch(std::vector<BufferCopyUpload>&& uploads) {
+void UploadContext::submitCopyBufferBatch(std::vector<BufferCopyUpload> &&uploads) {
     if (!m_device || !m_queue) {
         throw std::runtime_error("UploadContext::submitCopyBufferBatch called before init.");
     }
@@ -143,8 +125,9 @@ void UploadContext::submitCopyBufferBatch(std::vector<BufferCopyUpload>&& upload
     pendingUpload.stagingBuffers.reserve(uploads.size());
     bool hasCommands = false;
 
-    for (BufferCopyUpload& upload : uploads) {
-        if (upload.dstBuffer == VK_NULL_HANDLE || upload.size == 0 || upload.stagingBuffer.buffer == nullptr) {
+    for (BufferCopyUpload &upload : uploads) {
+        if (upload.dstBuffer == VK_NULL_HANDLE || upload.size == 0 ||
+            upload.stagingBuffer.buffer == nullptr) {
             continue;
         }
 
@@ -155,16 +138,12 @@ void UploadContext::submitCopyBufferBatch(std::vector<BufferCopyUpload>&& upload
         }
 
         pendingUpload.stagingBuffers.emplace_back(std::move(upload.stagingBuffer));
-        StagingBuffer& staging = pendingUpload.stagingBuffers.back();
+        StagingBuffer &staging = pendingUpload.stagingBuffers.back();
 
         vk::BufferCopy copyRegion{};
         copyRegion.size = upload.size;
-        const std::array<vk::BufferCopy, 1> copyRegions = { copyRegion };
-        pendingUpload.commandBuffer.copyBuffer(
-            *staging.buffer,
-            upload.dstBuffer,
-            copyRegions
-        );
+        const std::array<vk::BufferCopy, 1> copyRegions = {copyRegion};
+        pendingUpload.commandBuffer.copyBuffer(*staging.buffer, upload.dstBuffer, copyRegions);
     }
 
     if (!hasCommands || pendingUpload.stagingBuffers.empty()) {
@@ -174,22 +153,13 @@ void UploadContext::submitCopyBufferBatch(std::vector<BufferCopyUpload>&& upload
     submitPendingUpload(std::move(pendingUpload));
 }
 
-void UploadContext::submitImageUpload(
-    StagingBuffer&& stagingBuffer,
-    vk::Image image,
-    uint32_t width,
-    uint32_t height
-) {
+void UploadContext::submitImageUpload(StagingBuffer &&stagingBuffer, vk::Image image,
+                                      uint32_t width, uint32_t height) {
     submitImageUploadArray(std::move(stagingBuffer), image, width, height, 1);
 }
 
-void UploadContext::submitImageUploadArray(
-    StagingBuffer&& stagingBuffer,
-    vk::Image image,
-    uint32_t width,
-    uint32_t height,
-    uint32_t layerCount
-) {
+void UploadContext::submitImageUploadArray(StagingBuffer &&stagingBuffer, vk::Image image,
+                                           uint32_t width, uint32_t height, uint32_t layerCount) {
     if (!m_device || !m_queue) {
         throw std::runtime_error("UploadContext::submitImageUploadArray called before init.");
     }
@@ -216,15 +186,10 @@ void UploadContext::submitImageUploadArray(
     toTransferDstBarrier.srcAccessMask = {};
     toTransferDstBarrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
 
-    const std::array<vk::ImageMemoryBarrier, 1> toTransferDstBarriers = { toTransferDstBarrier };
-    pendingUpload.commandBuffer.pipelineBarrier(
-        vk::PipelineStageFlagBits::eTopOfPipe,
-        vk::PipelineStageFlagBits::eTransfer,
-        {},
-        {},
-        {},
-        toTransferDstBarriers
-    );
+    const std::array<vk::ImageMemoryBarrier, 1> toTransferDstBarriers = {toTransferDstBarrier};
+    pendingUpload.commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                                vk::PipelineStageFlagBits::eTransfer, {}, {}, {},
+                                                toTransferDstBarriers);
 
     const vk::DeviceSize bytesPerLayer =
         static_cast<vk::DeviceSize>(width) * static_cast<vk::DeviceSize>(height) * 4u;
@@ -239,17 +204,14 @@ void UploadContext::submitImageUploadArray(
         copyRegion.imageSubresource.mipLevel = 0;
         copyRegion.imageSubresource.baseArrayLayer = layer;
         copyRegion.imageSubresource.layerCount = 1;
-        copyRegion.imageOffset = vk::Offset3D{ 0, 0, 0 };
-        copyRegion.imageExtent = vk::Extent3D{ width, height, 1 };
+        copyRegion.imageOffset = vk::Offset3D{0, 0, 0};
+        copyRegion.imageExtent = vk::Extent3D{width, height, 1};
         copyRegions.push_back(copyRegion);
     }
 
-    pendingUpload.commandBuffer.copyBufferToImage(
-        *pendingUpload.stagingBuffers[0].buffer,
-        image,
-        vk::ImageLayout::eTransferDstOptimal,
-        copyRegions
-    );
+    pendingUpload.commandBuffer.copyBufferToImage(*pendingUpload.stagingBuffers[0].buffer, image,
+                                                  vk::ImageLayout::eTransferDstOptimal,
+                                                  copyRegions);
 
     vk::ImageMemoryBarrier toShaderReadBarrier{};
     toShaderReadBarrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
@@ -265,15 +227,10 @@ void UploadContext::submitImageUploadArray(
     toShaderReadBarrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
     toShaderReadBarrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
 
-    const std::array<vk::ImageMemoryBarrier, 1> toShaderReadBarriers = { toShaderReadBarrier };
-    pendingUpload.commandBuffer.pipelineBarrier(
-        vk::PipelineStageFlagBits::eTransfer,
-        vk::PipelineStageFlagBits::eFragmentShader,
-        {},
-        {},
-        {},
-        toShaderReadBarriers
-    );
+    const std::array<vk::ImageMemoryBarrier, 1> toShaderReadBarriers = {toShaderReadBarrier};
+    pendingUpload.commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                                                vk::PipelineStageFlagBits::eFragmentShader, {}, {},
+                                                {}, toShaderReadBarriers);
 
     submitPendingUpload(std::move(pendingUpload));
 }
@@ -298,7 +255,7 @@ vk::raii::CommandBuffer UploadContext::beginCommandBuffer() {
     return commandBuffer;
 }
 
-void UploadContext::submitPendingUpload(PendingUpload&& pendingUpload) {
+void UploadContext::submitPendingUpload(PendingUpload &&pendingUpload) {
     if (!m_queue) {
         throw std::runtime_error("UploadContext::submitPendingUpload called before init.");
     }

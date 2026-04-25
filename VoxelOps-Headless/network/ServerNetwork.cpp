@@ -1,26 +1,23 @@
 #include "ServerNetwork.hpp"
 
-ServerNetwork* ServerNetwork::s_instance = nullptr;
+ServerNetwork *ServerNetwork::s_instance = nullptr;
 
 ServerNetwork::ServerNetwork()
-    : m_quit(false),
-    m_pollGroup(k_HSteamNetPollGroup_Invalid),
-    m_listenSock(k_HSteamListenSocket_Invalid)
-{
+    : m_quit(false), m_pollGroup(k_HSteamNetPollGroup_Invalid),
+      m_listenSock(k_HSteamListenSocket_Invalid) {
     // allow only one instance to own the static callback bridge
     s_instance = this;
 }
 
-ServerNetwork::~ServerNetwork()
-{
+ServerNetwork::~ServerNetwork() {
     Stop();
     ShutdownNetworking();
     // cleanup pointer
-    if (s_instance == this) s_instance = nullptr;
+    if (s_instance == this)
+        s_instance = nullptr;
 }
 
-bool ServerNetwork::Start(uint16_t port)
-{
+bool ServerNetwork::Start(uint16_t port) {
     if (m_started.load(std::memory_order_acquire)) {
         std::cerr << "ServerNetwork already started\n";
         return false;
@@ -29,6 +26,9 @@ bool ServerNetwork::Start(uint16_t port)
     m_quit.store(false, std::memory_order_release);
     m_serverTick.store(0, std::memory_order_release);
     m_lagCompFrames.clear();
+    m_combatSnapshotsAliveCache.clear();
+    m_combatSnapshotsAliveCacheTick = 0;
+    m_hasCombatSnapshotsAliveCache = false;
     m_matchStartTime = std::chrono::steady_clock::now();
     m_matchStarted = false;
     m_matchEnded = false;
@@ -64,7 +64,7 @@ bool ServerNetwork::Start(uint16_t port)
     // Prepare listen socket option to install our connection-status callback
     SteamNetworkingConfigValue_t opt;
     opt.SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged,
-        reinterpret_cast<void*>(ServerNetwork::SteamNetConnectionStatusChangedCallback));
+               reinterpret_cast<void *>(ServerNetwork::SteamNetConnectionStatusChangedCallback));
 
     // Create listen socket bound to the chosen port
     SteamNetworkingIPAddr addr;
@@ -85,8 +85,7 @@ bool ServerNetwork::Start(uint16_t port)
         char s[SteamNetworkingIPAddr::k_cchMaxString];
         boundAddr.ToString(s, sizeof(s), true);
         std::cout << "Server listening on " << s << " (Ctrl+C to quit)\n";
-    }
-    else {
+    } else {
         std::cout << "Server listening on UDP port " << port << " (Ctrl+C to quit)\n";
     }
 
@@ -95,8 +94,7 @@ bool ServerNetwork::Start(uint16_t port)
     return true;
 }
 
-void ServerNetwork::Run()
-{
+void ServerNetwork::Run() {
     if (!m_started.load(std::memory_order_acquire)) {
         std::cerr << "ServerNetwork::Run called before Start\n";
         return;
@@ -105,13 +103,11 @@ void ServerNetwork::Run()
     ShutdownNetworking();
 }
 
-void ServerNetwork::Stop()
-{
+void ServerNetwork::Stop() {
     m_quit.store(true, std::memory_order_release);
 }
 
-void ServerNetwork::ShutdownNetworking()
-{
+void ServerNetwork::ShutdownNetworking() {
     std::lock_guard<std::mutex> shutdownLock(m_shutdownMutex);
     if (m_shutdownComplete) {
         return;
@@ -126,16 +122,19 @@ void ServerNetwork::ShutdownNetworking()
     {
         std::lock_guard<std::mutex> lk(m_mutex);
         sessions.reserve(m_clients.size());
-        for (const auto& kv : m_clients) {
+        for (const auto &kv : m_clients) {
             sessions.push_back(kv);
         }
         m_clients.clear();
         m_matchScores.clear();
         m_worldItems.clear();
         m_nextWorldItemId = 1;
+        m_combatSnapshotsAliveCache.clear();
+        m_combatSnapshotsAliveCacheTick = 0;
+        m_hasCombatSnapshotsAliveCache = false;
     }
 
-    for (const auto& [conn, session] : sessions) {
+    for (const auto &[conn, session] : sessions) {
         ClearChunkPipelineForConnection(conn);
         if (session.playerId != 0) {
             {
@@ -143,6 +142,7 @@ void ServerNetwork::ShutdownNetworking()
                 m_matchScores.erase(session.playerId);
             }
             m_playerManager.removePlayer(session.playerId);
+            InvalidateCombatSnapshotCache();
         }
         SteamNetworkingSockets()->CloseConnection(conn, 0, "server shutting down", false);
     }

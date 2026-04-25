@@ -11,48 +11,40 @@
 
 class Player;
 
-
-
 struct RayResult {
-	bool hit;
-	glm::ivec3 hitBlockWorld;
-	glm::ivec3 adjacentAirBlockWorld;
-	glm::ivec3 hitChunk;
-	float distance;
+    bool hit;
+    glm::ivec3 hitBlockWorld;
+    glm::ivec3 adjacentAirBlockWorld;
+    glm::ivec3 hitChunk;
+    float distance;
 };
-
 
 struct RayShootHit {
-	bool hit;
-	glm::vec3 hitPoint;
-	float distance;
-	enum class Type { None, Block, Player } type;
-	glm::ivec3 blockPos;      // valid if Type::Block
-	glm::ivec3 chunkPos;      // valid if Type::Block
-	Player* player = nullptr; // valid if Type::Player
-	HitRegion region;         // valid if Type::Player
+    bool hit;
+    glm::vec3 hitPoint;
+    float distance;
+    enum class Type { None, Block, Player } type;
+    glm::ivec3 blockPos;      // valid if Type::Block
+    glm::ivec3 chunkPos;      // valid if Type::Block
+    Player *player = nullptr; // valid if Type::Player
+    HitRegion region;         // valid if Type::Player
 };
 
-
 class RayManager {
-public:
-	RayManager();
+  public:
+    RayManager();
 
-	RayResult rayHasBlockIntersectBatch(std::list<Ray>& rays);
-	RayResult rayHasBlockIntersectSingle(const Ray& ray, const ChunkManager& chunkManager, float maxDistance); //for block breaking/placing
+    RayResult rayHasBlockIntersectBatch(std::list<Ray> &rays);
+    RayResult rayHasBlockIntersectSingle(const Ray &ray, const ChunkManager &chunkManager,
+                                         float maxDistance); // for block breaking/placing
 
+    // for shooting
+    RayShootHit rayShoot(const glm::vec3 &origin, const glm::vec3 &dir,
+                         const ChunkManager &chunkManager, const std::vector<Player *> &players,
+                         float maxDistance);
 
-	//for shooting
-	RayShootHit rayShoot(
-		const glm::vec3& origin,
-		const glm::vec3& dir,
-		const ChunkManager& chunkManager,
-		const std::vector<Player*>& players,
-		float maxDistance
-	);
-private:
-	//ChunkManager& chunkManager;
+  private:
+    // ChunkManager& chunkManager;
 
-	glm::ivec3 chunkHitCoords;
-
+    glm::ivec3 chunkHitCoords;
 };

@@ -1,6 +1,6 @@
 #pragma once
 
-namespace Shared::PlayerData {
+namespace Shared { namespace PlayerData {
 
 struct MovementSettings {
     float gravity = -53.0f;
@@ -18,7 +18,7 @@ struct MovementSettings {
     float sprintJumpVelocityMultiplier = 1.4f;
     float sprintJumpMinMoveInput = 0.2f;
     float coyoteTimeSec = 0.1f;
-    float jumpBufferSec = 0.1f;   
+    float jumpBufferSec = 0.1f;
 
     float collisionHeight = 2.56f;
     float collisionRadius = 0.3f;
@@ -30,6 +30,6 @@ struct MovementSettings {
     float inputSilenceStopSec = 0.35f;
 };
 
-const MovementSettings& GetMovementSettings();
+const MovementSettings &GetMovementSettings();
 
-} // namespace Shared::PlayerData
+} } // namespace Shared::PlayerData

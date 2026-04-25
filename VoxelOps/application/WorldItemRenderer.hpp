@@ -4,11 +4,11 @@ class Camera;
 struct Runtime;
 
 class WorldItemRenderer {
-public:
-    void render(const Runtime& runtime, const Camera& activeCamera);
+  public:
+    void render(const Runtime &runtime, const Camera &activeCamera);
     void shutdown();
 
-private:
+  private:
     void ensureCubeMesh();
 
     unsigned int m_worldItemVao = 0;

@@ -4,12 +4,12 @@
 #include <glm/vec3.hpp>
 #include <list>
 #include <memory>
-#include <map>
 #include <limits>
 
 #include "../../Shared/network/Packets.hpp"
 #include "../../Shared/player/Inventory.hpp"
 #include "../../Shared/gun/GunType.hpp"
+#include "../network/PlayerInputBuffer.hpp"
 
 using PlayerID = uint64_t;
 using Clock = std::chrono::steady_clock;
@@ -24,8 +24,8 @@ struct ConnectionHandle {
 
 struct ServerPlayer {
     PlayerID id = 0;
-    glm::vec3 position{ 0.0f };
-    glm::vec3 velocity{ 0.0f };
+    glm::vec3 position{0.0f};
+    glm::vec3 velocity{0.0f};
     float yaw = 0.0f;
     float pitch = 0.0f;
     bool onGround = false;
@@ -39,11 +39,10 @@ struct ServerPlayer {
     bool pendingRespawnRequest = false;
 
     std::shared_ptr<ConnectionHandle> conn; // nullable
+
     Clock::time_point lastHeartbeat = Clock::now();
     Clock::time_point lastInputReceived = Clock::now();
-    std::map<uint32_t, PlayerInput> pendingInputs;
-    uint32_t lastProcessedInputTick = 0;
-    bool hasReceivedInput = false;
+    PlayerInputBuffer inputBuffer;
     uint8_t activeInputFlags = 0;
     bool flyMode = false;
     bool allowFlyMode = false;
@@ -55,13 +54,12 @@ struct ServerPlayer {
     float jumpBufferTimer = 0.0f;
     Inventory inventory{};
 
-    // For fast O(1) removal from order list (set by PlayerManager)
     std::list<PlayerID>::iterator orderIt;
 };
 
 struct ServerPlayerCombatSnapshot {
     PlayerID id = 0;
-    glm::vec3 position{ 0.0f };
+    glm::vec3 position{0.0f};
     float yaw = 0.0f;
     float height = 2.56f;
     float radius = 0.3f;

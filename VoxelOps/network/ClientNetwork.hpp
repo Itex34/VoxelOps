@@ -1,7 +1,5 @@
 #pragma once
 
-
-
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -15,7 +13,6 @@
 #include <mutex>
 #include <glm/vec3.hpp>
 
-
 #include <GameNetworkingSockets/steam/steamnetworkingsockets.h>
 #include <GameNetworkingSockets/steam/steamnetworkingtypes.h>
 
@@ -24,12 +21,8 @@
 #include "../../Shared/network/Packets.hpp" //for packet types
 
 class ClientNetwork {
-public:
-    enum class ConnectionState : uint8_t {
-        Disconnected = 0,
-        Connecting = 1,
-        Connected = 2
-    };
+  public:
+    enum class ConnectionState : uint8_t { Disconnected = 0, Connecting = 1, Connected = 2 };
 
     struct ChunkQueueDepths {
         size_t chunkData = 0;
@@ -72,15 +65,15 @@ public:
     bool SendConnectRequest(std::string_view requestedUsername = {});
 
     // Send movement input for server-authoritative simulation.
-    bool SendPlayerInput(const PlayerInput& input);
+    bool SendPlayerInput(const PlayerInput &input);
     bool SendRespawnRequest();
-    bool SendChunkResyncRequest(const glm::ivec3& chunkPos);
-    bool SendInventoryActionRequest(const InventoryActionRequest& request);
-    bool SendBlockPlaceRequest(const BlockPlaceRequest& request);
-    bool SendBlockBreakRequest(const BlockBreakRequest& request);
+    bool SendChunkResyncRequest(const glm::ivec3 &chunkPos);
+    bool SendInventoryActionRequest(const InventoryActionRequest &request);
+    bool SendBlockPlaceRequest(const BlockPlaceRequest &request);
+    bool SendBlockBreakRequest(const BlockBreakRequest &request);
     // Legacy state packet (kept for compatibility while migrating handlers).
-    bool SendPosition(uint32_t seq, const glm::vec3& pos, const glm::vec3& vel);
-    bool SendChunkRequest(const glm::ivec3& centerChunk, uint16_t viewDistance);
+    bool SendPosition(uint32_t seq, const glm::vec3 &pos, const glm::vec3 &vel);
+    bool SendChunkRequest(const glm::ivec3 &centerChunk, uint16_t viewDistance);
 
     void Poll();
 
@@ -90,42 +83,42 @@ public:
     // Query
     bool IsConnected() const;
     ConnectionState GetConnectionState() const noexcept;
-    const std::string& GetConnectionStatusText() const noexcept;
-    const std::string& GetAssignedUsername() const noexcept;
+    const std::string &GetConnectionStatusText() const noexcept;
+    const std::string &GetAssignedUsername() const noexcept;
     bool ShouldAutoReconnect() const noexcept;
     int GetPingMs() const noexcept;
 
-
     bool SendShootRequest(uint32_t clientShotId, uint32_t clientTick, uint16_t weaponId,
-        const glm::vec3& pos, const glm::vec3& dir,
-        uint32_t seed = 0, uint8_t inputFlags = 0);
+                          const glm::vec3 &pos, const glm::vec3 &dir, uint32_t seed = 0,
+                          uint8_t inputFlags = 0);
 
-    bool PopChunkData(ChunkData& out);
-    bool PopChunkDelta(ChunkDelta& out);
-    bool PopChunkUnload(ChunkUnload& out);
-    bool PopPlayerSnapshot(PlayerSnapshotFrame& out);
-    bool PopShootResult(ShootResult& out);
-    bool PopInventoryActionResult(InventoryActionResult& out);
-    bool PopInventorySnapshot(InventorySnapshot& out);
-    bool PopWorldItemSnapshot(WorldItemSnapshot& out);
-    bool PopBlockPlaceResult(BlockPlaceResult& out);
-    bool PopBlockBreakResult(BlockBreakResult& out);
-    bool PopKillFeedEvent(KillFeedEvent& out);
-    bool PopScoreboardSnapshot(ScoreboardSnapshot& out);
+    bool PopChunkData(ChunkData &out);
+    bool PopChunkDelta(ChunkDelta &out);
+    bool PopChunkUnload(ChunkUnload &out);
+    bool PopPlayerSnapshot(PlayerSnapshotFrame &out);
+    bool PopShootResult(ShootResult &out);
+    bool PopInventoryActionResult(InventoryActionResult &out);
+    bool PopInventorySnapshot(InventorySnapshot &out);
+    bool PopWorldItemSnapshot(WorldItemSnapshot &out);
+    bool PopBlockPlaceResult(BlockPlaceResult &out);
+    bool PopBlockBreakResult(BlockBreakResult &out);
+    bool PopKillFeedEvent(KillFeedEvent &out);
+    bool PopScoreboardSnapshot(ScoreboardSnapshot &out);
     ChunkQueueDepths GetChunkQueueDepths();
-private:
+
+  private:
     HSteamNetConnection m_conn = k_HSteamNetConnection_Invalid;
-    std::atomic<bool> m_started{ false };
+    std::atomic<bool> m_started{false};
     // helper serialization
-    static void AppendUint32LE(std::vector<uint8_t>& out, uint32_t v);
-    static void AppendFloatLE(std::vector<uint8_t>& out, float f);
+    static void AppendUint32LE(std::vector<uint8_t> &out, uint32_t v);
+    static void AppendFloatLE(std::vector<uint8_t> &out, float f);
 
     // helpers to read LE from incoming buffer
-    static uint32_t ReadUint32LE(const uint8_t* ptr);
-    static float ReadFloatLE(const uint8_t* ptr);
+    static uint32_t ReadUint32LE(const uint8_t *ptr);
+    static float ReadFloatLE(const uint8_t *ptr);
 
     // handle messages received from server
-    void OnMessage(const uint8_t* data, uint32_t size);
+    void OnMessage(const uint8_t *data, uint32_t size);
     bool EnsureClientIdentity();
     void SetConnectionStatus(ConnectionState state, std::string text, bool allowReconnect = true);
 

@@ -18,7 +18,7 @@ struct RuntimePathState {
 
 RuntimePathState g_state;
 
-std::filesystem::path NormalizePath(const std::filesystem::path& path) {
+std::filesystem::path NormalizePath(const std::filesystem::path &path) {
     std::error_code ec;
     std::filesystem::path absolutePath = std::filesystem::absolute(path, ec);
     if (ec) {
@@ -27,12 +27,13 @@ std::filesystem::path NormalizePath(const std::filesystem::path& path) {
     return absolutePath.lexically_normal();
 }
 
-bool PathExists(const std::filesystem::path& path) {
+bool PathExists(const std::filesystem::path &path) {
     std::error_code ec;
     return std::filesystem::exists(path, ec);
 }
 
-void AddUniquePath(std::vector<std::filesystem::path>& out, const std::filesystem::path& candidate) {
+void AddUniquePath(std::vector<std::filesystem::path> &out,
+                   const std::filesystem::path &candidate) {
     const std::filesystem::path normalized = NormalizePath(candidate);
     const auto alreadyThere = std::find(out.begin(), out.end(), normalized);
     if (alreadyThere == out.end()) {
@@ -40,7 +41,8 @@ void AddUniquePath(std::vector<std::filesystem::path>& out, const std::filesyste
     }
 }
 
-void AddPathAndParents(std::vector<std::filesystem::path>& out, const std::filesystem::path& start) {
+void AddPathAndParents(std::vector<std::filesystem::path> &out,
+                       const std::filesystem::path &start) {
     if (start.empty()) {
         return;
     }
@@ -57,7 +59,7 @@ void AddPathAndParents(std::vector<std::filesystem::path>& out, const std::files
     }
 }
 
-std::filesystem::path DetectExecutableDir(const std::filesystem::path& executablePath) {
+std::filesystem::path DetectExecutableDir(const std::filesystem::path &executablePath) {
     if (executablePath.empty()) {
         return NormalizePath(std::filesystem::current_path());
     }
@@ -74,15 +76,15 @@ std::filesystem::path DetectExecutableDir(const std::filesystem::path& executabl
     return NormalizePath(parent);
 }
 
-std::filesystem::path FindVoxelOpsBase(const std::vector<std::filesystem::path>& roots) {
-    for (const auto& root : roots) {
+std::filesystem::path FindVoxelOpsBase(const std::vector<std::filesystem::path> &roots) {
+    for (const auto &root : roots) {
         const std::filesystem::path asProject = root / "VoxelOps";
         if (PathExists(asProject / "shaders") && PathExists(asProject / "assets")) {
             return asProject;
         }
     }
 
-    for (const auto& root : roots) {
+    for (const auto &root : roots) {
         if (PathExists(root / "shaders") && PathExists(root / "assets")) {
             return root;
         }
@@ -94,18 +96,16 @@ std::filesystem::path FindVoxelOpsBase(const std::vector<std::filesystem::path>&
     return NormalizePath(std::filesystem::current_path() / "VoxelOps");
 }
 
-std::filesystem::path FindModelsBase(
-    const std::vector<std::filesystem::path>& roots,
-    const std::filesystem::path& voxelOpsBase
-) {
-    for (const auto& root : roots) {
+std::filesystem::path FindModelsBase(const std::vector<std::filesystem::path> &roots,
+                                     const std::filesystem::path &voxelOpsBase) {
+    for (const auto &root : roots) {
         const std::filesystem::path modelsDir = root / "Models";
         if (PathExists(modelsDir)) {
             return modelsDir;
         }
     }
 
-    for (const auto& root : roots) {
+    for (const auto &root : roots) {
         const std::filesystem::path modelsDir = root / "models";
         if (PathExists(modelsDir)) {
             return modelsDir;
@@ -123,11 +123,9 @@ std::filesystem::path FindModelsBase(
     return NormalizePath(std::filesystem::current_path() / "Models");
 }
 
-std::filesystem::path FindSharedBase(
-    const std::vector<std::filesystem::path>& roots,
-    const std::filesystem::path& voxelOpsBase
-) {
-    for (const auto& root : roots) {
+std::filesystem::path FindSharedBase(const std::vector<std::filesystem::path> &roots,
+                                     const std::filesystem::path &voxelOpsBase) {
+    for (const auto &root : roots) {
         const std::filesystem::path sharedDir = root / "Shared";
         if (PathExists(sharedDir)) {
             return sharedDir;
@@ -152,13 +150,13 @@ void EnsureInitialized() {
     Initialize({});
 }
 
-std::string PathToString(const std::filesystem::path& path) {
+std::string PathToString(const std::filesystem::path &path) {
     return path.lexically_normal().generic_string();
 }
 
 } // namespace
 
-void Initialize(const std::filesystem::path& executablePath) {
+void Initialize(const std::filesystem::path &executablePath) {
     RuntimePathState nextState;
 
     std::filesystem::path executableDir = DetectExecutableDir(executablePath);
@@ -179,17 +177,17 @@ void Initialize(const std::filesystem::path& executablePath) {
     g_state = std::move(nextState);
 }
 
-std::filesystem::path ResolveVoxelOpsPath(const std::filesystem::path& relativePath) {
+std::filesystem::path ResolveVoxelOpsPath(const std::filesystem::path &relativePath) {
     EnsureInitialized();
     return (g_state.voxelOpsBase / relativePath).lexically_normal();
 }
 
-std::filesystem::path ResolveModelsPath(const std::filesystem::path& relativePath) {
+std::filesystem::path ResolveModelsPath(const std::filesystem::path &relativePath) {
     EnsureInitialized();
     return (g_state.modelsBase / relativePath).lexically_normal();
 }
 
-std::filesystem::path ResolveSharedPath(const std::filesystem::path& relativePath) {
+std::filesystem::path ResolveSharedPath(const std::filesystem::path &relativePath) {
     EnsureInitialized();
     return (g_state.sharedBase / relativePath).lexically_normal();
 }

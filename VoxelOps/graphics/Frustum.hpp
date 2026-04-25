@@ -13,10 +13,10 @@ struct Plane {
 };
 
 class Frustum {
-public:
+  public:
     Plane planes[6];
 
-    void extractPlanes(const glm::mat4& viewProj, bool depthZeroToOne = false) {
+    void extractPlanes(const glm::mat4 &viewProj, bool depthZeroToOne = false) {
         glm::vec4 rowX = glm::row(viewProj, 0);
         glm::vec4 rowY = glm::row(viewProj, 1);
         glm::vec4 rowZ = glm::row(viewProj, 2);
@@ -29,15 +29,18 @@ public:
         // Near/Far extraction depends on clip-space depth convention:
         // OpenGL: z in [-w, +w], Vulkan/D3D: z in [0, +w].
         planes[4] = depthZeroToOne ? normalizePlane(rowZ) : normalizePlane(rowW + rowZ); // Near
-        planes[5] = normalizePlane(rowW - rowZ); // Far
+        planes[5] = normalizePlane(rowW - rowZ);                                         // Far
     }
 
-    bool isBoxVisible(const glm::vec3& min, const glm::vec3& max) const {
-        for (const Plane& p : planes) {
+    bool isBoxVisible(const glm::vec3 &min, const glm::vec3 &max) const {
+        for (const Plane &p : planes) {
             glm::vec3 positiveVertex = min;
-            if (p.normal.x >= 0) positiveVertex.x = max.x;
-            if (p.normal.y >= 0) positiveVertex.y = max.y;
-            if (p.normal.z >= 0) positiveVertex.z = max.z;
+            if (p.normal.x >= 0)
+                positiveVertex.x = max.x;
+            if (p.normal.y >= 0)
+                positiveVertex.y = max.y;
+            if (p.normal.z >= 0)
+                positiveVertex.z = max.z;
 
             if (glm::dot(p.normal, positiveVertex) + p.d < 0.0f)
                 return false;
@@ -45,15 +48,8 @@ public:
         return true;
     }
 
-
-
-    void drawFrustumFaces(
-        Shader& shader,
-        const glm::mat4& frustumViewProj,
-        const glm::mat4& view,
-        const glm::mat4& projection,
-        bool toggleWireframe
-    ) const {
+    void drawFrustumFaces(Shader &shader, const glm::mat4 &frustumViewProj, const glm::mat4 &view,
+                          const glm::mat4 &projection, bool toggleWireframe) const {
         std::vector<glm::vec3> corners = getFrustumCorners(frustumViewProj);
 
         // Corner index mapping:
@@ -66,20 +62,18 @@ public:
         // 6: Far Top Left
         // 7: Far Top Right
 
-        const GLuint indices[] = {
-            // Near
-            0, 1, 2, 1, 3, 2,
-            // Far
-            4, 6, 5, 5, 6, 7,
-            // Left
-            0, 2, 4, 4, 2, 6,
-            // Right
-            1, 5, 3, 3, 5, 7,
-            // Top
-            2, 3, 6, 6, 3, 7,
-            // Bottom
-            0, 4, 1, 1, 4, 5
-        };
+        const GLuint indices[] = {// Near
+                                  0, 1, 2, 1, 3, 2,
+                                  // Far
+                                  4, 6, 5, 5, 6, 7,
+                                  // Left
+                                  0, 2, 4, 4, 2, 6,
+                                  // Right
+                                  1, 5, 3, 3, 5, 7,
+                                  // Top
+                                  2, 3, 6, 6, 3, 7,
+                                  // Bottom
+                                  0, 4, 1, 1, 4, 5};
 
         static GLuint VAO = 0, VBO = 0, EBO = 0;
         if (VAO == 0) {
@@ -96,7 +90,7 @@ public:
             glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
 
             glEnableVertexAttribArray(0);
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void *)0);
 
             glBindVertexArray(0);
         }
@@ -108,7 +102,7 @@ public:
         shader.setMat4("model", glm::mat4(1.0f));
         shader.setMat4("view", view);
         shader.setMat4("projection", projection);
-        shader.setVec3("color", glm::vec3(1.0f, 0.0f, 0.0f)); 
+        shader.setVec3("color", glm::vec3(1.0f, 0.0f, 0.0f));
 
         glDisable(GL_CULL_FACE);
         if (toggleWireframe)
@@ -124,24 +118,20 @@ public:
         glEnable(GL_CULL_FACE);
     }
 
-private:
-    Plane normalizePlane(const glm::vec4& p) const {
+  private:
+    Plane normalizePlane(const glm::vec4 &p) const {
         float length = glm::length(glm::vec3(p));
-        return { glm::vec3(p) / length, p.w / length };
+        return {glm::vec3(p) / length, p.w / length};
     }
 
-    std::vector<glm::vec3> getFrustumCorners(const glm::mat4& viewProj) const {
+    std::vector<glm::vec3> getFrustumCorners(const glm::mat4 &viewProj) const {
         glm::mat4 inv = glm::inverse(viewProj);
         std::vector<glm::vec3> corners;
         for (int z = 0; z <= 1; ++z) {
             for (int y = 0; y <= 1; ++y) {
                 for (int x = 0; x <= 1; ++x) {
-                    glm::vec4 clip = glm::vec4(
-                        x ? 1.0f : -1.0f,
-                        y ? 1.0f : -1.0f,
-                        z ? 1.0f : -1.0f,
-                        1.0f
-                    );
+                    glm::vec4 clip =
+                        glm::vec4(x ? 1.0f : -1.0f, y ? 1.0f : -1.0f, z ? 1.0f : -1.0f, 1.0f);
                     glm::vec4 world = inv * clip;
                     corners.push_back(glm::vec3(world) / world.w);
                 }

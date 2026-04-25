@@ -6,31 +6,20 @@
 
 namespace {
 
-bool IsValidIdentityChar(char c)
-{
-    return
-        (c >= 'a' && c <= 'z') ||
-        (c >= '0' && c <= '9') ||
-        c == '_' ||
-        c == '-';
+bool IsValidIdentityChar(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
 }
 
-bool IsValidDisplayNameChar(char c)
-{
-    return
-        (c >= 'a' && c <= 'z') ||
-        (c >= 'A' && c <= 'Z') ||
-        (c >= '0' && c <= '9') ||
-        c == '_' ||
-        c == '-';
+bool IsValidDisplayNameChar(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' ||
+           c == '-';
 }
 
 } // namespace
 
 namespace NetValidation {
 
-std::string NormalizeIdentity(std::string identity)
-{
+std::string NormalizeIdentity(std::string identity) {
     std::string out;
     out.reserve(identity.size());
     for (char c : identity) {
@@ -45,8 +34,7 @@ std::string NormalizeIdentity(std::string identity)
     return out;
 }
 
-bool IsValidIdentity(const std::string& identity)
-{
+bool IsValidIdentity(const std::string &identity) {
     if (identity.empty() || identity.size() > kMaxConnectIdentityChars) {
         return false;
     }
@@ -58,8 +46,7 @@ bool IsValidIdentity(const std::string& identity)
     return true;
 }
 
-std::string NormalizeDisplayName(std::string name)
-{
+std::string NormalizeDisplayName(std::string name) {
     size_t begin = 0;
     while (begin < name.size() && std::isspace(static_cast<unsigned char>(name[begin])) != 0) {
         ++begin;
@@ -84,4 +71,3 @@ std::string NormalizeDisplayName(std::string name)
 }
 
 } // namespace NetValidation
-

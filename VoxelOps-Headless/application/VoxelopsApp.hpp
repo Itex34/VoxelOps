@@ -16,63 +16,52 @@
 #include <sstream>
 #include <optional>
 
-
 class App {
-public:
-	App(){}
-	void Run(){}
-	void Exit(){}
+  public:
+    App() {}
+    void Run() {}
+    void Exit() {}
 
+    void updateFPSCounter(SDL_Window *window);
 
-	void updateFPSCounter(SDL_Window* window);
-private:
-	float windowWidth = 640;
-	float windowHeight = 480;
+  private:
+    float windowWidth = 640;
+    float windowHeight = 480;
 
+    bool useDebugCamera = false;
 
-	bool useDebugCamera = false;
+    void renderDebug();
 
-	void renderDebug();
+    std::optional<Camera> debugCamera;
+    std::optional<Player> player;
+    std::optional<InputCallbacks> inputCallbacks;
+    std::optional<Shader> shader;
+    std::optional<Shader> dbgShader;
 
+    Physics physics;
+    ChunkManager chunkManager;
+    // TextureAtlas atlas;
+    Frustum frustum;
 
+    SDL_Window *window;
 
-	std::optional<Camera> debugCamera;
-	std::optional<Player> player;
-	std::optional<InputCallbacks> inputCallbacks;
-	std::optional<Shader> shader;
-	std::optional<Shader> dbgShader;
+    // ---DEBUG VARS---
 
-	Physics physics;
-	ChunkManager chunkManager;
-	//TextureAtlas atlas;
-	Frustum frustum;
+    double lastX = 0.0f, lastY = 0.0f;
+    float yaw = 0;
+    float pitch = 0;
 
+    double xoffset;
+    double yoffset;
 
+    double xpos, ypos;
 
+    bool toggleWireframe = false;
+    bool toggleChunkBorders = false;
+    bool toggleDebugFrustum = false;
 
-
-	SDL_Window* window;
-
-
-
-	// ---DEBUG VARS---
-
-
-	double lastX = 0.0f, lastY = 0.0f;
-	float yaw = 0;
-	float pitch = 0;
-
-	double xoffset;
-	double yoffset;
-
-	double xpos, ypos;
-
-	bool toggleWireframe = false;
-	bool toggleChunkBorders = false;
-	bool toggleDebugFrustum = false;
-
-	bool wasF1Pressed = false;
-	bool wasTPressed = false;
-	bool wasF2Pressed = false;
-	bool wasF3Pressed = false;
+    bool wasF1Pressed = false;
+    bool wasTPressed = false;
+    bool wasF2Pressed = false;
+    bool wasF3Pressed = false;
 };

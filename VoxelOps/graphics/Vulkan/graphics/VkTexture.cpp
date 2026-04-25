@@ -1,4 +1,4 @@
-#include "graphics/Vulkan/graphics/Texture.hpp"
+#include "graphics/Vulkan/graphics/VkTexture.hpp"
 
 #include "graphics/Vulkan/vulkan/UploadContext.hpp"
 #include "graphics/Vulkan/vulkan/VulkanUtils.hpp"

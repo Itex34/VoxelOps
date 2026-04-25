@@ -9,14 +9,9 @@
 #include <iostream>
 #include <glm/gtc/type_ptr.hpp>
 
-void ChunkRenderSystem::renderChunks(
-    ChunkManager& cm,
-    Shader& shader,
-    Frustum& frustum,
-    const glm::vec3& viewPosition,
-    int maxRenderDistance
-) {
-    const auto drainChunkErrors = [](const char* stage, const glm::ivec3& chunkPos) {
+void ChunkRenderSystem::renderChunks(ChunkManager &cm, Shader &shader, Frustum &frustum,
+                                     const glm::vec3 &viewPosition, int maxRenderDistance) {
+    const auto drainChunkErrors = [](const char *stage, const glm::ivec3 &chunkPos) {
         unsigned int firstError = GL_NO_ERROR;
         int count = 0;
         for (;;) {
@@ -32,12 +27,10 @@ void ChunkRenderSystem::renderChunks(
         if (count > 0) {
             static int s_chunkRenderErrorLogCount = 0;
             if (s_chunkRenderErrorLogCount < 32) {
-                std::cerr
-                    << "[chunk] GL error during " << stage
-                    << ": count=" << count
-                    << " first=0x" << std::hex << firstError << std::dec
-                    << " chunk=(" << chunkPos.x << "," << chunkPos.y << "," << chunkPos.z << ")"
-                    << "\n";
+                std::cerr << "[chunk] GL error during " << stage << ": count=" << count
+                          << " first=0x" << std::hex << firstError << std::dec << " chunk=("
+                          << chunkPos.x << "," << chunkPos.y << "," << chunkPos.z << ")"
+                          << "\n";
                 ++s_chunkRenderErrorLogCount;
             }
         }
@@ -45,11 +38,9 @@ void ChunkRenderSystem::renderChunks(
     };
 
     const glm::vec3 playerPos = viewPosition;
-    const glm::ivec3 playerBlockPos(
-        static_cast<int>(std::floor(playerPos.x)),
-        static_cast<int>(std::floor(playerPos.y)),
-        static_cast<int>(std::floor(playerPos.z))
-    );
+    const glm::ivec3 playerBlockPos(static_cast<int>(std::floor(playerPos.x)),
+                                    static_cast<int>(std::floor(playerPos.y)),
+                                    static_cast<int>(std::floor(playerPos.z)));
     const glm::ivec3 playerChunkPos = cm.worldToChunkPos(playerBlockPos);
 
     size_t regionCount = 0;
@@ -58,7 +49,7 @@ void ChunkRenderSystem::renderChunks(
     size_t distCullCount = 0;
     size_t frustumCullCount = 0;
 
-    for (auto& [regionPos, region] : cm.regions) {
+    for (auto &[regionPos, region] : cm.regions) {
         ++regionCount;
         glm::vec3 regionMin = glm::vec3(regionPos * REGION_SIZE * CHUNK_SIZE);
         glm::vec3 regionMax = regionMin + glm::vec3(REGION_SIZE * CHUNK_SIZE);
@@ -67,8 +58,8 @@ void ChunkRenderSystem::renderChunks(
             continue;
         }
 
-        RegionMeshBuffer& gpu = *region.gpu;
-        for (const auto& [chunkPos, mesh] : region.chunks) {
+        RegionMeshBuffer &gpu = *region.gpu;
+        for (const auto &[chunkPos, mesh] : region.chunks) {
             if (!mesh.valid) {
                 continue;
             }
@@ -76,9 +67,8 @@ void ChunkRenderSystem::renderChunks(
 
             glm::ivec3 d = chunkPos - playerChunkPos;
             // Client-side render culling uses radial distance in XZ.
-            const int64_t dist2 =
-                static_cast<int64_t>(d.x) * static_cast<int64_t>(d.x) +
-                static_cast<int64_t>(d.z) * static_cast<int64_t>(d.z);
+            const int64_t dist2 = static_cast<int64_t>(d.x) * static_cast<int64_t>(d.x) +
+                                  static_cast<int64_t>(d.z) * static_cast<int64_t>(d.z);
             const int64_t radius2 =
                 static_cast<int64_t>(maxRenderDistance) * static_cast<int64_t>(maxRenderDistance);
             if (dist2 > radius2) {
@@ -108,14 +98,10 @@ void ChunkRenderSystem::renderChunks(
             ++drawnCount;
         }
     }
-
 }
 
-void ChunkRenderSystem::renderChunkBorders(
-    ChunkManager& cm,
-    glm::mat4& view,
-    glm::mat4& projection
-) {
+void ChunkRenderSystem::renderChunkBorders(ChunkManager &cm, glm::mat4 &view,
+                                           glm::mat4 &projection) {
     cm.debugShader->use();
     cm.debugShader->setMat4("projection", projection);
     cm.debugShader->setMat4("view", view);
@@ -141,28 +127,21 @@ void ChunkRenderSystem::renderChunkBorders(
     }
 }
 
-void ChunkRenderSystem::renderChunksDepthPass(
-    ChunkManager& cm,
-    GLuint shadowProgram,
-    const glm::mat4& lightViewProj,
-    const glm::vec3& viewPosition,
-    int maxRenderDistance
-)
-{
+void ChunkRenderSystem::renderChunksDepthPass(ChunkManager &cm, GLuint shadowProgram,
+                                              const glm::mat4 &lightViewProj,
+                                              const glm::vec3 &viewPosition,
+                                              int maxRenderDistance) {
     if (shadowProgram == 0) {
         return;
     }
 
-    const glm::ivec3 playerBlockPos(
-        static_cast<int>(std::floor(viewPosition.x)),
-        static_cast<int>(std::floor(viewPosition.y)),
-        static_cast<int>(std::floor(viewPosition.z))
-    );
+    const glm::ivec3 playerBlockPos(static_cast<int>(std::floor(viewPosition.x)),
+                                    static_cast<int>(std::floor(viewPosition.y)),
+                                    static_cast<int>(std::floor(viewPosition.z)));
     const glm::ivec3 playerChunkPos = cm.worldToChunkPos(playerBlockPos);
     const int shadowCullDistance = std::max(1, maxRenderDistance + 4);
     const int64_t radius2 =
         static_cast<int64_t>(shadowCullDistance) * static_cast<int64_t>(shadowCullDistance);
-
 
     const GLint lightVpLoc = glGetUniformLocation(shadowProgram, "uLightViewProj");
     const GLint modelLoc = glGetUniformLocation(shadowProgram, "uModel");
@@ -173,17 +152,16 @@ void ChunkRenderSystem::renderChunksDepthPass(
     glUseProgram(shadowProgram);
     glUniformMatrix4fv(lightVpLoc, 1, GL_FALSE, glm::value_ptr(lightViewProj));
 
-    for (auto& [regionPos, region] : cm.regions) {
+    for (auto &[regionPos, region] : cm.regions) {
         (void)regionPos;
-        RegionMeshBuffer& gpu = *region.gpu;
-        for (const auto& [chunkPos, mesh] : region.chunks) {
+        RegionMeshBuffer &gpu = *region.gpu;
+        for (const auto &[chunkPos, mesh] : region.chunks) {
             if (!mesh.valid) {
                 continue;
             }
             glm::ivec3 d = chunkPos - playerChunkPos;
-            const int64_t dist2 =
-                static_cast<int64_t>(d.x) * static_cast<int64_t>(d.x) +
-                static_cast<int64_t>(d.z) * static_cast<int64_t>(d.z);
+            const int64_t dist2 = static_cast<int64_t>(d.x) * static_cast<int64_t>(d.x) +
+                                  static_cast<int64_t>(d.z) * static_cast<int64_t>(d.z);
             if (dist2 > radius2) {
                 continue;
             }
@@ -198,8 +176,3 @@ void ChunkRenderSystem::renderChunksDepthPass(
 
     glUseProgram(0);
 }
-
-
-
-
-

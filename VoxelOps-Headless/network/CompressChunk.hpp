@@ -11,4 +11,4 @@ struct CompressedChunkPayload {
 // Compresses a serialized chunk payload for network transport.
 // When compressed == true, payload layout is:
 //   [rawSize:u32 little-endian][lz4 block bytes]
-CompressedChunkPayload CompressChunkPayload(const std::vector<uint8_t>& rawPayload);
+CompressedChunkPayload CompressChunkPayload(const std::vector<uint8_t> &rawPayload);

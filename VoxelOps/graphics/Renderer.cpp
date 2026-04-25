@@ -1,6 +1,5 @@
 
 
-
 #include "Renderer.hpp"
 #include "Mesh.hpp"
 #include "Shader.hpp"
@@ -22,7 +21,7 @@
 #include <vector>
 
 namespace {
-constexpr const char* kDepthLinearizeVs = R"(
+constexpr const char *kDepthLinearizeVs = R"(
 #version 330 core
 out vec2 vUv;
 void main()
@@ -38,7 +37,7 @@ void main()
 }
 )";
 
-constexpr const char* kDepthLinearizeFs = R"(
+constexpr const char *kDepthLinearizeFs = R"(
 #version 330 core
 in vec2 vUv;
 layout(location = 0) out float oLinearDepthKm;
@@ -66,7 +65,7 @@ void main()
 }
 )";
 
-constexpr const char* kSunShadowVs = R"(
+constexpr const char *kSunShadowVs = R"(
 #version 430 core
 layout(location = 0) in uint inLow;
 layout(location = 1) in uint inHigh;
@@ -120,7 +119,7 @@ void main()
 }
 )";
 
-constexpr const char* kSunShadowFs = R"(
+constexpr const char *kSunShadowFs = R"(
 #version 430 core
 void main()
 {
@@ -128,7 +127,7 @@ void main()
 }
 )";
 
-constexpr const char* kSunShadowMomentsBlurVs = R"(
+constexpr const char *kSunShadowMomentsBlurVs = R"(
 #version 330 core
 out vec2 vUv;
 void main()
@@ -144,7 +143,7 @@ void main()
 }
 )";
 
-constexpr const char* kSunShadowMomentsBlurFs = R"(
+constexpr const char *kSunShadowMomentsBlurFs = R"(
 #version 330 core
 in vec2 vUv;
 layout(location = 0) out vec4 oMoments;
@@ -171,8 +170,7 @@ void main()
 }
 )";
 
-GLuint compileInlineShader(GLenum shaderType, const char* source, const char* debugName)
-{
+GLuint compileInlineShader(GLenum shaderType, const char *source, const char *debugName) {
     GLuint shader = glCreateShader(shaderType);
     glShaderSource(shader, 1, &source, nullptr);
     glCompileShader(shader);
@@ -195,8 +193,7 @@ GLuint compileInlineShader(GLenum shaderType, const char* source, const char* de
     return 0;
 }
 
-GLuint createDepthLinearizeProgram()
-{
+GLuint createDepthLinearizeProgram() {
     GLuint vs = compileInlineShader(GL_VERTEX_SHADER, kDepthLinearizeVs, "depth_linearize_vs");
     if (vs == 0) {
         return 0;
@@ -232,8 +229,7 @@ GLuint createDepthLinearizeProgram()
     return 0;
 }
 
-GLuint createSunShadowProgram()
-{
+GLuint createSunShadowProgram() {
     GLuint vs = compileInlineShader(GL_VERTEX_SHADER, kSunShadowVs, "sun_shadow_vs");
     if (vs == 0) {
         return 0;
@@ -269,13 +265,14 @@ GLuint createSunShadowProgram()
     return 0;
 }
 
-GLuint createSunShadowMomentsBlurProgram()
-{
-    GLuint vs = compileInlineShader(GL_VERTEX_SHADER, kSunShadowMomentsBlurVs, "sun_shadow_moments_blur_vs");
+GLuint createSunShadowMomentsBlurProgram() {
+    GLuint vs = compileInlineShader(GL_VERTEX_SHADER, kSunShadowMomentsBlurVs,
+                                    "sun_shadow_moments_blur_vs");
     if (vs == 0) {
         return 0;
     }
-    GLuint fs = compileInlineShader(GL_FRAGMENT_SHADER, kSunShadowMomentsBlurFs, "sun_shadow_moments_blur_fs");
+    GLuint fs = compileInlineShader(GL_FRAGMENT_SHADER, kSunShadowMomentsBlurFs,
+                                    "sun_shadow_moments_blur_fs");
     if (fs == 0) {
         glDeleteShader(vs);
         return 0;
@@ -306,8 +303,7 @@ GLuint createSunShadowMomentsBlurProgram()
     return 0;
 }
 
-glm::mat4 makePbrToVoxelAxisSwapMatrix()
-{
+glm::mat4 makePbrToVoxelAxisSwapMatrix() {
     // pbr(x,y,z) -> voxel(x,z,y)
     glm::mat4 m(1.0f);
     m[0] = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
@@ -317,15 +313,13 @@ glm::mat4 makePbrToVoxelAxisSwapMatrix()
     return m;
 }
 
-glm::mat4 makePbrKmToVoxelMetersMatrix()
-{
+glm::mat4 makePbrKmToVoxelMetersMatrix() {
     const glm::mat4 axisSwap = makePbrToVoxelAxisSwapMatrix();
     const glm::mat4 kilometersToMeters = glm::scale(glm::mat4(1.0f), glm::vec3(1000.0f));
     return kilometersToMeters * axisSwap;
 }
 
-glm::vec3 safeNormalizeOrDefault(const glm::vec3& v, const glm::vec3& defaultDir)
-{
+glm::vec3 safeNormalizeOrDefault(const glm::vec3 &v, const glm::vec3 &defaultDir) {
     const float lenSq = glm::dot(v, v);
     if (lenSq <= 1e-8f) {
         return defaultDir;
@@ -333,14 +327,10 @@ glm::vec3 safeNormalizeOrDefault(const glm::vec3& v, const glm::vec3& defaultDir
     return glm::normalize(v);
 }
 
-glm::mat4 buildLightViewProjForScene(
-    const glm::vec3& center,
-    const glm::vec3& sunDir,
-    float halfExtentXZ,
-    float halfExtentY,
-    int shadowMapSize)
-{
-    const glm::vec3 lightDirToSun = safeNormalizeOrDefault(sunDir, glm::normalize(glm::vec3(0.25f, 1.0f, 0.2f)));
+glm::mat4 buildLightViewProjForScene(const glm::vec3 &center, const glm::vec3 &sunDir,
+                                     float halfExtentXZ, float halfExtentY, int shadowMapSize) {
+    const glm::vec3 lightDirToSun =
+        safeNormalizeOrDefault(sunDir, glm::normalize(glm::vec3(0.25f, 1.0f, 0.2f)));
     const float lightDistance = halfExtentXZ + halfExtentY + 128.0f;
     const glm::vec3 eye = center + lightDirToSun * lightDistance;
 
@@ -353,18 +343,17 @@ glm::mat4 buildLightViewProjForScene(
 
     std::array<glm::vec3, 8> corners = {
         center + glm::vec3(-halfExtentXZ, -halfExtentY, -halfExtentXZ),
-        center + glm::vec3( halfExtentXZ, -halfExtentY, -halfExtentXZ),
-        center + glm::vec3(-halfExtentXZ,  halfExtentY, -halfExtentXZ),
-        center + glm::vec3( halfExtentXZ,  halfExtentY, -halfExtentXZ),
-        center + glm::vec3(-halfExtentXZ, -halfExtentY,  halfExtentXZ),
-        center + glm::vec3( halfExtentXZ, -halfExtentY,  halfExtentXZ),
-        center + glm::vec3(-halfExtentXZ,  halfExtentY,  halfExtentXZ),
-        center + glm::vec3( halfExtentXZ,  halfExtentY,  halfExtentXZ)
-    };
+        center + glm::vec3(halfExtentXZ, -halfExtentY, -halfExtentXZ),
+        center + glm::vec3(-halfExtentXZ, halfExtentY, -halfExtentXZ),
+        center + glm::vec3(halfExtentXZ, halfExtentY, -halfExtentXZ),
+        center + glm::vec3(-halfExtentXZ, -halfExtentY, halfExtentXZ),
+        center + glm::vec3(halfExtentXZ, -halfExtentY, halfExtentXZ),
+        center + glm::vec3(-halfExtentXZ, halfExtentY, halfExtentXZ),
+        center + glm::vec3(halfExtentXZ, halfExtentY, halfExtentXZ)};
 
     glm::vec3 minLs(std::numeric_limits<float>::max());
     glm::vec3 maxLs(-std::numeric_limits<float>::max());
-    for (const glm::vec3& c : corners) {
+    for (const glm::vec3 &c : corners) {
         const glm::vec3 ls = glm::vec3(lightView * glm::vec4(c, 1.0f));
         minLs = glm::min(minLs, ls);
         maxLs = glm::max(maxLs, ls);
@@ -391,8 +380,7 @@ glm::mat4 buildLightViewProjForScene(
     return lightProj * lightView;
 }
 
-void applyOpaqueWorldState()
-{
+void applyOpaqueWorldState() {
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
@@ -401,8 +389,7 @@ void applyOpaqueWorldState()
     glDisable(GL_BLEND);
 }
 
-void drainPendingRendererGlErrors(const char* stageTag)
-{
+void drainPendingRendererGlErrors(const char *stageTag) {
     unsigned int firstError = GL_NO_ERROR;
     int count = 0;
     for (;;) {
@@ -425,28 +412,28 @@ void drainPendingRendererGlErrors(const char* stageTag)
         }
     }
 }
-}
+} // namespace
 
-GLuint Renderer::loadTexture(const char* path) {
+GLuint Renderer::loadTexture(const char *path) {
     int width, height, nrChannels;
     stbi_set_flip_vertically_on_load(true);
-    unsigned char* data = stbi_load(path, &width, &height, &nrChannels, 0);
-    if (!data) { std::cerr << "Failed to load texture: " << path << std::endl; return 0; }
+    unsigned char *data = stbi_load(path, &width, &height, &nrChannels, 0);
+    if (!data) {
+        std::cerr << "Failed to load texture: " << path << std::endl;
+        return 0;
+    }
 
     GLenum internalFormat, format;
     if (nrChannels == 1) {
         internalFormat = GL_R8;
         format = GL_RED;
-    }
-    else if (nrChannels == 3) {
-        internalFormat = GL_SRGB8;      // sRGB internal for correct sampling -> linear data in shader
+    } else if (nrChannels == 3) {
+        internalFormat = GL_SRGB8; // sRGB internal for correct sampling -> linear data in shader
         format = GL_RGB;
-    }
-    else if (nrChannels == 4) {
+    } else if (nrChannels == 4) {
         internalFormat = GL_SRGB8_ALPHA8;
         format = GL_RGBA;
-    }
-    else {
+    } else {
         std::cerr << "Unsupported channel count: " << nrChannels << std::endl;
         stbi_image_free(data);
         return 0;
@@ -464,10 +451,11 @@ GLuint Renderer::loadTexture(const char* path) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
+    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, format, GL_UNSIGNED_BYTE,
+                 data);
 
-    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-
-    //glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    // glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+    // data);
 
     GLfloat aniso = 2.0f;
     glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &aniso);
@@ -481,34 +469,28 @@ GLuint Renderer::loadTexture(const char* path) {
     return textureID;
 }
 
-const Backend& Renderer::getBackend() const noexcept
-{
+const Backend &Renderer::getBackend() const noexcept {
     return m_ActiveBackend;
 }
 
-GraphicsBackend Renderer::getActiveBackend() const noexcept
-{
+GraphicsBackend Renderer::getActiveBackend() const noexcept {
     return m_ActiveBackend.getActiveBackend();
 }
 
-std::string_view Renderer::getActiveBackendName() const noexcept
-{
+std::string_view Renderer::getActiveBackendName() const noexcept {
     return m_ActiveBackend.getActiveBackendName();
 }
 
-bool Renderer::isMDIUsable() const noexcept
-{
+bool Renderer::isMDIUsable() const noexcept {
     return m_ActiveBackend.isMDIUsable();
 }
 
-void Renderer::shutdown()
-{
+void Renderer::shutdown() {
     releaseSceneCaptureResources();
     releaseSunShadowResources();
 }
 
-bool Renderer::ensureDepthLinearizeProgram()
-{
+bool Renderer::ensureDepthLinearizeProgram() {
     if (m_DepthLinearizeProgram != 0 && m_FullscreenTriangleVao != 0) {
         return true;
     }
@@ -523,36 +505,34 @@ bool Renderer::ensureDepthLinearizeProgram()
 
     m_DepthLinearizeProgram = createDepthLinearizeProgram();
     if (m_DepthLinearizeProgram == 0) {
-        std::cerr << "[Renderer] Failed to create depth linearize shader program for scene capture.\n";
+        std::cerr
+            << "[Renderer] Failed to create depth linearize shader program for scene capture.\n";
         return false;
     }
     return true;
 }
 
-bool Renderer::ensureSceneCaptureResources(int width, int height)
-{
+bool Renderer::ensureSceneCaptureResources(int width, int height) {
     if (width <= 0 || height <= 0) {
         static bool loggedInvalidSceneSize = false;
         if (!loggedInvalidSceneSize) {
-            std::cerr << "[Renderer] Scene capture skipped: invalid size " << width << "x" << height << ".\n";
+            std::cerr << "[Renderer] Scene capture skipped: invalid size " << width << "x" << height
+                      << ".\n";
             loggedInvalidSceneSize = true;
         }
         return false;
     }
 
-    if (m_SceneFbo != 0 &&
-        m_SceneColorTex != 0 &&
-        m_SceneDepthTex != 0 &&
-        m_SceneLinearDepthTex != 0 &&
-        m_SceneWidth == width &&
-        m_SceneHeight == height &&
+    if (m_SceneFbo != 0 && m_SceneColorTex != 0 && m_SceneDepthTex != 0 &&
+        m_SceneLinearDepthTex != 0 && m_SceneWidth == width && m_SceneHeight == height &&
         ensureDepthLinearizeProgram()) {
         return true;
     }
 
     releaseSceneCaptureResources();
     if (!ensureDepthLinearizeProgram()) {
-        std::cerr << "[Renderer] Scene capture unavailable: depth linearization program not ready.\n";
+        std::cerr
+            << "[Renderer] Scene capture unavailable: depth linearization program not ready.\n";
         return false;
     }
 
@@ -575,18 +555,20 @@ bool Renderer::ensureSceneCaptureResources(int width, int height)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, m_SceneLinearDepthTex, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D,
+                           m_SceneLinearDepthTex, 0);
 
     glGenTextures(1, &m_SceneDepthTex);
     glBindTexture(GL_TEXTURE_2D, m_SceneDepthTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, width, height, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, width, height, 0, GL_DEPTH_COMPONENT,
+                 GL_FLOAT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_SceneDepthTex, 0);
 
-    const GLenum drawBuffers[1] = { GL_COLOR_ATTACHMENT0 };
+    const GLenum drawBuffers[1] = {GL_COLOR_ATTACHMENT0};
     glDrawBuffers(1, drawBuffers);
 
     const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
@@ -594,8 +576,9 @@ bool Renderer::ensureSceneCaptureResources(int width, int height)
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     if (status != GL_FRAMEBUFFER_COMPLETE) {
-        std::cerr << "[Renderer] Scene capture framebuffer incomplete: 0x" << std::hex << status << std::dec
-                  << " (size=" << width << "x" << height << ", color=RGBA16F, linearDepth=R32F, depth=D32F).\n";
+        std::cerr << "[Renderer] Scene capture framebuffer incomplete: 0x" << std::hex << status
+                  << std::dec << " (size=" << width << "x" << height
+                  << ", color=RGBA16F, linearDepth=R32F, depth=D32F).\n";
         releaseSceneCaptureResources();
         return false;
     }
@@ -605,8 +588,7 @@ bool Renderer::ensureSceneCaptureResources(int width, int height)
     return true;
 }
 
-void Renderer::releaseSceneCaptureResources()
-{
+void Renderer::releaseSceneCaptureResources() {
     if (m_SceneDepthTex != 0) {
         glDeleteTextures(1, &m_SceneDepthTex);
         m_SceneDepthTex = 0;
@@ -635,17 +617,14 @@ void Renderer::releaseSceneCaptureResources()
     m_SceneHeight = 0;
 }
 
-bool Renderer::ensureSunShadowResources()
-{
+bool Renderer::ensureSunShadowResources() {
     bool hasAllShadowResources = (m_SunShadowProgram != 0) && (m_SunShadowMomentsBlurProgram != 0);
     for (int i = 0; i < kSunShadowCascadeCount; ++i) {
-        hasAllShadowResources = hasAllShadowResources && (m_SunShadowFbo[i] != 0) && (m_SunShadowDepthTex[i] != 0);
+        hasAllShadowResources =
+            hasAllShadowResources && (m_SunShadowFbo[i] != 0) && (m_SunShadowDepthTex[i] != 0);
     }
-    hasAllShadowResources =
-        hasAllShadowResources &&
-        (m_SunShadowMomentsTex != 0) &&
-        (m_SunShadowMomentsTempTex != 0) &&
-        (m_SunShadowMomentsFbo != 0);
+    hasAllShadowResources = hasAllShadowResources && (m_SunShadowMomentsTex != 0) &&
+                            (m_SunShadowMomentsTempTex != 0) && (m_SunShadowMomentsFbo != 0);
     if (hasAllShadowResources) {
         return true;
     }
@@ -673,7 +652,8 @@ bool Renderer::ensureSunShadowResources()
     glGenTextures(1, &m_SunShadowMomentsTex);
     glGenTextures(1, &m_SunShadowMomentsTempTex);
     glGenFramebuffers(1, &m_SunShadowMomentsFbo);
-    if (m_SunShadowMomentsTex == 0 || m_SunShadowMomentsTempTex == 0 || m_SunShadowMomentsFbo == 0) {
+    if (m_SunShadowMomentsTex == 0 || m_SunShadowMomentsTempTex == 0 ||
+        m_SunShadowMomentsFbo == 0) {
         std::cerr << "[Renderer] Failed to allocate EVSM moments resources.\n";
         releaseSunShadowResources();
         return false;
@@ -681,17 +661,10 @@ bool Renderer::ensureSunShadowResources()
 
     auto allocateMomentsTex = [&](GLuint tex) {
         glBindTexture(GL_TEXTURE_2D, tex);
-        glTexImage2D(
-            GL_TEXTURE_2D,
-            0,
-            // EVSM4 moments in 32-bit float to avoid half-float quantization striping.
-            GL_RGBA32F,
-            m_SunShadowMapSize,
-            m_SunShadowMapSize,
-            0,
-            GL_RGBA,
-            GL_FLOAT,
-            nullptr);
+        glTexImage2D(GL_TEXTURE_2D, 0,
+                     // EVSM4 moments in 32-bit float to avoid half-float quantization striping.
+                     GL_RGBA32F, m_SunShadowMapSize, m_SunShadowMapSize, 0, GL_RGBA, GL_FLOAT,
+                     nullptr);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -711,33 +684,26 @@ bool Renderer::ensureSunShadowResources()
         }
 
         glBindTexture(GL_TEXTURE_2D, m_SunShadowDepthTex[i]);
-        glTexImage2D(
-            GL_TEXTURE_2D,
-            0,
-            GL_DEPTH_COMPONENT32F,
-            m_SunShadowMapSize,
-            m_SunShadowMapSize,
-            0,
-            GL_DEPTH_COMPONENT,
-            GL_FLOAT,
-            nullptr);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, m_SunShadowMapSize,
+                     m_SunShadowMapSize, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-        const float borderColor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+        const float borderColor[4] = {1.0f, 1.0f, 1.0f, 1.0f};
         glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
 
         glBindFramebuffer(GL_FRAMEBUFFER, m_SunShadowFbo[i]);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_SunShadowDepthTex[i], 0);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D,
+                               m_SunShadowDepthTex[i], 0);
         if (i == 0) {
-            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_SunShadowMomentsTex, 0);
-            const GLenum drawBuffers[1] = { GL_COLOR_ATTACHMENT0 };
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                                   m_SunShadowMomentsTex, 0);
+            const GLenum drawBuffers[1] = {GL_COLOR_ATTACHMENT0};
             glDrawBuffers(1, drawBuffers);
-        }
-        else {
+        } else {
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
             glDrawBuffer(GL_NONE);
         }
@@ -745,8 +711,8 @@ bool Renderer::ensureSunShadowResources()
 
         const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
         if (status != GL_FRAMEBUFFER_COMPLETE) {
-            std::cerr << "[Renderer] Sun shadow framebuffer incomplete for cascade " << i
-                      << ": 0x" << std::hex << status << std::dec << "\n";
+            std::cerr << "[Renderer] Sun shadow framebuffer incomplete for cascade " << i << ": 0x"
+                      << std::hex << status << std::dec << "\n";
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glBindTexture(GL_TEXTURE_2D, 0);
             releaseSunShadowResources();
@@ -759,8 +725,7 @@ bool Renderer::ensureSunShadowResources()
     return true;
 }
 
-void Renderer::releaseSunShadowResources()
-{
+void Renderer::releaseSunShadowResources() {
     if (m_SunShadowMomentsFbo != 0) {
         glDeleteFramebuffers(1, &m_SunShadowMomentsFbo);
         m_SunShadowMomentsFbo = 0;
@@ -797,12 +762,13 @@ void Renderer::releaseSunShadowResources()
     }
 }
 
-bool Renderer::runSunShadowMomentsBlurPass()
-{
+bool Renderer::runSunShadowMomentsBlurPass() {
     if (m_FullscreenTriangleVao == 0) {
         glGenVertexArrays(1, &m_FullscreenTriangleVao);
     }
-    if (m_SunShadowMomentsBlurProgram == 0 || m_SunShadowMomentsTex == 0 || m_SunShadowMomentsTempTex == 0 || m_SunShadowMomentsFbo == 0 || m_FullscreenTriangleVao == 0) {
+    if (m_SunShadowMomentsBlurProgram == 0 || m_SunShadowMomentsTex == 0 ||
+        m_SunShadowMomentsTempTex == 0 || m_SunShadowMomentsFbo == 0 ||
+        m_FullscreenTriangleVao == 0) {
         static bool loggedMissingMomentsBlurResources = false;
         if (!loggedMissingMomentsBlurResources) {
             std::cerr << "[Renderer] EVSM blur resources missing (program/tex/fbo/vao).\n";
@@ -812,16 +778,17 @@ bool Renderer::runSunShadowMomentsBlurPass()
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, m_SunShadowMomentsFbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_SunShadowMomentsTempTex, 0);
-    const GLenum drawBuffers[1] = { GL_COLOR_ATTACHMENT0 };
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                           m_SunShadowMomentsTempTex, 0);
+    const GLenum drawBuffers[1] = {GL_COLOR_ATTACHMENT0};
     glDrawBuffers(1, drawBuffers);
     glReadBuffer(GL_NONE);
     const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE) {
         static bool loggedMomentsFboStatus = false;
         if (!loggedMomentsFboStatus) {
-            std::cerr << "[Renderer] EVSM blur framebuffer incomplete: 0x"
-                      << std::hex << status << std::dec << ".\n";
+            std::cerr << "[Renderer] EVSM blur framebuffer incomplete: 0x" << std::hex << status
+                      << std::dec << ".\n";
             loggedMomentsFboStatus = true;
         }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -855,7 +822,8 @@ bool Renderer::runSunShadowMomentsBlurPass()
     glBindTexture(GL_TEXTURE_2D, m_SunShadowMomentsTex);
     glDrawArrays(GL_TRIANGLES, 0, 3);
 
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_SunShadowMomentsTex, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                           m_SunShadowMomentsTex, 0);
     if (directionLoc >= 0) {
         glUniform2f(directionLoc, 0.0f, 1.0f);
     }
@@ -871,13 +839,9 @@ bool Renderer::runSunShadowMomentsBlurPass()
     return true;
 }
 
-bool Renderer::renderSunShadowMaps(
-    RenderFrameParams& params,
-    const glm::mat4& projection,
-    const glm::mat4& view,
-    glm::mat4& outShadowViewProj)
-{
-    auto logSunShadowStageError = [](const char* stage, int cascadeIndex) {
+bool Renderer::renderSunShadowMaps(RenderFrameParams &params, const glm::mat4 &projection,
+                                   const glm::mat4 &view, glm::mat4 &outShadowViewProj) {
+    auto logSunShadowStageError = [](const char *stage, int cascadeIndex) {
         unsigned int firstError = GL_NO_ERROR;
         int count = 0;
         for (;;) {
@@ -898,8 +862,8 @@ bool Renderer::renderSunShadowMaps(
                 if (cascadeIndex >= 0) {
                     std::cerr << " (cascade=" << cascadeIndex << ")";
                 }
-                std::cerr << ": count=" << count
-                          << " first=0x" << std::hex << firstError << std::dec << "\n";
+                std::cerr << ": count=" << count << " first=0x" << std::hex << firstError
+                          << std::dec << "\n";
                 ++loggedCount;
             }
         }
@@ -915,9 +879,10 @@ bool Renderer::renderSunShadowMaps(
     }
     logSunShadowStageError("ensureSunShadowResources", -1);
 
-    const float maxShadowDistanceMeters = std::max(128.0f, static_cast<float>(params.player.renderDistance * CHUNK_SIZE));
+    const float maxShadowDistanceMeters =
+        std::max(128.0f, static_cast<float>(params.player.renderDistance * CHUNK_SIZE));
     // Give more resolution to cascade 0 so side-face shadow edges quantize less.
-    const float cascadeFractions[kSunShadowCascadeCount] = { 0.24f, 1.0f };
+    const float cascadeFractions[kSunShadowCascadeCount] = {0.24f, 1.0f};
     const glm::vec3 baseShadowCenter = params.activeCamera.position;
     const glm::vec3 sunDir = params.sky.getSunDir();
 
@@ -931,32 +896,36 @@ bool Renderer::renderSunShadowMaps(
     glUseProgram(m_SunShadowProgram);
     logSunShadowStageError("glUseProgram(shadow)", -1);
     const GLint shadowLightDirLoc = glGetUniformLocation(m_SunShadowProgram, "uLightDirWs");
-    const GLint shadowCasterNormalBiasLoc = glGetUniformLocation(m_SunShadowProgram, "uCasterNormalBiasMeters");
-    const GLint shadowCasterLightBiasLoc = glGetUniformLocation(m_SunShadowProgram, "uCasterLightBiasMeters");
+    const GLint shadowCasterNormalBiasLoc =
+        glGetUniformLocation(m_SunShadowProgram, "uCasterNormalBiasMeters");
+    const GLint shadowCasterLightBiasLoc =
+        glGetUniformLocation(m_SunShadowProgram, "uCasterLightBiasMeters");
     const GLint shadowWriteMomentsLoc = glGetUniformLocation(m_SunShadowProgram, "uWriteMoments");
-    const GLint shadowEvsmPosExponentLoc = glGetUniformLocation(m_SunShadowProgram, "uEvsmPosExponent");
-    const GLint shadowEvsmNegExponentLoc = glGetUniformLocation(m_SunShadowProgram, "uEvsmNegExponent");
+    const GLint shadowEvsmPosExponentLoc =
+        glGetUniformLocation(m_SunShadowProgram, "uEvsmPosExponent");
+    const GLint shadowEvsmNegExponentLoc =
+        glGetUniformLocation(m_SunShadowProgram, "uEvsmNegExponent");
 
-    const glm::vec3 sunDirWs = safeNormalizeOrDefault(sunDir, glm::normalize(glm::vec3(0.25f, 1.0f, 0.2f)));
+    const glm::vec3 sunDirWs =
+        safeNormalizeOrDefault(sunDir, glm::normalize(glm::vec3(0.25f, 1.0f, 0.2f)));
     if (shadowLightDirLoc >= 0) {
         glUniform3fv(shadowLightDirLoc, 1, glm::value_ptr(sunDirWs));
     }
 
     const float sunGrazing = 1.0f - glm::clamp(std::abs(sunDirWs.y), 0.0f, 1.0f);
-    const float lowSunBoost = 1.0f +
-        sunGrazing * sunGrazing * glm::clamp(params.sunShadowLowSunBiasBoost, 0.0f, 4.0f);
+    const float lowSunBoost =
+        1.0f + sunGrazing * sunGrazing * glm::clamp(params.sunShadowLowSunBiasBoost, 0.0f, 4.0f);
     const bool useTwoSidedShadowCastersForLowSun =
         params.sunShadowFrontFaceCullAtLowSun &&
         (sunGrazing >= glm::clamp(params.sunShadowFrontFaceCullGrazingThreshold, 0.0f, 1.0f));
     if (useTwoSidedShadowCastersForLowSun) {
         glDisable(GL_CULL_FACE);
-    }
-    else {
+    } else {
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
     }
-    const float casterNormalBiasBase[kSunShadowCascadeCount] = { 0.00065f, 0.00105f };
-    const float casterLightBiasBase[kSunShadowCascadeCount] = { 0.0018f, 0.0030f };
+    const float casterNormalBiasBase[kSunShadowCascadeCount] = {0.00065f, 0.00105f};
+    const float casterLightBiasBase[kSunShadowCascadeCount] = {0.0018f, 0.0030f};
     const float evsmPosExponent = 4.2f;
     const float evsmNegExponent = 4.2f;
 
@@ -974,8 +943,8 @@ bool Renderer::renderSunShadowMaps(
         m_SunShadowCascadeFarMeters[cascadeIndex] = cascadeFarMeters;
 
         const float worldRadiusXZ = (cascadeIndex == 0)
-            ? std::max(40.0f, std::min(cascadeFarMeters * 0.52f, 96.0f))
-            : std::max(96.0f, cascadeFarMeters * 1.10f);
+                                        ? std::max(40.0f, std::min(cascadeFarMeters * 0.52f, 96.0f))
+                                        : std::max(96.0f, cascadeFarMeters * 1.10f);
         const float worldRadiusY = (cascadeIndex == 0) ? 80.0f : 192.0f;
 
         glm::vec3 shadowCenter = baseShadowCenter;
@@ -986,17 +955,13 @@ bool Renderer::renderSunShadowMaps(
         shadowCenter.z = std::floor(shadowCenter.z / centerSnap) * centerSnap;
 
         const glm::mat4 lightViewProjVoxel = buildLightViewProjForScene(
-            shadowCenter,
-            sunDir,
-            worldRadiusXZ,
-            worldRadiusY,
-            m_SunShadowMapSize);
+            shadowCenter, sunDir, worldRadiusXZ, worldRadiusY, m_SunShadowMapSize);
         m_LastSunShadowViewProjVoxel[cascadeIndex] = lightViewProjVoxel;
 
         glBindFramebuffer(GL_FRAMEBUFFER, m_SunShadowFbo[cascadeIndex]);
         glViewport(0, 0, m_SunShadowMapSize, m_SunShadowMapSize);
         if (cascadeIndex == 0 && useNearEvsmMoments) {
-            const GLenum drawBuffers[1] = { GL_COLOR_ATTACHMENT0 };
+            const GLenum drawBuffers[1] = {GL_COLOR_ATTACHMENT0};
             glDrawBuffers(1, drawBuffers);
             glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
             if (shadowWriteMomentsLoc >= 0) {
@@ -1010,16 +975,11 @@ bool Renderer::renderSunShadowMaps(
             }
             const float clearPos = std::exp(evsmPosExponent);
             const float clearNeg = -std::exp(-evsmNegExponent);
-            const float clearMoments[4] = {
-                clearPos,
-                clearPos * clearPos,
-                clearNeg,
-                clearNeg * clearNeg
-            };
+            const float clearMoments[4] = {clearPos, clearPos * clearPos, clearNeg,
+                                           clearNeg * clearNeg};
             glClearBufferfv(GL_COLOR, 0, clearMoments);
             glClear(GL_DEPTH_BUFFER_BIT);
-        }
-        else {
+        } else {
             // Depth-only draw state for cascade FBOs is configured at creation time.
             // Avoid redundant per-frame glDrawBuffer calls on some drivers.
             glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
@@ -1029,7 +989,8 @@ bool Renderer::renderSunShadowMaps(
             glClear(GL_DEPTH_BUFFER_BIT);
         }
         if (shadowCasterNormalBiasLoc >= 0) {
-            glUniform1f(shadowCasterNormalBiasLoc, casterNormalBiasBase[cascadeIndex] * lowSunBoost);
+            glUniform1f(shadowCasterNormalBiasLoc,
+                        casterNormalBiasBase[cascadeIndex] * lowSunBoost);
         }
         if (shadowCasterLightBiasLoc >= 0) {
             glUniform1f(shadowCasterLightBiasLoc, casterLightBiasBase[cascadeIndex] * lowSunBoost);
@@ -1039,19 +1000,14 @@ bool Renderer::renderSunShadowMaps(
         const float polygonUnitsScale = glm::mix(1.0f, lowSunBoost, 0.78f);
         if (cascadeIndex == 0) {
             glPolygonOffset(0.0f, 0.30f * polygonUnitsScale);
-        }
-        else {
+        } else {
             glPolygonOffset(0.0f, 0.44f * polygonUnitsScale);
         }
 
         const int cascadeRenderDistance = std::max(
-            2,
-            static_cast<int>(std::ceil(cascadeFarMeters / static_cast<float>(CHUNK_SIZE))) + 2);
-        params.chunkManager.renderChunksDepthPass(
-            m_SunShadowProgram,
-            lightViewProjVoxel,
-            shadowCenter,
-            cascadeRenderDistance);
+            2, static_cast<int>(std::ceil(cascadeFarMeters / static_cast<float>(CHUNK_SIZE))) + 2);
+        params.chunkManager.renderChunksDepthPass(m_SunShadowProgram, lightViewProjVoxel,
+                                                  shadowCenter, cascadeRenderDistance);
         logSunShadowStageError("renderChunksDepthPass", cascadeIndex);
     }
 
@@ -1063,7 +1019,8 @@ bool Renderer::renderSunShadowMaps(
         if (!runSunShadowMomentsBlurPass()) {
             static bool loggedMomentsBlurFailure = false;
             if (!loggedMomentsBlurFailure) {
-                std::cerr << "[Renderer] EVSM near blur pass unavailable; keeping unblurred near moments this frame.\n";
+                std::cerr << "[Renderer] EVSM near blur pass unavailable; keeping unblurred near "
+                             "moments this frame.\n";
                 loggedMomentsBlurFailure = true;
             }
         }
@@ -1079,9 +1036,9 @@ bool Renderer::renderSunShadowMaps(
     return true;
 }
 
-void Renderer::runDepthLinearizePass(const glm::mat4& projection)
-{
-    if (m_SceneFbo == 0 || m_SceneDepthTex == 0 || m_SceneLinearDepthTex == 0 || m_DepthLinearizeProgram == 0) {
+void Renderer::runDepthLinearizePass(const glm::mat4 &projection) {
+    if (m_SceneFbo == 0 || m_SceneDepthTex == 0 || m_SceneLinearDepthTex == 0 ||
+        m_DepthLinearizeProgram == 0) {
         return;
     }
 
@@ -1089,7 +1046,7 @@ void Renderer::runDepthLinearizePass(const glm::mat4& projection)
     glBindFramebuffer(GL_FRAMEBUFFER, m_SceneFbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, 0, 0);
 
-    const GLenum drawBuffers[1] = { GL_COLOR_ATTACHMENT1 };
+    const GLenum drawBuffers[1] = {GL_COLOR_ATTACHMENT1};
     glDrawBuffers(1, drawBuffers);
     glViewport(0, 0, m_SceneWidth, m_SceneHeight);
     glDisable(GL_DEPTH_TEST);
@@ -1120,31 +1077,28 @@ void Renderer::runDepthLinearizePass(const glm::mat4& projection)
     // Restore scene depth attachment for next frame's world rendering.
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_SceneDepthTex, 0);
 
-    const GLenum sceneColorBuffer[1] = { GL_COLOR_ATTACHMENT0 };
+    const GLenum sceneColorBuffer[1] = {GL_COLOR_ATTACHMENT0};
     glDrawBuffers(1, sceneColorBuffer);
     glDepthMask(GL_TRUE);
 }
 
-
-void Renderer::beginFrame()
-{
+void Renderer::beginFrame() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-void Renderer::endFrame()
-{
+void Renderer::endFrame() {
     // swap buffers (outside if handled elsewhere)
 }
 
-void Renderer::renderFrame(RenderFrameParams& params)
-{
+void Renderer::renderFrame(RenderFrameParams &params) {
     drainPendingRendererGlErrors("frame start");
-    const Camera& cullingCamera = params.cullingCamera ? *params.cullingCamera : params.activeCamera;
+    const Camera &cullingCamera =
+        params.cullingCamera ? *params.cullingCamera : params.activeCamera;
 
     int frameWidth = GameData::screenWidth;
     int frameHeight = GameData::screenHeight;
     if (frameWidth <= 0 || frameHeight <= 0) {
-        GLint viewport[4] = { 0, 0, 0, 0 };
+        GLint viewport[4] = {0, 0, 0, 0};
         glGetIntegerv(GL_VIEWPORT, viewport);
         frameWidth = viewport[2];
         frameHeight = viewport[3];
@@ -1152,7 +1106,8 @@ void Renderer::renderFrame(RenderFrameParams& params)
     if (frameWidth <= 0 || frameHeight <= 0) {
         static bool loggedInvalidFrameSize = false;
         if (!loggedInvalidFrameSize) {
-            std::cerr << "[Renderer] Skipping frame: invalid framebuffer size " << frameWidth << "x" << frameHeight << ".\n";
+            std::cerr << "[Renderer] Skipping frame: invalid framebuffer size " << frameWidth << "x"
+                      << frameHeight << ".\n";
             loggedInvalidFrameSize = true;
         }
         return;
@@ -1160,10 +1115,7 @@ void Renderer::renderFrame(RenderFrameParams& params)
 
     glm::mat4 projection = glm::perspective(
         glm::radians(GameData::FOV),
-        static_cast<float>(frameWidth) / static_cast<float>(frameHeight),
-        0.1f,
-        100000.0f
-    );
+        static_cast<float>(frameWidth) / static_cast<float>(frameHeight), 0.1f, 100000.0f);
     glm::mat4 view = params.activeCamera.getViewMatrix();
     params.sky.setViewFovYDegrees(GameData::FOV);
 
@@ -1173,7 +1125,8 @@ void Renderer::renderFrame(RenderFrameParams& params)
         if (!useExternalSceneTextures) {
             static bool loggedSceneCaptureFailure = false;
             if (!loggedSceneCaptureFailure) {
-                std::cerr << "[Renderer] Falling back to direct sky path: failed to allocate scene capture resources.\n";
+                std::cerr << "[Renderer] Falling back to direct sky path: failed to allocate scene "
+                             "capture resources.\n";
                 loggedSceneCaptureFailure = true;
             }
         }
@@ -1182,12 +1135,14 @@ void Renderer::renderFrame(RenderFrameParams& params)
     bool useExternalShadowMap = false;
     glm::mat4 externalShadowViewProj(1.0f);
     if (useExternalSceneTextures && params.sky.supportsExternalShadowMap()) {
-        useExternalShadowMap = renderSunShadowMaps(params, projection, view, externalShadowViewProj);
+        useExternalShadowMap =
+            renderSunShadowMaps(params, projection, view, externalShadowViewProj);
         drainPendingRendererGlErrors("sun shadow maps");
         if (!useExternalShadowMap) {
             static bool loggedShadowFailure = false;
             if (!loggedShadowFailure) {
-                std::cerr << "[Renderer] Realistic sky fallback: failed to render external sun shadow map.\n";
+                std::cerr << "[Renderer] Realistic sky fallback: failed to render external sun "
+                             "shadow map.\n";
                 loggedShadowFailure = true;
             }
         }
@@ -1196,15 +1151,15 @@ void Renderer::renderFrame(RenderFrameParams& params)
     if (useExternalSceneTextures) {
         static bool loggedSceneCaptureReady = false;
         if (!loggedSceneCaptureReady) {
-            std::cerr << "[Renderer] Scene capture ready: " << m_SceneWidth << "x" << m_SceneHeight << ".\n";
+            std::cerr << "[Renderer] Scene capture ready: " << m_SceneWidth << "x" << m_SceneHeight
+                      << ".\n";
             loggedSceneCaptureReady = true;
         }
         glBindFramebuffer(GL_FRAMEBUFFER, m_SceneFbo);
-        const GLenum drawBuffers[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+        const GLenum drawBuffers[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
         glDrawBuffers(2, drawBuffers);
         glViewport(0, 0, m_SceneWidth, m_SceneHeight);
-    }
-    else {
+    } else {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glViewport(0, 0, frameWidth, frameHeight);
     }
@@ -1250,21 +1205,19 @@ void Renderer::renderFrame(RenderFrameParams& params)
     // Keep physical depth units (km) to match the PbrSky sample integration path.
     params.chunkShader.setFloat("uAerialDepthScaleKm", 1.0f);
     const bool useChunkSunShadow =
-        useExternalShadowMap &&
-        (m_SunShadowDepthTex[0] != 0) &&
-        (m_SunShadowDepthTex[1] != 0);
+        useExternalShadowMap && (m_SunShadowDepthTex[0] != 0) && (m_SunShadowDepthTex[1] != 0);
     params.chunkShader.setInt("uUseSunShadowMap", useChunkSunShadow ? 1 : 0);
     // Keep sampler bindings deterministic to avoid driver draw-time sampler-type conflicts.
     params.chunkShader.setInt("texture1", 0);
     params.chunkShader.setInt("uSunShadowTexNear", 1);
     params.chunkShader.setInt("uSunShadowTexFar", 2);
     params.chunkShader.setInt("uSunShadowMomentsNear", 3);
-    params.chunkShader.setFloat(
-        "uSunShadowLowSunBiasBoost",
-        glm::clamp(params.sunShadowLowSunBiasBoost, 0.0f, 4.0f));
+    params.chunkShader.setFloat("uSunShadowLowSunBiasBoost",
+                                glm::clamp(params.sunShadowLowSunBiasBoost, 0.0f, 4.0f));
     // Realistic path disables baked channel when dynamic sun shadows are active.
     // Fall back to baked only when dynamic map is unavailable to avoid totally flat lighting.
-    const bool useBakedSunChannel = !params.sky.requiresExternalSceneTextures() || !useChunkSunShadow;
+    const bool useBakedSunChannel =
+        !params.sky.requiresExternalSceneTextures() || !useChunkSunShadow;
     params.chunkShader.setInt("uUseBakedSunChannel", useBakedSunChannel ? 1 : 0);
     if (useChunkSunShadow) {
         glActiveTexture(GL_TEXTURE1);
@@ -1280,10 +1233,10 @@ void Renderer::renderFrame(RenderFrameParams& params)
         const float texelSize = 1.0f / static_cast<float>(std::max(1, m_SunShadowMapSize));
         params.chunkShader.setVec2("uSunShadowTexelSizeNear", glm::vec2(texelSize));
         params.chunkShader.setVec2("uSunShadowTexelSizeFar", glm::vec2(texelSize));
-        params.chunkShader.setFloat("uSunShadowSplitDepthKm", m_SunShadowCascadeFarMeters[0] * 0.001f);
+        params.chunkShader.setFloat("uSunShadowSplitDepthKm",
+                                    m_SunShadowCascadeFarMeters[0] * 0.001f);
         params.chunkShader.setFloat("uSunShadowBlendKm", 0.012f);
-    }
-    else {
+    } else {
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, 0);
         glActiveTexture(GL_TEXTURE2);
@@ -1300,7 +1253,8 @@ void Renderer::renderFrame(RenderFrameParams& params)
     drainPendingRendererGlErrors("chunk pass uniforms setup");
 
     bool localUniformState = false;
-    bool& uniformsConfigured = params.chunkUniformsInitialized ? *params.chunkUniformsInitialized : localUniformState;
+    bool &uniformsConfigured =
+        params.chunkUniformsInitialized ? *params.chunkUniformsInitialized : localUniformState;
     params.chunkShader.setVec3("lightDir", lightDir);
     params.chunkShader.setVec3("lightColor", lightColor);
     if (!uniformsConfigured) {
@@ -1334,12 +1288,8 @@ void Renderer::renderFrame(RenderFrameParams& params)
     glPolygonMode(GL_FRONT_AND_BACK, params.toggleWireframe ? GL_LINE : GL_FILL);
     drainPendingRendererGlErrors("chunk pass pre-draw");
 
-    params.chunkManager.renderChunks(
-        params.chunkShader,
-        params.frustum,
-        cullingCamera.position,
-        params.player.renderDistance
-    );
+    params.chunkManager.renderChunks(params.chunkShader, params.frustum, cullingCamera.position,
+                                     params.player.renderDistance);
     drainPendingRendererGlErrors("chunk world pass");
 
     const glm::vec3 ambientColor = glm::vec3(0.36f, 0.40f, 0.46f);
@@ -1353,13 +1303,8 @@ void Renderer::renderFrame(RenderFrameParams& params)
     }
 
     if (params.toggleDebugFrustum) {
-        params.frustum.drawFrustumFaces(
-            params.debugShader,
-            projection * view,
-            view,
-            projection,
-            params.toggleWireframe
-        );
+        params.frustum.drawFrustumFaces(params.debugShader, projection * view, view, projection,
+                                        params.toggleWireframe);
         drainPendingRendererGlErrors("frustum debug pass");
     }
 
@@ -1389,8 +1334,7 @@ void Renderer::renderFrame(RenderFrameParams& params)
         params.sky.setExternalSceneTextures(m_SceneColorTex, m_SceneLinearDepthTex);
         if (useExternalShadowMap) {
             params.sky.setExternalShadowMap(m_SunShadowDepthTex[0], externalShadowViewProj);
-        }
-        else {
+        } else {
             params.sky.clearExternalShadowMap();
         }
         drainPendingRendererGlErrors("external sky input setup");
@@ -1406,14 +1350,3 @@ void Renderer::renderFrame(RenderFrameParams& params)
     // Keep downstream passes (held gun, UI overlays) deterministic.
     applyOpaqueWorldState();
 }
-
-
-
-
-
-
-
-
-
-
-

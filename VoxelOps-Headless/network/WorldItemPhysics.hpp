@@ -9,14 +9,14 @@ struct WorldItemEntity {
     uint64_t id = 0;
     uint16_t itemId = 0;
     uint16_t quantity = 0;
-    glm::vec3 position{ 0.0f };
-    glm::vec3 velocity{ 0.0f };
+    glm::vec3 position{0.0f};
+    glm::vec3 velocity{0.0f};
     float pickupCooldownSeconds = 0.0f;
     float ttlSeconds = 0.0f;
 };
 
 class WorldItemPhysicsSystem {
-public:
+  public:
     static constexpr float kGravity = 24.0f;
     static constexpr float kAirDampingPerTick = 0.995f;
     static constexpr float kGroundDampingPerTick = 0.90f;
@@ -27,10 +27,6 @@ public:
     static constexpr float kCollisionRadius = 0.17f;
     static constexpr float kCollisionHeight = 0.22f;
 
-    static void Step(
-        WorldItemEntity& item,
-        float deltaSeconds,
-        float tickRateHz,
-        const ChunkManager& chunkManager
-    );
+    static void Step(WorldItemEntity &item, float deltaSeconds, float tickRateHz,
+                     const ChunkManager &chunkManager);
 };

@@ -23,7 +23,7 @@ std::string getTextureNameForFace(BlockID blockID, int face) {
         return std::string();
     }
 
-    const BlockTexture& tex = it->second.textures;
+    const BlockTexture &tex = it->second.textures;
 
     switch (face) {
     case 0: // +X (Right)
@@ -45,21 +45,29 @@ std::string getTextureNameForFace(BlockID blockID, int face) {
 /// Optional small helpers that may be useful on the server side.
 
 // Safe accessor that returns a texture name but falls back to a provided default.
-std::string getTextureNameForFaceOr(BlockID blockID, int face, const std::string& fallback) {
+std::string getTextureNameForFaceOr(BlockID blockID, int face, const std::string &fallback) {
     std::string name = getTextureNameForFace(blockID, face);
-    if (name.empty()) return fallback;
+    if (name.empty())
+        return fallback;
     return name;
 }
 
 // Convert face index to a human-readable name (useful for logging)
 std::string faceName(int face) {
     switch (face) {
-    case 0: return "+X (Right)";
-    case 1: return "-X (Left)";
-    case 2: return "+Y (Top)";
-    case 3: return "-Y (Bottom)";
-    case 4: return "+Z (Front)";
-    case 5: return "-Z (Back)";
-    default: return "InvalidFace";
+    case 0:
+        return "+X (Right)";
+    case 1:
+        return "-X (Left)";
+    case 2:
+        return "+Y (Top)";
+    case 3:
+        return "-Y (Bottom)";
+    case 4:
+        return "+Z (Front)";
+    case 5:
+        return "-Z (Back)";
+    default:
+        return "InvalidFace";
     }
 }

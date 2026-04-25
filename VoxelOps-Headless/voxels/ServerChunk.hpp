@@ -31,7 +31,7 @@ struct EditOp {
 using ClientId = uint64_t; // or whatever type you use to identify connections
 
 class ServerChunk {
-public:
+  public:
     ServerChunk(glm::ivec3 pos = glm::ivec3(0));
 
     // Thread-safe accessors. These lock internally.
@@ -45,16 +45,16 @@ public:
     // Return diffs since version (empty optional => too old to compute diff; request full chunk)
     std::optional<std::vector<EditOp>> diffSince(int64_t knownVersion, size_t maxOps = 1024) const;
 
-    // Serialization: pack header + compressed data (you choose compression). 
+    // Serialization: pack header + compressed data (you choose compression).
     // These are thread-safe (lock inside).
     // serialize() returns raw bytes to send over network or to persist to disk.
     std::vector<uint8_t> serializeCompressed() const;
     // deserializeCompressed returns true on success (data becomes authoritative)
-    bool deserializeCompressed(const std::vector<uint8_t>& blob);
+    bool deserializeCompressed(const std::vector<uint8_t> &blob);
 
     // persistence helpers (implement per your storage backend)
-    bool loadFromDisk(const std::string& path);
-    bool saveToDisk(const std::string& path) const;
+    bool loadFromDisk(const std::string &path);
+    bool saveToDisk(const std::string &path) const;
 
     // subscription management (client connection identifiers)
     void addSubscriber(ClientId id);
@@ -62,11 +62,19 @@ public:
     std::vector<ClientId> getSubscribers() const;
 
     // metadata
-    glm::ivec3 position;     // chunk coords
-    int64_t version() const noexcept { return m_version.load(std::memory_order_acquire); }
-    bool dirty() const noexcept { return m_dirty.load(std::memory_order_relaxed); }
-    void markDirty() noexcept { m_dirty.store(true, std::memory_order_relaxed); }
-    void clearDirty() noexcept { m_dirty.store(false, std::memory_order_relaxed); }
+    glm::ivec3 position; // chunk coords
+    int64_t version() const noexcept {
+        return m_version.load(std::memory_order_acquire);
+    }
+    bool dirty() const noexcept {
+        return m_dirty.load(std::memory_order_relaxed);
+    }
+    void markDirty() noexcept {
+        m_dirty.store(true, std::memory_order_relaxed);
+    }
+    void clearDirty() noexcept {
+        m_dirty.store(false, std::memory_order_relaxed);
+    }
 
     // Return last access as steady_clock::time_point (constructed from stored ns)
     std::chrono::steady_clock::time_point getLastAccess() const noexcept {
@@ -75,14 +83,16 @@ public:
     }
 
     // helpers to get world coordinates of chunk origin
-    glm::ivec3 getWorldPosition() const noexcept { return position * CHUNK_SIZE; }
+    glm::ivec3 getWorldPosition() const noexcept {
+        return position * CHUNK_SIZE;
+    }
 
     // static helpers consistent with client
     static inline constexpr bool inBounds(int x, int y, int z) noexcept {
         return (unsigned)x < CHUNK_SIZE && (unsigned)y < CHUNK_SIZE && (unsigned)z < CHUNK_SIZE;
     }
 
-private:
+  private:
     // internal index arithmetic (same as client)
     static inline constexpr int idx(int x, int y, int z) noexcept {
         return x + CHUNK_SIZE * (y + CHUNK_SIZE * z);
@@ -90,21 +100,21 @@ private:
 
     // helper to get steady_clock now in ns (inline for header)
     static inline uint64_t nowNs() noexcept {
-        return static_cast<uint64_t>(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()
-            ).count()
-            );
+        return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                         std::chrono::steady_clock::now().time_since_epoch())
+                                         .count());
     }
 
-    // Raw voxel data (same memory layout as client). Using BlockID so server and client wire format match.
+    // Raw voxel data (same memory layout as client). Using BlockID so server and client wire format
+    // match.
     std::array<BlockID, CHUNK_VOLUME> m_blocks;
     uint16_t m_nonAirCount = 0; // modified under write-lock
 
     // authority metadata
     mutable std::shared_mutex m_mutex; // shared for readers, exclusive for writers
-    std::atomic<int64_t> m_version{ 0 };  // increment on every applied edit (atomic for lock-free reads)
-    std::atomic<bool> m_dirty{ false };
+    std::atomic<int64_t> m_version{
+        0}; // increment on every applied edit (atomic for lock-free reads)
+    std::atomic<bool> m_dirty{false};
 
     // bounded edit log to support diffs. Keep it reasonably sized.
     std::deque<EditOp> m_editLog;
@@ -114,16 +124,18 @@ private:
     std::unordered_set<ClientId> m_subscribers;
 
     // last access for eviction heuristics: store as atomic nanoseconds from steady_clock epoch
-    mutable std::atomic<uint64_t> m_lastAccessNs{ nowNs() };
+    mutable std::atomic<uint64_t> m_lastAccessNs{nowNs()};
 
     // update access time (can be called under shared_lock or unique_lock)
-    void touchLockedAtomic() const noexcept { m_lastAccessNs.store(nowNs(), std::memory_order_relaxed); }
+    void touchLockedAtomic() const noexcept {
+        m_lastAccessNs.store(nowNs(), std::memory_order_relaxed);
+    }
 
     // compression helpers: prefer LZ4; here we provide placeholder wrapper signatures
-    static std::vector<uint8_t> compressBlob(const uint8_t* data, size_t size);
-    static std::vector<uint8_t> decompressBlob(const uint8_t* data, size_t size);
+    static std::vector<uint8_t> compressBlob(const uint8_t *data, size_t size);
+    static std::vector<uint8_t> decompressBlob(const uint8_t *data, size_t size);
 
     // only used by (de)serialization to get raw voxel bytes
-    void fillRawVoxelBytes(uint8_t* outBuf, size_t bufSize) const;
-    void loadRawVoxelBytes(const uint8_t* data, size_t bufSize);
+    void fillRawVoxelBytes(uint8_t *outBuf, size_t bufSize) const;
+    void loadRawVoxelBytes(const uint8_t *data, size_t bufSize);
 };

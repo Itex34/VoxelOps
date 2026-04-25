@@ -31,7 +31,7 @@ struct GiCascadeConfig {
     // Grid spacing in world blocks.
     uint32_t spacingBlocks = 1;
     // Probe grid dimensions in probe cells.
-    glm::uvec3 probeCounts{ 0u };
+    glm::uvec3 probeCounts{0u};
     GiCascadeSchedule schedule{};
 };
 
@@ -43,7 +43,7 @@ struct GiClipmapConfig {
 
 struct GiCascadeRuntimeState {
     // World-space origin of probe [0,0,0], snapped to cascade spacing.
-    glm::ivec3 snappedOriginBlocks{ 0 };
+    glm::ivec3 snappedOriginBlocks{0};
     // Round-robin probe update cursor in flattened probe index space.
     uint32_t updateCursor = 0;
 };
@@ -63,13 +63,13 @@ struct GiFrameBudget {
 
 struct GiCascadeAtlasExtent {
     // Packed as X x (Y*Z) tiles for each probe volume slice.
-    glm::uvec2 irradianceTexels{ 0u };
-    glm::uvec2 visibilityTexels{ 0u };
+    glm::uvec2 irradianceTexels{0u};
+    glm::uvec2 visibilityTexels{0u};
 };
 
-inline uint32_t probeCount(const GiCascadeConfig& cascade) {
-    const uint64_t xy = static_cast<uint64_t>(cascade.probeCounts.x) *
-        static_cast<uint64_t>(cascade.probeCounts.y);
+inline uint32_t probeCount(const GiCascadeConfig &cascade) {
+    const uint64_t xy =
+        static_cast<uint64_t>(cascade.probeCounts.x) * static_cast<uint64_t>(cascade.probeCounts.y);
     const uint64_t xyz = xy * static_cast<uint64_t>(cascade.probeCounts.z);
     if (xyz > static_cast<uint64_t>(UINT32_MAX)) {
         return UINT32_MAX;
@@ -81,23 +81,19 @@ inline uint32_t probeTileTexels(uint32_t interiorTexels, uint32_t borderTexels) 
     return interiorTexels + (borderTexels * 2u);
 }
 
-inline GiCascadeAtlasExtent computeAtlasExtent(
-    const GiCascadeConfig& cascade,
-    const GiProbeTextureLayout& layout
-) {
-    const uint32_t irradianceTile = probeTileTexels(layout.irradianceInteriorTexels, layout.borderTexels);
-    const uint32_t visibilityTile = probeTileTexels(layout.visibilityInteriorTexels, layout.borderTexels);
+inline GiCascadeAtlasExtent computeAtlasExtent(const GiCascadeConfig &cascade,
+                                               const GiProbeTextureLayout &layout) {
+    const uint32_t irradianceTile =
+        probeTileTexels(layout.irradianceInteriorTexels, layout.borderTexels);
+    const uint32_t visibilityTile =
+        probeTileTexels(layout.visibilityInteriorTexels, layout.borderTexels);
     const uint32_t packedRows = cascade.probeCounts.y * cascade.probeCounts.z;
 
     GiCascadeAtlasExtent out{};
-    out.irradianceTexels = glm::uvec2(
-        cascade.probeCounts.x * irradianceTile,
-        packedRows * irradianceTile
-    );
-    out.visibilityTexels = glm::uvec2(
-        cascade.probeCounts.x * visibilityTile,
-        packedRows * visibilityTile
-    );
+    out.irradianceTexels =
+        glm::uvec2(cascade.probeCounts.x * irradianceTile, packedRows * irradianceTile);
+    out.visibilityTexels =
+        glm::uvec2(cascade.probeCounts.x * visibilityTile, packedRows * visibilityTile);
     return out;
 }
 
@@ -110,30 +106,29 @@ inline int32_t floorDiv(int32_t value, int32_t divisor) {
     return q;
 }
 
-inline glm::ivec3 snapCascadeOriginBlocks(const glm::vec3& playerPositionBlocks, const GiCascadeConfig& cascade) {
+inline glm::ivec3 snapCascadeOriginBlocks(const glm::vec3 &playerPositionBlocks,
+                                          const GiCascadeConfig &cascade) {
     const int32_t spacing = std::max(1, static_cast<int32_t>(cascade.spacingBlocks));
     const glm::ivec3 playerCell(
         floorDiv(static_cast<int32_t>(std::floor(playerPositionBlocks.x)), spacing),
         floorDiv(static_cast<int32_t>(std::floor(playerPositionBlocks.y)), spacing),
-        floorDiv(static_cast<int32_t>(std::floor(playerPositionBlocks.z)), spacing)
-    );
+        floorDiv(static_cast<int32_t>(std::floor(playerPositionBlocks.z)), spacing));
     const glm::ivec3 halfGrid = glm::ivec3(cascade.probeCounts) / 2;
     return (playerCell - halfGrid) * spacing;
 }
 
-inline GiCascadeFrameBudget buildCascadeFrameBudget(
-    const GiCascadeConfig& cascade,
-    GiCascadeRuntimeState& runtime,
-    uint64_t frameIndex
-) {
+inline GiCascadeFrameBudget buildCascadeFrameBudget(const GiCascadeConfig &cascade,
+                                                    GiCascadeRuntimeState &runtime,
+                                                    uint64_t frameIndex) {
     GiCascadeFrameBudget out{};
     const uint32_t totalProbes = probeCount(cascade);
     if (totalProbes == 0) {
         return out;
     }
 
-    const GiCascadeSchedule& schedule = cascade.schedule;
-    if (schedule.updateEveryNFrames == 0 || schedule.maxProbeUpdatesPerTick == 0 || schedule.raysPerProbe == 0) {
+    const GiCascadeSchedule &schedule = cascade.schedule;
+    if (schedule.updateEveryNFrames == 0 || schedule.maxProbeUpdatesPerTick == 0 ||
+        schedule.raysPerProbe == 0) {
         return out;
     }
     if ((frameIndex % schedule.updateEveryNFrames) != 0) {
@@ -153,44 +148,40 @@ inline GiCascadeFrameBudget buildCascadeFrameBudget(
     return out;
 }
 
-inline GiFrameBudget buildFrameBudget(
-    const GiClipmapConfig& config,
-    std::array<GiCascadeRuntimeState, MAX_CASCADES>& runtime,
-    uint64_t frameIndex
-) {
+inline GiFrameBudget buildFrameBudget(const GiClipmapConfig &config,
+                                      std::array<GiCascadeRuntimeState, MAX_CASCADES> &runtime,
+                                      uint64_t frameIndex) {
     GiFrameBudget frame{};
     const uint32_t cascadeCount = std::min(config.cascadeCount, MAX_CASCADES);
     for (uint32_t cascadeIndex = 0; cascadeIndex < cascadeCount; ++cascadeIndex) {
-        frame.cascades[cascadeIndex] = buildCascadeFrameBudget(
-            config.cascades[cascadeIndex],
-            runtime[cascadeIndex],
-            frameIndex
-        );
+        frame.cascades[cascadeIndex] = buildCascadeFrameBudget(config.cascades[cascadeIndex],
+                                                               runtime[cascadeIndex], frameIndex);
         frame.totalProbesUpdated += frame.cascades[cascadeIndex].probesUpdated;
         frame.totalRaysCast += frame.cascades[cascadeIndex].raysCast;
     }
     return frame;
 }
 
-inline uint64_t estimateWorstCaseRaysPerFrame(const GiClipmapConfig& config) {
+inline uint64_t estimateWorstCaseRaysPerFrame(const GiClipmapConfig &config) {
     uint64_t rays = 0;
     const uint32_t cascadeCount = std::min(config.cascadeCount, MAX_CASCADES);
     for (uint32_t cascadeIndex = 0; cascadeIndex < cascadeCount; ++cascadeIndex) {
-        const GiCascadeConfig& cascade = config.cascades[cascadeIndex];
-        const uint64_t probes = std::min<uint64_t>(probeCount(cascade), cascade.schedule.maxProbeUpdatesPerTick);
+        const GiCascadeConfig &cascade = config.cascades[cascadeIndex];
+        const uint64_t probes =
+            std::min<uint64_t>(probeCount(cascade), cascade.schedule.maxProbeUpdatesPerTick);
         rays += probes * static_cast<uint64_t>(cascade.schedule.raysPerProbe);
     }
     return rays;
 }
 
-inline double estimateAverageRaysPerFrame(const GiClipmapConfig& config) {
+inline double estimateAverageRaysPerFrame(const GiClipmapConfig &config) {
     double rays = 0.0;
     const uint32_t cascadeCount = std::min(config.cascadeCount, MAX_CASCADES);
     for (uint32_t cascadeIndex = 0; cascadeIndex < cascadeCount; ++cascadeIndex) {
-        const GiCascadeConfig& cascade = config.cascades[cascadeIndex];
+        const GiCascadeConfig &cascade = config.cascades[cascadeIndex];
         const uint32_t n = std::max(1u, cascade.schedule.updateEveryNFrames);
-        const double probesPerFrame = static_cast<double>(cascade.schedule.maxProbeUpdatesPerTick) /
-            static_cast<double>(n);
+        const double probesPerFrame =
+            static_cast<double>(cascade.schedule.maxProbeUpdatesPerTick) / static_cast<double>(n);
         rays += probesPerFrame * static_cast<double>(cascade.schedule.raysPerProbe);
     }
     return rays;
@@ -226,4 +217,3 @@ inline GiClipmapConfig makeDefaultConfig() {
 }
 
 } // namespace GiClipmapPlan
-

@@ -33,15 +33,14 @@ constexpr float kGiTemporalBlend = 0.14f;
 constexpr uint32_t kGiOccupancyPaddingMultiplier = 2;
 constexpr float kGiLumaFixedScale = 100000.0f;
 constexpr bool kEnablePathTracedGi = true;
-constexpr uint32_t kPathTraceRaysPerPixel = 2u;
+constexpr uint32_t kPathTraceRaysPerPixel = 1u;
 constexpr uint32_t kPathTraceMaxBounces = 2u;
 constexpr float kPathTraceSkyIntensity = 1.0f;
-constexpr glm::ivec3 kRtDummyChunkPos{ 250000, 250000, 250000 };
+constexpr glm::ivec3 kRtDummyChunkPos{250000, 250000, 250000};
 
 std::string toLowerCopy(std::string value) {
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return value;
 }
 
@@ -56,7 +55,7 @@ bool isSolidBlock(BlockID id) {
     return id != BlockID::Air;
 }
 
-vk::raii::ShaderModule loadShaderModule(const vk::raii::Device& device, const std::string& path) {
+vk::raii::ShaderModule loadShaderModule(const vk::raii::Device &device, const std::string &path) {
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file) {
         throw std::runtime_error("Failed to open shader: " + path);
@@ -69,7 +68,7 @@ vk::raii::ShaderModule loadShaderModule(const vk::raii::Device& device, const st
 
     std::vector<uint32_t> code(size / 4);
     file.seekg(0);
-    file.read(reinterpret_cast<char*>(code.data()), static_cast<std::streamsize>(size));
+    file.read(reinterpret_cast<char *>(code.data()), static_cast<std::streamsize>(size));
     if (!file) {
         throw std::runtime_error("Failed to read shader: " + path);
     }
@@ -80,7 +79,7 @@ vk::raii::ShaderModule loadShaderModule(const vk::raii::Device& device, const st
     return vk::raii::ShaderModule(device, shaderModuleInfo);
 }
 
-inline void setOccupancyBit(std::vector<uint32_t>& words, uint32_t linearIndex) {
+inline void setOccupancyBit(std::vector<uint32_t> &words, uint32_t linearIndex) {
     const uint32_t wordIndex = linearIndex >> 5u;
     const uint32_t bit = linearIndex & 31u;
     if (wordIndex < words.size()) {
@@ -89,8 +88,8 @@ inline void setOccupancyBit(std::vector<uint32_t>& words, uint32_t linearIndex) 
 }
 
 struct DeviceBufferAllocation {
-    vk::raii::Buffer buffer{ nullptr };
-    vk::raii::DeviceMemory memory{ nullptr };
+    vk::raii::Buffer buffer{nullptr};
+    vk::raii::DeviceMemory memory{nullptr};
 
     void reset() {
         buffer.clear();
@@ -98,15 +97,10 @@ struct DeviceBufferAllocation {
     }
 };
 
-void createBufferWithAddressing(
-    const vk::raii::Device& device,
-    const vk::raii::PhysicalDevice& physicalDevice,
-    vk::DeviceSize size,
-    vk::BufferUsageFlags usage,
-    vk::MemoryPropertyFlags properties,
-    bool enableDeviceAddress,
-    DeviceBufferAllocation& outBuffer
-) {
+void createBufferWithAddressing(const vk::raii::Device &device,
+                                const vk::raii::PhysicalDevice &physicalDevice, vk::DeviceSize size,
+                                vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties,
+                                bool enableDeviceAddress, DeviceBufferAllocation &outBuffer) {
     outBuffer.reset();
 
     vk::BufferCreateInfo bufferInfo{};
@@ -119,11 +113,8 @@ void createBufferWithAddressing(
 
     vk::MemoryAllocateInfo allocInfo{};
     allocInfo.allocationSize = requirements.size;
-    allocInfo.memoryTypeIndex = VulkanUtils::findMemoryType(
-        physicalDevice,
-        requirements.memoryTypeBits,
-        properties
-    );
+    allocInfo.memoryTypeIndex =
+        VulkanUtils::findMemoryType(physicalDevice, requirements.memoryTypeBits, properties);
 
     vk::MemoryAllocateFlagsInfo allocFlags{};
     if (enableDeviceAddress) {
@@ -135,20 +126,20 @@ void createBufferWithAddressing(
     outBuffer.buffer.bindMemory(*outBuffer.memory, 0);
 }
 
-vk::DeviceAddress getBufferDeviceAddress(const vk::raii::Device& device, vk::Buffer buffer) {
+vk::DeviceAddress getBufferDeviceAddress(const vk::raii::Device &device, vk::Buffer buffer) {
     vk::BufferDeviceAddressInfo addressInfo{};
     addressInfo.buffer = buffer;
     return device.getBufferAddress(addressInfo);
 }
 
-glm::vec3 decodePackedVoxelPosition(const VoxelVertex& packed) {
+glm::vec3 decodePackedVoxelPosition(const VoxelVertex &packed) {
     const uint32_t x = (packed.low >> 0u) & 31u;
     const uint32_t y = (packed.low >> 5u) & 31u;
     const uint32_t z = (packed.low >> 10u) & 31u;
     return glm::vec3(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
 }
 
-VkTransformMatrixKHR makeTranslationTransform(const glm::vec3& translation) {
+VkTransformMatrixKHR makeTranslationTransform(const glm::vec3 &translation) {
     VkTransformMatrixKHR out{};
     out.matrix[0][0] = 1.0f;
     out.matrix[0][1] = 0.0f;
@@ -167,18 +158,15 @@ VkTransformMatrixKHR makeTranslationTransform(const glm::vec3& translation) {
 
 VoxelVertex makePackedVoxelVertex(uint32_t x, uint32_t y, uint32_t z) {
     VoxelVertex out{};
-    out.low =
-        ((x & 31u) << 0u) |
-        ((y & 31u) << 5u) |
-        ((z & 31u) << 10u);
+    out.low = ((x & 31u) << 0u) | ((y & 31u) << 5u) | ((z & 31u) << 10u);
     out.high = 0u;
     return out;
 }
 
 struct alignas(16) GpuProbeSample {
-    glm::vec4 irradianceDepthMean{ 0.20f, 0.24f, 0.30f, 1.0f };
+    glm::vec4 irradianceDepthMean{0.20f, 0.24f, 0.30f, 1.0f};
     // x = directional strength, y = integrated frames, zw = oct-encoded dominant direction
-    glm::vec4 depthMomentFrames{ 0.0f, 0.0f, 0.5f, 1.0f };
+    glm::vec4 depthMomentFrames{0.0f, 0.0f, 0.5f, 1.0f};
 };
 
 struct alignas(16) GpuProbeStats {
@@ -226,34 +214,34 @@ struct alignas(16) GiComputePushConstants {
     float sunDirZ = 0.42f;
     float sunIntensity = 1.10f;
 };
-}
+} // namespace
 
 struct VulkanRenderDevice::GiComputeState {
     struct CascadeResources {
-        glm::ivec3 occupancyMinBlocks{ 0 };
-        glm::uvec3 occupancyDims{ 0u };
+        glm::ivec3 occupancyMinBlocks{0};
+        glm::uvec3 occupancyDims{0u};
         uint32_t occupancyWordCount = 0;
         std::vector<uint32_t> occupancyWords;
-        glm::ivec3 occupancyAnchorSnappedOrigin{ std::numeric_limits<int>::min() };
+        glm::ivec3 occupancyAnchorSnappedOrigin{std::numeric_limits<int>::min()};
         uint64_t occupancyLastBuildFrame = 0;
 
-        vk::raii::Buffer occupancyBuffer{ nullptr };
-        vk::raii::DeviceMemory occupancyMemory{ nullptr };
-        void* occupancyMapped = nullptr;
+        vk::raii::Buffer occupancyBuffer{nullptr};
+        vk::raii::DeviceMemory occupancyMemory{nullptr};
+        void *occupancyMapped = nullptr;
 
         std::vector<uint32_t> materialIds;
-        vk::raii::Buffer materialBuffer{ nullptr };
-        vk::raii::DeviceMemory materialMemory{ nullptr };
-        void* materialMapped = nullptr;
+        vk::raii::Buffer materialBuffer{nullptr};
+        vk::raii::DeviceMemory materialMemory{nullptr};
+        void *materialMapped = nullptr;
 
-        vk::raii::Buffer probeBuffer{ nullptr };
-        vk::raii::DeviceMemory probeMemory{ nullptr };
-        void* probeMapped = nullptr;
+        vk::raii::Buffer probeBuffer{nullptr};
+        vk::raii::DeviceMemory probeMemory{nullptr};
+        void *probeMapped = nullptr;
         uint32_t probeCount = 0;
 
-        vk::raii::Buffer statsBuffer{ nullptr };
-        vk::raii::DeviceMemory statsMemory{ nullptr };
-        void* statsMapped = nullptr;
+        vk::raii::Buffer statsBuffer{nullptr};
+        vk::raii::DeviceMemory statsMemory{nullptr};
+        void *statsMapped = nullptr;
 
         void reset() {
             if (occupancyMapped != nullptr) {
@@ -297,19 +285,19 @@ struct VulkanRenderDevice::GiComputeState {
     bool timestampEnabled = false;
     float timestampPeriodNs = 0.0f;
 
-    vk::raii::DescriptorSetLayout descriptorSetLayout{ nullptr };
-    vk::raii::DescriptorPool descriptorPool{ nullptr };
+    vk::raii::DescriptorSetLayout descriptorSetLayout{nullptr};
+    vk::raii::DescriptorPool descriptorPool{nullptr};
     std::vector<vk::raii::DescriptorSet> descriptorSets;
-    vk::raii::PipelineLayout pipelineLayout{ nullptr };
-    vk::raii::Pipeline pipeline{ nullptr };
-    vk::raii::CommandPool commandPool{ nullptr };
-    vk::raii::CommandBuffer commandBuffer{ nullptr };
-    vk::raii::Fence fence{ nullptr };
-    vk::raii::QueryPool queryPool{ nullptr };
+    vk::raii::PipelineLayout pipelineLayout{nullptr};
+    vk::raii::Pipeline pipeline{nullptr};
+    vk::raii::CommandPool commandPool{nullptr};
+    vk::raii::CommandBuffer commandBuffer{nullptr};
+    vk::raii::Fence fence{nullptr};
+    vk::raii::QueryPool queryPool{nullptr};
     std::array<CascadeResources, GiClipmapPlan::MAX_CASCADES> cascades{};
 
     void reset() {
-        for (CascadeResources& cascade : cascades) {
+        for (CascadeResources &cascade : cascades) {
             cascade.reset();
         }
         descriptorSets.clear();
@@ -332,7 +320,7 @@ struct VulkanRenderDevice::RtSceneState {
         DeviceBufferAllocation vertexBuffer{};
         DeviceBufferAllocation indexBuffer{};
         DeviceBufferAllocation asBuffer{};
-        vk::raii::AccelerationStructureKHR as{ nullptr };
+        vk::raii::AccelerationStructureKHR as{nullptr};
         uint64_t revision = 0;
         uint32_t primitiveCount = 0;
 
@@ -353,7 +341,7 @@ struct VulkanRenderDevice::RtSceneState {
 
     struct RetiredTlas {
         DeviceBufferAllocation asBuffer{};
-        vk::raii::AccelerationStructureKHR as{ nullptr };
+        vk::raii::AccelerationStructureKHR as{nullptr};
         uint64_t retireFrame = 0;
 
         void reset() {
@@ -363,13 +351,13 @@ struct VulkanRenderDevice::RtSceneState {
         }
     };
 
-    vk::raii::CommandPool commandPool{ nullptr };
+    vk::raii::CommandPool commandPool{nullptr};
     ChunkBlas dummyBlas{};
     std::unordered_map<glm::ivec3, ChunkBlas, IVec3Hash> chunkBlases;
     std::vector<RetiredChunkBlas> retiredChunkBlases;
 
     DeviceBufferAllocation tlasAsBuffer{};
-    vk::raii::AccelerationStructureKHR tlas{ nullptr };
+    vk::raii::AccelerationStructureKHR tlas{nullptr};
     std::vector<RetiredTlas> retiredTlases;
 
     bool ready = false;
@@ -377,17 +365,17 @@ struct VulkanRenderDevice::RtSceneState {
     void reset() {
         tlas.clear();
         tlasAsBuffer.reset();
-        for (RetiredTlas& retired : retiredTlases) {
+        for (RetiredTlas &retired : retiredTlases) {
             retired.reset();
         }
         retiredTlases.clear();
 
-        for (RetiredChunkBlas& retired : retiredChunkBlases) {
+        for (RetiredChunkBlas &retired : retiredChunkBlases) {
             retired.blas.reset();
         }
         retiredChunkBlases.clear();
 
-        for (auto& [_, chunkBlas] : chunkBlases) {
+        for (auto &[_, chunkBlas] : chunkBlases) {
             chunkBlas.reset();
         }
         chunkBlases.clear();
@@ -404,7 +392,7 @@ VulkanRenderDevice::~VulkanRenderDevice() {
     shutdown();
 }
 
-bool VulkanRenderDevice::initialize(SDL_Window* window) {
+bool VulkanRenderDevice::initialize(SDL_Window *window) {
     if (window == nullptr) {
         std::cerr << "[Vulkan] initialize failed: null SDL window.\n";
         return false;
@@ -419,11 +407,8 @@ bool VulkanRenderDevice::initialize(SDL_Window* window) {
         m_renderer = std::make_unique<VulkanRenderer>(*m_context);
         m_renderer->init();
 
-        m_uploadContext.init(
-            m_context->getDevice(),
-            m_context->getGraphicsQueueFamily(),
-            m_context->getGraphicsQueue()
-        );
+        m_uploadContext.init(m_context->getDevice(), m_context->getGraphicsQueueFamily(),
+                             m_context->getGraphicsQueue());
 
         if (!ensureAtlasTextureLoaded()) {
             return false;
@@ -436,8 +421,7 @@ bool VulkanRenderDevice::initialize(SDL_Window* window) {
         m_initialized = true;
         m_warnedUninitializedRender = false;
         return true;
-    }
-    catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::cerr << "[Vulkan] initialize failed: " << e.what() << "\n";
         shutdown();
         return false;
@@ -453,8 +437,7 @@ void VulkanRenderDevice::onWindowResized(int width, int height) {
     }
     try {
         m_renderer->handleWindowResize(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
-    }
-    catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::cerr << "[Vulkan] handleWindowResize failed: " << e.what() << "\n";
     }
 }
@@ -528,27 +511,20 @@ bool VulkanRenderDevice::isMDIUsable() const noexcept {
     if (!m_context) {
         return false;
     }
-    return m_context->isMultiDrawIndirectEnabled() && m_context->isDrawIndirectFirstInstanceEnabled();
+    return m_context->isMultiDrawIndirectEnabled() &&
+           m_context->isDrawIndirectFirstInstanceEnabled();
 }
 
-void VulkanRenderDevice::renderFrame(RenderFrameParams& params) {
-    const Camera& cullingCamera = params.cullingCamera ? *params.cullingCamera : params.activeCamera;
-    renderFrameVulkan(
-        params.chunkManager,
-        params.activeCamera,
-        cullingCamera,
-        params.player,
-        params.sky.getSunDir()
-    );
+void VulkanRenderDevice::renderFrame(RenderFrameParams &params) {
+    const Camera &cullingCamera =
+        params.cullingCamera ? *params.cullingCamera : params.activeCamera;
+    renderFrameVulkan(params.chunkManager, params.activeCamera, cullingCamera, params.player,
+                      params.sky.getSunDir());
 }
 
-void VulkanRenderDevice::renderFrameVulkan(
-    ChunkManager& chunkManager,
-    const Camera& activeCamera,
-    const Camera& cullingCamera,
-    const Player& player,
-    const glm::vec3& sunDirection
-) {
+void VulkanRenderDevice::renderFrameVulkan(ChunkManager &chunkManager, const Camera &activeCamera,
+                                           const Camera &cullingCamera, const Player &player,
+                                           const glm::vec3 &sunDirection) {
     const auto measureMs = [](auto start, auto end) -> float {
         return static_cast<float>(std::chrono::duration<double, std::milli>(end - start).count());
     };
@@ -567,17 +543,15 @@ void VulkanRenderDevice::renderFrameVulkan(
     collectRetiredChunkMeshes();
     collectRetiredRayTracingResources();
 
-    const glm::ivec3 cullingChunk = chunkManager.worldToChunkPos(glm::ivec3(
-        static_cast<int>(std::floor(cullingCamera.position.x)),
-        static_cast<int>(std::floor(cullingCamera.position.y)),
-        static_cast<int>(std::floor(cullingCamera.position.z))
-    ));
+    const glm::ivec3 cullingChunk = chunkManager.worldToChunkPos(
+        glm::ivec3(static_cast<int>(std::floor(cullingCamera.position.x)),
+                   static_cast<int>(std::floor(cullingCamera.position.y)),
+                   static_cast<int>(std::floor(cullingCamera.position.z))));
 
     const float sunLen2 = glm::dot(sunDirection, sunDirection);
     if (sunLen2 > 1.0e-8f && std::isfinite(sunLen2)) {
         m_giSunDirection = glm::normalize(sunDirection);
-    }
-    else {
+    } else {
         m_giSunDirection = glm::normalize(glm::vec3(0.25f, 0.85f, 0.42f));
     }
 
@@ -607,14 +581,16 @@ void VulkanRenderDevice::renderFrameVulkan(
     bool resetRestirHistory = false;
     if (m_giHistoryAnchorValid) {
         const float cameraDelta = glm::length(cullingCamera.position - m_giHistoryAnchor);
-        const float sunDelta = 1.0f - glm::clamp(glm::dot(m_giSunDirection, m_prevGiHistorySunDir), -1.0f, 1.0f);
+        const float sunDelta =
+            1.0f - glm::clamp(glm::dot(m_giSunDirection, m_prevGiHistorySunDir), -1.0f, 1.0f);
         resetRestirHistory = (cameraDelta > 6.0f) || (sunDelta > 0.08f);
     }
     m_giHistoryAnchor = cullingCamera.position;
     m_prevGiHistorySunDir = m_giSunDirection;
     m_giHistoryAnchorValid = true;
 
-    const bool hardwareRtSupported = (m_context != nullptr) && m_context->isHardwareRayTracingSupported();
+    const bool hardwareRtSupported =
+        (m_context != nullptr) && m_context->isHardwareRayTracingSupported();
     const bool rtSceneReady = hardwareRtSupported && (m_activeGiSceneTlas != VK_NULL_HANDLE);
     const int runtimeTracingPreference = GameData::giTracingBackendPreference;
     bool preferHardwareRt = true;
@@ -627,40 +603,38 @@ void VulkanRenderDevice::renderFrameVulkan(
         useEnvOverride = false;
     }
     if (useEnvOverride) {
-        if (const char* env = std::getenv("VOXELOPS_GI_TRACING_BACKEND")) {
+        if (const char *env = std::getenv("VOXELOPS_GI_TRACING_BACKEND")) {
             const std::string mode = toLowerCopy(std::string(env));
             if (mode == "software" || mode == "dda" || mode == "compute") {
                 preferHardwareRt = false;
-            }
-            else if (mode == "hardware" || mode == "rt" || mode == "rtcore" || mode == "rtcores") {
+            } else if (mode == "hardware" || mode == "rt" || mode == "rtcore" ||
+                       mode == "rtcores") {
                 preferHardwareRt = true;
             }
         }
     }
-    const GiTracingBackend selectedGiTracingBackend =
-        (preferHardwareRt && rtSceneReady)
-        ? GiTracingBackend::HardwareRt
-        : GiTracingBackend::SoftwareDda;
+    const GiTracingBackend selectedGiTracingBackend = (preferHardwareRt && rtSceneReady)
+                                                          ? GiTracingBackend::HardwareRt
+                                                          : GiTracingBackend::SoftwareDda;
     if (preferHardwareRt && !rtSceneReady && !m_warnedHardwareRtUnavailable) {
-        std::cerr
-            << "[Vulkan][GI] Hardware RT backend requested but unavailable (support="
-            << (hardwareRtSupported ? "yes" : "no")
-            << ", scene="
-            << ((m_activeGiSceneTlas != VK_NULL_HANDLE) ? "ready" : "not-ready")
-            << "). "
-            << "Falling back to SoftwareDda.\n";
+        std::cerr << "[Vulkan][GI] Hardware RT backend requested but unavailable (support="
+                  << (hardwareRtSupported ? "yes" : "no")
+                  << ", scene=" << ((m_activeGiSceneTlas != VK_NULL_HANDLE) ? "ready" : "not-ready")
+                  << "). "
+                  << "Falling back to SoftwareDda.\n";
         m_warnedHardwareRtUnavailable = true;
     }
     if (!m_loggedGiTracingBackend || selectedGiTracingBackend != m_lastGiTracingBackend) {
-        std::cout
-            << "[Vulkan][GI] tracing backend="
-            << ((selectedGiTracingBackend == GiTracingBackend::HardwareRt) ? "HardwareRt" : "SoftwareDda")
-            << " pref="
-            << ((runtimeTracingPreference == 1) ? "SoftwareDda" :
-                (runtimeTracingPreference == 2) ? "HardwareRt" : "Auto")
-            << " hwRtSupported=" << (hardwareRtSupported ? "true" : "false")
-            << " sceneTlas=" << ((m_activeGiSceneTlas != VK_NULL_HANDLE) ? "ready" : "none")
-            << "\n";
+        std::cout << "[Vulkan][GI] tracing backend="
+                  << ((selectedGiTracingBackend == GiTracingBackend::HardwareRt) ? "HardwareRt"
+                                                                                 : "SoftwareDda")
+                  << " pref="
+                  << ((runtimeTracingPreference == 1)   ? "SoftwareDda"
+                      : (runtimeTracingPreference == 2) ? "HardwareRt"
+                                                        : "Auto")
+                  << " hwRtSupported=" << (hardwareRtSupported ? "true" : "false")
+                  << " sceneTlas=" << ((m_activeGiSceneTlas != VK_NULL_HANDLE) ? "ready" : "none")
+                  << "\n";
         m_loggedGiTracingBackend = true;
         m_lastGiTracingBackend = selectedGiTracingBackend;
     }
@@ -682,10 +656,9 @@ void VulkanRenderDevice::renderFrameVulkan(
         const int worldMinZ = WORLD_MIN_Z * CHUNK_SIZE;
         const int worldMaxZ = ((WORLD_MAX_Z + 1) * CHUNK_SIZE) - 1;
 
-        const uint32_t lightingCascadeCount = std::min(
-            static_cast<uint32_t>(GI_LIGHTING_MAX_CASCADES),
-            std::min(m_giConfig.cascadeCount, GiClipmapPlan::MAX_CASCADES)
-        );
+        const uint32_t lightingCascadeCount =
+            std::min(static_cast<uint32_t>(GI_LIGHTING_MAX_CASCADES),
+                     std::min(m_giConfig.cascadeCount, GiClipmapPlan::MAX_CASCADES));
         m_frameData.giLighting.cascadeCount = 0;
         m_frameData.giLighting.pathTracingEnabled = kEnablePathTracedGi;
         m_frameData.giLighting.pathTraceRaysPerPixel = kPathTraceRaysPerPixel;
@@ -694,12 +667,12 @@ void VulkanRenderDevice::renderFrameVulkan(
         m_frameData.giLighting.baseDiffuse = kEnablePathTracedGi ? 0.12f : 0.50f;
         m_frameData.giLighting.giIntensity = 1.00f;
         m_frameData.giLighting.sunIntensity = 1.35f;
-        m_frameData.giLighting.restirTemporalBlend = 0.78f;
+        m_frameData.giLighting.restirTemporalBlend = 0.86f;
         m_frameData.giLighting.restirSpatialReuse = 0.18f;
-        m_frameData.giLighting.denoiseTemporalBlend = 0.86f;
-        m_frameData.giLighting.denoiseSpatialWeight = 0.22f;
-        m_frameData.giLighting.denoiseLumaPhi = 1.6f;
-        m_frameData.giLighting.denoiseMomentBlend = 0.12f;
+        m_frameData.giLighting.denoiseTemporalBlend = 0.92f;
+        m_frameData.giLighting.denoiseSpatialWeight = 0.26f;
+        m_frameData.giLighting.denoiseLumaPhi = 2.0f;
+        m_frameData.giLighting.denoiseMomentBlend = 0.08f;
         m_frameData.giLighting.sunShadowMinVisibility = 0.00f;
         m_frameData.giLighting.sunShadowMaxDistance = backendTraceDistanceCap;
         m_frameData.giLighting.sunDirection = m_giSunDirection;
@@ -711,35 +684,32 @@ void VulkanRenderDevice::renderFrameVulkan(
         m_frameData.giLighting.tracingBackend = selectedGiTracingBackend;
         m_frameData.giLighting.sceneTlas = m_activeGiSceneTlas;
         m_frameData.giLighting.traceMaterialBuffer = VK_NULL_HANDLE;
-        m_frameData.giLighting.shadowWorldBoundsXy = glm::ivec4(worldMinX, worldMaxX, WORLD_MIN_Y, WORLD_MAX_Y);
+        m_frameData.giLighting.shadowWorldBoundsXy =
+            glm::ivec4(worldMinX, worldMaxX, WORLD_MIN_Y, WORLD_MAX_Y);
         m_frameData.giLighting.shadowWorldBoundsZ = glm::ivec4(worldMinZ, worldMaxZ, 0, 0);
 
         int shadowCascadeIndex = -1;
         uint64_t shadowCascadeVolume = 0;
         for (uint32_t cascadeIndex = 0; cascadeIndex < lightingCascadeCount; ++cascadeIndex) {
-            const auto& cascadeConfig = m_giConfig.cascades[cascadeIndex];
-            const auto& cascadeState = m_giComputeState->cascades[cascadeIndex];
-            if (cascadeState.probeBuffer == nullptr ||
-                cascadeConfig.probeCounts.x == 0 ||
-                cascadeConfig.probeCounts.y == 0 ||
-                cascadeConfig.probeCounts.z == 0) {
+            const auto &cascadeConfig = m_giConfig.cascades[cascadeIndex];
+            const auto &cascadeState = m_giComputeState->cascades[cascadeIndex];
+            if (cascadeState.probeBuffer == nullptr || cascadeConfig.probeCounts.x == 0 ||
+                cascadeConfig.probeCounts.y == 0 || cascadeConfig.probeCounts.z == 0) {
                 continue;
             }
 
-            GiCascadeLightingData& lightingCascade = m_frameData.giLighting.cascades[cascadeIndex];
-            lightingCascade.originSpacingBlocks = glm::ivec4(
-                m_giCascadeRuntime[cascadeIndex].snappedOriginBlocks,
-                static_cast<int>(std::max(1u, cascadeConfig.spacingBlocks))
-            );
+            GiCascadeLightingData &lightingCascade = m_frameData.giLighting.cascades[cascadeIndex];
+            lightingCascade.originSpacingBlocks =
+                glm::ivec4(m_giCascadeRuntime[cascadeIndex].snappedOriginBlocks,
+                           static_cast<int>(std::max(1u, cascadeConfig.spacingBlocks)));
             lightingCascade.probeCounts = glm::uvec4(cascadeConfig.probeCounts, 0u);
             lightingCascade.probeBuffer = *cascadeState.probeBuffer;
             m_frameData.giLighting.cascadeCount = cascadeIndex + 1;
 
             if (cascadeState.occupancyBuffer != nullptr && cascadeState.occupancyWordCount > 0) {
-                const uint64_t volume =
-                    static_cast<uint64_t>(cascadeState.occupancyDims.x) *
-                    static_cast<uint64_t>(cascadeState.occupancyDims.y) *
-                    static_cast<uint64_t>(cascadeState.occupancyDims.z);
+                const uint64_t volume = static_cast<uint64_t>(cascadeState.occupancyDims.x) *
+                                        static_cast<uint64_t>(cascadeState.occupancyDims.y) *
+                                        static_cast<uint64_t>(cascadeState.occupancyDims.z);
                 if (volume > shadowCascadeVolume) {
                     shadowCascadeVolume = volume;
                     shadowCascadeIndex = static_cast<int>(cascadeIndex);
@@ -750,20 +720,25 @@ void VulkanRenderDevice::renderFrameVulkan(
 
         if (shadowCascadeIndex >= 0) {
             const uint32_t selectedIndex = static_cast<uint32_t>(shadowCascadeIndex);
-            const auto& cascadeConfig = m_giConfig.cascades[selectedIndex];
-            const auto& cascadeState = m_giComputeState->cascades[selectedIndex];
-            m_frameData.giLighting.shadowOccupancyBuffer =
-                (cascadeState.occupancyBuffer != nullptr) ? *cascadeState.occupancyBuffer : VK_NULL_HANDLE;
+            const auto &cascadeConfig = m_giConfig.cascades[selectedIndex];
+            const auto &cascadeState = m_giComputeState->cascades[selectedIndex];
+            m_frameData.giLighting.shadowOccupancyBuffer = (cascadeState.occupancyBuffer != nullptr)
+                                                               ? *cascadeState.occupancyBuffer
+                                                               : VK_NULL_HANDLE;
             m_frameData.giLighting.shadowOccupancyMinBlocks = cascadeState.occupancyMinBlocks;
             m_frameData.giLighting.shadowOccupancyDims = cascadeState.occupancyDims;
             m_frameData.giLighting.shadowOccupancyWordCount = cascadeState.occupancyWordCount;
-            m_frameData.giLighting.traceMaterialBuffer =
-                (cascadeState.materialBuffer != nullptr) ? *cascadeState.materialBuffer : VK_NULL_HANDLE;
+            m_frameData.giLighting.traceMaterialBuffer = (cascadeState.materialBuffer != nullptr)
+                                                             ? *cascadeState.materialBuffer
+                                                             : VK_NULL_HANDLE;
 
             const uint32_t spacing = std::max(1u, cascadeConfig.spacingBlocks);
-            const uint32_t maxProbeAxis = std::max({ cascadeConfig.probeCounts.x, cascadeConfig.probeCounts.y, cascadeConfig.probeCounts.z });
+            const uint32_t maxProbeAxis =
+                std::max({cascadeConfig.probeCounts.x, cascadeConfig.probeCounts.y,
+                          cascadeConfig.probeCounts.z});
             const float traceDistance = std::max(64.0f, static_cast<float>(maxProbeAxis * spacing));
-            m_frameData.giLighting.sunShadowMaxDistance = std::min(traceDistance, backendTraceDistanceCap);
+            m_frameData.giLighting.sunShadowMaxDistance =
+                std::min(traceDistance, backendTraceDistanceCap);
 
             const bool traceSceneReady =
                 (m_frameData.giLighting.shadowOccupancyBuffer != VK_NULL_HANDLE) &&
@@ -790,8 +765,7 @@ void VulkanRenderDevice::renderFrameVulkan(
             m_frameData.giLighting.sunShadowsEnabled =
                 (!m_frameData.giLighting.pathTracingEnabled) &&
                 (m_frameData.giLighting.shadowOccupancyBuffer != VK_NULL_HANDLE);
-        }
-        else {
+        } else {
             if (m_lastTraceSceneValid) {
                 m_frameData.giLighting.shadowOccupancyBuffer = m_lastTraceOccupancyBuffer;
                 m_frameData.giLighting.traceMaterialBuffer = m_lastTraceMaterialBuffer;
@@ -806,13 +780,12 @@ void VulkanRenderDevice::renderFrameVulkan(
         }
     }
 
-    const bool currentGiStable =
-        m_frameData.giLighting.pathTracingEnabled &&
-        (m_frameData.giLighting.shadowOccupancyBuffer != VK_NULL_HANDLE) &&
-        (m_frameData.giLighting.traceMaterialBuffer != VK_NULL_HANDLE) &&
-        (m_frameData.giLighting.shadowOccupancyDims.x > 0u) &&
-        (m_frameData.giLighting.shadowOccupancyDims.y > 0u) &&
-        (m_frameData.giLighting.shadowOccupancyDims.z > 0u);
+    const bool currentGiStable = m_frameData.giLighting.pathTracingEnabled &&
+                                 (m_frameData.giLighting.shadowOccupancyBuffer != VK_NULL_HANDLE) &&
+                                 (m_frameData.giLighting.traceMaterialBuffer != VK_NULL_HANDLE) &&
+                                 (m_frameData.giLighting.shadowOccupancyDims.x > 0u) &&
+                                 (m_frameData.giLighting.shadowOccupancyDims.y > 0u) &&
+                                 (m_frameData.giLighting.shadowOccupancyDims.z > 0u);
     if (currentGiStable) {
         m_lastGiLighting = m_frameData.giLighting;
         m_lastGiLightingValid = true;
@@ -834,11 +807,8 @@ void VulkanRenderDevice::renderFrameVulkan(
 
     glm::mat4 view = activeCamera.getViewMatrix();
     glm::mat4 projection = glm::perspectiveRH_ZO(
-        glm::radians(GameData::FOV),
-        static_cast<float>(width) / static_cast<float>(height),
-        0.1f,
-        1000.0f
-    );
+        glm::radians(GameData::FOV), static_cast<float>(width) / static_cast<float>(height), 0.1f,
+        1000.0f);
     projection[1][1] *= -1.0f;
     const glm::mat4 viewProjection = projection * view;
     Frustum frustum;
@@ -846,18 +816,18 @@ void VulkanRenderDevice::renderFrameVulkan(
     frustum.extractPlanes(cullingViewProjection, true);
 
     const int maxRenderDistance = std::max(2, static_cast<int>(player.renderDistance));
-    const int64_t radius2 = static_cast<int64_t>(maxRenderDistance) * static_cast<int64_t>(maxRenderDistance);
+    const int64_t radius2 =
+        static_cast<int64_t>(maxRenderDistance) * static_cast<int64_t>(maxRenderDistance);
     const auto frameBuildStart = std::chrono::steady_clock::now();
 
-    for (const auto& [chunkPos, cached] : m_chunkMeshes) {
+    for (const auto &[chunkPos, cached] : m_chunkMeshes) {
         if (cached.mesh.getIndexCount() == 0) {
             continue;
         }
 
         const glm::ivec3 d = chunkPos - cullingChunk;
-        const int64_t dist2 =
-            static_cast<int64_t>(d.x) * static_cast<int64_t>(d.x) +
-            static_cast<int64_t>(d.z) * static_cast<int64_t>(d.z);
+        const int64_t dist2 = static_cast<int64_t>(d.x) * static_cast<int64_t>(d.x) +
+                              static_cast<int64_t>(d.z) * static_cast<int64_t>(d.z);
         if (dist2 > radius2) {
             continue;
         }
@@ -889,19 +859,22 @@ void VulkanRenderDevice::renderFrameVulkan(
         m_frameData.indirectBatches.push_back(batch);
     }
 
-    if (ensureRemotePlayerAssetsLoaded() && m_remotePlayerModel && m_remotePlayerModel->hasLocalBounds()) {
+    if (ensureRemotePlayerAssetsLoaded() && m_remotePlayerModel &&
+        m_remotePlayerModel->hasLocalBounds()) {
         constexpr float kLocalGhostRejectDistance = 2.0f;
-        const float localGhostRejectDistanceSq = kLocalGhostRejectDistance * kLocalGhostRejectDistance;
+        const float localGhostRejectDistanceSq =
+            kLocalGhostRejectDistance * kLocalGhostRejectDistance;
 
         const glm::vec3 localMin = m_remotePlayerModel->getLocalMinBounds();
         const glm::vec3 localMax = m_remotePlayerModel->getLocalMaxBounds();
         const glm::vec3 modelSize = localMax - localMin;
-        const float targetHeight = std::max(Shared::PlayerData::GetMovementSettings().collisionHeight, 0.01f);
+        const float targetHeight =
+            std::max(Shared::PlayerData::GetMovementSettings().collisionHeight, 0.01f);
         const float uniformFitToCollision = targetHeight / std::max(modelSize.y, 1.0e-4f);
         const float modelMinY = localMin.y;
 
         m_frameData.objects.reserve(m_frameData.objects.size() + player.connectedPlayers.size());
-        for (const auto& [_, state] : player.connectedPlayers) {
+        for (const auto &[_, state] : player.connectedPlayers) {
             const glm::vec3 toLocal = state.position - player.getPosition();
             const float localDistSq = glm::dot(toLocal, toLocal);
             if (!std::isfinite(localDistSq) || localDistSq < localGhostRejectDistanceSq) {
@@ -911,18 +884,15 @@ void VulkanRenderDevice::renderFrameVulkan(
             const glm::vec3 scaled = state.scale * uniformFitToCollision;
             const glm::vec3 anchoredPos =
                 state.position + glm::vec3(0.0f, -modelMinY * scaled.y, 0.0f);
-            const glm::quat safeRotation =
-                (glm::dot(state.rotation, state.rotation) > 1.0e-10f)
-                ? glm::normalize(state.rotation)
-                : glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+            const glm::quat safeRotation = (glm::dot(state.rotation, state.rotation) > 1.0e-10f)
+                                               ? glm::normalize(state.rotation)
+                                               : glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
 
             RenderObject object{};
             object.model = m_remotePlayerModel.get();
             object.meshTextures = &m_remotePlayerTextureViews;
-            object.transform =
-                glm::translate(glm::mat4(1.0f), anchoredPos) *
-                glm::toMat4(safeRotation) *
-                glm::scale(glm::mat4(1.0f), scaled);
+            object.transform = glm::translate(glm::mat4(1.0f), anchoredPos) *
+                               glm::toMat4(safeRotation) * glm::scale(glm::mat4(1.0f), scaled);
             m_frameData.objects.push_back(object);
         }
     }
@@ -930,15 +900,10 @@ void VulkanRenderDevice::renderFrameVulkan(
     m_lastTimingSnapshot.cpuFrameBuildMs = measureMs(frameBuildStart, frameBuildEnd);
 
     try {
-        m_renderer->renderFrame(
-            static_cast<uint32_t>(width),
-            static_cast<uint32_t>(height),
-            view,
-            projection,
-            viewProjection,
-            m_frameData
-        );
-        const VulkanRenderer::FrameTimingStats& rendererStats = m_renderer->getLastFrameTimingStats();
+        m_renderer->renderFrame(static_cast<uint32_t>(width), static_cast<uint32_t>(height), view,
+                                projection, viewProjection, m_frameData);
+        const VulkanRenderer::FrameTimingStats &rendererStats =
+            m_renderer->getLastFrameTimingStats();
         m_lastTimingSnapshot.gpuValid = rendererStats.gpuValid;
         m_lastTimingSnapshot.gpuFrameMs = rendererStats.gpuFrameMs;
         m_lastTimingSnapshot.gpuChunkPassMs = rendererStats.gpuChunkPassMs;
@@ -950,8 +915,7 @@ void VulkanRenderDevice::renderFrameVulkan(
         m_lastTimingSnapshot.cpuUiPassMs = rendererStats.cpuUiPassMs;
         m_lastTimingSnapshot.nrdBootstrapActive = m_renderer->isNrdBootstrapActive();
         m_lastTimingSnapshot.nrdBootstrapDispatchCount = m_renderer->getNrdBootstrapDispatchCount();
-    }
-    catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::cerr << "[Vulkan] renderFrame failed: " << e.what() << "\n";
     }
 }
@@ -965,8 +929,7 @@ void VulkanRenderDevice::shutdown() {
         if (m_context) {
             m_context->getDevice().waitIdle();
         }
-    }
-    catch (...) {
+    } catch (...) {
     }
 
     cleanupChunkMeshes();
@@ -991,7 +954,9 @@ void VulkanRenderDevice::shutdown() {
     m_initialized = false;
 }
 
-std::string_view VulkanRenderDevice::getApiName() const noexcept { return "Vulkan"; }
+std::string_view VulkanRenderDevice::getApiName() const noexcept {
+    return "Vulkan";
+}
 
 bool VulkanRenderDevice::ensureInitialized() {
     if (m_initialized && m_context && m_renderer) {
@@ -1013,16 +978,12 @@ bool VulkanRenderDevice::ensureAtlasTextureLoaded() {
     }
 
     const std::string atlasPath =
-        Shared::RuntimePaths::ResolveVoxelOpsPath("assets/textures/textureAtlas.png").generic_string();
+        Shared::RuntimePaths::ResolveVoxelOpsPath("assets/textures/textureAtlas.png")
+            .generic_string();
     m_atlasTexture.initFromAtlasFileAsArray(
-        m_context->getDevice(),
-        m_context->getPhysicalDevice(),
-        m_uploadContext,
-        atlasPath,
-        static_cast<uint32_t>(TEXTURE_ATLAS_SIZE),
-        m_context->isSamplerAnisotropyEnabled(),
-        m_context->getMaxSamplerAnisotropy()
-    );
+        m_context->getDevice(), m_context->getPhysicalDevice(), m_uploadContext, atlasPath,
+        static_cast<uint32_t>(TEXTURE_ATLAS_SIZE), m_context->isSamplerAnisotropyEnabled(),
+        m_context->getMaxSamplerAnisotropy());
     m_atlasTextureLoaded = true;
     return true;
 }
@@ -1042,31 +1003,24 @@ bool VulkanRenderDevice::ensureRemotePlayerAssetsLoaded() {
             Shared::RuntimePaths::ResolveModelsPath("MinecraftPlayer/Player.fbx").generic_string();
         m_remotePlayerModel = std::make_unique<VkModel>();
         m_remotePlayerModel->loadModel(modelPath);
-        m_remotePlayerModel->initGpuResources(
-            m_context->getDevice(),
-            m_context->getPhysicalDevice(),
-            m_uploadContext
-        );
+        m_remotePlayerModel->initGpuResources(m_context->getDevice(),
+                                              m_context->getPhysicalDevice(), m_uploadContext);
 
-        const auto& meshTexturePaths = m_remotePlayerModel->getMeshTexturePaths();
+        const auto &meshTexturePaths = m_remotePlayerModel->getMeshTexturePaths();
         m_remotePlayerTextures.clear();
         m_remotePlayerTextures.reserve(meshTexturePaths.size());
-        for (const std::string& texturePath : meshTexturePaths) {
+        for (const std::string &texturePath : meshTexturePaths) {
             VkTexture texture{};
-            texture.initFromFile(
-                m_context->getDevice(),
-                m_context->getPhysicalDevice(),
-                m_uploadContext,
-                texturePath,
-                m_context->isSamplerAnisotropyEnabled(),
-                m_context->getMaxSamplerAnisotropy()
-            );
+            texture.initFromFile(m_context->getDevice(), m_context->getPhysicalDevice(),
+                                 m_uploadContext, texturePath,
+                                 m_context->isSamplerAnisotropyEnabled(),
+                                 m_context->getMaxSamplerAnisotropy());
             m_remotePlayerTextures.emplace_back(std::move(texture));
         }
 
         m_remotePlayerTextureViews.clear();
         m_remotePlayerTextureViews.reserve(m_remotePlayerTextures.size());
-        for (const VkTexture& texture : m_remotePlayerTextures) {
+        for (const VkTexture &texture : m_remotePlayerTextures) {
             m_remotePlayerTextureViews.push_back(&texture);
         }
 
@@ -1074,8 +1028,7 @@ bool VulkanRenderDevice::ensureRemotePlayerAssetsLoaded() {
         m_remotePlayerAssetsLoaded = true;
         m_warnedRemotePlayerAssets = false;
         return true;
-    }
-    catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         if (!m_warnedRemotePlayerAssets) {
             std::cerr << "[Vulkan] Failed to load remote player model assets: " << e.what() << "\n";
             m_warnedRemotePlayerAssets = true;
@@ -1111,11 +1064,10 @@ void VulkanRenderDevice::initGiClipmaps() {
     if (!initGiComputeResources()) {
         std::cerr << "[Vulkan][GI] Compute init failed, GI probe integration disabled.\n";
     }
-    std::cout
-        << "[Vulkan][GI] Clipmap init cascades=" << cascadeCount
-        << " | worstRays/frame=" << GiClipmapPlan::estimateWorstCaseRaysPerFrame(m_giConfig)
-        << " | avgRays/frame=" << GiClipmapPlan::estimateAverageRaysPerFrame(m_giConfig)
-        << "\n";
+    std::cout << "[Vulkan][GI] Clipmap init cascades=" << cascadeCount
+              << " | worstRays/frame=" << GiClipmapPlan::estimateWorstCaseRaysPerFrame(m_giConfig)
+              << " | avgRays/frame=" << GiClipmapPlan::estimateAverageRaysPerFrame(m_giConfig)
+              << "\n";
 }
 
 void VulkanRenderDevice::resetGiClipmaps() {
@@ -1153,7 +1105,7 @@ bool VulkanRenderDevice::initGiComputeResources() {
     }
 
     auto state = std::make_unique<GiComputeState>();
-    const vk::raii::Device& device = m_context->getDevice();
+    const vk::raii::Device &device = m_context->getDevice();
 
     try {
         vk::DescriptorSetLayoutBinding occupancyBinding{};
@@ -1181,11 +1133,7 @@ bool VulkanRenderDevice::initGiComputeResources() {
         statsBinding.stageFlags = vk::ShaderStageFlagBits::eCompute;
 
         const std::array<vk::DescriptorSetLayoutBinding, 4> bindings = {
-            occupancyBinding,
-            materialBinding,
-            probeBinding,
-            statsBinding
-        };
+            occupancyBinding, materialBinding, probeBinding, statsBinding};
         vk::DescriptorSetLayoutCreateInfo descriptorSetLayoutInfo{};
         descriptorSetLayoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
         descriptorSetLayoutInfo.pBindings = bindings.data();
@@ -1222,7 +1170,8 @@ bool VulkanRenderDevice::initGiComputeResources() {
         if (!shaderDir.empty() && shaderDir.back() != '/' && shaderDir.back() != '\\') {
             shaderDir.push_back('/');
         }
-        vk::raii::ShaderModule computeShader = loadShaderModule(device, shaderDir + "gi_probe_integrate.comp.spv");
+        vk::raii::ShaderModule computeShader =
+            loadShaderModule(device, shaderDir + "gi_probe_integrate.comp.spv");
 
         vk::PipelineShaderStageCreateInfo stageInfo{};
         stageInfo.stage = vk::ShaderStageFlagBits::eCompute;
@@ -1263,8 +1212,9 @@ bool VulkanRenderDevice::initGiComputeResources() {
         state->fence = vk::raii::Fence(device, fenceInfo);
 
         state->timestampEnabled = m_context->areTimestampQueriesSupported() &&
-            m_context->getTimestampPeriodNanoseconds() > 0.0f;
-        state->timestampPeriodNs = state->timestampEnabled ? m_context->getTimestampPeriodNanoseconds() : 0.0f;
+                                  m_context->getTimestampPeriodNanoseconds() > 0.0f;
+        state->timestampPeriodNs =
+            state->timestampEnabled ? m_context->getTimestampPeriodNanoseconds() : 0.0f;
         if (state->timestampEnabled) {
             vk::QueryPoolCreateInfo queryPoolInfo{};
             queryPoolInfo.queryType = vk::QueryType::eTimestamp;
@@ -1275,8 +1225,7 @@ bool VulkanRenderDevice::initGiComputeResources() {
         state->ready = true;
         m_giComputeState = std::move(state);
         return true;
-    }
-    catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         state->reset();
         std::cerr << "[Vulkan][GI] Failed to initialize compute resources: " << e.what() << "\n";
         return false;
@@ -1291,19 +1240,17 @@ void VulkanRenderDevice::resetGiComputeResources() {
     m_giComputeState.reset();
 }
 
-bool VulkanRenderDevice::dispatchGiProbeCompute(
-    ChunkManager& chunkManager,
-    const GiClipmapPlan::GiFrameBudget& frameBudget,
-    uint32_t cascadeCount
-) {
+bool VulkanRenderDevice::dispatchGiProbeCompute(ChunkManager &chunkManager,
+                                                const GiClipmapPlan::GiFrameBudget &frameBudget,
+                                                uint32_t cascadeCount) {
     if (!m_context || !m_giComputeState || !m_giComputeState->ready) {
         return false;
     }
 
-    GiComputeState& state = *m_giComputeState;
-    const vk::raii::Device& device = m_context->getDevice();
-    const vk::raii::PhysicalDevice& physicalDevice = m_context->getPhysicalDevice();
-    const vk::raii::Queue& queue = m_context->getGraphicsQueue();
+    GiComputeState &state = *m_giComputeState;
+    const vk::raii::Device &device = m_context->getDevice();
+    const vk::raii::PhysicalDevice &physicalDevice = m_context->getPhysicalDevice();
+    const vk::raii::Queue &queue = m_context->getGraphicsQueue();
 
     const int worldMinX = WORLD_MIN_X * CHUNK_SIZE;
     const int worldMaxX = ((WORLD_MAX_X + 1) * CHUNK_SIZE) - 1;
@@ -1312,8 +1259,8 @@ bool VulkanRenderDevice::dispatchGiProbeCompute(
 
     bool hasWork = false;
     for (uint32_t cascadeIndex = 0; cascadeIndex < cascadeCount; ++cascadeIndex) {
-        const GiClipmapPlan::GiCascadeConfig& cascade = m_giConfig.cascades[cascadeIndex];
-        const GiClipmapPlan::GiCascadeFrameBudget& budget = frameBudget.cascades[cascadeIndex];
+        const GiClipmapPlan::GiCascadeConfig &cascade = m_giConfig.cascades[cascadeIndex];
+        const GiClipmapPlan::GiCascadeFrameBudget &budget = frameBudget.cascades[cascadeIndex];
         if (budget.probesUpdated == 0) {
             continue;
         }
@@ -1324,34 +1271,34 @@ bool VulkanRenderDevice::dispatchGiProbeCompute(
         }
 
         const uint32_t spacing = std::max(1u, cascade.spacingBlocks);
-        const glm::ivec3 probeExtentBlocks = glm::ivec3(cascade.probeCounts) * static_cast<int>(spacing);
+        const glm::ivec3 probeExtentBlocks =
+            glm::ivec3(cascade.probeCounts) * static_cast<int>(spacing);
         const int paddingBlocks = static_cast<int>(spacing * kGiOccupancyPaddingMultiplier);
-        const glm::ivec3 occupancyMin = m_giCascadeRuntime[cascadeIndex].snappedOriginBlocks - glm::ivec3(paddingBlocks);
-        const glm::uvec3 occupancyDims = glm::uvec3(
-            std::max(1, probeExtentBlocks.x + (paddingBlocks * 2)),
-            std::max(1, probeExtentBlocks.y + (paddingBlocks * 2)),
-            std::max(1, probeExtentBlocks.z + (paddingBlocks * 2))
-        );
+        const glm::ivec3 occupancyMin =
+            m_giCascadeRuntime[cascadeIndex].snappedOriginBlocks - glm::ivec3(paddingBlocks);
+        const glm::uvec3 occupancyDims =
+            glm::uvec3(std::max(1, probeExtentBlocks.x + (paddingBlocks * 2)),
+                       std::max(1, probeExtentBlocks.y + (paddingBlocks * 2)),
+                       std::max(1, probeExtentBlocks.z + (paddingBlocks * 2)));
 
         const uint64_t occupancyVoxelCount = static_cast<uint64_t>(occupancyDims.x) *
-            static_cast<uint64_t>(occupancyDims.y) *
-            static_cast<uint64_t>(occupancyDims.z);
+                                             static_cast<uint64_t>(occupancyDims.y) *
+                                             static_cast<uint64_t>(occupancyDims.z);
         if (occupancyVoxelCount == 0) {
             continue;
         }
         const uint64_t occupancyWordCount64 = (occupancyVoxelCount + 31ull) / 32ull;
         if (occupancyWordCount64 > static_cast<uint64_t>(UINT32_MAX)) {
-            std::cerr << "[Vulkan][GI] Occupancy buffer too large for cascade " << cascadeIndex << "\n";
+            std::cerr << "[Vulkan][GI] Occupancy buffer too large for cascade " << cascadeIndex
+                      << "\n";
             continue;
         }
         const uint32_t occupancyWordCount = static_cast<uint32_t>(occupancyWordCount64);
 
-        GiComputeState::CascadeResources& resources = state.cascades[cascadeIndex];
+        GiComputeState::CascadeResources &resources = state.cascades[cascadeIndex];
         const bool needsRealloc =
-            resources.occupancyBuffer == nullptr ||
-            resources.materialBuffer == nullptr ||
-            resources.probeBuffer == nullptr ||
-            resources.statsBuffer == nullptr ||
+            resources.occupancyBuffer == nullptr || resources.materialBuffer == nullptr ||
+            resources.probeBuffer == nullptr || resources.statsBuffer == nullptr ||
             resources.occupancyDims != occupancyDims ||
             resources.occupancyWordCount != occupancyWordCount ||
             resources.probeCount != totalProbes;
@@ -1364,66 +1311,60 @@ bool VulkanRenderDevice::dispatchGiProbeCompute(
             resources.occupancyWords.assign(occupancyWordCount, 0u);
             resources.materialIds.assign(static_cast<size_t>(occupancyVoxelCount), 0u);
 
-            VulkanUtils::createBuffer(
-                device,
-                physicalDevice,
-                static_cast<vk::DeviceSize>(resources.occupancyWordCount) * sizeof(uint32_t),
-                vk::BufferUsageFlagBits::eStorageBuffer,
-                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-                resources.occupancyBuffer,
-                resources.occupancyMemory
-            );
+            VulkanUtils::createBuffer(device, physicalDevice,
+                                      static_cast<vk::DeviceSize>(resources.occupancyWordCount) *
+                                          sizeof(uint32_t),
+                                      vk::BufferUsageFlagBits::eStorageBuffer,
+                                      vk::MemoryPropertyFlagBits::eHostVisible |
+                                          vk::MemoryPropertyFlagBits::eHostCoherent,
+                                      resources.occupancyBuffer, resources.occupancyMemory);
             resources.occupancyMapped = resources.occupancyMemory.mapMemory(0, VK_WHOLE_SIZE);
 
-            VulkanUtils::createBuffer(
-                device,
-                physicalDevice,
-                static_cast<vk::DeviceSize>(occupancyVoxelCount) * sizeof(uint32_t),
-                vk::BufferUsageFlagBits::eStorageBuffer,
-                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-                resources.materialBuffer,
-                resources.materialMemory
-            );
+            VulkanUtils::createBuffer(device, physicalDevice,
+                                      static_cast<vk::DeviceSize>(occupancyVoxelCount) *
+                                          sizeof(uint32_t),
+                                      vk::BufferUsageFlagBits::eStorageBuffer,
+                                      vk::MemoryPropertyFlagBits::eHostVisible |
+                                          vk::MemoryPropertyFlagBits::eHostCoherent,
+                                      resources.materialBuffer, resources.materialMemory);
             resources.materialMapped = resources.materialMemory.mapMemory(0, VK_WHOLE_SIZE);
 
-            VulkanUtils::createBuffer(
-                device,
-                physicalDevice,
-                static_cast<vk::DeviceSize>(resources.probeCount) * sizeof(GpuProbeSample),
-                vk::BufferUsageFlagBits::eStorageBuffer,
-                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-                resources.probeBuffer,
-                resources.probeMemory
-            );
+            VulkanUtils::createBuffer(device, physicalDevice,
+                                      static_cast<vk::DeviceSize>(resources.probeCount) *
+                                          sizeof(GpuProbeSample),
+                                      vk::BufferUsageFlagBits::eStorageBuffer,
+                                      vk::MemoryPropertyFlagBits::eHostVisible |
+                                          vk::MemoryPropertyFlagBits::eHostCoherent,
+                                      resources.probeBuffer, resources.probeMemory);
             resources.probeMapped = resources.probeMemory.mapMemory(0, VK_WHOLE_SIZE);
             std::vector<GpuProbeSample> initialSamples(resources.probeCount);
-            std::memcpy(resources.probeMapped, initialSamples.data(), initialSamples.size() * sizeof(GpuProbeSample));
+            std::memcpy(resources.probeMapped, initialSamples.data(),
+                        initialSamples.size() * sizeof(GpuProbeSample));
 
-            VulkanUtils::createBuffer(
-                device,
-                physicalDevice,
-                sizeof(GpuProbeStats),
-                vk::BufferUsageFlagBits::eStorageBuffer,
-                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-                resources.statsBuffer,
-                resources.statsMemory
-            );
+            VulkanUtils::createBuffer(device, physicalDevice, sizeof(GpuProbeStats),
+                                      vk::BufferUsageFlagBits::eStorageBuffer,
+                                      vk::MemoryPropertyFlagBits::eHostVisible |
+                                          vk::MemoryPropertyFlagBits::eHostCoherent,
+                                      resources.statsBuffer, resources.statsMemory);
             resources.statsMapped = resources.statsMemory.mapMemory(0, VK_WHOLE_SIZE);
 
             vk::DescriptorBufferInfo occupancyInfo{};
             occupancyInfo.buffer = *resources.occupancyBuffer;
             occupancyInfo.offset = 0;
-            occupancyInfo.range = static_cast<vk::DeviceSize>(resources.occupancyWordCount) * sizeof(uint32_t);
+            occupancyInfo.range =
+                static_cast<vk::DeviceSize>(resources.occupancyWordCount) * sizeof(uint32_t);
 
             vk::DescriptorBufferInfo materialInfo{};
             materialInfo.buffer = *resources.materialBuffer;
             materialInfo.offset = 0;
-            materialInfo.range = static_cast<vk::DeviceSize>(occupancyVoxelCount) * sizeof(uint32_t);
+            materialInfo.range =
+                static_cast<vk::DeviceSize>(occupancyVoxelCount) * sizeof(uint32_t);
 
             vk::DescriptorBufferInfo probeInfo{};
             probeInfo.buffer = *resources.probeBuffer;
             probeInfo.offset = 0;
-            probeInfo.range = static_cast<vk::DeviceSize>(resources.probeCount) * sizeof(GpuProbeSample);
+            probeInfo.range =
+                static_cast<vk::DeviceSize>(resources.probeCount) * sizeof(GpuProbeSample);
 
             vk::DescriptorBufferInfo statsInfo{};
             statsInfo.buffer = *resources.statsBuffer;
@@ -1459,9 +1400,11 @@ bool VulkanRenderDevice::dispatchGiProbeCompute(
 
         const glm::ivec3 snappedOrigin = m_giCascadeRuntime[cascadeIndex].snappedOriginBlocks;
         const bool originChanged = resources.occupancyAnchorSnappedOrigin != snappedOrigin;
-        const uint32_t occupancyRefreshFrames = std::max(1u, cascade.schedule.updateEveryNFrames * 8u);
+        const uint32_t occupancyRefreshFrames =
+            std::max(1u, cascade.schedule.updateEveryNFrames * 8u);
         const bool periodicRefresh = resources.occupancyLastBuildFrame == 0 ||
-            (m_frameCounter - resources.occupancyLastBuildFrame) >= static_cast<uint64_t>(occupancyRefreshFrames);
+                                     (m_frameCounter - resources.occupancyLastBuildFrame) >=
+                                         static_cast<uint64_t>(occupancyRefreshFrames);
         const bool shouldRebuildOccupancy = needsRealloc || originChanged || periodicRefresh;
 
         if (shouldRebuildOccupancy) {
@@ -1488,8 +1431,7 @@ bool VulkanRenderDevice::dispatchGiProbeCompute(
                         if (yBelowWorld) {
                             solid = true;
                             blockId = BlockID::Bedrock;
-                        }
-                        else if (!yAboveWorld && !xOut && !zOut) {
+                        } else if (!yAboveWorld && !xOut && !zOut) {
                             blockId = chunkManager.getBlockGlobal(worldX, worldY, worldZ);
                             solid = isSolidBlock(blockId);
                         }
@@ -1504,14 +1446,10 @@ bool VulkanRenderDevice::dispatchGiProbeCompute(
                 }
             }
 
-            std::memcpy(
-                resources.occupancyMapped,
-                resources.occupancyWords.data(),
-                resources.occupancyWords.size() * sizeof(uint32_t));
-            std::memcpy(
-                resources.materialMapped,
-                resources.materialIds.data(),
-                resources.materialIds.size() * sizeof(uint32_t));
+            std::memcpy(resources.occupancyMapped, resources.occupancyWords.data(),
+                        resources.occupancyWords.size() * sizeof(uint32_t));
+            std::memcpy(resources.materialMapped, resources.materialIds.data(),
+                        resources.materialIds.size() * sizeof(uint32_t));
             resources.occupancyAnchorSnappedOrigin = snappedOrigin;
             resources.occupancyLastBuildFrame = m_frameCounter;
         }
@@ -1532,13 +1470,14 @@ bool VulkanRenderDevice::dispatchGiProbeCompute(
 
     if (state.timestampEnabled && state.queryPool != nullptr) {
         state.commandBuffer.resetQueryPool(*state.queryPool, 0, 2);
-        state.commandBuffer.writeTimestamp(vk::PipelineStageFlagBits::eTopOfPipe, *state.queryPool, 0);
+        state.commandBuffer.writeTimestamp(vk::PipelineStageFlagBits::eTopOfPipe, *state.queryPool,
+                                           0);
     }
 
     state.commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, *state.pipeline);
     for (uint32_t cascadeIndex = 0; cascadeIndex < cascadeCount; ++cascadeIndex) {
-        const GiClipmapPlan::GiCascadeConfig& cascade = m_giConfig.cascades[cascadeIndex];
-        const GiClipmapPlan::GiCascadeFrameBudget& budget = frameBudget.cascades[cascadeIndex];
+        const GiClipmapPlan::GiCascadeConfig &cascade = m_giConfig.cascades[cascadeIndex];
+        const GiClipmapPlan::GiCascadeFrameBudget &budget = frameBudget.cascades[cascadeIndex];
         if (budget.probesUpdated == 0) {
             continue;
         }
@@ -1548,16 +1487,15 @@ bool VulkanRenderDevice::dispatchGiProbeCompute(
             continue;
         }
 
-        const GiComputeState::CascadeResources& resources = state.cascades[cascadeIndex];
-        if (resources.occupancyBuffer == nullptr ||
-            resources.materialBuffer == nullptr ||
-            resources.probeBuffer == nullptr ||
-            resources.statsBuffer == nullptr) {
+        const GiComputeState::CascadeResources &resources = state.cascades[cascadeIndex];
+        if (resources.occupancyBuffer == nullptr || resources.materialBuffer == nullptr ||
+            resources.probeBuffer == nullptr || resources.statsBuffer == nullptr) {
             continue;
         }
 
         const uint32_t spacing = std::max(1u, cascade.spacingBlocks);
-        const uint32_t maxProbeAxis = std::max({ cascade.probeCounts.x, cascade.probeCounts.y, cascade.probeCounts.z });
+        const uint32_t maxProbeAxis =
+            std::max({cascade.probeCounts.x, cascade.probeCounts.y, cascade.probeCounts.z});
         const float maxTraceDistance = std::max(48.0f, static_cast<float>(maxProbeAxis * spacing));
 
         GiComputePushConstants push{};
@@ -1598,19 +1536,10 @@ bool VulkanRenderDevice::dispatchGiProbeCompute(
         push.sunIntensity = m_giSunIntensity;
 
         const vk::DescriptorSet descriptorSet = *state.descriptorSets[cascadeIndex];
-        state.commandBuffer.bindDescriptorSets(
-            vk::PipelineBindPoint::eCompute,
-            *state.pipelineLayout,
-            0,
-            descriptorSet,
-            {}
-        );
+        state.commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
+                                               *state.pipelineLayout, 0, descriptorSet, {});
         state.commandBuffer.pushConstants<GiComputePushConstants>(
-            *state.pipelineLayout,
-            vk::ShaderStageFlagBits::eCompute,
-            0,
-            push
-        );
+            *state.pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0, push);
 
         const uint32_t groupCount = (budget.probesUpdated + 63u) / 64u;
         if (groupCount > 0) {
@@ -1619,11 +1548,12 @@ bool VulkanRenderDevice::dispatchGiProbeCompute(
     }
 
     if (state.timestampEnabled && state.queryPool != nullptr) {
-        state.commandBuffer.writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, *state.queryPool, 1);
+        state.commandBuffer.writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe,
+                                           *state.queryPool, 1);
     }
     state.commandBuffer.end();
 
-    std::array<vk::Fence, 1> fences = { *state.fence };
+    std::array<vk::Fence, 1> fences = {*state.fence};
     (void)device.resetFences(fences);
 
     const vk::CommandBuffer rawCommandBuffer = *state.commandBuffer;
@@ -1637,33 +1567,27 @@ bool VulkanRenderDevice::dispatchGiProbeCompute(
     if (state.timestampEnabled && state.queryPool != nullptr) {
         std::array<uint64_t, 2> ticks{};
         const VkResult result = vkGetQueryPoolResults(
-            static_cast<VkDevice>(*device),
-            static_cast<VkQueryPool>(*state.queryPool),
-            0,
-            2,
-            sizeof(ticks),
-            ticks.data(),
-            sizeof(uint64_t),
-            VK_QUERY_RESULT_64_BIT
-        );
+            static_cast<VkDevice>(*device), static_cast<VkQueryPool>(*state.queryPool), 0, 2,
+            sizeof(ticks), ticks.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
         if (result == VK_SUCCESS && ticks[1] >= ticks[0]) {
             const double tickToMs = static_cast<double>(state.timestampPeriodNs) * 1.0e-6;
-            m_lastGiStats.gpuIntegrateMs = static_cast<float>(static_cast<double>(ticks[1] - ticks[0]) * tickToMs);
+            m_lastGiStats.gpuIntegrateMs =
+                static_cast<float>(static_cast<double>(ticks[1] - ticks[0]) * tickToMs);
         }
     }
 
     uint64_t totalLumaFixed = 0;
     uint64_t totalLumaCount = 0;
     for (uint32_t cascadeIndex = 0; cascadeIndex < cascadeCount; ++cascadeIndex) {
-        const GiClipmapPlan::GiCascadeFrameBudget& budget = frameBudget.cascades[cascadeIndex];
+        const GiClipmapPlan::GiCascadeFrameBudget &budget = frameBudget.cascades[cascadeIndex];
         if (budget.probesUpdated == 0) {
             continue;
         }
-        const GiComputeState::CascadeResources& resources = state.cascades[cascadeIndex];
+        const GiComputeState::CascadeResources &resources = state.cascades[cascadeIndex];
         if (resources.statsMapped == nullptr) {
             continue;
         }
-        const auto* stats = reinterpret_cast<const GpuProbeStats*>(resources.statsMapped);
+        const auto *stats = reinterpret_cast<const GpuProbeStats *>(resources.statsMapped);
         totalLumaFixed += stats->lumaSumFixed;
         totalLumaCount += stats->lumaCount;
     }
@@ -1676,7 +1600,8 @@ bool VulkanRenderDevice::dispatchGiProbeCompute(
     return true;
 }
 
-void VulkanRenderDevice::updateGiProbes(ChunkManager& chunkManager, const glm::vec3& probeAnchorPosition) {
+void VulkanRenderDevice::updateGiProbes(ChunkManager &chunkManager,
+                                        const glm::vec3 &probeAnchorPosition) {
     const auto measureMs = [](auto start, auto end) -> float {
         return static_cast<float>(std::chrono::duration<double, std::milli>(end - start).count());
     };
@@ -1689,17 +1614,13 @@ void VulkanRenderDevice::updateGiProbes(ChunkManager& chunkManager, const glm::v
     }
 
     for (uint32_t cascadeIndex = 0; cascadeIndex < cascadeCount; ++cascadeIndex) {
-        m_giCascadeRuntime[cascadeIndex].snappedOriginBlocks = GiClipmapPlan::snapCascadeOriginBlocks(
-            probeAnchorPosition,
-            m_giConfig.cascades[cascadeIndex]
-        );
+        m_giCascadeRuntime[cascadeIndex].snappedOriginBlocks =
+            GiClipmapPlan::snapCascadeOriginBlocks(probeAnchorPosition,
+                                                   m_giConfig.cascades[cascadeIndex]);
     }
 
-    const GiClipmapPlan::GiFrameBudget frameBudget = GiClipmapPlan::buildFrameBudget(
-        m_giConfig,
-        m_giCascadeRuntime,
-        m_frameCounter
-    );
+    const GiClipmapPlan::GiFrameBudget frameBudget =
+        GiClipmapPlan::buildFrameBudget(m_giConfig, m_giCascadeRuntime, m_frameCounter);
     m_lastGiStats.probesUpdated = frameBudget.totalProbesUpdated;
     m_lastGiStats.raysCast = frameBudget.totalRaysCast;
 
@@ -1716,7 +1637,7 @@ void VulkanRenderDevice::updateGiProbes(ChunkManager& chunkManager, const glm::v
 }
 
 void VulkanRenderDevice::cleanupRemotePlayerAssets() {
-    for (VkTexture& texture : m_remotePlayerTextures) {
+    for (VkTexture &texture : m_remotePlayerTextures) {
         texture.cleanup();
     }
     m_remotePlayerTextures.clear();
@@ -1738,7 +1659,7 @@ void VulkanRenderDevice::initRayTracingScene() {
         m_rtSceneState = std::make_unique<RtSceneState>();
     }
 
-    RtSceneState& rt = *m_rtSceneState;
+    RtSceneState &rt = *m_rtSceneState;
     if (rt.commandPool == nullptr) {
         vk::CommandPoolCreateInfo poolInfo{};
         poolInfo.flags = vk::CommandPoolCreateFlagBits::eTransient;
@@ -1749,12 +1670,9 @@ void VulkanRenderDevice::initRayTracingScene() {
     rt.ready = true;
     if (rt.chunkBlases.find(kRtDummyChunkPos) == rt.chunkBlases.end()) {
         CpuChunkMesh dummyMesh{};
-        dummyMesh.vertices = {
-            makePackedVoxelVertex(0u, 0u, 0u),
-            makePackedVoxelVertex(1u, 0u, 0u),
-            makePackedVoxelVertex(0u, 1u, 0u)
-        };
-        dummyMesh.indices = { 0u, 1u, 2u };
+        dummyMesh.vertices = {makePackedVoxelVertex(0u, 0u, 0u), makePackedVoxelVertex(1u, 0u, 0u),
+                              makePackedVoxelVertex(0u, 1u, 0u)};
+        dummyMesh.indices = {0u, 1u, 2u};
         dummyMesh.revision = 1u;
         (void)uploadChunkRayTracingGeometry(kRtDummyChunkPos, dummyMesh);
     }
@@ -1767,7 +1685,7 @@ void VulkanRenderDevice::collectRetiredRayTracingResources() {
         return;
     }
 
-    RtSceneState& rt = *m_rtSceneState;
+    RtSceneState &rt = *m_rtSceneState;
     for (auto it = rt.retiredChunkBlases.begin(); it != rt.retiredChunkBlases.end();) {
         if (it->retireFrame > m_frameCounter) {
             ++it;
@@ -1796,7 +1714,8 @@ void VulkanRenderDevice::resetRayTracingScene() {
     m_rtSceneState.reset();
 }
 
-bool VulkanRenderDevice::uploadChunkRayTracingGeometry(const glm::ivec3& chunkPos, const CpuChunkMesh& cpuMesh) {
+bool VulkanRenderDevice::uploadChunkRayTracingGeometry(const glm::ivec3 &chunkPos,
+                                                       const CpuChunkMesh &cpuMesh) {
     if (!m_rtSceneState || !m_rtSceneState->ready || !m_context) {
         return false;
     }
@@ -1805,18 +1724,18 @@ bool VulkanRenderDevice::uploadChunkRayTracingGeometry(const glm::ivec3& chunkPo
     }
 
     try {
-        RtSceneState& rt = *m_rtSceneState;
+        RtSceneState &rt = *m_rtSceneState;
         auto existingIt = rt.chunkBlases.find(chunkPos);
         if (existingIt != rt.chunkBlases.end() && existingIt->second.revision == cpuMesh.revision) {
             return true;
         }
 
-        const vk::raii::Device& device = m_context->getDevice();
-        const vk::raii::PhysicalDevice& physicalDevice = m_context->getPhysicalDevice();
+        const vk::raii::Device &device = m_context->getDevice();
+        const vk::raii::PhysicalDevice &physicalDevice = m_context->getPhysicalDevice();
 
         std::vector<glm::vec3> positions;
         positions.reserve(cpuMesh.vertices.size());
-        for (const VoxelVertex& packed : cpuMesh.vertices) {
+        for (const VoxelVertex &packed : cpuMesh.vertices) {
             positions.push_back(decodePackedVoxelPosition(packed));
         }
 
@@ -1826,48 +1745,36 @@ bool VulkanRenderDevice::uploadChunkRayTracingGeometry(const glm::ivec3& chunkPo
         }
 
         RtSceneState::ChunkBlas built{};
-        const vk::DeviceSize vertexBytes = static_cast<vk::DeviceSize>(positions.size() * sizeof(glm::vec3));
-        const vk::DeviceSize indexBytes = static_cast<vk::DeviceSize>(indices.size() * sizeof(uint16_t));
+        const vk::DeviceSize vertexBytes =
+            static_cast<vk::DeviceSize>(positions.size() * sizeof(glm::vec3));
+        const vk::DeviceSize indexBytes =
+            static_cast<vk::DeviceSize>(indices.size() * sizeof(uint16_t));
         createBufferWithAddressing(
-            device,
-            physicalDevice,
-            vertexBytes,
-            vk::BufferUsageFlagBits::eTransferDst |
-            vk::BufferUsageFlagBits::eShaderDeviceAddress |
-            vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR,
-            vk::MemoryPropertyFlagBits::eDeviceLocal,
-            true,
-            built.vertexBuffer
-        );
+            device, physicalDevice, vertexBytes,
+            vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR,
+            vk::MemoryPropertyFlagBits::eDeviceLocal, true, built.vertexBuffer);
         createBufferWithAddressing(
-            device,
-            physicalDevice,
-            indexBytes,
-            vk::BufferUsageFlagBits::eTransferDst |
-            vk::BufferUsageFlagBits::eShaderDeviceAddress |
-            vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR,
-            vk::MemoryPropertyFlagBits::eDeviceLocal,
-            true,
-            built.indexBuffer
-        );
+            device, physicalDevice, indexBytes,
+            vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR,
+            vk::MemoryPropertyFlagBits::eDeviceLocal, true, built.indexBuffer);
 
         std::vector<UploadContext::BufferCopyUpload> uploads;
         uploads.reserve(2);
         uploads.push_back(UploadContext::BufferCopyUpload{
             m_uploadContext.createStagingBuffer(physicalDevice, positions.data(), vertexBytes),
-            *built.vertexBuffer.buffer,
-            vertexBytes
-        });
+            *built.vertexBuffer.buffer, vertexBytes});
         uploads.push_back(UploadContext::BufferCopyUpload{
             m_uploadContext.createStagingBuffer(physicalDevice, indices.data(), indexBytes),
-            *built.indexBuffer.buffer,
-            indexBytes
-        });
+            *built.indexBuffer.buffer, indexBytes});
         m_uploadContext.submitCopyBufferBatch(std::move(uploads));
         m_uploadContext.waitIdle();
 
-        const vk::DeviceAddress vertexAddress = getBufferDeviceAddress(device, *built.vertexBuffer.buffer);
-        const vk::DeviceAddress indexAddress = getBufferDeviceAddress(device, *built.indexBuffer.buffer);
+        const vk::DeviceAddress vertexAddress =
+            getBufferDeviceAddress(device, *built.vertexBuffer.buffer);
+        const vk::DeviceAddress indexAddress =
+            getBufferDeviceAddress(device, *built.indexBuffer.buffer);
         const uint32_t primitiveCount = static_cast<uint32_t>(indices.size() / 3u);
         if (primitiveCount == 0u) {
             built.reset();
@@ -1894,23 +1801,15 @@ bool VulkanRenderDevice::uploadChunkRayTracingGeometry(const glm::ivec3& chunkPo
         buildInfo.geometryCount = 1;
         buildInfo.pGeometries = &geometry;
 
-        const std::array<uint32_t, 1> primitiveCounts = { primitiveCount };
-        const vk::AccelerationStructureBuildSizesInfoKHR sizeInfo = device.getAccelerationStructureBuildSizesKHR(
-            vk::AccelerationStructureBuildTypeKHR::eDevice,
-            buildInfo,
-            primitiveCounts
-        );
+        const std::array<uint32_t, 1> primitiveCounts = {primitiveCount};
+        const vk::AccelerationStructureBuildSizesInfoKHR sizeInfo =
+            device.getAccelerationStructureBuildSizesKHR(
+                vk::AccelerationStructureBuildTypeKHR::eDevice, buildInfo, primitiveCounts);
 
-        createBufferWithAddressing(
-            device,
-            physicalDevice,
-            sizeInfo.accelerationStructureSize,
-            vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
-            vk::BufferUsageFlagBits::eShaderDeviceAddress,
-            vk::MemoryPropertyFlagBits::eDeviceLocal,
-            true,
-            built.asBuffer
-        );
+        createBufferWithAddressing(device, physicalDevice, sizeInfo.accelerationStructureSize,
+                                   vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
+                                       vk::BufferUsageFlagBits::eShaderDeviceAddress,
+                                   vk::MemoryPropertyFlagBits::eDeviceLocal, true, built.asBuffer);
 
         vk::AccelerationStructureCreateInfoKHR asCreateInfo{};
         asCreateInfo.buffer = *built.asBuffer.buffer;
@@ -1919,27 +1818,23 @@ bool VulkanRenderDevice::uploadChunkRayTracingGeometry(const glm::ivec3& chunkPo
         built.as = vk::raii::AccelerationStructureKHR(device, asCreateInfo);
 
         DeviceBufferAllocation scratchBuffer{};
-        createBufferWithAddressing(
-            device,
-            physicalDevice,
-            sizeInfo.buildScratchSize,
-            vk::BufferUsageFlagBits::eStorageBuffer |
-            vk::BufferUsageFlagBits::eShaderDeviceAddress,
-            vk::MemoryPropertyFlagBits::eDeviceLocal,
-            true,
-            scratchBuffer
-        );
+        createBufferWithAddressing(device, physicalDevice, sizeInfo.buildScratchSize,
+                                   vk::BufferUsageFlagBits::eStorageBuffer |
+                                       vk::BufferUsageFlagBits::eShaderDeviceAddress,
+                                   vk::MemoryPropertyFlagBits::eDeviceLocal, true, scratchBuffer);
         buildInfo.dstAccelerationStructure = *built.as;
         buildInfo.scratchData.deviceAddress = getBufferDeviceAddress(device, *scratchBuffer.buffer);
 
         vk::AccelerationStructureBuildRangeInfoKHR rangeInfo{};
         rangeInfo.primitiveCount = primitiveCount;
-        const std::array<vk::AccelerationStructureBuildRangeInfoKHR*, 1> rangeInfos = { &rangeInfo };
-        const std::array<vk::AccelerationStructureBuildGeometryInfoKHR, 1> buildInfos = { buildInfo };
+        const std::array<vk::AccelerationStructureBuildRangeInfoKHR *, 1> rangeInfos = {&rangeInfo};
+        const std::array<vk::AccelerationStructureBuildGeometryInfoKHR, 1> buildInfos = {buildInfo};
 
-        vk::raii::CommandBuffer commandBuffer = VulkanUtils::beginSingleTimeCommands(device, rt.commandPool);
+        vk::raii::CommandBuffer commandBuffer =
+            VulkanUtils::beginSingleTimeCommands(device, rt.commandPool);
         commandBuffer.buildAccelerationStructuresKHR(buildInfos, rangeInfos);
-        VulkanUtils::endSingleTimeCommands(device, m_context->getGraphicsQueue(), std::move(commandBuffer));
+        VulkanUtils::endSingleTimeCommands(device, m_context->getGraphicsQueue(),
+                                           std::move(commandBuffer));
         scratchBuffer.reset();
 
         built.revision = cpuMesh.revision;
@@ -1956,20 +1851,19 @@ bool VulkanRenderDevice::uploadChunkRayTracingGeometry(const glm::ivec3& chunkPo
         rt.chunkBlases.insert_or_assign(chunkPos, std::move(built));
         m_rtSceneDirty = true;
         return true;
-    }
-    catch (const std::exception& e) {
-        std::cerr << "[Vulkan][RT] Failed to upload BLAS for chunk (" << chunkPos.x << ", " << chunkPos.y << ", " << chunkPos.z
-                  << "): " << e.what() << "\n";
+    } catch (const std::exception &e) {
+        std::cerr << "[Vulkan][RT] Failed to upload BLAS for chunk (" << chunkPos.x << ", "
+                  << chunkPos.y << ", " << chunkPos.z << "): " << e.what() << "\n";
         return false;
     }
 }
 
-void VulkanRenderDevice::removeChunkRayTracingGeometry(const glm::ivec3& chunkPos) {
+void VulkanRenderDevice::removeChunkRayTracingGeometry(const glm::ivec3 &chunkPos) {
     if (!m_rtSceneState) {
         return;
     }
 
-    RtSceneState& rt = *m_rtSceneState;
+    RtSceneState &rt = *m_rtSceneState;
     auto it = rt.chunkBlases.find(chunkPos);
     if (it == rt.chunkBlases.end()) {
         return;
@@ -1991,20 +1885,21 @@ bool VulkanRenderDevice::rebuildRayTracingScene() {
     }
 
     try {
-        RtSceneState& rt = *m_rtSceneState;
-        const vk::raii::Device& device = m_context->getDevice();
-        const vk::raii::PhysicalDevice& physicalDevice = m_context->getPhysicalDevice();
+        RtSceneState &rt = *m_rtSceneState;
+        const vk::raii::Device &device = m_context->getDevice();
+        const vk::raii::PhysicalDevice &physicalDevice = m_context->getPhysicalDevice();
 
         std::vector<VkAccelerationStructureInstanceKHR> instances;
         instances.reserve(rt.chunkBlases.size());
-        for (const auto& [chunkPos, chunkBlas] : rt.chunkBlases) {
+        for (const auto &[chunkPos, chunkBlas] : rt.chunkBlases) {
             if (chunkBlas.as == nullptr || chunkBlas.primitiveCount == 0u) {
                 continue;
             }
 
             vk::AccelerationStructureDeviceAddressInfoKHR addrInfo{};
             addrInfo.accelerationStructure = *chunkBlas.as;
-            const vk::DeviceAddress blasAddress = device.getAccelerationStructureAddressKHR(addrInfo);
+            const vk::DeviceAddress blasAddress =
+                device.getAccelerationStructureAddressKHR(addrInfo);
             if (blasAddress == 0) {
                 continue;
             }
@@ -2020,21 +1915,19 @@ bool VulkanRenderDevice::rebuildRayTracingScene() {
         }
 
         DeviceBufferAllocation instanceBuffer{};
-        const vk::DeviceSize instanceBytes =
-            static_cast<vk::DeviceSize>(std::max<size_t>(1u, instances.size()) * sizeof(VkAccelerationStructureInstanceKHR));
+        const vk::DeviceSize instanceBytes = static_cast<vk::DeviceSize>(
+            std::max<size_t>(1u, instances.size()) * sizeof(VkAccelerationStructureInstanceKHR));
         createBufferWithAddressing(
-            device,
-            physicalDevice,
-            instanceBytes,
+            device, physicalDevice, instanceBytes,
             vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
-            vk::BufferUsageFlagBits::eShaderDeviceAddress,
+                vk::BufferUsageFlagBits::eShaderDeviceAddress,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            true,
-            instanceBuffer
-        );
+            true, instanceBuffer);
         if (!instances.empty()) {
-            void* mapped = instanceBuffer.memory.mapMemory(0, instanceBytes);
-            std::memcpy(mapped, instances.data(), static_cast<size_t>(instances.size() * sizeof(VkAccelerationStructureInstanceKHR)));
+            void *mapped = instanceBuffer.memory.mapMemory(0, instanceBytes);
+            std::memcpy(
+                mapped, instances.data(),
+                static_cast<size_t>(instances.size() * sizeof(VkAccelerationStructureInstanceKHR)));
             instanceBuffer.memory.unmapMemory();
         }
 
@@ -2054,24 +1947,16 @@ bool VulkanRenderDevice::rebuildRayTracingScene() {
         buildInfo.pGeometries = &geometry;
 
         const uint32_t primitiveCount = static_cast<uint32_t>(instances.size());
-        const std::array<uint32_t, 1> primitiveCounts = { primitiveCount };
-        const vk::AccelerationStructureBuildSizesInfoKHR sizeInfo = device.getAccelerationStructureBuildSizesKHR(
-            vk::AccelerationStructureBuildTypeKHR::eDevice,
-            buildInfo,
-            primitiveCounts
-        );
+        const std::array<uint32_t, 1> primitiveCounts = {primitiveCount};
+        const vk::AccelerationStructureBuildSizesInfoKHR sizeInfo =
+            device.getAccelerationStructureBuildSizesKHR(
+                vk::AccelerationStructureBuildTypeKHR::eDevice, buildInfo, primitiveCounts);
 
         DeviceBufferAllocation newTlasBuffer{};
-        createBufferWithAddressing(
-            device,
-            physicalDevice,
-            sizeInfo.accelerationStructureSize,
-            vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
-            vk::BufferUsageFlagBits::eShaderDeviceAddress,
-            vk::MemoryPropertyFlagBits::eDeviceLocal,
-            true,
-            newTlasBuffer
-        );
+        createBufferWithAddressing(device, physicalDevice, sizeInfo.accelerationStructureSize,
+                                   vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
+                                       vk::BufferUsageFlagBits::eShaderDeviceAddress,
+                                   vk::MemoryPropertyFlagBits::eDeviceLocal, true, newTlasBuffer);
 
         vk::AccelerationStructureCreateInfoKHR asCreateInfo{};
         asCreateInfo.buffer = *newTlasBuffer.buffer;
@@ -2080,28 +1965,24 @@ bool VulkanRenderDevice::rebuildRayTracingScene() {
         vk::raii::AccelerationStructureKHR newTlas(device, asCreateInfo);
 
         DeviceBufferAllocation scratchBuffer{};
-        createBufferWithAddressing(
-            device,
-            physicalDevice,
-            sizeInfo.buildScratchSize,
-            vk::BufferUsageFlagBits::eStorageBuffer |
-            vk::BufferUsageFlagBits::eShaderDeviceAddress,
-            vk::MemoryPropertyFlagBits::eDeviceLocal,
-            true,
-            scratchBuffer
-        );
+        createBufferWithAddressing(device, physicalDevice, sizeInfo.buildScratchSize,
+                                   vk::BufferUsageFlagBits::eStorageBuffer |
+                                       vk::BufferUsageFlagBits::eShaderDeviceAddress,
+                                   vk::MemoryPropertyFlagBits::eDeviceLocal, true, scratchBuffer);
 
         buildInfo.dstAccelerationStructure = *newTlas;
         buildInfo.scratchData.deviceAddress = getBufferDeviceAddress(device, *scratchBuffer.buffer);
 
         vk::AccelerationStructureBuildRangeInfoKHR rangeInfo{};
         rangeInfo.primitiveCount = primitiveCount;
-        const std::array<vk::AccelerationStructureBuildRangeInfoKHR*, 1> rangeInfos = { &rangeInfo };
-        const std::array<vk::AccelerationStructureBuildGeometryInfoKHR, 1> buildInfos = { buildInfo };
+        const std::array<vk::AccelerationStructureBuildRangeInfoKHR *, 1> rangeInfos = {&rangeInfo};
+        const std::array<vk::AccelerationStructureBuildGeometryInfoKHR, 1> buildInfos = {buildInfo};
 
-        vk::raii::CommandBuffer commandBuffer = VulkanUtils::beginSingleTimeCommands(device, rt.commandPool);
+        vk::raii::CommandBuffer commandBuffer =
+            VulkanUtils::beginSingleTimeCommands(device, rt.commandPool);
         commandBuffer.buildAccelerationStructuresKHR(buildInfos, rangeInfos);
-        VulkanUtils::endSingleTimeCommands(device, m_context->getGraphicsQueue(), std::move(commandBuffer));
+        VulkanUtils::endSingleTimeCommands(device, m_context->getGraphicsQueue(),
+                                           std::move(commandBuffer));
         scratchBuffer.reset();
         instanceBuffer.reset();
 
@@ -2116,28 +1997,29 @@ bool VulkanRenderDevice::rebuildRayTracingScene() {
         rt.tlas = std::move(newTlas);
         rt.tlasAsBuffer = std::move(newTlasBuffer);
         m_activeGiSceneTlas = (rt.tlas != nullptr)
-            ? static_cast<VkAccelerationStructureKHR>(static_cast<vk::AccelerationStructureKHR>(*rt.tlas))
-            : VK_NULL_HANDLE;
+                                  ? static_cast<VkAccelerationStructureKHR>(
+                                        static_cast<vk::AccelerationStructureKHR>(*rt.tlas))
+                                  : VK_NULL_HANDLE;
         m_rtSceneDirty = false;
         return m_activeGiSceneTlas != VK_NULL_HANDLE;
-    }
-    catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::cerr << "[Vulkan][RT] Failed to rebuild TLAS: " << e.what() << "\n";
         return false;
     }
 }
 
-void VulkanRenderDevice::syncChunkMeshes(ChunkManager& chunkManager, const glm::ivec3& cullingChunk) {
+void VulkanRenderDevice::syncChunkMeshes(ChunkManager &chunkManager,
+                                         const glm::ivec3 &cullingChunk) {
     if (!m_context) {
         return;
     }
 
     static constexpr size_t kMaxChunkUploadsPerFrame = 8;
 
-    const auto& cpuMeshes = chunkManager.getCpuChunkMeshes();
+    const auto &cpuMeshes = chunkManager.getCpuChunkMeshes();
     std::vector<glm::ivec3> chunksToRemove;
     chunksToRemove.reserve(m_chunkMeshes.size());
-    for (const auto& [chunkPos, _cached] : m_chunkMeshes) {
+    for (const auto &[chunkPos, _cached] : m_chunkMeshes) {
         if (cpuMeshes.find(chunkPos) == cpuMeshes.end()) {
             chunksToRemove.push_back(chunkPos);
         }
@@ -2150,47 +2032,42 @@ void VulkanRenderDevice::syncChunkMeshes(ChunkManager& chunkManager, const glm::
     std::vector<UploadCandidate> candidates;
     candidates.reserve(kMaxChunkUploadsPerFrame);
 
-    auto xzDistance2 = [&cullingChunk](const glm::ivec3& chunkPos) -> int64_t {
+    auto xzDistance2 = [&cullingChunk](const glm::ivec3 &chunkPos) -> int64_t {
         const glm::ivec3 d = chunkPos - cullingChunk;
         return static_cast<int64_t>(d.x) * static_cast<int64_t>(d.x) +
-            static_cast<int64_t>(d.z) * static_cast<int64_t>(d.z);
+               static_cast<int64_t>(d.z) * static_cast<int64_t>(d.z);
     };
 
     auto farthestIt = [&candidates]() {
         return std::max_element(
-            candidates.begin(),
-            candidates.end(),
-            [](const UploadCandidate& a, const UploadCandidate& b) {
-                return a.dist2 < b.dist2;
-            }
-        );
+            candidates.begin(), candidates.end(),
+            [](const UploadCandidate &a, const UploadCandidate &b) { return a.dist2 < b.dist2; });
     };
 
-    for (const auto& [chunkPos, cpu] : cpuMeshes) {
+    for (const auto &[chunkPos, cpu] : cpuMeshes) {
         if (cpu.vertices.empty() || cpu.indices.empty()) {
             continue;
         }
 
         const auto cacheIt = m_chunkMeshes.find(chunkPos);
-        if (cacheIt != m_chunkMeshes.end() &&
-            cacheIt->second.revision == cpu.revision &&
+        if (cacheIt != m_chunkMeshes.end() && cacheIt->second.revision == cpu.revision &&
             cacheIt->second.mesh.getIndexCount() > 0) {
             continue;
         }
 
         const int64_t dist2 = xzDistance2(chunkPos);
         if (candidates.size() < kMaxChunkUploadsPerFrame) {
-            candidates.push_back(UploadCandidate{ chunkPos, dist2 });
+            candidates.push_back(UploadCandidate{chunkPos, dist2});
             continue;
         }
 
         auto it = farthestIt();
         if (it != candidates.end() && dist2 < it->dist2) {
-            *it = UploadCandidate{ chunkPos, dist2 };
+            *it = UploadCandidate{chunkPos, dist2};
         }
     }
 
-    for (const glm::ivec3& chunkPos : chunksToRemove) {
+    for (const glm::ivec3 &chunkPos : chunksToRemove) {
         auto it = m_chunkMeshes.find(chunkPos);
         if (it == m_chunkMeshes.end()) {
             continue;
@@ -2200,33 +2077,28 @@ void VulkanRenderDevice::syncChunkMeshes(ChunkManager& chunkManager, const glm::
         m_chunkMeshes.erase(it);
     }
 
-    std::sort(
-        candidates.begin(),
-        candidates.end(),
-        [](const UploadCandidate& a, const UploadCandidate& b) {
-            return a.dist2 < b.dist2;
-        }
-    );
+    std::sort(candidates.begin(), candidates.end(),
+              [](const UploadCandidate &a, const UploadCandidate &b) { return a.dist2 < b.dist2; });
 
-    for (const UploadCandidate& candidate : candidates) {
-        const glm::ivec3& chunkPos = candidate.chunkPos;
+    for (const UploadCandidate &candidate : candidates) {
+        const glm::ivec3 &chunkPos = candidate.chunkPos;
         const auto cpuIt = cpuMeshes.find(chunkPos);
         if (cpuIt == cpuMeshes.end()) {
             continue;
         }
 
-        const CpuChunkMesh& cpu = cpuIt->second;
+        const CpuChunkMesh &cpu = cpuIt->second;
         if (cpu.vertices.empty() || cpu.indices.empty()) {
             continue;
         }
 
-        VulkanChunkMesh& cache = m_chunkMeshes[chunkPos];
+        VulkanChunkMesh &cache = m_chunkMeshes[chunkPos];
         retireChunkMesh(std::move(cache.mesh));
         cache.mesh = VkMesh{};
 
         std::vector<VkMesh::PackedVoxelVertex> vertices;
         vertices.reserve(cpu.vertices.size());
-        for (const VoxelVertex& packed : cpu.vertices) {
+        for (const VoxelVertex &packed : cpu.vertices) {
             VkMesh::PackedVoxelVertex out{};
             out.low = packed.low;
             out.high = packed.high;
@@ -2242,7 +2114,7 @@ void VulkanRenderDevice::syncChunkMeshes(ChunkManager& chunkManager, const glm::
     }
 }
 
-void VulkanRenderDevice::retireChunkMesh(VkMesh&& mesh) {
+void VulkanRenderDevice::retireChunkMesh(VkMesh &&mesh) {
     static constexpr uint64_t kRetireDelayFrames = 24;
     RetiredChunkMesh retired{};
     retired.mesh = std::move(mesh);
@@ -2262,12 +2134,12 @@ void VulkanRenderDevice::collectRetiredChunkMeshes() {
 }
 
 void VulkanRenderDevice::cleanupChunkMeshes() {
-    for (auto& [_, mesh] : m_chunkMeshes) {
+    for (auto &[_, mesh] : m_chunkMeshes) {
         mesh.mesh.cleanup();
     }
     m_chunkMeshes.clear();
 
-    for (auto& retired : m_retiredChunkMeshes) {
+    for (auto &retired : m_retiredChunkMeshes) {
         retired.mesh.cleanup();
     }
     m_retiredChunkMeshes.clear();
@@ -2278,4 +2150,3 @@ void VulkanRenderDevice::cleanupChunkMeshes() {
         m_rtSceneDirty = false;
     }
 }
-

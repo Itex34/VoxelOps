@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <limits>
 
-Model::Model(const std::string& path) {
+Model::Model(const std::string &path) {
     loadModel(path);
 }
 
@@ -35,15 +35,15 @@ glm::vec3 Model::getLocalMaxBounds() const noexcept {
     return m_hasLocalBounds ? m_localMaxBounds : glm::vec3(0.0f);
 }
 
-const ModelRegionAabb& Model::getLocalRegionAabb(ModelRegion region) const noexcept {
+const ModelRegionAabb &Model::getLocalRegionAabb(ModelRegion region) const noexcept {
     return m_localRegionAabbs[static_cast<size_t>(region)];
 }
 
-const std::vector<ModelLocalTriangle>& Model::getLocalTriangles() const noexcept {
+const std::vector<ModelLocalTriangle> &Model::getLocalTriangles() const noexcept {
     return m_localTriangles;
 }
 
-void Model::loadModel(const std::string& path) {
+void Model::loadModel(const std::string &path) {
     meshes.clear();
     textures_loaded.clear();
     m_localVertices.clear();
@@ -51,14 +51,14 @@ void Model::loadModel(const std::string& path) {
     m_localMinBounds = glm::vec3(std::numeric_limits<float>::max());
     m_localMaxBounds = glm::vec3(std::numeric_limits<float>::lowest());
     m_hasLocalBounds = false;
-    for (ModelRegionAabb& region : m_localRegionAabbs) {
+    for (ModelRegionAabb &region : m_localRegionAabbs) {
         region = ModelRegionAabb{};
     }
 
     Assimp::Importer importer;
     // Keep model texture orientation consistent by flipping UVs at import time.
     // Texture decoding itself stays unflipped (see TextureFromFile/TextureFromAssimp).
-    const aiScene* scene = importer.ReadFile(path, aiProcess_Triangulate | aiProcess_FlipUVs);
+    const aiScene *scene = importer.ReadFile(path, aiProcess_Triangulate | aiProcess_FlipUVs);
 
     if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
         std::cout << "ERROR::ASSIMP::" << importer.GetErrorString() << std::endl;
@@ -71,11 +71,11 @@ void Model::loadModel(const std::string& path) {
     finalizeRegionAabbsFromVertices();
 }
 
-void Model::processNode(aiNode* node, const aiScene* scene, const aiMatrix4x4& parentTransform) {
+void Model::processNode(aiNode *node, const aiScene *scene, const aiMatrix4x4 &parentTransform) {
     const aiMatrix4x4 currentTransform = parentTransform * node->mTransformation;
 
     for (unsigned int i = 0; i < node->mNumMeshes; i++) {
-        aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
+        aiMesh *mesh = scene->mMeshes[node->mMeshes[i]];
         meshes.push_back(processMesh(mesh, scene, currentTransform));
     }
 
@@ -84,14 +84,15 @@ void Model::processNode(aiNode* node, const aiScene* scene, const aiMatrix4x4& p
     }
 }
 
-Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene, const aiMatrix4x4& nodeTransform) {
+Mesh Model::processMesh(aiMesh *mesh, const aiScene *scene, const aiMatrix4x4 &nodeTransform) {
     std::vector<Vertex> vertices;
     std::vector<unsigned int> indices;
     std::vector<Texture> textures;
     aiMatrix3x3 normalTransform(nodeTransform);
     normalTransform.Inverse().Transpose();
 
-    // Pick the UV set that carries meaningful variation (some FBX files keep valid UVs in channel 1+).
+    // Pick the UV set that carries meaningful variation (some FBX files keep valid UVs in channel
+    // 1+).
     unsigned int uvChannel = AI_MAX_NUMBER_OF_TEXTURECOORDS;
     float bestUvScore = -1.0f;
     for (unsigned int c = 0; c < AI_MAX_NUMBER_OF_TEXTURECOORDS; ++c) {
@@ -103,7 +104,7 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene, const aiMatrix4x4& n
         float maxU = std::numeric_limits<float>::lowest();
         float maxV = std::numeric_limits<float>::lowest();
         for (unsigned int i = 0; i < mesh->mNumVertices; ++i) {
-            const aiVector3D& uv = mesh->mTextureCoords[c][i];
+            const aiVector3D &uv = mesh->mTextureCoords[c][i];
             minU = std::min(minU, uv.x);
             maxU = std::max(maxU, uv.x);
             minV = std::min(minV, uv.y);
@@ -119,7 +120,7 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene, const aiMatrix4x4& n
     for (unsigned int i = 0; i < mesh->mNumVertices; i++) {
         Vertex vertex;
         const aiVector3D transformedPos = nodeTransform * mesh->mVertices[i];
-        vertex.position = { transformedPos.x, transformedPos.y, transformedPos.z };
+        vertex.position = {transformedPos.x, transformedPos.y, transformedPos.z};
         m_localVertices.push_back(vertex.position);
         m_localMinBounds = glm::min(m_localMinBounds, vertex.position);
         m_localMaxBounds = glm::max(m_localMaxBounds, vertex.position);
@@ -127,19 +128,18 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene, const aiMatrix4x4& n
         if (mesh->HasNormals()) {
             aiVector3D transformedNormal = normalTransform * mesh->mNormals[i];
             transformedNormal.Normalize();
-            vertex.normal = { transformedNormal.x, transformedNormal.y, transformedNormal.z };
-        }
-        else {
-            vertex.normal = { 0.0f, 1.0f, 0.0f };
+            vertex.normal = {transformedNormal.x, transformedNormal.y, transformedNormal.z};
+        } else {
+            vertex.normal = {0.0f, 1.0f, 0.0f};
         }
 
         if (uvChannel < AI_MAX_NUMBER_OF_TEXTURECOORDS) {
-            vertex.texCoords = { mesh->mTextureCoords[uvChannel][i].x, mesh->mTextureCoords[uvChannel][i].y };
+            vertex.texCoords = {mesh->mTextureCoords[uvChannel][i].x,
+                                mesh->mTextureCoords[uvChannel][i].y};
+        } else {
+            vertex.texCoords = {0.0f, 0.0f};
         }
-        else {
-            vertex.texCoords = { 0.0f, 0.0f };
-        }
-        vertex.color = { 1.0f, 1.0f, 1.0f };
+        vertex.color = {1.0f, 1.0f, 1.0f};
 
         vertices.push_back(vertex);
     }
@@ -167,8 +167,9 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene, const aiMatrix4x4& n
     }
 
     if (mesh->mMaterialIndex >= 0) {
-        aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
-        std::vector<Texture> diffuseMaps = loadMaterialTextures(material, aiTextureType_BASE_COLOR, scene);
+        aiMaterial *material = scene->mMaterials[mesh->mMaterialIndex];
+        std::vector<Texture> diffuseMaps =
+            loadMaterialTextures(material, aiTextureType_BASE_COLOR, scene);
         if (diffuseMaps.empty()) {
             diffuseMaps = loadMaterialTextures(material, aiTextureType_DIFFUSE, scene);
         }
@@ -178,13 +179,15 @@ Mesh Model::processMesh(aiMesh* mesh, const aiScene* scene, const aiMatrix4x4& n
     return Mesh(vertices, indices, textures);
 }
 
-std::vector<Texture> Model::loadMaterialTextures(aiMaterial* mat, aiTextureType type, const aiScene* scene) {
+std::vector<Texture> Model::loadMaterialTextures(aiMaterial *mat, aiTextureType type,
+                                                 const aiScene *scene) {
     std::vector<Texture> textures;
     for (unsigned int i = 0; i < mat->GetTextureCount(type); i++) {
         aiString str;
         mat->GetTexture(type, i, &str);
-        std::cout << "Trying to load texture: " << str.C_Str() << " from directory: " << directory << std::endl;
-        const aiTexture* aiTex = scene->GetEmbeddedTexture(str.C_Str());
+        std::cout << "Trying to load texture: " << str.C_Str() << " from directory: " << directory
+                  << std::endl;
+        const aiTexture *aiTex = scene->GetEmbeddedTexture(str.C_Str());
         if (aiTex) {
             Texture texture;
             texture.id = TextureFromAssimp(aiTex);
@@ -192,10 +195,9 @@ std::vector<Texture> Model::loadMaterialTextures(aiMaterial* mat, aiTextureType 
             texture.path = str.C_Str();
             textures.push_back(texture);
             textures_loaded.push_back(texture);
-        }
-        else {
+        } else {
             bool skip = false;
-            for (const auto& loadedTexture : textures_loaded) {
+            for (const auto &loadedTexture : textures_loaded) {
                 if (std::strcmp(loadedTexture.path.data(), str.C_Str()) == 0) {
                     textures.push_back(loadedTexture);
                     skip = true;
@@ -216,7 +218,7 @@ std::vector<Texture> Model::loadMaterialTextures(aiMaterial* mat, aiTextureType 
     return textures;
 }
 
-unsigned int Model::TextureFromFile(const char* path, const std::string& directory) {
+unsigned int Model::TextureFromFile(const char *path, const std::string &directory) {
     std::filesystem::path filename = std::filesystem::path(directory) / path;
     unsigned int textureID;
     glGenTextures(1, &textureID);
@@ -224,7 +226,7 @@ unsigned int Model::TextureFromFile(const char* path, const std::string& directo
     int width, height, nrComponents;
     // Model assets use their authored UV orientation; avoid inheriting global flip state.
     stbi_set_flip_vertically_on_load(false);
-    unsigned char* data = stbi_load(filename.string().c_str(), &width, &height, &nrComponents, 0);
+    unsigned char *data = stbi_load(filename.string().c_str(), &width, &height, &nrComponents, 0);
     if (data) {
         GLenum format;
         if (nrComponents == 1)
@@ -245,8 +247,7 @@ unsigned int Model::TextureFromFile(const char* path, const std::string& directo
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
         stbi_image_free(data);
-    }
-    else {
+    } else {
         std::cout << "Texture failed to load at path: " << path << std::endl;
         stbi_image_free(data);
     }
@@ -254,42 +255,32 @@ unsigned int Model::TextureFromFile(const char* path, const std::string& directo
     return textureID;
 }
 
-unsigned int Model::TextureFromAssimp(const aiTexture* aiTex) {
+unsigned int Model::TextureFromAssimp(const aiTexture *aiTex) {
     unsigned int textureID;
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_2D, textureID);
 
-    if (aiTex->mHeight == 0) {    // compressed texture
+    if (aiTex->mHeight == 0) { // compressed texture
         int width, height, nrChannels;
         // Keep embedded model textures consistent with non-embedded model texture orientation.
         stbi_set_flip_vertically_on_load(false);
-        unsigned char* data = stbi_load_from_memory(
-            reinterpret_cast<unsigned char*>(aiTex->pcData),
-            aiTex->mWidth, &width, &height, &nrChannels, 0
-        );
+        unsigned char *data =
+            stbi_load_from_memory(reinterpret_cast<unsigned char *>(aiTex->pcData), aiTex->mWidth,
+                                  &width, &height, &nrChannels, 0);
 
         if (data) {
             GLenum format = (nrChannels == 4) ? GL_RGBA : GL_RGB;
-            glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+            glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE,
+                         data);
             stbi_image_free(data);
-        }
-        else {
+        } else {
             std::cout << "Failed to load embedded texture from memory." << std::endl;
         }
-    }
-    else {
+    } else {
         // aiTexel is stored BGRA8888 for uncompressed embedded textures.
-        glTexImage2D(
-            GL_TEXTURE_2D,
-            0,
-            GL_RGBA8,
-            static_cast<GLsizei>(aiTex->mWidth),
-            static_cast<GLsizei>(aiTex->mHeight),
-            0,
-            GL_BGRA,
-            GL_UNSIGNED_BYTE,
-            aiTex->pcData
-        );
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, static_cast<GLsizei>(aiTex->mWidth),
+                     static_cast<GLsizei>(aiTex->mHeight), 0, GL_BGRA, GL_UNSIGNED_BYTE,
+                     aiTex->pcData);
     }
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -308,7 +299,8 @@ void Model::finalizeRegionAabbsFromVertices() {
     constexpr float kLegsRatio = 0.45f;
     constexpr float kBodyRatio = 0.37f;
     constexpr float kHeadRatio = 0.18f;
-    static_assert(kLegsRatio + kBodyRatio + kHeadRatio > 0.99f, "Region ratios must cover full height.");
+    static_assert(kLegsRatio + kBodyRatio + kHeadRatio > 0.99f,
+                  "Region ratios must cover full height.");
 
     const float minY = m_localMinBounds.y;
     const float maxY = m_localMaxBounds.y;
@@ -316,24 +308,19 @@ void Model::finalizeRegionAabbsFromVertices() {
     const float legsTop = minY + height * kLegsRatio;
     const float bodyTop = legsTop + height * kBodyRatio;
 
-    std::array<glm::vec3, 3> regionMin{
-        glm::vec3(std::numeric_limits<float>::max()),
-        glm::vec3(std::numeric_limits<float>::max()),
-        glm::vec3(std::numeric_limits<float>::max())
-    };
-    std::array<glm::vec3, 3> regionMax{
-        glm::vec3(std::numeric_limits<float>::lowest()),
-        glm::vec3(std::numeric_limits<float>::lowest()),
-        glm::vec3(std::numeric_limits<float>::lowest())
-    };
-    std::array<bool, 3> hasRegion{ false, false, false };
+    std::array<glm::vec3, 3> regionMin{glm::vec3(std::numeric_limits<float>::max()),
+                                       glm::vec3(std::numeric_limits<float>::max()),
+                                       glm::vec3(std::numeric_limits<float>::max())};
+    std::array<glm::vec3, 3> regionMax{glm::vec3(std::numeric_limits<float>::lowest()),
+                                       glm::vec3(std::numeric_limits<float>::lowest()),
+                                       glm::vec3(std::numeric_limits<float>::lowest())};
+    std::array<bool, 3> hasRegion{false, false, false};
 
-    for (const glm::vec3& v : m_localVertices) {
+    for (const glm::vec3 &v : m_localVertices) {
         size_t regionIdx = static_cast<size_t>(ModelRegion::Head);
         if (v.y <= legsTop) {
             regionIdx = static_cast<size_t>(ModelRegion::Legs);
-        }
-        else if (v.y <= bodyTop) {
+        } else if (v.y <= bodyTop) {
             regionIdx = static_cast<size_t>(ModelRegion::Body);
         }
 
@@ -342,14 +329,13 @@ void Model::finalizeRegionAabbsFromVertices() {
         hasRegion[regionIdx] = true;
     }
 
-    const std::array<float, 4> yCuts{ minY, legsTop, bodyTop, maxY };
+    const std::array<float, 4> yCuts{minY, legsTop, bodyTop, maxY};
     for (size_t i = 0; i < 3; ++i) {
-        ModelRegionAabb& out = m_localRegionAabbs[i];
+        ModelRegionAabb &out = m_localRegionAabbs[i];
         if (hasRegion[i]) {
             out.min = regionMin[i];
             out.max = regionMax[i];
-        }
-        else {
+        } else {
             out.min = glm::vec3(m_localMinBounds.x, yCuts[i], m_localMinBounds.z);
             out.max = glm::vec3(m_localMaxBounds.x, yCuts[i + 1], m_localMaxBounds.z);
         }
@@ -366,22 +352,20 @@ void Model::finalizeRegionAabbsFromVertices() {
         out.valid = true;
     }
 
-    for (ModelLocalTriangle& tri : m_localTriangles) {
+    for (ModelLocalTriangle &tri : m_localTriangles) {
         const float centerY = (tri.a.y + tri.b.y + tri.c.y) / 3.0f;
         if (centerY <= legsTop) {
             tri.region = ModelRegion::Legs;
-        }
-        else if (centerY <= bodyTop) {
+        } else if (centerY <= bodyTop) {
             tri.region = ModelRegion::Body;
-        }
-        else {
+        } else {
             tri.region = ModelRegion::Head;
         }
     }
 }
 
-
-void Model::draw(const glm::vec3& position, const glm::quat& rotation, const glm::vec3& scale, Shader& shader) {
+void Model::draw(const glm::vec3 &position, const glm::quat &rotation, const glm::vec3 &scale,
+                 Shader &shader) {
     glm::mat4 scaleMat = glm::scale(glm::mat4(1.0f), scale);
     glm::mat4 rotationMat = glm::toMat4(rotation);
     glm::mat4 translationMat = glm::translate(glm::mat4(1.0f), position);
@@ -390,7 +374,7 @@ void Model::draw(const glm::vec3& position, const glm::quat& rotation, const glm
 
     shader.setMat4("model", model);
 
-    for (Mesh& mesh : meshes) {
+    for (Mesh &mesh : meshes) {
         mesh.draw();
     }
 }

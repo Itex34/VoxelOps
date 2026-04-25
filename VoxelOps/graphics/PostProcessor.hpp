@@ -1,5 +1,2 @@
 #pragma once
-class PostProcessor {
-
-
-};
+class PostProcessor {};

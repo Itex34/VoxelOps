@@ -39,45 +39,60 @@ namespace {
 static_assert(sizeof(IndexedIndirectCommand) == sizeof(vk::DrawIndexedIndirectCommand));
 static_assert(alignof(IndexedIndirectCommand) == alignof(vk::DrawIndexedIndirectCommand));
 
+// ReSTIR GI production toggles.
+// Keep the legacy GI spatial compute stage disabled until it is rewritten as true reservoir
+// resampling.
+constexpr bool kRestirGiDispatchSpatialPass = false;
+// Use temporal GI buffers as history source (not the legacy spatial GI buffers).
+constexpr bool kRestirGiUseSpatialHistory = false;
+// Use a single history slot to avoid swapchain-image history divergence/flicker.
+constexpr uint32_t kRestirHistorySlot = 0u;
+
 struct alignas(16) GiCascadeParamsGpu {
-    glm::ivec4 originSpacingBlocks{ 0 };
-    glm::uvec4 probeCounts{ 0u };
+    glm::ivec4 originSpacingBlocks{0};
+    glm::uvec4 probeCounts{0u};
 };
 
 struct alignas(16) GiLightingParamsGpu {
-    glm::uvec4 header{ 0u }; // x=cascadeCount, y=sunShadowEnabled, z=pathTraceEnabled, w=nrdDebugView
-    glm::uvec4 pathConfig{ 1u, 0u, 0u, 0u }; // x=raysPerPixel, y=restirHistoryValid, z=frameIndexLow, w=historyReset
-    glm::uvec4 tracingConfig{ 0u, 0u, 0u, 0u }; // x=backend(0=dda,1=rt), y=hwRtSupported, z=tlasValid, w=nrdHistoryValid
-    glm::vec4 tuning{ 1.0f, 0.55f, 0.70f, 0.00f }; // x=baseDiffuse, y=giIntensity, z=sunIntensity, w=shadowMinVisibility
-    glm::vec4 sunDirection{ 0.25f, 0.85f, 0.42f, 0.0f };
-    glm::ivec4 shadowOccupancyMinWordCount{ 0 }; // xyz=min blocks, w=wordCount
-    glm::uvec4 shadowOccupancyDims{ 0u }; // xyz=dims blocks
-    glm::ivec4 shadowWorldBoundsXy{ 0 }; // x=minX,y=maxX,z=minY,w=maxY
-    glm::ivec4 shadowWorldBoundsZ{ 0 }; // x=minZ,y=maxZ
-    glm::vec4 shadowParams{ 64.0f, 0.08f, 2.0f, 1.0f }; // x=maxDistance, y=normalBias, z=maxBounces, w=skyIntensity
-    glm::vec4 restirParams{ 0.00f, 0.00f, 0.0f, 0.0f }; // x=temporalBlend, y=spatialReuseWeight, zw=invViewportSize
-    glm::vec4 denoiseParams{ 0.32f, 0.12f, 2.0f, 0.24f }; // x=temporalBlend, y=spatialWeight, z=lumaPhi, w=momentBlend
-    glm::mat4 currViewProjection{ 1.0f };
-    glm::mat4 prevViewProjection{ 1.0f };
-    glm::mat4 nrdPrevViewProjection{ 1.0f };
+    glm::uvec4 header{0u}; // x=cascadeCount, y=sunShadowEnabled, z=pathTraceEnabled, w=nrdDebugView
+    glm::uvec4 pathConfig{
+        1u, 0u, 0u, 0u}; // x=raysPerPixel, y=restirHistoryValid, z=frameIndexLow, w=historyReset
+    glm::uvec4 tracingConfig{
+        0u, 0u, 0u, 0u}; // x=backend(0=dda,1=rt), y=hwRtSupported, z=tlasValid, w=nrdHistoryValid
+    glm::vec4 tuning{1.0f, 0.55f, 0.70f,
+                     0.00f}; // x=baseDiffuse, y=giIntensity, z=sunIntensity, w=shadowMinVisibility
+    glm::vec4 sunDirection{0.25f, 0.85f, 0.42f, 0.0f};
+    glm::ivec4 shadowOccupancyMinWordCount{0}; // xyz=min blocks, w=wordCount
+    glm::uvec4 shadowOccupancyDims{0u};        // xyz=dims blocks
+    glm::ivec4 shadowWorldBoundsXy{0};         // x=minX,y=maxX,z=minY,w=maxY
+    glm::ivec4 shadowWorldBoundsZ{0};          // x=minZ,y=maxZ
+    glm::vec4 shadowParams{64.0f, 0.08f, 2.0f,
+                           1.0f}; // x=maxDistance, y=normalBias, z=maxBounces, w=skyIntensity
+    glm::vec4 restirParams{0.00f, 0.00f, 0.0f,
+                           0.0f}; // x=temporalBlend, y=spatialReuseWeight, zw=invViewportSize
+    glm::vec4 denoiseParams{0.32f, 0.12f, 2.0f,
+                            0.24f}; // x=temporalBlend, y=spatialWeight, z=lumaPhi, w=momentBlend
+    glm::mat4 currViewProjection{1.0f};
+    glm::mat4 prevViewProjection{1.0f};
+    glm::mat4 nrdPrevViewProjection{1.0f};
     std::array<GiCascadeParamsGpu, GI_LIGHTING_MAX_CASCADES> cascades{};
 };
 
 struct alignas(16) GiProbeSampleGpu {
-    glm::vec4 irradianceDepthMean{ 0.20f, 0.24f, 0.30f, 1.0f };
-    glm::vec4 depthMomentFrames{ 0.0f, 0.0f, 0.5f, 1.0f };
+    glm::vec4 irradianceDepthMean{0.20f, 0.24f, 0.30f, 1.0f};
+    glm::vec4 depthMomentFrames{0.0f, 0.0f, 0.5f, 1.0f};
 };
 
 struct alignas(16) RestirGiSpatialPushConstants {
-    glm::uvec2 extent{ 0u, 0u };
-    glm::vec2 invExtent{ 0.0f, 0.0f };
+    glm::uvec2 extent{0u, 0u};
+    glm::vec2 invExtent{0.0f, 0.0f};
     float spatialWeight = 0.10f;
     float lumaPhi = 2.0f;
     float normalPower = 12.0f;
     float depthScale = 1200.0f;
 };
 
-vk::raii::ShaderModule loadShaderModule(const vk::raii::Device& device, const std::string& path) {
+vk::raii::ShaderModule loadShaderModule(const vk::raii::Device &device, const std::string &path) {
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file) {
         throw std::runtime_error("Failed to open shader: " + path);
@@ -90,7 +105,7 @@ vk::raii::ShaderModule loadShaderModule(const vk::raii::Device& device, const st
 
     std::vector<uint32_t> code(size / 4);
     file.seekg(0);
-    file.read(reinterpret_cast<char*>(code.data()), static_cast<std::streamsize>(size));
+    file.read(reinterpret_cast<char *>(code.data()), static_cast<std::streamsize>(size));
     if (!file) {
         throw std::runtime_error("Failed to read shader: " + path);
     }
@@ -102,63 +117,108 @@ vk::raii::ShaderModule loadShaderModule(const vk::raii::Device& device, const st
 }
 
 #if VOXELOPS_NRD_HEADERS
-vk::raii::ShaderModule loadShaderModuleFromBytes(const vk::raii::Device& device, const void* bytes, size_t size) {
+vk::raii::ShaderModule loadShaderModuleFromBytes(const vk::raii::Device &device, const void *bytes,
+                                                 size_t size) {
     if (bytes == nullptr || size == 0 || (size % 4) != 0) {
         throw std::runtime_error("Invalid NRD shader module bytecode.");
     }
 
     vk::ShaderModuleCreateInfo shaderModuleInfo{};
     shaderModuleInfo.codeSize = size;
-    shaderModuleInfo.pCode = reinterpret_cast<const uint32_t*>(bytes);
+    shaderModuleInfo.pCode = reinterpret_cast<const uint32_t *>(bytes);
     return vk::raii::ShaderModule(device, shaderModuleInfo);
 }
 
 vk::Format mapNrdFormatToVk(nrd::Format format) {
     switch (format) {
-    case nrd::Format::R8_UNORM: return vk::Format::eR8Unorm;
-    case nrd::Format::R8_SNORM: return vk::Format::eR8Snorm;
-    case nrd::Format::R8_UINT: return vk::Format::eR8Uint;
-    case nrd::Format::R8_SINT: return vk::Format::eR8Sint;
-    case nrd::Format::RG8_UNORM: return vk::Format::eR8G8Unorm;
-    case nrd::Format::RG8_SNORM: return vk::Format::eR8G8Snorm;
-    case nrd::Format::RG8_UINT: return vk::Format::eR8G8Uint;
-    case nrd::Format::RG8_SINT: return vk::Format::eR8G8Sint;
-    case nrd::Format::RGBA8_UNORM: return vk::Format::eR8G8B8A8Unorm;
-    case nrd::Format::RGBA8_SNORM: return vk::Format::eR8G8B8A8Snorm;
-    case nrd::Format::RGBA8_UINT: return vk::Format::eR8G8B8A8Uint;
-    case nrd::Format::RGBA8_SINT: return vk::Format::eR8G8B8A8Sint;
-    case nrd::Format::RGBA8_SRGB: return vk::Format::eR8G8B8A8Srgb;
-    case nrd::Format::R16_UNORM: return vk::Format::eR16Unorm;
-    case nrd::Format::R16_SNORM: return vk::Format::eR16Snorm;
-    case nrd::Format::R16_UINT: return vk::Format::eR16Uint;
-    case nrd::Format::R16_SINT: return vk::Format::eR16Sint;
-    case nrd::Format::R16_SFLOAT: return vk::Format::eR16Sfloat;
-    case nrd::Format::RG16_UNORM: return vk::Format::eR16G16Unorm;
-    case nrd::Format::RG16_SNORM: return vk::Format::eR16G16Snorm;
-    case nrd::Format::RG16_UINT: return vk::Format::eR16G16Uint;
-    case nrd::Format::RG16_SINT: return vk::Format::eR16G16Sint;
-    case nrd::Format::RG16_SFLOAT: return vk::Format::eR16G16Sfloat;
-    case nrd::Format::RGBA16_UNORM: return vk::Format::eR16G16B16A16Unorm;
-    case nrd::Format::RGBA16_SNORM: return vk::Format::eR16G16B16A16Snorm;
-    case nrd::Format::RGBA16_UINT: return vk::Format::eR16G16B16A16Uint;
-    case nrd::Format::RGBA16_SINT: return vk::Format::eR16G16B16A16Sint;
-    case nrd::Format::RGBA16_SFLOAT: return vk::Format::eR16G16B16A16Sfloat;
-    case nrd::Format::R32_UINT: return vk::Format::eR32Uint;
-    case nrd::Format::R32_SINT: return vk::Format::eR32Sint;
-    case nrd::Format::R32_SFLOAT: return vk::Format::eR32Sfloat;
-    case nrd::Format::RG32_UINT: return vk::Format::eR32G32Uint;
-    case nrd::Format::RG32_SINT: return vk::Format::eR32G32Sint;
-    case nrd::Format::RG32_SFLOAT: return vk::Format::eR32G32Sfloat;
-    case nrd::Format::RGB32_UINT: return vk::Format::eR32G32B32Uint;
-    case nrd::Format::RGB32_SINT: return vk::Format::eR32G32B32Sint;
-    case nrd::Format::RGB32_SFLOAT: return vk::Format::eR32G32B32Sfloat;
-    case nrd::Format::RGBA32_UINT: return vk::Format::eR32G32B32A32Uint;
-    case nrd::Format::RGBA32_SINT: return vk::Format::eR32G32B32A32Sint;
-    case nrd::Format::RGBA32_SFLOAT: return vk::Format::eR32G32B32A32Sfloat;
-    case nrd::Format::R10_G10_B10_A2_UNORM: return vk::Format::eA2B10G10R10UnormPack32;
-    case nrd::Format::R10_G10_B10_A2_UINT: return vk::Format::eA2B10G10R10UintPack32;
-    case nrd::Format::R11_G11_B10_UFLOAT: return vk::Format::eB10G11R11UfloatPack32;
-    case nrd::Format::R9_G9_B9_E5_UFLOAT: return vk::Format::eE5B9G9R9UfloatPack32;
+    case nrd::Format::R8_UNORM:
+        return vk::Format::eR8Unorm;
+    case nrd::Format::R8_SNORM:
+        return vk::Format::eR8Snorm;
+    case nrd::Format::R8_UINT:
+        return vk::Format::eR8Uint;
+    case nrd::Format::R8_SINT:
+        return vk::Format::eR8Sint;
+    case nrd::Format::RG8_UNORM:
+        return vk::Format::eR8G8Unorm;
+    case nrd::Format::RG8_SNORM:
+        return vk::Format::eR8G8Snorm;
+    case nrd::Format::RG8_UINT:
+        return vk::Format::eR8G8Uint;
+    case nrd::Format::RG8_SINT:
+        return vk::Format::eR8G8Sint;
+    case nrd::Format::RGBA8_UNORM:
+        return vk::Format::eR8G8B8A8Unorm;
+    case nrd::Format::RGBA8_SNORM:
+        return vk::Format::eR8G8B8A8Snorm;
+    case nrd::Format::RGBA8_UINT:
+        return vk::Format::eR8G8B8A8Uint;
+    case nrd::Format::RGBA8_SINT:
+        return vk::Format::eR8G8B8A8Sint;
+    case nrd::Format::RGBA8_SRGB:
+        return vk::Format::eR8G8B8A8Srgb;
+    case nrd::Format::R16_UNORM:
+        return vk::Format::eR16Unorm;
+    case nrd::Format::R16_SNORM:
+        return vk::Format::eR16Snorm;
+    case nrd::Format::R16_UINT:
+        return vk::Format::eR16Uint;
+    case nrd::Format::R16_SINT:
+        return vk::Format::eR16Sint;
+    case nrd::Format::R16_SFLOAT:
+        return vk::Format::eR16Sfloat;
+    case nrd::Format::RG16_UNORM:
+        return vk::Format::eR16G16Unorm;
+    case nrd::Format::RG16_SNORM:
+        return vk::Format::eR16G16Snorm;
+    case nrd::Format::RG16_UINT:
+        return vk::Format::eR16G16Uint;
+    case nrd::Format::RG16_SINT:
+        return vk::Format::eR16G16Sint;
+    case nrd::Format::RG16_SFLOAT:
+        return vk::Format::eR16G16Sfloat;
+    case nrd::Format::RGBA16_UNORM:
+        return vk::Format::eR16G16B16A16Unorm;
+    case nrd::Format::RGBA16_SNORM:
+        return vk::Format::eR16G16B16A16Snorm;
+    case nrd::Format::RGBA16_UINT:
+        return vk::Format::eR16G16B16A16Uint;
+    case nrd::Format::RGBA16_SINT:
+        return vk::Format::eR16G16B16A16Sint;
+    case nrd::Format::RGBA16_SFLOAT:
+        return vk::Format::eR16G16B16A16Sfloat;
+    case nrd::Format::R32_UINT:
+        return vk::Format::eR32Uint;
+    case nrd::Format::R32_SINT:
+        return vk::Format::eR32Sint;
+    case nrd::Format::R32_SFLOAT:
+        return vk::Format::eR32Sfloat;
+    case nrd::Format::RG32_UINT:
+        return vk::Format::eR32G32Uint;
+    case nrd::Format::RG32_SINT:
+        return vk::Format::eR32G32Sint;
+    case nrd::Format::RG32_SFLOAT:
+        return vk::Format::eR32G32Sfloat;
+    case nrd::Format::RGB32_UINT:
+        return vk::Format::eR32G32B32Uint;
+    case nrd::Format::RGB32_SINT:
+        return vk::Format::eR32G32B32Sint;
+    case nrd::Format::RGB32_SFLOAT:
+        return vk::Format::eR32G32B32Sfloat;
+    case nrd::Format::RGBA32_UINT:
+        return vk::Format::eR32G32B32A32Uint;
+    case nrd::Format::RGBA32_SINT:
+        return vk::Format::eR32G32B32A32Sint;
+    case nrd::Format::RGBA32_SFLOAT:
+        return vk::Format::eR32G32B32A32Sfloat;
+    case nrd::Format::R10_G10_B10_A2_UNORM:
+        return vk::Format::eA2B10G10R10UnormPack32;
+    case nrd::Format::R10_G10_B10_A2_UINT:
+        return vk::Format::eA2B10G10R10UintPack32;
+    case nrd::Format::R11_G11_B10_UFLOAT:
+        return vk::Format::eB10G11R11UfloatPack32;
+    case nrd::Format::R9_G9_B9_E5_UFLOAT:
+        return vk::Format::eE5B9G9R9UfloatPack32;
     default:
         break;
     }
@@ -181,21 +241,17 @@ vk::DeviceSize growCapacity(vk::DeviceSize minimum, vk::DeviceSize required) {
     }
     return capacity;
 }
-}
+} // namespace
 
-VulkanRenderer::VulkanRenderer(VulkanContext& context)
-    : m_context(context)
-    , m_nrdBootstrap(std::make_unique<NrdBootstrap>()) {
-}
+VulkanRenderer::VulkanRenderer(VulkanContext &context)
+    : m_context(context), m_nrdBootstrap(std::make_unique<NrdBootstrap>()) {}
 
 VulkanRenderer::~VulkanRenderer() noexcept {
     try {
         cleanup();
-    }
-    catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::cerr << "VulkanRenderer cleanup failed: " << e.what() << "\n";
-    }
-    catch (...) {
+    } catch (...) {
         std::cerr << "VulkanRenderer cleanup failed with unknown exception.\n";
     }
 }
@@ -226,29 +282,18 @@ void VulkanRenderer::init() {
 
     createCommandPool();
 
-    const vk::raii::Device& device = m_context.getDevice();
-    const vk::raii::PhysicalDevice& physicalDevice = m_context.getPhysicalDevice();
-    const vk::raii::Queue& graphicsQueue = m_context.getGraphicsQueue();
+    const vk::raii::Device &device = m_context.getDevice();
+    const vk::raii::PhysicalDevice &physicalDevice = m_context.getPhysicalDevice();
+    const vk::raii::Queue &graphicsQueue = m_context.getGraphicsQueue();
 
     m_uploadContext.init(device, m_context.getGraphicsQueueFamily(), graphicsQueue);
 
-    m_fallbackArrayTexture.initFromAtlasFileAsArray(
-        device,
-        physicalDevice,
-        m_uploadContext,
-        "",
-        1,
-        m_context.isSamplerAnisotropyEnabled(),
-        m_context.getMaxSamplerAnisotropy()
-    );
-    m_fallback2DTexture.initFromFile(
-        device,
-        physicalDevice,
-        m_uploadContext,
-        "",
-        m_context.isSamplerAnisotropyEnabled(),
-        m_context.getMaxSamplerAnisotropy()
-    );
+    m_fallbackArrayTexture.initFromAtlasFileAsArray(device, physicalDevice, m_uploadContext, "", 1,
+                                                    m_context.isSamplerAnisotropyEnabled(),
+                                                    m_context.getMaxSamplerAnisotropy());
+    m_fallback2DTexture.initFromFile(device, physicalDevice, m_uploadContext, "",
+                                     m_context.isSamplerAnisotropyEnabled(),
+                                     m_context.getMaxSamplerAnisotropy());
 
     m_uploadContext.waitIdle();
 
@@ -261,14 +306,10 @@ void VulkanRenderer::init() {
     m_initialized = true;
 }
 
-void VulkanRenderer::renderFrame(
-    uint32_t windowWidth,
-    uint32_t windowHeight,
-    const glm::mat4& viewMatrix,
-    const glm::mat4& projectionMatrix,
-    const glm::mat4& viewProjection,
-    const FrameRenderData& frameData
-) {
+void VulkanRenderer::renderFrame(uint32_t windowWidth, uint32_t windowHeight,
+                                 const glm::mat4 &viewMatrix, const glm::mat4 &projectionMatrix,
+                                 const glm::mat4 &viewProjection,
+                                 const FrameRenderData &frameData) {
     if (!m_initialized || m_framebuffers.empty()) {
         return;
     }
@@ -281,24 +322,28 @@ void VulkanRenderer::renderFrame(
 
     m_uploadContext.poll();
 
-    const vk::raii::Device& device = m_context.getDevice();
+    const vk::raii::Device &device = m_context.getDevice();
 
     const vk::Fence currentFrameFence = m_frameSync.getCurrentFrameFence();
-    std::array<vk::Fence, 1> currentFrameFenceArray = { currentFrameFence };
-    (void)device.waitForFences(currentFrameFenceArray, vk::True, std::numeric_limits<uint64_t>::max());
+    std::array<vk::Fence, 1> currentFrameFenceArray = {currentFrameFence};
+    (void)device.waitForFences(currentFrameFenceArray, vk::True,
+                               std::numeric_limits<uint64_t>::max());
+    if (frameData.giLighting.pathTracingEnabled && m_restirSharedHistoryFence != VK_NULL_HANDLE &&
+        m_restirSharedHistoryFence != currentFrameFence) {
+        std::array<vk::Fence, 1> historyFenceArray = {m_restirSharedHistoryFence};
+        (void)device.waitForFences(historyFenceArray, vk::True,
+                                   std::numeric_limits<uint64_t>::max());
+    }
 
     uint32_t imageIndex = 0;
     vk::Result acquireResult = vk::Result::eSuccess;
     try {
         auto acquire = m_context.getSwapchain().acquireNextImage(
-            std::numeric_limits<uint64_t>::max(),
-            m_frameSync.getCurrentImageAvailableSemaphore(),
-            nullptr
-        );
+            std::numeric_limits<uint64_t>::max(), m_frameSync.getCurrentImageAvailableSemaphore(),
+            nullptr);
         acquireResult = acquire.result;
         imageIndex = acquire.value;
-    }
-    catch (const vk::OutOfDateKHRError&) {
+    } catch (const vk::OutOfDateKHRError &) {
         handleWindowResize(windowWidth, windowHeight);
         return;
     }
@@ -314,11 +359,10 @@ void VulkanRenderer::renderFrame(
 
     const vk::Fence imageFence = m_frameSync.getImageInFlightFence(imageIndex);
     if (imageFence) {
-        std::array<vk::Fence, 1> imageFenceArray = { imageFence };
+        std::array<vk::Fence, 1> imageFenceArray = {imageFence};
         (void)device.waitForFences(imageFenceArray, vk::True, std::numeric_limits<uint64_t>::max());
         updateGpuTimingStatsForImage(imageIndex);
-    }
-    else {
+    } else {
         m_lastFrameTimingStats.gpuValid = false;
     }
 
@@ -327,23 +371,24 @@ void VulkanRenderer::renderFrame(
 
     std::vector<glm::mat4> combinedModelMatrices = frameData.modelMatrices;
     combinedModelMatrices.reserve(frameData.modelMatrices.size() + frameData.objects.size());
-    for (const RenderObject& object : frameData.objects) {
+    for (const RenderObject &object : frameData.objects) {
         combinedModelMatrices.emplace_back(object.transform);
     }
     uint32_t requiredIndirectMatrixCount = 0;
-    for (const IndexedIndirectCommand& command : frameData.indirectCommands) {
+    for (const IndexedIndirectCommand &command : frameData.indirectCommands) {
         if (command.instanceCount == 0) {
             continue;
         }
 
-        const uint64_t commandEnd =
-            static_cast<uint64_t>(command.firstInstance) + static_cast<uint64_t>(command.instanceCount);
+        const uint64_t commandEnd = static_cast<uint64_t>(command.firstInstance) +
+                                    static_cast<uint64_t>(command.instanceCount);
         if (commandEnd > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())) {
             requiredIndirectMatrixCount = std::numeric_limits<uint32_t>::max();
             break;
         }
 
-        requiredIndirectMatrixCount = std::max(requiredIndirectMatrixCount, static_cast<uint32_t>(commandEnd));
+        requiredIndirectMatrixCount =
+            std::max(requiredIndirectMatrixCount, static_cast<uint32_t>(commandEnd));
     }
     if (combinedModelMatrices.size() < requiredIndirectMatrixCount) {
         combinedModelMatrices.resize(requiredIndirectMatrixCount, glm::mat4(1.0f));
@@ -354,24 +399,15 @@ void VulkanRenderer::renderFrame(
     if (m_nrdBootstrap != nullptr) {
         glm::mat4 prevViewMatrix = viewMatrix;
         glm::mat4 prevProjectionMatrix = projectionMatrix;
-        bool hasPrevMatrices =
-            frameData.giLighting.enabled &&
-            !frameData.giLighting.resetHistory &&
-            m_nrdPrevMatricesValid;
+        bool hasPrevMatrices = frameData.giLighting.enabled && !frameData.giLighting.resetHistory &&
+                               m_nrdPrevMatricesValid;
         if (hasPrevMatrices) {
             prevViewMatrix = m_nrdPrevView;
             prevProjectionMatrix = m_nrdPrevProjection;
         }
-        m_nrdBootstrap->updateFrame(
-            viewMatrix,
-            projectionMatrix,
-            prevViewMatrix,
-            prevProjectionMatrix,
-            hasPrevMatrices,
-            frameData,
-            currentExtent.width,
-            currentExtent.height
-        );
+        m_nrdBootstrap->updateFrame(viewMatrix, projectionMatrix, prevViewMatrix,
+                                    prevProjectionMatrix, hasPrevMatrices, frameData,
+                                    currentExtent.width, currentExtent.height);
     }
 
     m_commandBuffers[imageIndex].reset();
@@ -379,14 +415,7 @@ void VulkanRenderer::renderFrame(
     float modelCpuMs = 0.0f;
     float uiCpuMs = 0.0f;
     const auto cpuRecordStart = std::chrono::steady_clock::now();
-    recordCommandBuffer(
-        imageIndex,
-        viewProjection,
-        frameData,
-        chunkCpuMs,
-        modelCpuMs,
-        uiCpuMs
-    );
+    recordCommandBuffer(imageIndex, viewProjection, frameData, chunkCpuMs, modelCpuMs, uiCpuMs);
     const auto cpuRecordEnd = std::chrono::steady_clock::now();
     m_lastFrameTimingStats.cpuCommandRecordMs = static_cast<float>(
         std::chrono::duration<double, std::milli>(cpuRecordEnd - cpuRecordStart).count());
@@ -409,28 +438,31 @@ void VulkanRenderer::renderFrame(
     submitInfo.pSignalSemaphores = &signalSemaphore;
 
     m_context.getGraphicsQueue().submit(submitInfo, currentFrameFence);
+    m_restirSharedHistoryFence =
+        frameData.giLighting.pathTracingEnabled ? currentFrameFence : VK_NULL_HANDLE;
 
-    if (imageIndex < m_restirDiValidPerImage.size()) {
+    const uint32_t historyIndex = kRestirHistorySlot;
+    if (historyIndex < m_restirDiValidPerImage.size()) {
         if (frameData.giLighting.pathTracingEnabled) {
-            m_restirDiValidPerImage[imageIndex] = true;
-            if (imageIndex < m_restirDiWriteParityPerImage.size()) {
-                m_restirDiWriteParityPerImage[imageIndex] ^= 1u;
+            m_restirDiValidPerImage[historyIndex] = true;
+            if (historyIndex < m_restirDiWriteParityPerImage.size()) {
+                m_restirDiWriteParityPerImage[historyIndex] ^= 1u;
             }
         } else {
-            m_restirDiValidPerImage[imageIndex] = false;
+            m_restirDiValidPerImage[historyIndex] = false;
         }
     }
-    if (imageIndex < m_restirDiPrevViewProjectionPerImage.size() &&
-        imageIndex < m_prevViewProjectionValidPerImage.size() &&
-        imageIndex < m_restirDiPrevViewPerImage.size() &&
-        imageIndex < m_restirDiPrevProjectionPerImage.size()) {
+    if (historyIndex < m_restirDiPrevViewProjectionPerImage.size() &&
+        historyIndex < m_prevViewProjectionValidPerImage.size() &&
+        historyIndex < m_restirDiPrevViewPerImage.size() &&
+        historyIndex < m_restirDiPrevProjectionPerImage.size()) {
         if (frameData.giLighting.enabled) {
-            m_restirDiPrevViewProjectionPerImage[imageIndex] = viewProjection;
-            m_restirDiPrevViewPerImage[imageIndex] = viewMatrix;
-            m_restirDiPrevProjectionPerImage[imageIndex] = projectionMatrix;
-            m_prevViewProjectionValidPerImage[imageIndex] = true;
+            m_restirDiPrevViewProjectionPerImage[historyIndex] = viewProjection;
+            m_restirDiPrevViewPerImage[historyIndex] = viewMatrix;
+            m_restirDiPrevProjectionPerImage[historyIndex] = projectionMatrix;
+            m_prevViewProjectionValidPerImage[historyIndex] = true;
         } else {
-            m_prevViewProjectionValidPerImage[imageIndex] = false;
+            m_prevViewProjectionValidPerImage[historyIndex] = false;
         }
     }
     if (frameData.giLighting.enabled) {
@@ -457,8 +489,7 @@ void VulkanRenderer::renderFrame(
         if (m_context.shouldRecreateSwapchain(presentResult)) {
             handleWindowResize(windowWidth, windowHeight);
         }
-    }
-    catch (const vk::OutOfDateKHRError&) {
+    } catch (const vk::OutOfDateKHRError &) {
         handleWindowResize(windowWidth, windowHeight);
     }
 
@@ -487,14 +518,12 @@ void VulkanRenderer::cleanup() {
         return;
     }
 
-    const vk::raii::Device& device = m_context.getDevice();
+    const vk::raii::Device &device = m_context.getDevice();
     try {
         device.waitIdle();
-    }
-    catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::cerr << "VulkanRenderer::cleanup waitIdle failed: " << e.what() << "\n";
-    }
-    catch (...) {
+    } catch (...) {
         std::cerr << "VulkanRenderer::cleanup waitIdle failed with unknown exception.\n";
     }
 
@@ -508,11 +537,12 @@ void VulkanRenderer::cleanup() {
     m_uploadContext.cleanup();
 
     m_commandPool.clear();
+    m_restirSharedHistoryFence = VK_NULL_HANDLE;
     m_initialized = false;
 }
 
 void VulkanRenderer::createCommandPool() {
-    const vk::raii::Device& device = m_context.getDevice();
+    const vk::raii::Device &device = m_context.getDevice();
     if (m_commandPool != nullptr) {
         return;
     }
@@ -524,7 +554,7 @@ void VulkanRenderer::createCommandPool() {
 }
 
 void VulkanRenderer::createCommandBuffers() {
-    const vk::raii::Device& device = m_context.getDevice();
+    const vk::raii::Device &device = m_context.getDevice();
     m_commandBuffers.clear();
 
     if (m_framebuffers.empty()) {
@@ -539,18 +569,16 @@ void VulkanRenderer::createCommandBuffers() {
 }
 
 void VulkanRenderer::createFramebuffers() {
-    const vk::raii::Device& device = m_context.getDevice();
-    const auto& swapchainImageViews = m_context.getSwapchainImageViews();
+    const vk::raii::Device &device = m_context.getDevice();
+    const auto &swapchainImageViews = m_context.getSwapchainImageViews();
     const vk::Extent2D extent = m_context.getSwapchainExtent();
 
     m_framebuffers.clear();
     m_framebuffers.reserve(swapchainImageViews.size());
 
-    for (const auto& swapchainImageView : swapchainImageViews) {
-        std::array<vk::ImageView, 2> attachments = {
-            *swapchainImageView,
-            *m_context.getDepthImageView()
-        };
+    for (const auto &swapchainImageView : swapchainImageViews) {
+        std::array<vk::ImageView, 2> attachments = {*swapchainImageView,
+                                                    *m_context.getDepthImageView()};
 
         vk::FramebufferCreateInfo framebufferInfo{};
         framebufferInfo.renderPass = *m_renderPass.get();
@@ -571,7 +599,7 @@ void VulkanRenderer::createModelDescriptorResources() {
         return;
     }
 
-    const vk::raii::Device& device = m_context.getDevice();
+    const vk::raii::Device &device = m_context.getDevice();
 
     vk::DescriptorSetLayoutBinding storageBinding{};
     storageBinding.binding = 0;
@@ -595,7 +623,8 @@ void VulkanRenderer::createModelDescriptorResources() {
     poolInfo.pPoolSizes = &poolSize;
     m_modelDescriptorPool = vk::raii::DescriptorPool(device, poolInfo);
 
-    std::vector<vk::DescriptorSetLayout> layouts(m_framebuffers.size(), *m_modelDescriptorSetLayout);
+    std::vector<vk::DescriptorSetLayout> layouts(m_framebuffers.size(),
+                                                 *m_modelDescriptorSetLayout);
     vk::DescriptorSetAllocateInfo allocateInfo{};
     allocateInfo.descriptorPool = *m_modelDescriptorPool;
     allocateInfo.descriptorSetCount = static_cast<uint32_t>(layouts.size());
@@ -607,24 +636,17 @@ void VulkanRenderer::createModelDescriptorResources() {
 }
 
 template <typename T>
-void VulkanRenderer::createPingPongImagePair(
-    std::vector<std::array<T, 2>>& out,
-    vk::Format format,
-    vk::Extent2D extent,
-    vk::ImageUsageFlags usage,
-    const vk::ClearColorValue& clearValue,
-    vk::raii::CommandBuffer& commandBuffer
-) {
-    const vk::raii::Device& device = m_context.getDevice();
-    const vk::raii::PhysicalDevice& physicalDevice = m_context.getPhysicalDevice();
+void VulkanRenderer::createPingPongImagePair(std::vector<std::array<T, 2>> &out, vk::Format format,
+                                             vk::Extent2D extent, vk::ImageUsageFlags usage,
+                                             const vk::ClearColorValue &clearValue,
+                                             vk::raii::CommandBuffer &commandBuffer) {
+    const vk::raii::Device &device = m_context.getDevice();
+    const vk::raii::PhysicalDevice &physicalDevice = m_context.getPhysicalDevice();
 
-    const vk::ImageSubresourceRange range(
-        vk::ImageAspectFlagBits::eColor,
-        0, 1, 0, 1
-    );
+    const vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
 
-    for (auto& pair : out) {
-        for (auto& res : pair) {
+    for (auto &pair : out) {
+        for (auto &res : pair) {
             vk::ImageCreateInfo imageInfo{};
             imageInfo.imageType = vk::ImageType::e2D;
             imageInfo.extent = vk::Extent3D(extent.width, extent.height, 1u);
@@ -641,11 +663,9 @@ void VulkanRenderer::createPingPongImagePair(
             const vk::MemoryRequirements requirements = res.image.getMemoryRequirements();
             vk::MemoryAllocateInfo allocInfo{};
             allocInfo.allocationSize = requirements.size;
-            allocInfo.memoryTypeIndex = VulkanUtils::findMemoryType(
-                physicalDevice,
-                requirements.memoryTypeBits,
-                vk::MemoryPropertyFlagBits::eDeviceLocal
-            );
+            allocInfo.memoryTypeIndex =
+                VulkanUtils::findMemoryType(physicalDevice, requirements.memoryTypeBits,
+                                            vk::MemoryPropertyFlagBits::eDeviceLocal);
             res.memory = vk::raii::DeviceMemory(device, allocInfo);
             res.image.bindMemory(*res.memory, 0);
 
@@ -665,32 +685,18 @@ void VulkanRenderer::createPingPongImagePair(
             toGeneral.image = *res.image;
             toGeneral.subresourceRange = range;
             toGeneral.srcAccessMask = {};
-            toGeneral.dstAccessMask =
-                vk::AccessFlagBits::eShaderRead |
-                vk::AccessFlagBits::eShaderWrite |
-                vk::AccessFlagBits::eTransferWrite;
-            commandBuffer.pipelineBarrier(
-                vk::PipelineStageFlagBits::eTopOfPipe,
-                vk::PipelineStageFlagBits::eTransfer |
-                vk::PipelineStageFlagBits::eFragmentShader |
-                vk::PipelineStageFlagBits::eComputeShader,
-                {}, {}, {},
-                toGeneral
-            );
-            commandBuffer.clearColorImage(
-                *res.image,
-                vk::ImageLayout::eGeneral,
-                clearValue,
-                range
-            );
+            toGeneral.dstAccessMask = vk::AccessFlagBits::eShaderRead |
+                                      vk::AccessFlagBits::eShaderWrite |
+                                      vk::AccessFlagBits::eTransferWrite;
+            commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                          vk::PipelineStageFlagBits::eTransfer |
+                                              vk::PipelineStageFlagBits::eFragmentShader |
+                                              vk::PipelineStageFlagBits::eComputeShader,
+                                          {}, {}, {}, toGeneral);
+            commandBuffer.clearColorImage(*res.image, vk::ImageLayout::eGeneral, clearValue, range);
         }
     }
 }
-
-
-
-
-
 
 vk::raii::Sampler VulkanRenderer::createSharedRestirSampler() {
     vk::SamplerCreateInfo samplerInfo{};
@@ -709,15 +715,14 @@ vk::raii::Sampler VulkanRenderer::createSharedRestirSampler() {
     return vk::raii::Sampler(m_context.getDevice(), samplerInfo);
 }
 
-
-
-
 void VulkanRenderer::createRestirDiResources() {
     cleanupRestirDiResources();
-    if (m_framebuffers.empty() || m_commandPool == nullptr) return;
+    if (m_framebuffers.empty() || m_commandPool == nullptr)
+        return;
 
     const vk::Extent2D extent = m_context.getSwapchainExtent();
-    if (extent.width == 0 || extent.height == 0) return;
+    if (extent.width == 0 || extent.height == 0)
+        return;
 
     const size_t imageCount = m_framebuffers.size();
     m_restirDiPerImage.resize(imageCount);
@@ -730,23 +735,16 @@ void VulkanRenderer::createRestirDiResources() {
 
     m_restirDiSampler = createSharedRestirSampler();
 
-    constexpr vk::ImageUsageFlags kUsage =
-        vk::ImageUsageFlagBits::eSampled |
-        vk::ImageUsageFlagBits::eStorage |
-        vk::ImageUsageFlagBits::eTransferDst;
+    constexpr vk::ImageUsageFlags kUsage = vk::ImageUsageFlagBits::eSampled |
+                                           vk::ImageUsageFlagBits::eStorage |
+                                           vk::ImageUsageFlagBits::eTransferDst;
 
     vk::raii::CommandBuffer cmd =
         VulkanUtils::beginSingleTimeCommands(m_context.getDevice(), m_commandPool);
-    createPingPongImagePair(
-        m_restirDiPerImage,
-        vk::Format::eR16G16B16A16Sfloat,
-        extent,
-        kUsage,
-        vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 0.0f }),
-        cmd
-    );
-    VulkanUtils::endSingleTimeCommands(
-        m_context.getDevice(), m_context.getGraphicsQueue(), std::move(cmd));
+    createPingPongImagePair(m_restirDiPerImage, vk::Format::eR16G16B16A16Sfloat, extent, kUsage,
+                            vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}), cmd);
+    VulkanUtils::endSingleTimeCommands(m_context.getDevice(), m_context.getGraphicsQueue(),
+                                       std::move(cmd));
 }
 
 void VulkanRenderer::cleanupRestirDiResources() {
@@ -762,31 +760,27 @@ void VulkanRenderer::cleanupRestirDiResources() {
 
 void VulkanRenderer::createRestirValidationResources() {
     cleanupRestirValidationResources();
-    if (m_framebuffers.empty() || m_commandPool == nullptr) return;
+    if (m_framebuffers.empty() || m_commandPool == nullptr)
+        return;
 
     const vk::Extent2D extent = m_context.getSwapchainExtent();
-    if (extent.width == 0 || extent.height == 0) return;
+    if (extent.width == 0 || extent.height == 0)
+        return;
 
     m_restirValidationPerImage.resize(m_framebuffers.size());
     m_restirValidationSampler = createSharedRestirSampler();
 
-    constexpr vk::ImageUsageFlags kUsage =
-        vk::ImageUsageFlagBits::eSampled |
-        vk::ImageUsageFlagBits::eStorage |
-        vk::ImageUsageFlagBits::eTransferDst;
+    constexpr vk::ImageUsageFlags kUsage = vk::ImageUsageFlagBits::eSampled |
+                                           vk::ImageUsageFlagBits::eStorage |
+                                           vk::ImageUsageFlagBits::eTransferDst;
 
     vk::raii::CommandBuffer cmd =
         VulkanUtils::beginSingleTimeCommands(m_context.getDevice(), m_commandPool);
-    createPingPongImagePair(
-        m_restirValidationPerImage,
-        vk::Format::eR16G16B16A16Sfloat,
-        extent,
-        kUsage,
-        vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 1.0f, 0.0f }),
-        cmd
-    );
-    VulkanUtils::endSingleTimeCommands(
-        m_context.getDevice(), m_context.getGraphicsQueue(), std::move(cmd));
+    createPingPongImagePair(m_restirValidationPerImage, vk::Format::eR16G16B16A16Sfloat, extent,
+                            kUsage,
+                            vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 1.0f, 0.0f}), cmd);
+    VulkanUtils::endSingleTimeCommands(m_context.getDevice(), m_context.getGraphicsQueue(),
+                                       std::move(cmd));
 }
 
 void VulkanRenderer::cleanupRestirValidationResources() {
@@ -796,31 +790,26 @@ void VulkanRenderer::cleanupRestirValidationResources() {
 
 void VulkanRenderer::createRestirMetaResources() {
     cleanupRestirMetaResources();
-    if (m_framebuffers.empty() || m_commandPool == nullptr) return;
+    if (m_framebuffers.empty() || m_commandPool == nullptr)
+        return;
 
     const vk::Extent2D extent = m_context.getSwapchainExtent();
-    if (extent.width == 0 || extent.height == 0) return;
+    if (extent.width == 0 || extent.height == 0)
+        return;
 
     m_restirMetaPerImage.resize(m_framebuffers.size());
     m_restirMetaSampler = createSharedRestirSampler();
 
-    constexpr vk::ImageUsageFlags kUsage =
-        vk::ImageUsageFlagBits::eSampled |
-        vk::ImageUsageFlagBits::eStorage |
-        vk::ImageUsageFlagBits::eTransferDst;
+    constexpr vk::ImageUsageFlags kUsage = vk::ImageUsageFlagBits::eSampled |
+                                           vk::ImageUsageFlagBits::eStorage |
+                                           vk::ImageUsageFlagBits::eTransferDst;
 
     vk::raii::CommandBuffer cmd =
         VulkanUtils::beginSingleTimeCommands(m_context.getDevice(), m_commandPool);
-    createPingPongImagePair(
-        m_restirMetaPerImage,
-        vk::Format::eR16G16B16A16Sfloat,
-        extent,
-        kUsage,
-        vk::ClearColorValue(std::array<float, 4>{ 1.0f, 0.0f, 0.0f, 0.0f }),
-        cmd
-    );
-    VulkanUtils::endSingleTimeCommands(
-        m_context.getDevice(), m_context.getGraphicsQueue(), std::move(cmd));
+    createPingPongImagePair(m_restirMetaPerImage, vk::Format::eR16G16B16A16Sfloat, extent, kUsage,
+                            vk::ClearColorValue(std::array<float, 4>{1.0f, 0.0f, 0.0f, 0.0f}), cmd);
+    VulkanUtils::endSingleTimeCommands(m_context.getDevice(), m_context.getGraphicsQueue(),
+                                       std::move(cmd));
 }
 
 void VulkanRenderer::cleanupRestirMetaResources() {
@@ -830,10 +819,12 @@ void VulkanRenderer::cleanupRestirMetaResources() {
 
 void VulkanRenderer::createRestirGiResources() {
     cleanupRestirGiResources();
-    if (m_framebuffers.empty() || m_commandPool == nullptr) return;
+    if (m_framebuffers.empty() || m_commandPool == nullptr)
+        return;
 
     const vk::Extent2D extent = m_context.getSwapchainExtent();
-    if (extent.width == 0 || extent.height == 0) return;
+    if (extent.width == 0 || extent.height == 0)
+        return;
 
     const size_t imageCount = m_framebuffers.size();
     m_restirGiPerImage.resize(imageCount);
@@ -841,32 +832,19 @@ void VulkanRenderer::createRestirGiResources() {
     m_restirGiSampler = createSharedRestirSampler();
     m_restirGiMetaSampler = createSharedRestirSampler();
 
-    constexpr vk::ImageUsageFlags kUsage =
-        vk::ImageUsageFlagBits::eSampled |
-        vk::ImageUsageFlagBits::eStorage |
-        vk::ImageUsageFlagBits::eTransferDst;
+    constexpr vk::ImageUsageFlags kUsage = vk::ImageUsageFlagBits::eSampled |
+                                           vk::ImageUsageFlagBits::eStorage |
+                                           vk::ImageUsageFlagBits::eTransferDst;
 
     // Both pairs go into one command buffer — single queue submission
     vk::raii::CommandBuffer cmd =
         VulkanUtils::beginSingleTimeCommands(m_context.getDevice(), m_commandPool);
-    createPingPongImagePair(
-        m_restirGiPerImage,
-        vk::Format::eR16G16B16A16Sfloat,
-        extent,
-        kUsage,
-        vk::ClearColorValue(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 0.0f }),
-        cmd
-    );
-    createPingPongImagePair(
-        m_restirGiMetaPerImage,
-        vk::Format::eR16G16B16A16Sfloat,
-        extent,
-        kUsage,
-        vk::ClearColorValue(std::array<float, 4>{ 1.0f, 0.0f, 0.0f, 0.0f }),
-        cmd
-    );
-    VulkanUtils::endSingleTimeCommands(
-        m_context.getDevice(), m_context.getGraphicsQueue(), std::move(cmd));
+    createPingPongImagePair(m_restirGiPerImage, vk::Format::eR16G16B16A16Sfloat, extent, kUsage,
+                            vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}), cmd);
+    createPingPongImagePair(m_restirGiMetaPerImage, vk::Format::eR16G16B16A16Sfloat, extent, kUsage,
+                            vk::ClearColorValue(std::array<float, 4>{1.0f, 0.0f, 0.0f, 0.0f}), cmd);
+    VulkanUtils::endSingleTimeCommands(m_context.getDevice(), m_context.getGraphicsQueue(),
+                                       std::move(cmd));
 }
 
 void VulkanRenderer::cleanupRestirGiResources() {
@@ -876,19 +854,14 @@ void VulkanRenderer::cleanupRestirGiResources() {
     m_restirGiMetaPerImage.clear();
 }
 
-
-
-
-
-
 void VulkanRenderer::createGiDescriptorResources() {
     cleanupGiDescriptorResources();
     if (m_framebuffers.empty()) {
         return;
     }
 
-    const vk::raii::Device& device = m_context.getDevice();
-    const vk::raii::PhysicalDevice& physicalDevice = m_context.getPhysicalDevice();
+    const vk::raii::Device &device = m_context.getDevice();
+    const vk::raii::PhysicalDevice &physicalDevice = m_context.getPhysicalDevice();
 
     m_giRtDescriptorEnabled = m_context.isHardwareRayTracingSupported();
 
@@ -936,7 +909,8 @@ void VulkanRenderer::createGiDescriptorResources() {
     poolSizes.reserve(m_giRtDescriptorEnabled ? 5 : 4);
     vk::DescriptorPoolSize storagePool{};
     storagePool.type = vk::DescriptorType::eStorageBuffer;
-    storagePool.descriptorCount = static_cast<uint32_t>(m_framebuffers.size()) * (GI_CASCADE_BINDINGS + 2);
+    storagePool.descriptorCount =
+        static_cast<uint32_t>(m_framebuffers.size()) * (GI_CASCADE_BINDINGS + 2);
     poolSizes.push_back(storagePool);
     vk::DescriptorPoolSize uniformPool{};
     uniformPool.type = vk::DescriptorType::eUniformBuffer;
@@ -979,76 +953,48 @@ void VulkanRenderer::createGiDescriptorResources() {
         m_giFallbackProbeBuffers.emplace_back(nullptr);
         m_giFallbackProbeBufferMemory.emplace_back(nullptr);
         VulkanUtils::createBuffer(
-            device,
-            physicalDevice,
-            sizeof(GiProbeSampleGpu),
+            device, physicalDevice, sizeof(GiProbeSampleGpu),
             vk::BufferUsageFlagBits::eStorageBuffer,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            m_giFallbackProbeBuffers.back(),
-            m_giFallbackProbeBufferMemory.back()
-        );
+            m_giFallbackProbeBuffers.back(), m_giFallbackProbeBufferMemory.back());
 
         GiProbeSampleGpu fallback{};
-        void* mapped = m_giFallbackProbeBufferMemory.back().mapMemory(0, VK_WHOLE_SIZE);
+        void *mapped = m_giFallbackProbeBufferMemory.back().mapMemory(0, VK_WHOLE_SIZE);
         std::memcpy(mapped, &fallback, sizeof(fallback));
         m_giFallbackProbeBufferMemory.back().unmapMemory();
     }
 
     VulkanUtils::createBuffer(
-        device,
-        physicalDevice,
-        sizeof(uint32_t),
-        vk::BufferUsageFlagBits::eStorageBuffer,
+        device, physicalDevice, sizeof(uint32_t), vk::BufferUsageFlagBits::eStorageBuffer,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        m_giFallbackShadowOccupancyBuffer,
-        m_giFallbackShadowOccupancyBufferMemory
-    );
+        m_giFallbackShadowOccupancyBuffer, m_giFallbackShadowOccupancyBufferMemory);
     {
         const uint32_t zeroWord = 0u;
-        void* mapped = m_giFallbackShadowOccupancyBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
+        void *mapped = m_giFallbackShadowOccupancyBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
         std::memcpy(mapped, &zeroWord, sizeof(zeroWord));
         m_giFallbackShadowOccupancyBufferMemory.unmapMemory();
     }
 
     VulkanUtils::createBuffer(
-        device,
-        physicalDevice,
-        sizeof(uint32_t),
-        vk::BufferUsageFlagBits::eStorageBuffer,
+        device, physicalDevice, sizeof(uint32_t), vk::BufferUsageFlagBits::eStorageBuffer,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        m_giFallbackMaterialBuffer,
-        m_giFallbackMaterialBufferMemory
-    );
+        m_giFallbackMaterialBuffer, m_giFallbackMaterialBufferMemory);
     {
         const uint32_t fallbackMaterial = 0u;
-        void* mapped = m_giFallbackMaterialBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
+        void *mapped = m_giFallbackMaterialBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
         std::memcpy(mapped, &fallbackMaterial, sizeof(fallbackMaterial));
         m_giFallbackMaterialBufferMemory.unmapMemory();
     }
 
-    for (PerImageDrawResources& resources : m_perImageDrawResources) {
-        VulkanUtils::createBuffer(
-            device,
-            physicalDevice,
-            sizeof(GiLightingParamsGpu),
-            vk::BufferUsageFlagBits::eUniformBuffer,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            resources.giParamsBuffer,
-            resources.giParamsBufferMemory
-        );
+    for (PerImageDrawResources &resources : m_perImageDrawResources) {
+        VulkanUtils::createBuffer(device, physicalDevice, sizeof(GiLightingParamsGpu),
+                                  vk::BufferUsageFlagBits::eUniformBuffer,
+                                  vk::MemoryPropertyFlagBits::eHostVisible |
+                                      vk::MemoryPropertyFlagBits::eHostCoherent,
+                                  resources.giParamsBuffer, resources.giParamsBufferMemory);
         resources.giParamsMapped = resources.giParamsBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
     }
 }
-
-
-
-
-
-
-
-
-
-
 
 void VulkanRenderer::createNrdSignalResources() {
     cleanupNrdSignalResources();
@@ -1057,8 +1003,8 @@ void VulkanRenderer::createNrdSignalResources() {
         return;
     }
 
-    const vk::raii::Device& device = m_context.getDevice();
-    const vk::raii::PhysicalDevice& physicalDevice = m_context.getPhysicalDevice();
+    const vk::raii::Device &device = m_context.getDevice();
+    const vk::raii::PhysicalDevice &physicalDevice = m_context.getPhysicalDevice();
     const vk::Extent2D extent = m_context.getSwapchainExtent();
     if (extent.width == 0 || extent.height == 0) {
         return;
@@ -1068,13 +1014,12 @@ void VulkanRenderer::createNrdSignalResources() {
     m_nrdPerImage.resize(1);
     m_nrdValidPerImage.assign(imageCount, false);
 
-    constexpr vk::ImageUsageFlags kUsage =
-        vk::ImageUsageFlagBits::eSampled |
-        vk::ImageUsageFlagBits::eStorage |
-        vk::ImageUsageFlagBits::eTransferDst;
+    constexpr vk::ImageUsageFlags kUsage = vk::ImageUsageFlagBits::eSampled |
+                                           vk::ImageUsageFlagBits::eStorage |
+                                           vk::ImageUsageFlagBits::eTransferDst;
     constexpr vk::Format kDiffFormat = vk::Format::eR16G16B16A16Sfloat;
     constexpr vk::Format kNormalRoughnessFormat = vk::Format::eR16G16B16A16Sfloat;
-    constexpr vk::Format kMotionFormat = vk::Format::eR16G16Sfloat;
+    constexpr vk::Format kMotionFormat = vk::Format::eR16G16B16A16Sfloat;
     constexpr vk::Format kViewZFormat = vk::Format::eR32Sfloat;
     m_loggedMissingNrdResources = false;
 
@@ -1100,18 +1045,17 @@ void VulkanRenderer::createNrdSignalResources() {
 
     const auto supportsStorage = [&](vk::Format format) -> bool {
         const vk::FormatProperties props = physicalDevice.getFormatProperties(format);
-        return static_cast<bool>(props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eStorageImage);
+        return static_cast<bool>(props.optimalTilingFeatures &
+                                 vk::FormatFeatureFlagBits::eStorageImage);
     };
-    if (!supportsStorage(kDiffFormat) ||
-        !supportsStorage(kNormalRoughnessFormat) ||
-        !supportsStorage(kMotionFormat) ||
-        !supportsStorage(kViewZFormat)) {
+    if (!supportsStorage(kDiffFormat) || !supportsStorage(kNormalRoughnessFormat) ||
+        !supportsStorage(kMotionFormat) || !supportsStorage(kViewZFormat)) {
         throw std::runtime_error(
-            "NRD signal formats are not supported as storage images by this Vulkan device."
-        );
+            "NRD signal formats are not supported as storage images by this Vulkan device.");
     }
 
-    const auto createSignal = [&](RestirDiReservoirResources& dst, vk::Format format, uint32_t w, uint32_t h) {
+    const auto createSignal = [&](RestirDiReservoirResources &dst, vk::Format format, uint32_t w,
+                                  uint32_t h) {
         vk::ImageCreateInfo imageInfo{};
         imageInfo.imageType = vk::ImageType::e2D;
         imageInfo.extent = vk::Extent3D(w, h, 1u);
@@ -1129,10 +1073,7 @@ void VulkanRenderer::createNrdSignalResources() {
         vk::MemoryAllocateInfo allocInfo{};
         allocInfo.allocationSize = requirements.size;
         allocInfo.memoryTypeIndex = VulkanUtils::findMemoryType(
-            physicalDevice,
-            requirements.memoryTypeBits,
-            vk::MemoryPropertyFlagBits::eDeviceLocal
-        );
+            physicalDevice, requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
         dst.memory = vk::raii::DeviceMemory(device, allocInfo);
         dst.image.bindMemory(*dst.memory, 0);
 
@@ -1155,22 +1096,17 @@ void VulkanRenderer::createNrdSignalResources() {
     createSignal(m_nrdFallback.diffOut, kDiffFormat, 1u, 1u);
     m_nrdFallbackReady = true;
 
-    NrdPerImageResources& resources = m_nrdPerImage[0];
+    NrdPerImageResources &resources = m_nrdPerImage[0];
     createSignal(resources.diffIn, kDiffFormat, extent.width, extent.height);
     createSignal(resources.normalRoughnessIn, kNormalRoughnessFormat, extent.width, extent.height);
     createSignal(resources.motionIn, kMotionFormat, extent.width, extent.height);
     createSignal(resources.viewZIn, kViewZFormat, extent.width, extent.height);
     createSignal(resources.diffOut, kDiffFormat, extent.width, extent.height);
 
-    vk::raii::CommandBuffer commandBuffer = VulkanUtils::beginSingleTimeCommands(device, m_commandPool);
-    const vk::ImageSubresourceRange range(
-        vk::ImageAspectFlagBits::eColor,
-        0,
-        1,
-        0,
-        1
-    );
-    const auto transitionAndClear = [&](vk::Image image, const vk::ClearColorValue& clearValue) {
+    vk::raii::CommandBuffer commandBuffer =
+        VulkanUtils::beginSingleTimeCommands(device, m_commandPool);
+    const vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+    const auto transitionAndClear = [&](vk::Image image, const vk::ClearColorValue &clearValue) {
         vk::ImageMemoryBarrier toGeneral{};
         toGeneral.oldLayout = vk::ImageLayout::eUndefined;
         toGeneral.newLayout = vk::ImageLayout::eGeneral;
@@ -1179,26 +1115,20 @@ void VulkanRenderer::createNrdSignalResources() {
         toGeneral.image = image;
         toGeneral.subresourceRange = range;
         toGeneral.srcAccessMask = {};
-        toGeneral.dstAccessMask =
-            vk::AccessFlagBits::eShaderRead |
-            vk::AccessFlagBits::eShaderWrite |
-            vk::AccessFlagBits::eTransferWrite;
-        commandBuffer.pipelineBarrier(
-            vk::PipelineStageFlagBits::eTopOfPipe,
-            vk::PipelineStageFlagBits::eTransfer |
-            vk::PipelineStageFlagBits::eFragmentShader |
-            vk::PipelineStageFlagBits::eComputeShader,
-            {},
-            {},
-            {},
-            toGeneral
-        );
+        toGeneral.dstAccessMask = vk::AccessFlagBits::eShaderRead |
+                                  vk::AccessFlagBits::eShaderWrite |
+                                  vk::AccessFlagBits::eTransferWrite;
+        commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                      vk::PipelineStageFlagBits::eTransfer |
+                                          vk::PipelineStageFlagBits::eFragmentShader |
+                                          vk::PipelineStageFlagBits::eComputeShader,
+                                      {}, {}, {}, toGeneral);
         commandBuffer.clearColorImage(image, vk::ImageLayout::eGeneral, clearValue, range);
     };
 
-    const vk::ClearColorValue clearZero(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 0.0f });
-    const vk::ClearColorValue clearNormalRoughness(std::array<float, 4>{ 0.5f, 1.0f, 0.5f, 1.0f });
-    const vk::ClearColorValue clearViewZ(std::array<float, 4>{ -1.0f, 0.0f, 0.0f, 0.0f });
+    const vk::ClearColorValue clearZero(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f});
+    const vk::ClearColorValue clearNormalRoughness(std::array<float, 4>{0.5f, 1.0f, 0.5f, 1.0f});
+    const vk::ClearColorValue clearViewZ(std::array<float, 4>{-1.0f, 0.0f, 0.0f, 0.0f});
     transitionAndClear(*m_nrdFallback.diffIn.image, clearZero);
     transitionAndClear(*m_nrdFallback.normalRoughnessIn.image, clearNormalRoughness);
     transitionAndClear(*m_nrdFallback.motionIn.image, clearZero);
@@ -1210,7 +1140,8 @@ void VulkanRenderer::createNrdSignalResources() {
     transitionAndClear(*resources.viewZIn.image, clearViewZ);
     transitionAndClear(*resources.diffOut.image, clearZero);
 
-    VulkanUtils::endSingleTimeCommands(device, m_context.getGraphicsQueue(), std::move(commandBuffer));
+    VulkanUtils::endSingleTimeCommands(device, m_context.getGraphicsQueue(),
+                                       std::move(commandBuffer));
 }
 
 void VulkanRenderer::cleanupNrdSignalResources() {
@@ -1248,10 +1179,10 @@ bool VulkanRenderer::createNrdRuntimeResources() {
         if (m_nrdBootstrap == nullptr || !m_nrdBootstrap->isActive()) {
             return false;
         }
-        const nrd::LibraryDesc* libraryDesc =
-            static_cast<const nrd::LibraryDesc*>(m_nrdBootstrap->libraryDescData());
-        const nrd::InstanceDesc* instanceDesc =
-            static_cast<const nrd::InstanceDesc*>(m_nrdBootstrap->instanceDescData());
+        const nrd::LibraryDesc *libraryDesc =
+            static_cast<const nrd::LibraryDesc *>(m_nrdBootstrap->libraryDescData());
+        const nrd::InstanceDesc *instanceDesc =
+            static_cast<const nrd::InstanceDesc *>(m_nrdBootstrap->instanceDescData());
         if (libraryDesc == nullptr || instanceDesc == nullptr || m_framebuffers.empty()) {
             return false;
         }
@@ -1262,51 +1193,53 @@ bool VulkanRenderer::createNrdRuntimeResources() {
         }
 
         if (!m_context.isComputeShaderDerivativesEnabled()) {
-            std::cerr
-                << "[Vulkan][NRD] Runtime disabled: VK_KHR_compute_shader_derivatives "
-                << "with computeDerivativeGroupQuads is unavailable.\n";
+            std::cerr << "[Vulkan][NRD] Runtime disabled: VK_KHR_compute_shader_derivatives "
+                      << "with computeDerivativeGroupQuads is unavailable.\n";
             return false;
         }
 
-        const vk::raii::Device& device = m_context.getDevice();
-        const vk::raii::PhysicalDevice& physicalDevice = m_context.getPhysicalDevice();
+        const vk::raii::Device &device = m_context.getDevice();
+        const vk::raii::PhysicalDevice &physicalDevice = m_context.getPhysicalDevice();
         const vk::Extent2D extent = m_context.getSwapchainExtent();
         if (extent.width == 0 || extent.height == 0) {
             return false;
         }
 
-        m_nrdTextureBinding =
-            libraryDesc->spirvBindingOffsets.textureOffset + instanceDesc->resourcesBaseRegisterIndex;
-        m_nrdStorageBinding =
-            libraryDesc->spirvBindingOffsets.storageTextureAndBufferOffset + instanceDesc->resourcesBaseRegisterIndex;
-        m_nrdConstantBinding =
-            libraryDesc->spirvBindingOffsets.constantBufferOffset + instanceDesc->constantBufferRegisterIndex;
+        m_nrdTextureBinding = libraryDesc->spirvBindingOffsets.textureOffset +
+                              instanceDesc->resourcesBaseRegisterIndex;
+        m_nrdStorageBinding = libraryDesc->spirvBindingOffsets.storageTextureAndBufferOffset +
+                              instanceDesc->resourcesBaseRegisterIndex;
+        m_nrdConstantBinding = libraryDesc->spirvBindingOffsets.constantBufferOffset +
+                               instanceDesc->constantBufferRegisterIndex;
         m_nrdSetResourcesIndex = instanceDesc->resourcesSpaceIndex;
         m_nrdSetConstantsIndex = instanceDesc->constantBufferAndSamplersSpaceIndex;
         m_nrdTextureCapacity = std::max(1u, instanceDesc->descriptorPoolDesc.perSetTexturesMaxNum);
-        m_nrdStorageCapacity = std::max(1u, instanceDesc->descriptorPoolDesc.perSetStorageTexturesMaxNum);
+        m_nrdStorageCapacity =
+            std::max(1u, instanceDesc->descriptorPoolDesc.perSetStorageTexturesMaxNum);
         m_nrdConstantBufferSize = instanceDesc->constantBufferMaxDataSize;
 
         const vk::PhysicalDeviceProperties properties = physicalDevice.getProperties();
-        const vk::DeviceSize uboAlignment = std::max<vk::DeviceSize>(
-            16,
-            properties.limits.minUniformBufferOffsetAlignment
-        );
+        const vk::DeviceSize uboAlignment =
+            std::max<vk::DeviceSize>(16, properties.limits.minUniformBufferOffsetAlignment);
         const vk::DeviceSize alignedCbSize =
-            ((static_cast<vk::DeviceSize>(m_nrdConstantBufferSize) + uboAlignment - 1) / uboAlignment) * uboAlignment;
+            ((static_cast<vk::DeviceSize>(m_nrdConstantBufferSize) + uboAlignment - 1) /
+             uboAlignment) *
+            uboAlignment;
         m_nrdConstantBufferStride = static_cast<uint32_t>(alignedCbSize);
 
         {
             std::vector<vk::DescriptorSetLayoutBinding> bindings;
-            bindings.reserve(static_cast<size_t>(m_nrdTextureCapacity) + static_cast<size_t>(m_nrdStorageCapacity));
+            bindings.reserve(static_cast<size_t>(m_nrdTextureCapacity) +
+                             static_cast<size_t>(m_nrdStorageCapacity));
 
             const auto pushBinding = [&](uint32_t binding, vk::DescriptorType type) {
-                for (const vk::DescriptorSetLayoutBinding& existing : bindings) {
+                for (const vk::DescriptorSetLayoutBinding &existing : bindings) {
                     if (existing.binding != binding) {
                         continue;
                     }
                     if (existing.descriptorType != type) {
-                        throw std::runtime_error("NRD descriptor binding collision in resources set layout.");
+                        throw std::runtime_error(
+                            "NRD descriptor binding collision in resources set layout.");
                     }
                     return;
                 }
@@ -1325,9 +1258,8 @@ bool VulkanRenderer::createNrdRuntimeResources() {
             for (uint32_t i = 0; i < m_nrdStorageCapacity; ++i) {
                 pushBinding(m_nrdStorageBinding + i, vk::DescriptorType::eStorageImage);
             }
-            std::sort(bindings.begin(), bindings.end(), [](const auto& a, const auto& b) {
-                return a.binding < b.binding;
-            });
+            std::sort(bindings.begin(), bindings.end(),
+                      [](const auto &a, const auto &b) { return a.binding < b.binding; });
 
             vk::DescriptorSetLayoutCreateInfo layoutInfo{};
             layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
@@ -1335,169 +1267,172 @@ bool VulkanRenderer::createNrdRuntimeResources() {
             m_nrdResourcesSetLayout = vk::raii::DescriptorSetLayout(device, layoutInfo);
         }
 
-    if (m_nrdNearestSampler == nullptr) {
-        vk::SamplerCreateInfo samplerInfo{};
-        samplerInfo.magFilter = vk::Filter::eNearest;
-        samplerInfo.minFilter = vk::Filter::eNearest;
-        samplerInfo.mipmapMode = vk::SamplerMipmapMode::eNearest;
-        samplerInfo.addressModeU = vk::SamplerAddressMode::eClampToEdge;
-        samplerInfo.addressModeV = vk::SamplerAddressMode::eClampToEdge;
-        samplerInfo.addressModeW = vk::SamplerAddressMode::eClampToEdge;
-        samplerInfo.mipLodBias = 0.0f;
-        samplerInfo.anisotropyEnable = VK_FALSE;
-        samplerInfo.maxAnisotropy = 1.0f;
-        samplerInfo.compareEnable = VK_FALSE;
-        samplerInfo.compareOp = vk::CompareOp::eAlways;
-        samplerInfo.minLod = 0.0f;
-        samplerInfo.maxLod = 0.0f;
-        samplerInfo.borderColor = vk::BorderColor::eFloatOpaqueBlack;
-        samplerInfo.unnormalizedCoordinates = VK_FALSE;
-        m_nrdNearestSampler = vk::raii::Sampler(device, samplerInfo);
-    }
-    if (m_nrdLinearSampler == nullptr) {
-        vk::SamplerCreateInfo samplerInfo{};
-        samplerInfo.magFilter = vk::Filter::eLinear;
-        samplerInfo.minFilter = vk::Filter::eLinear;
-        samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
-        samplerInfo.addressModeU = vk::SamplerAddressMode::eClampToEdge;
-        samplerInfo.addressModeV = vk::SamplerAddressMode::eClampToEdge;
-        samplerInfo.addressModeW = vk::SamplerAddressMode::eClampToEdge;
-        samplerInfo.mipLodBias = 0.0f;
-        samplerInfo.anisotropyEnable = VK_FALSE;
-        samplerInfo.maxAnisotropy = 1.0f;
-        samplerInfo.compareEnable = VK_FALSE;
-        samplerInfo.compareOp = vk::CompareOp::eAlways;
-        samplerInfo.minLod = 0.0f;
-        samplerInfo.maxLod = 0.0f;
-        samplerInfo.borderColor = vk::BorderColor::eFloatOpaqueBlack;
-        samplerInfo.unnormalizedCoordinates = VK_FALSE;
-        m_nrdLinearSampler = vk::raii::Sampler(device, samplerInfo);
-    }
-
-    {
-        std::vector<vk::DescriptorSetLayoutBinding> bindings;
-        vk::DescriptorSetLayoutBinding constantBinding{};
-        constantBinding.binding = m_nrdConstantBinding;
-        constantBinding.descriptorType = vk::DescriptorType::eUniformBufferDynamic;
-        constantBinding.descriptorCount = 1;
-        constantBinding.stageFlags = vk::ShaderStageFlagBits::eCompute;
-        bindings.push_back(constantBinding);
-
-        for (uint32_t i = 0; i < instanceDesc->samplersNum; ++i) {
-            vk::DescriptorSetLayoutBinding samplerBinding{};
-            samplerBinding.binding =
-                libraryDesc->spirvBindingOffsets.samplerOffset + instanceDesc->samplersBaseRegisterIndex + i;
-            samplerBinding.descriptorType = vk::DescriptorType::eSampler;
-            samplerBinding.descriptorCount = 1;
-            samplerBinding.stageFlags = vk::ShaderStageFlagBits::eCompute;
-            bindings.push_back(samplerBinding);
+        if (m_nrdNearestSampler == nullptr) {
+            vk::SamplerCreateInfo samplerInfo{};
+            samplerInfo.magFilter = vk::Filter::eNearest;
+            samplerInfo.minFilter = vk::Filter::eNearest;
+            samplerInfo.mipmapMode = vk::SamplerMipmapMode::eNearest;
+            samplerInfo.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+            samplerInfo.addressModeV = vk::SamplerAddressMode::eClampToEdge;
+            samplerInfo.addressModeW = vk::SamplerAddressMode::eClampToEdge;
+            samplerInfo.mipLodBias = 0.0f;
+            samplerInfo.anisotropyEnable = VK_FALSE;
+            samplerInfo.maxAnisotropy = 1.0f;
+            samplerInfo.compareEnable = VK_FALSE;
+            samplerInfo.compareOp = vk::CompareOp::eAlways;
+            samplerInfo.minLod = 0.0f;
+            samplerInfo.maxLod = 0.0f;
+            samplerInfo.borderColor = vk::BorderColor::eFloatOpaqueBlack;
+            samplerInfo.unnormalizedCoordinates = VK_FALSE;
+            m_nrdNearestSampler = vk::raii::Sampler(device, samplerInfo);
+        }
+        if (m_nrdLinearSampler == nullptr) {
+            vk::SamplerCreateInfo samplerInfo{};
+            samplerInfo.magFilter = vk::Filter::eLinear;
+            samplerInfo.minFilter = vk::Filter::eLinear;
+            samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
+            samplerInfo.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+            samplerInfo.addressModeV = vk::SamplerAddressMode::eClampToEdge;
+            samplerInfo.addressModeW = vk::SamplerAddressMode::eClampToEdge;
+            samplerInfo.mipLodBias = 0.0f;
+            samplerInfo.anisotropyEnable = VK_FALSE;
+            samplerInfo.maxAnisotropy = 1.0f;
+            samplerInfo.compareEnable = VK_FALSE;
+            samplerInfo.compareOp = vk::CompareOp::eAlways;
+            samplerInfo.minLod = 0.0f;
+            samplerInfo.maxLod = 0.0f;
+            samplerInfo.borderColor = vk::BorderColor::eFloatOpaqueBlack;
+            samplerInfo.unnormalizedCoordinates = VK_FALSE;
+            m_nrdLinearSampler = vk::raii::Sampler(device, samplerInfo);
         }
 
-        vk::DescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-        layoutInfo.pBindings = bindings.data();
-        m_nrdConstantsSetLayout = vk::raii::DescriptorSetLayout(device, layoutInfo);
-    }
+        {
+            std::vector<vk::DescriptorSetLayoutBinding> bindings;
+            vk::DescriptorSetLayoutBinding constantBinding{};
+            constantBinding.binding = m_nrdConstantBinding;
+            constantBinding.descriptorType = vk::DescriptorType::eUniformBufferDynamic;
+            constantBinding.descriptorCount = 1;
+            constantBinding.stageFlags = vk::ShaderStageFlagBits::eCompute;
+            bindings.push_back(constantBinding);
 
-    vk::raii::DescriptorSetLayout emptySetLayout{ nullptr };
-    const uint32_t maxSetIndex = std::max(m_nrdSetResourcesIndex, m_nrdSetConstantsIndex);
-    std::vector<vk::DescriptorSetLayout> setLayouts(maxSetIndex + 1u, VK_NULL_HANDLE);
-    setLayouts[m_nrdSetResourcesIndex] = *m_nrdResourcesSetLayout;
-    setLayouts[m_nrdSetConstantsIndex] = *m_nrdConstantsSetLayout;
-    for (uint32_t i = 0; i < setLayouts.size(); ++i) {
-        if (setLayouts[i] == VK_NULL_HANDLE) {
-            if (emptySetLayout == nullptr) {
-                vk::DescriptorSetLayoutCreateInfo emptyInfo{};
-                emptySetLayout = vk::raii::DescriptorSetLayout(device, emptyInfo);
+            for (uint32_t i = 0; i < instanceDesc->samplersNum; ++i) {
+                vk::DescriptorSetLayoutBinding samplerBinding{};
+                samplerBinding.binding = libraryDesc->spirvBindingOffsets.samplerOffset +
+                                         instanceDesc->samplersBaseRegisterIndex + i;
+                samplerBinding.descriptorType = vk::DescriptorType::eSampler;
+                samplerBinding.descriptorCount = 1;
+                samplerBinding.stageFlags = vk::ShaderStageFlagBits::eCompute;
+                bindings.push_back(samplerBinding);
             }
-            setLayouts[i] = *emptySetLayout;
-        }
-    }
 
-    vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
-    pipelineLayoutInfo.pSetLayouts = setLayouts.data();
-    m_nrdPipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
-
-    m_nrdPipelines.reserve(instanceDesc->pipelinesNum);
-    for (uint32_t i = 0; i < instanceDesc->pipelinesNum; ++i) {
-        const nrd::PipelineDesc& pipelineDesc = instanceDesc->pipelines[i];
-        if (pipelineDesc.computeShaderSPIRV.bytecode == nullptr || pipelineDesc.computeShaderSPIRV.size == 0) {
-            throw std::runtime_error("NRD pipeline has missing SPIR-V bytecode.");
+            vk::DescriptorSetLayoutCreateInfo layoutInfo{};
+            layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+            layoutInfo.pBindings = bindings.data();
+            m_nrdConstantsSetLayout = vk::raii::DescriptorSetLayout(device, layoutInfo);
         }
 
-        vk::raii::ShaderModule computeShader = loadShaderModuleFromBytes(
-            device,
-            pipelineDesc.computeShaderSPIRV.bytecode,
-            static_cast<size_t>(pipelineDesc.computeShaderSPIRV.size)
-        );
-        vk::PipelineShaderStageCreateInfo stageInfo{};
-        stageInfo.stage = vk::ShaderStageFlagBits::eCompute;
-        stageInfo.module = *computeShader;
-        stageInfo.pName = (instanceDesc->shaderEntryPoint != nullptr) ? instanceDesc->shaderEntryPoint : "main";
-
-        vk::ComputePipelineCreateInfo computeInfo{};
-        computeInfo.stage = stageInfo;
-        computeInfo.layout = *m_nrdPipelineLayout;
-        m_nrdPipelines.emplace_back(device, nullptr, computeInfo);
-    }
-
-    auto createRuntimeTexture = [&](NrdRuntimeTexture& dst, const nrd::TextureDesc& src) {
-        const vk::Format format = mapNrdFormatToVk(src.format);
-        if (format == vk::Format::eUndefined) {
-            throw std::runtime_error("Unsupported NRD texture format in Vulkan mapping.");
-        }
-        const std::string formatId = std::to_string(static_cast<uint32_t>(format));
-        const vk::FormatProperties props = physicalDevice.getFormatProperties(format);
-        if ((props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImage) == vk::FormatFeatureFlags()) {
-            throw std::runtime_error("NRD sampled format " + formatId + " is not supported by this Vulkan device.");
-        }
-        if ((props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eStorageImage) == vk::FormatFeatureFlags()) {
-            throw std::runtime_error("NRD storage format " + formatId + " is not supported by this Vulkan device.");
+        vk::raii::DescriptorSetLayout emptySetLayout{nullptr};
+        const uint32_t maxSetIndex = std::max(m_nrdSetResourcesIndex, m_nrdSetConstantsIndex);
+        std::vector<vk::DescriptorSetLayout> setLayouts(maxSetIndex + 1u, VK_NULL_HANDLE);
+        setLayouts[m_nrdSetResourcesIndex] = *m_nrdResourcesSetLayout;
+        setLayouts[m_nrdSetConstantsIndex] = *m_nrdConstantsSetLayout;
+        for (uint32_t i = 0; i < setLayouts.size(); ++i) {
+            if (setLayouts[i] == VK_NULL_HANDLE) {
+                if (emptySetLayout == nullptr) {
+                    vk::DescriptorSetLayoutCreateInfo emptyInfo{};
+                    emptySetLayout = vk::raii::DescriptorSetLayout(device, emptyInfo);
+                }
+                setLayouts[i] = *emptySetLayout;
+            }
         }
 
-        dst.format = format;
-        dst.width = std::max(1u, divideUp(extent.width, src.downsampleFactor));
-        dst.height = std::max(1u, divideUp(extent.height, src.downsampleFactor));
+        vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
+        pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
+        pipelineLayoutInfo.pSetLayouts = setLayouts.data();
+        m_nrdPipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
 
-        vk::ImageCreateInfo imageInfo{};
-        imageInfo.imageType = vk::ImageType::e2D;
-        imageInfo.extent = vk::Extent3D(dst.width, dst.height, 1u);
-        imageInfo.mipLevels = 1;
-        imageInfo.arrayLayers = 1;
-        imageInfo.format = format;
-        imageInfo.tiling = vk::ImageTiling::eOptimal;
-        imageInfo.initialLayout = vk::ImageLayout::eUndefined;
-        imageInfo.usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage;
-        imageInfo.samples = vk::SampleCountFlagBits::e1;
-        imageInfo.sharingMode = vk::SharingMode::eExclusive;
-        dst.image.image = vk::raii::Image(device, imageInfo);
+        m_nrdPipelines.reserve(instanceDesc->pipelinesNum);
+        for (uint32_t i = 0; i < instanceDesc->pipelinesNum; ++i) {
+            const nrd::PipelineDesc &pipelineDesc = instanceDesc->pipelines[i];
+            if (pipelineDesc.computeShaderSPIRV.bytecode == nullptr ||
+                pipelineDesc.computeShaderSPIRV.size == 0) {
+                throw std::runtime_error("NRD pipeline has missing SPIR-V bytecode.");
+            }
 
-        const vk::MemoryRequirements requirements = dst.image.image.getMemoryRequirements();
-        vk::MemoryAllocateInfo allocInfo{};
-        allocInfo.allocationSize = requirements.size;
-        allocInfo.memoryTypeIndex = VulkanUtils::findMemoryType(
-            physicalDevice,
-            requirements.memoryTypeBits,
-            vk::MemoryPropertyFlagBits::eDeviceLocal
-        );
-        dst.image.memory = vk::raii::DeviceMemory(device, allocInfo);
-        dst.image.image.bindMemory(*dst.image.memory, 0);
+            vk::raii::ShaderModule computeShader = loadShaderModuleFromBytes(
+                device, pipelineDesc.computeShaderSPIRV.bytecode,
+                static_cast<size_t>(pipelineDesc.computeShaderSPIRV.size));
+            vk::PipelineShaderStageCreateInfo stageInfo{};
+            stageInfo.stage = vk::ShaderStageFlagBits::eCompute;
+            stageInfo.module = *computeShader;
+            stageInfo.pName = (instanceDesc->shaderEntryPoint != nullptr)
+                                  ? instanceDesc->shaderEntryPoint
+                                  : "main";
 
-        vk::ImageViewCreateInfo viewInfo{};
-        viewInfo.image = *dst.image.image;
-        viewInfo.viewType = vk::ImageViewType::e2D;
-        viewInfo.format = format;
-        viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-        viewInfo.subresourceRange.baseMipLevel = 0;
-        viewInfo.subresourceRange.levelCount = 1;
-        viewInfo.subresourceRange.baseArrayLayer = 0;
-        viewInfo.subresourceRange.layerCount = 1;
-        dst.image.view = vk::raii::ImageView(device, viewInfo);
-    };
+            vk::ComputePipelineCreateInfo computeInfo{};
+            computeInfo.stage = stageInfo;
+            computeInfo.layout = *m_nrdPipelineLayout;
+            m_nrdPipelines.emplace_back(device, nullptr, computeInfo);
+        }
 
-    m_nrdRuntimePerImage.resize(1);
-    NrdRuntimePerImage& runtime = m_nrdRuntimePerImage[0];
+        auto createRuntimeTexture = [&](NrdRuntimeTexture &dst, const nrd::TextureDesc &src) {
+            const vk::Format format = mapNrdFormatToVk(src.format);
+            if (format == vk::Format::eUndefined) {
+                throw std::runtime_error("Unsupported NRD texture format in Vulkan mapping.");
+            }
+            const std::string formatId = std::to_string(static_cast<uint32_t>(format));
+            const vk::FormatProperties props = physicalDevice.getFormatProperties(format);
+            if ((props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImage) ==
+                vk::FormatFeatureFlags()) {
+                throw std::runtime_error("NRD sampled format " + formatId +
+                                         " is not supported by this Vulkan device.");
+            }
+            if ((props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eStorageImage) ==
+                vk::FormatFeatureFlags()) {
+                throw std::runtime_error("NRD storage format " + formatId +
+                                         " is not supported by this Vulkan device.");
+            }
+
+            dst.format = format;
+            dst.width = std::max(1u, divideUp(extent.width, src.downsampleFactor));
+            dst.height = std::max(1u, divideUp(extent.height, src.downsampleFactor));
+
+            vk::ImageCreateInfo imageInfo{};
+            imageInfo.imageType = vk::ImageType::e2D;
+            imageInfo.extent = vk::Extent3D(dst.width, dst.height, 1u);
+            imageInfo.mipLevels = 1;
+            imageInfo.arrayLayers = 1;
+            imageInfo.format = format;
+            imageInfo.tiling = vk::ImageTiling::eOptimal;
+            imageInfo.initialLayout = vk::ImageLayout::eUndefined;
+            imageInfo.usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage;
+            imageInfo.samples = vk::SampleCountFlagBits::e1;
+            imageInfo.sharingMode = vk::SharingMode::eExclusive;
+            dst.image.image = vk::raii::Image(device, imageInfo);
+
+            const vk::MemoryRequirements requirements = dst.image.image.getMemoryRequirements();
+            vk::MemoryAllocateInfo allocInfo{};
+            allocInfo.allocationSize = requirements.size;
+            allocInfo.memoryTypeIndex =
+                VulkanUtils::findMemoryType(physicalDevice, requirements.memoryTypeBits,
+                                            vk::MemoryPropertyFlagBits::eDeviceLocal);
+            dst.image.memory = vk::raii::DeviceMemory(device, allocInfo);
+            dst.image.image.bindMemory(*dst.image.memory, 0);
+
+            vk::ImageViewCreateInfo viewInfo{};
+            viewInfo.image = *dst.image.image;
+            viewInfo.viewType = vk::ImageViewType::e2D;
+            viewInfo.format = format;
+            viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+            viewInfo.subresourceRange.baseMipLevel = 0;
+            viewInfo.subresourceRange.levelCount = 1;
+            viewInfo.subresourceRange.baseArrayLayer = 0;
+            viewInfo.subresourceRange.layerCount = 1;
+            dst.image.view = vk::raii::ImageView(device, viewInfo);
+        };
+
+        m_nrdRuntimePerImage.resize(1);
+        NrdRuntimePerImage &runtime = m_nrdRuntimePerImage[0];
         runtime.permanentPool.resize(instanceDesc->permanentPoolSize);
         runtime.transientPool.resize(instanceDesc->transientPoolSize);
         for (uint32_t i = 0; i < instanceDesc->permanentPoolSize; ++i) {
@@ -1508,21 +1443,15 @@ bool VulkanRenderer::createNrdRuntimeResources() {
         }
 
         const uint32_t maxDispatchSets = std::max(
-            64u,
-            std::max(instanceDesc->descriptorPoolDesc.setsMaxNum, instanceDesc->pipelinesNum)
-        );
+            64u, std::max(instanceDesc->descriptorPoolDesc.setsMaxNum, instanceDesc->pipelinesNum));
         const uint32_t maxConstantsSets = maxDispatchSets;
         const vk::DeviceSize constantBufferBytes =
-            static_cast<vk::DeviceSize>(m_nrdConstantBufferStride) * static_cast<vk::DeviceSize>(maxConstantsSets);
+            static_cast<vk::DeviceSize>(m_nrdConstantBufferStride) *
+            static_cast<vk::DeviceSize>(maxConstantsSets);
         VulkanUtils::createBuffer(
-            device,
-            physicalDevice,
-            constantBufferBytes,
-            vk::BufferUsageFlagBits::eUniformBuffer,
+            device, physicalDevice, constantBufferBytes, vk::BufferUsageFlagBits::eUniformBuffer,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            runtime.constantBuffer,
-            runtime.constantMemory
-        );
+            runtime.constantBuffer, runtime.constantMemory);
         runtime.constantMapped = runtime.constantMemory.mapMemory(0, constantBufferBytes);
 
         std::array<vk::DescriptorPoolSize, 4> poolSizes{};
@@ -1542,7 +1471,8 @@ bool VulkanRenderer::createNrdRuntimeResources() {
         poolInfo.pPoolSizes = poolSizes.data();
         runtime.descriptorPool = vk::raii::DescriptorPool(device, poolInfo);
 
-        std::vector<vk::DescriptorSetLayout> layouts(maxDispatchSets + 1u, *m_nrdResourcesSetLayout);
+        std::vector<vk::DescriptorSetLayout> layouts(maxDispatchSets + 1u,
+                                                     *m_nrdResourcesSetLayout);
         layouts[maxDispatchSets] = *m_nrdConstantsSetLayout;
         vk::DescriptorSetAllocateInfo allocInfo{};
         allocInfo.descriptorPool = *runtime.descriptorPool;
@@ -1576,8 +1506,8 @@ bool VulkanRenderer::createNrdRuntimeResources() {
             samplerInfos[i].imageLayout = vk::ImageLayout::eUndefined;
 
             samplerWrites[i].dstSet = *runtime.constantsSet;
-            samplerWrites[i].dstBinding =
-                libraryDesc->spirvBindingOffsets.samplerOffset + instanceDesc->samplersBaseRegisterIndex + i;
+            samplerWrites[i].dstBinding = libraryDesc->spirvBindingOffsets.samplerOffset +
+                                          instanceDesc->samplersBaseRegisterIndex + i;
             samplerWrites[i].descriptorType = vk::DescriptorType::eSampler;
             samplerWrites[i].descriptorCount = 1;
             samplerWrites[i].pImageInfo = &samplerInfos[i];
@@ -1589,46 +1519,36 @@ bool VulkanRenderer::createNrdRuntimeResources() {
         writes.insert(writes.end(), samplerWrites.begin(), samplerWrites.end());
         device.updateDescriptorSets(writes, {});
 
-    vk::raii::CommandBuffer commandBuffer = VulkanUtils::beginSingleTimeCommands(device, m_commandPool);
-    const vk::ImageSubresourceRange range(
-        vk::ImageAspectFlagBits::eColor,
-        0,
-        1,
-        0,
-        1
-    );
-    auto transitionPool = [&](std::vector<NrdRuntimeTexture>& pool) {
-        for (NrdRuntimeTexture& tex : pool) {
-            vk::ImageMemoryBarrier barrier{};
-            barrier.oldLayout = vk::ImageLayout::eUndefined;
-            barrier.newLayout = vk::ImageLayout::eGeneral;
-            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.image = *tex.image.image;
-            barrier.subresourceRange = range;
-            barrier.srcAccessMask = {};
-            barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
-            commandBuffer.pipelineBarrier(
-                vk::PipelineStageFlagBits::eTopOfPipe,
-                vk::PipelineStageFlagBits::eComputeShader,
-                {},
-                {},
-                {},
-                barrier
-            );
-        }
-    };
-    transitionPool(runtime.permanentPool);
-    transitionPool(runtime.transientPool);
-    VulkanUtils::endSingleTimeCommands(device, m_context.getGraphicsQueue(), std::move(commandBuffer));
+        vk::raii::CommandBuffer commandBuffer =
+            VulkanUtils::beginSingleTimeCommands(device, m_commandPool);
+        const vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+        auto transitionPool = [&](std::vector<NrdRuntimeTexture> &pool) {
+            for (NrdRuntimeTexture &tex : pool) {
+                vk::ImageMemoryBarrier barrier{};
+                barrier.oldLayout = vk::ImageLayout::eUndefined;
+                barrier.newLayout = vk::ImageLayout::eGeneral;
+                barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barrier.image = *tex.image.image;
+                barrier.subresourceRange = range;
+                barrier.srcAccessMask = {};
+                barrier.dstAccessMask =
+                    vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
+                commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                              vk::PipelineStageFlagBits::eComputeShader, {}, {}, {},
+                                              barrier);
+            }
+        };
+        transitionPool(runtime.permanentPool);
+        transitionPool(runtime.transientPool);
+        VulkanUtils::endSingleTimeCommands(device, m_context.getGraphicsQueue(),
+                                           std::move(commandBuffer));
 
         m_nrdRuntimeReady = true;
         return true;
-    }
-    catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::cerr << "[Vulkan][NRD] Runtime initialization failed: " << e.what() << "\n";
-    }
-    catch (...) {
+    } catch (...) {
         std::cerr << "[Vulkan][NRD] Runtime initialization failed: unknown exception.\n";
     }
 
@@ -1637,7 +1557,7 @@ bool VulkanRenderer::createNrdRuntimeResources() {
 }
 
 void VulkanRenderer::cleanupNrdRuntimeResources() {
-    for (NrdRuntimePerImage& runtime : m_nrdRuntimePerImage) {
+    for (NrdRuntimePerImage &runtime : m_nrdRuntimePerImage) {
         if (runtime.constantMapped != nullptr) {
             runtime.constantMemory.unmapMemory();
             runtime.constantMapped = nullptr;
@@ -1669,7 +1589,7 @@ void VulkanRenderer::cleanupNrdRuntimeResources() {
     m_nrdRuntimeReady = false;
 }
 
-void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData& frameData) {
+void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData &frameData) {
     const auto setNrdValidForAllImages = [&](bool valid) {
         std::fill(m_nrdValidPerImage.begin(), m_nrdValidPerImage.end(), valid);
     };
@@ -1686,24 +1606,25 @@ void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData&
         return;
     }
 
-    const nrd::InstanceDesc* instanceDesc =
-        static_cast<const nrd::InstanceDesc*>(m_nrdBootstrap->instanceDescData());
-    const nrd::DispatchDesc* dispatches =
-        static_cast<const nrd::DispatchDesc*>(m_nrdBootstrap->dispatchDescData());
+    const nrd::InstanceDesc *instanceDesc =
+        static_cast<const nrd::InstanceDesc *>(m_nrdBootstrap->instanceDescData());
+    const nrd::DispatchDesc *dispatches =
+        static_cast<const nrd::DispatchDesc *>(m_nrdBootstrap->dispatchDescData());
     const uint32_t dispatchCount = m_nrdBootstrap->lastDispatchCount();
     if (instanceDesc == nullptr || dispatches == nullptr || dispatchCount == 0) {
         setNrdValidForAllImages(false);
         return;
     }
 
-    NrdRuntimePerImage& runtime = m_nrdRuntimePerImage[0];
-    const NrdPerImageResources& external = m_nrdPerImage[0];
-    if (runtime.constantMapped == nullptr || runtime.constantsSet == nullptr || runtime.resourcesSets.empty()) {
+    NrdRuntimePerImage &runtime = m_nrdRuntimePerImage[0];
+    const NrdPerImageResources &external = m_nrdPerImage[0];
+    if (runtime.constantMapped == nullptr || runtime.constantsSet == nullptr ||
+        runtime.resourcesSets.empty()) {
         setNrdValidForAllImages(false);
         return;
     }
 
-    const auto getExternalView = [&](nrd::ResourceType type, vk::ImageView& outView) -> bool {
+    const auto getExternalView = [&](nrd::ResourceType type, vk::ImageView &outView) -> bool {
         switch (type) {
         case nrd::ResourceType::IN_MV:
             outView = *external.motionIn.view;
@@ -1730,12 +1651,12 @@ void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData&
     std::vector<vk::DescriptorImageInfo> storageInfos(m_nrdStorageCapacity);
     vk::ImageView sampledFallback = *external.normalRoughnessIn.view;
     vk::ImageView storageFallback = *external.diffOut.view;
-    for (vk::DescriptorImageInfo& info : sampledInfos) {
+    for (vk::DescriptorImageInfo &info : sampledInfos) {
         info.sampler = VK_NULL_HANDLE;
         info.imageView = sampledFallback;
         info.imageLayout = vk::ImageLayout::eGeneral;
     }
-    for (vk::DescriptorImageInfo& info : storageInfos) {
+    for (vk::DescriptorImageInfo &info : storageInfos) {
         info.sampler = VK_NULL_HANDLE;
         info.imageView = storageFallback;
         info.imageLayout = vk::ImageLayout::eGeneral;
@@ -1748,22 +1669,20 @@ void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData&
     for (uint32_t i = 0; i < dispatchCount; ++i) {
         if (i >= runtime.resourcesSets.size()) {
             if (!loggedResourceSetOverflow) {
-                std::cerr
-                    << "[Vulkan][NRD] Insufficient per-dispatch descriptor sets: required="
-                    << dispatchCount
-                    << ", allocated=" << runtime.resourcesSets.size()
-                    << ". Skipping remaining dispatches.\n";
+                std::cerr << "[Vulkan][NRD] Insufficient per-dispatch descriptor sets: required="
+                          << dispatchCount << ", allocated=" << runtime.resourcesSets.size()
+                          << ". Skipping remaining dispatches.\n";
                 loggedResourceSetOverflow = true;
             }
             dispatchedAll = false;
             break;
         }
-        const nrd::DispatchDesc& dispatch = dispatches[i];
+        const nrd::DispatchDesc &dispatch = dispatches[i];
         if (dispatch.pipelineIndex >= m_nrdPipelines.size()) {
             continue;
         }
 
-        const nrd::PipelineDesc& pipelineDesc = instanceDesc->pipelines[dispatch.pipelineIndex];
+        const nrd::PipelineDesc &pipelineDesc = instanceDesc->pipelines[dispatch.pipelineIndex];
         if (pipelineDesc.resourceRanges == nullptr || pipelineDesc.resourceRangesNum == 0) {
             continue;
         }
@@ -1772,12 +1691,12 @@ void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData&
         uint32_t nextStorage = 0;
         uint32_t resourceIndex = 0;
         for (uint32_t rangeIndex = 0; rangeIndex < pipelineDesc.resourceRangesNum; ++rangeIndex) {
-            const nrd::ResourceRangeDesc& rangeDesc = pipelineDesc.resourceRanges[rangeIndex];
+            const nrd::ResourceRangeDesc &rangeDesc = pipelineDesc.resourceRanges[rangeIndex];
             for (uint32_t j = 0; j < rangeDesc.descriptorsNum; ++j, ++resourceIndex) {
                 if (resourceIndex >= dispatch.resourcesNum) {
                     break;
                 }
-                const nrd::ResourceDesc& resourceDesc = dispatch.resources[resourceIndex];
+                const nrd::ResourceDesc &resourceDesc = dispatch.resources[resourceIndex];
 
                 vk::ImageView view = VK_NULL_HANDLE;
                 if (resourceDesc.type == nrd::ResourceType::PERMANENT_POOL) {
@@ -1835,7 +1754,8 @@ void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData&
             const uint32_t writeIndex = constantSetIndex % maxConstantsSets;
             const uint32_t maxSize = m_nrdConstantBufferSize;
             const uint32_t copySize = std::min(dispatch.constantBufferDataSize, maxSize);
-            uint8_t* dst = static_cast<uint8_t*>(runtime.constantMapped) +
+            uint8_t *dst =
+                static_cast<uint8_t *>(runtime.constantMapped) +
                 static_cast<size_t>(writeIndex) * static_cast<size_t>(m_nrdConstantBufferStride);
             std::memcpy(dst, dispatch.constantBufferData, copySize);
             if (copySize < maxSize) {
@@ -1844,40 +1764,29 @@ void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData&
             ++constantSetIndex;
         }
 
-        const uint32_t cbIndex = (constantSetIndex == 0) ? 0 : ((constantSetIndex - 1) % maxConstantsSets);
+        const uint32_t cbIndex =
+            (constantSetIndex == 0) ? 0 : ((constantSetIndex - 1) % maxConstantsSets);
         const uint32_t dynamicOffset = cbIndex * m_nrdConstantBufferStride;
-        const std::array<uint32_t, 1> dynamicOffsets = { dynamicOffset };
+        const std::array<uint32_t, 1> dynamicOffsets = {dynamicOffset};
 
-        m_commandBuffers[imageIndex].bindPipeline(vk::PipelineBindPoint::eCompute, *m_nrdPipelines[dispatch.pipelineIndex]);
+        m_commandBuffers[imageIndex].bindPipeline(vk::PipelineBindPoint::eCompute,
+                                                  *m_nrdPipelines[dispatch.pipelineIndex]);
         const vk::DescriptorSet resourcesSet = resourceSetForDispatch;
-        m_commandBuffers[imageIndex].bindDescriptorSets(
-            vk::PipelineBindPoint::eCompute,
-            *m_nrdPipelineLayout,
-            m_nrdSetResourcesIndex,
-            resourcesSet,
-            {}
-        );
+        m_commandBuffers[imageIndex].bindDescriptorSets(vk::PipelineBindPoint::eCompute,
+                                                        *m_nrdPipelineLayout,
+                                                        m_nrdSetResourcesIndex, resourcesSet, {});
         const vk::DescriptorSet constantsSet = *runtime.constantsSet;
         m_commandBuffers[imageIndex].bindDescriptorSets(
-            vk::PipelineBindPoint::eCompute,
-            *m_nrdPipelineLayout,
-            m_nrdSetConstantsIndex,
-            constantsSet,
-            dynamicOffsets
-        );
+            vk::PipelineBindPoint::eCompute, *m_nrdPipelineLayout, m_nrdSetConstantsIndex,
+            constantsSet, dynamicOffsets);
         m_commandBuffers[imageIndex].dispatch(dispatch.gridWidth, dispatch.gridHeight, 1u);
 
         vk::MemoryBarrier barrier{};
         barrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
         barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
-        m_commandBuffers[imageIndex].pipelineBarrier(
-            vk::PipelineStageFlagBits::eComputeShader,
-            vk::PipelineStageFlagBits::eComputeShader,
-            {},
-            barrier,
-            {},
-            {}
-        );
+        m_commandBuffers[imageIndex].pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
+                                                     vk::PipelineStageFlagBits::eComputeShader, {},
+                                                     barrier, {}, {});
     }
 
     setNrdValidForAllImages(dispatchedAll);
@@ -1891,8 +1800,8 @@ void VulkanRenderer::createRestirGiSpatialResources() {
         return;
     }
 
-    const vk::raii::Device& device = m_context.getDevice();
-    const vk::raii::PhysicalDevice& physicalDevice = m_context.getPhysicalDevice();
+    const vk::raii::Device &device = m_context.getDevice();
+    const vk::raii::PhysicalDevice &physicalDevice = m_context.getPhysicalDevice();
     const vk::Extent2D extent = m_context.getSwapchainExtent();
     if (extent.width == 0 || extent.height == 0) {
         return;
@@ -1905,8 +1814,8 @@ void VulkanRenderer::createRestirGiSpatialResources() {
     constexpr vk::Format kGiSpatialFormat = vk::Format::eR16G16B16A16Sfloat;
     for (size_t imageIndex = 0; imageIndex < imageCount; ++imageIndex) {
         for (uint32_t parity = 0; parity < 2u; ++parity) {
-            RestirDiReservoirResources& reservoir = m_restirGiSpatialPerImage[imageIndex][parity];
-            RestirMetaResources& meta = m_restirGiSpatialMetaPerImage[imageIndex][parity];
+            RestirDiReservoirResources &reservoir = m_restirGiSpatialPerImage[imageIndex][parity];
+            RestirMetaResources &meta = m_restirGiSpatialMetaPerImage[imageIndex][parity];
 
             vk::ImageCreateInfo imageInfo{};
             imageInfo.imageType = vk::ImageType::e2D;
@@ -1916,10 +1825,8 @@ void VulkanRenderer::createRestirGiSpatialResources() {
             imageInfo.format = kGiSpatialFormat;
             imageInfo.tiling = vk::ImageTiling::eOptimal;
             imageInfo.initialLayout = vk::ImageLayout::eUndefined;
-            imageInfo.usage =
-                vk::ImageUsageFlagBits::eSampled |
-                vk::ImageUsageFlagBits::eStorage |
-                vk::ImageUsageFlagBits::eTransferDst;
+            imageInfo.usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage |
+                              vk::ImageUsageFlagBits::eTransferDst;
             imageInfo.samples = vk::SampleCountFlagBits::e1;
             imageInfo.sharingMode = vk::SharingMode::eExclusive;
 
@@ -1928,11 +1835,9 @@ void VulkanRenderer::createRestirGiSpatialResources() {
                 const vk::MemoryRequirements requirements = reservoir.image.getMemoryRequirements();
                 vk::MemoryAllocateInfo allocInfo{};
                 allocInfo.allocationSize = requirements.size;
-                allocInfo.memoryTypeIndex = VulkanUtils::findMemoryType(
-                    physicalDevice,
-                    requirements.memoryTypeBits,
-                    vk::MemoryPropertyFlagBits::eDeviceLocal
-                );
+                allocInfo.memoryTypeIndex =
+                    VulkanUtils::findMemoryType(physicalDevice, requirements.memoryTypeBits,
+                                                vk::MemoryPropertyFlagBits::eDeviceLocal);
                 reservoir.memory = vk::raii::DeviceMemory(device, allocInfo);
                 reservoir.image.bindMemory(*reservoir.memory, 0);
             }
@@ -1953,11 +1858,9 @@ void VulkanRenderer::createRestirGiSpatialResources() {
                 const vk::MemoryRequirements requirements = meta.image.getMemoryRequirements();
                 vk::MemoryAllocateInfo allocInfo{};
                 allocInfo.allocationSize = requirements.size;
-                allocInfo.memoryTypeIndex = VulkanUtils::findMemoryType(
-                    physicalDevice,
-                    requirements.memoryTypeBits,
-                    vk::MemoryPropertyFlagBits::eDeviceLocal
-                );
+                allocInfo.memoryTypeIndex =
+                    VulkanUtils::findMemoryType(physicalDevice, requirements.memoryTypeBits,
+                                                vk::MemoryPropertyFlagBits::eDeviceLocal);
                 meta.memory = vk::raii::DeviceMemory(device, allocInfo);
                 meta.image.bindMemory(*meta.memory, 0);
             }
@@ -2006,12 +1909,8 @@ void VulkanRenderer::createRestirGiSpatialResources() {
     spatialGiMetaBinding.stageFlags = vk::ShaderStageFlagBits::eCompute;
 
     const std::array<vk::DescriptorSetLayoutBinding, 5> bindings = {
-        temporalGiBinding,
-        temporalGiMetaBinding,
-        temporalValidationBinding,
-        spatialGiBinding,
-        spatialGiMetaBinding
-    };
+        temporalGiBinding, temporalGiMetaBinding, temporalValidationBinding, spatialGiBinding,
+        spatialGiMetaBinding};
 
     vk::DescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
@@ -2045,7 +1944,8 @@ void VulkanRenderer::createRestirGiSpatialResources() {
     if (!shaderDir.empty() && shaderDir.back() != '/' && shaderDir.back() != '\\') {
         shaderDir.push_back('/');
     }
-    vk::raii::ShaderModule computeShader = loadShaderModule(device, shaderDir + "restir_gi_spatial.comp.spv");
+    vk::raii::ShaderModule computeShader =
+        loadShaderModule(device, shaderDir + "restir_gi_spatial.comp.spv");
 
     vk::PushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eCompute;
@@ -2053,8 +1953,7 @@ void VulkanRenderer::createRestirGiSpatialResources() {
     pushConstantRange.size = static_cast<uint32_t>(sizeof(RestirGiSpatialPushConstants));
 
     const std::array<vk::DescriptorSetLayout, 1> computeLayouts = {
-        *m_restirGiSpatialDescriptorSetLayout
-    };
+        *m_restirGiSpatialDescriptorSetLayout};
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(computeLayouts.size());
     pipelineLayoutInfo.pSetLayouts = computeLayouts.data();
@@ -2072,18 +1971,13 @@ void VulkanRenderer::createRestirGiSpatialResources() {
     computeInfo.layout = *m_restirGiSpatialPipelineLayout;
     m_restirGiSpatialPipeline = vk::raii::Pipeline(device, nullptr, computeInfo);
 
-    vk::raii::CommandBuffer commandBuffer = VulkanUtils::beginSingleTimeCommands(device, m_commandPool);
-    const vk::ImageSubresourceRange range(
-        vk::ImageAspectFlagBits::eColor,
-        0,
-        1,
-        0,
-        1
-    );
-    const vk::ClearColorValue clearZero(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 0.0f });
-    const vk::ClearColorValue clearMeta(std::array<float, 4>{ 1.0f, 0.0f, 0.0f, 1.0e-4f });
-    for (const auto& perImage : m_restirGiSpatialPerImage) {
-        for (const RestirDiReservoirResources& reservoir : perImage) {
+    vk::raii::CommandBuffer commandBuffer =
+        VulkanUtils::beginSingleTimeCommands(device, m_commandPool);
+    const vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+    const vk::ClearColorValue clearZero(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f});
+    const vk::ClearColorValue clearMeta(std::array<float, 4>{1.0f, 0.0f, 0.0f, 1.0e-4f});
+    for (const auto &perImage : m_restirGiSpatialPerImage) {
+        for (const RestirDiReservoirResources &reservoir : perImage) {
             vk::ImageMemoryBarrier toGeneral{};
             toGeneral.oldLayout = vk::ImageLayout::eUndefined;
             toGeneral.newLayout = vk::ImageLayout::eGeneral;
@@ -2092,25 +1986,20 @@ void VulkanRenderer::createRestirGiSpatialResources() {
             toGeneral.image = *reservoir.image;
             toGeneral.subresourceRange = range;
             toGeneral.srcAccessMask = {};
-            toGeneral.dstAccessMask =
-                vk::AccessFlagBits::eShaderRead |
-                vk::AccessFlagBits::eShaderWrite |
-                vk::AccessFlagBits::eTransferWrite;
-            commandBuffer.pipelineBarrier(
-                vk::PipelineStageFlagBits::eTopOfPipe,
-                vk::PipelineStageFlagBits::eTransfer |
-                vk::PipelineStageFlagBits::eFragmentShader |
-                vk::PipelineStageFlagBits::eComputeShader,
-                {},
-                {},
-                {},
-                toGeneral
-            );
-            commandBuffer.clearColorImage(*reservoir.image, vk::ImageLayout::eGeneral, clearZero, range);
+            toGeneral.dstAccessMask = vk::AccessFlagBits::eShaderRead |
+                                      vk::AccessFlagBits::eShaderWrite |
+                                      vk::AccessFlagBits::eTransferWrite;
+            commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                          vk::PipelineStageFlagBits::eTransfer |
+                                              vk::PipelineStageFlagBits::eFragmentShader |
+                                              vk::PipelineStageFlagBits::eComputeShader,
+                                          {}, {}, {}, toGeneral);
+            commandBuffer.clearColorImage(*reservoir.image, vk::ImageLayout::eGeneral, clearZero,
+                                          range);
         }
     }
-    for (const auto& perImage : m_restirGiSpatialMetaPerImage) {
-        for (const RestirMetaResources& meta : perImage) {
+    for (const auto &perImage : m_restirGiSpatialMetaPerImage) {
+        for (const RestirMetaResources &meta : perImage) {
             vk::ImageMemoryBarrier toGeneral{};
             toGeneral.oldLayout = vk::ImageLayout::eUndefined;
             toGeneral.newLayout = vk::ImageLayout::eGeneral;
@@ -2119,24 +2008,19 @@ void VulkanRenderer::createRestirGiSpatialResources() {
             toGeneral.image = *meta.image;
             toGeneral.subresourceRange = range;
             toGeneral.srcAccessMask = {};
-            toGeneral.dstAccessMask =
-                vk::AccessFlagBits::eShaderRead |
-                vk::AccessFlagBits::eShaderWrite |
-                vk::AccessFlagBits::eTransferWrite;
-            commandBuffer.pipelineBarrier(
-                vk::PipelineStageFlagBits::eTopOfPipe,
-                vk::PipelineStageFlagBits::eTransfer |
-                vk::PipelineStageFlagBits::eFragmentShader |
-                vk::PipelineStageFlagBits::eComputeShader,
-                {},
-                {},
-                {},
-                toGeneral
-            );
+            toGeneral.dstAccessMask = vk::AccessFlagBits::eShaderRead |
+                                      vk::AccessFlagBits::eShaderWrite |
+                                      vk::AccessFlagBits::eTransferWrite;
+            commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                          vk::PipelineStageFlagBits::eTransfer |
+                                              vk::PipelineStageFlagBits::eFragmentShader |
+                                              vk::PipelineStageFlagBits::eComputeShader,
+                                          {}, {}, {}, toGeneral);
             commandBuffer.clearColorImage(*meta.image, vk::ImageLayout::eGeneral, clearMeta, range);
         }
     }
-    VulkanUtils::endSingleTimeCommands(device, m_context.getGraphicsQueue(), std::move(commandBuffer));
+    VulkanUtils::endSingleTimeCommands(device, m_context.getGraphicsQueue(),
+                                       std::move(commandBuffer));
 }
 
 void VulkanRenderer::cleanupRestirGiSpatialResources() {
@@ -2150,15 +2034,14 @@ void VulkanRenderer::cleanupRestirGiSpatialResources() {
 }
 
 void VulkanRenderer::updateRestirGiSpatialDescriptorSet(uint32_t imageIndex, uint32_t writeParity) {
+    const uint32_t historyIndex = kRestirHistorySlot;
     if (imageIndex >= m_restirGiSpatialDescriptorSets.size() ||
-        imageIndex >= m_restirGiPerImage.size() ||
-        imageIndex >= m_restirGiMetaPerImage.size() ||
-        imageIndex >= m_restirValidationPerImage.size() ||
-        imageIndex >= m_restirGiSpatialPerImage.size() ||
-        imageIndex >= m_restirGiSpatialMetaPerImage.size() ||
-        m_restirGiSampler == nullptr ||
-        m_restirGiMetaSampler == nullptr ||
-        m_restirValidationSampler == nullptr) {
+        historyIndex >= m_restirGiPerImage.size() ||
+        historyIndex >= m_restirGiMetaPerImage.size() ||
+        historyIndex >= m_restirValidationPerImage.size() ||
+        historyIndex >= m_restirGiSpatialPerImage.size() ||
+        historyIndex >= m_restirGiSpatialMetaPerImage.size() || m_restirGiSampler == nullptr ||
+        m_restirGiMetaSampler == nullptr || m_restirValidationSampler == nullptr) {
         return;
     }
 
@@ -2166,27 +2049,27 @@ void VulkanRenderer::updateRestirGiSpatialDescriptorSet(uint32_t imageIndex, uin
 
     vk::DescriptorImageInfo temporalGiInfo{};
     temporalGiInfo.sampler = *m_restirGiSampler;
-    temporalGiInfo.imageView = *m_restirGiPerImage[imageIndex][parity].view;
+    temporalGiInfo.imageView = *m_restirGiPerImage[historyIndex][parity].view;
     temporalGiInfo.imageLayout = vk::ImageLayout::eGeneral;
 
     vk::DescriptorImageInfo temporalGiMetaInfo{};
     temporalGiMetaInfo.sampler = *m_restirGiMetaSampler;
-    temporalGiMetaInfo.imageView = *m_restirGiMetaPerImage[imageIndex][parity].view;
+    temporalGiMetaInfo.imageView = *m_restirGiMetaPerImage[historyIndex][parity].view;
     temporalGiMetaInfo.imageLayout = vk::ImageLayout::eGeneral;
 
     vk::DescriptorImageInfo temporalValidationInfo{};
     temporalValidationInfo.sampler = *m_restirValidationSampler;
-    temporalValidationInfo.imageView = *m_restirValidationPerImage[imageIndex][parity].view;
+    temporalValidationInfo.imageView = *m_restirValidationPerImage[historyIndex][parity].view;
     temporalValidationInfo.imageLayout = vk::ImageLayout::eGeneral;
 
     vk::DescriptorImageInfo spatialGiInfo{};
     spatialGiInfo.sampler = VK_NULL_HANDLE;
-    spatialGiInfo.imageView = *m_restirGiSpatialPerImage[imageIndex][parity].view;
+    spatialGiInfo.imageView = *m_restirGiSpatialPerImage[historyIndex][parity].view;
     spatialGiInfo.imageLayout = vk::ImageLayout::eGeneral;
 
     vk::DescriptorImageInfo spatialGiMetaInfo{};
     spatialGiMetaInfo.sampler = VK_NULL_HANDLE;
-    spatialGiMetaInfo.imageView = *m_restirGiSpatialMetaPerImage[imageIndex][parity].view;
+    spatialGiMetaInfo.imageView = *m_restirGiSpatialMetaPerImage[historyIndex][parity].view;
     spatialGiMetaInfo.imageLayout = vk::ImageLayout::eGeneral;
 
     std::array<vk::WriteDescriptorSet, 5> writes{};
@@ -2220,16 +2103,21 @@ void VulkanRenderer::updateRestirGiSpatialDescriptorSet(uint32_t imageIndex, uin
     writes[4].descriptorCount = 1;
     writes[4].pImageInfo = &spatialGiMetaInfo;
 
-    const vk::raii::Device& device = m_context.getDevice();
+    const vk::raii::Device &device = m_context.getDevice();
     device.updateDescriptorSets(writes, {});
 }
 
-void VulkanRenderer::dispatchRestirGiSpatialPass(uint32_t imageIndex, const FrameRenderData& frameData) {
+void VulkanRenderer::dispatchRestirGiSpatialPass(uint32_t imageIndex,
+                                                 const FrameRenderData &frameData) {
+    if (!kRestirGiDispatchSpatialPass) {
+        return;
+    }
+
+    const uint32_t historyIndex = kRestirHistorySlot;
     if (!frameData.giLighting.pathTracingEnabled ||
-        imageIndex >= m_restirDiWriteParityPerImage.size() ||
+        historyIndex >= m_restirDiWriteParityPerImage.size() ||
         imageIndex >= m_restirGiSpatialDescriptorSets.size() ||
-        m_restirGiSpatialPipeline == nullptr ||
-        m_restirGiSpatialPipelineLayout == nullptr) {
+        m_restirGiSpatialPipeline == nullptr || m_restirGiSpatialPipelineLayout == nullptr) {
         return;
     }
 
@@ -2238,31 +2126,25 @@ void VulkanRenderer::dispatchRestirGiSpatialPass(uint32_t imageIndex, const Fram
         return;
     }
 
-    const uint32_t writeParity = m_restirDiWriteParityPerImage[imageIndex] & 1u;
+    const uint32_t writeParity = m_restirDiWriteParityPerImage[historyIndex] & 1u;
     updateRestirGiSpatialDescriptorSet(imageIndex, writeParity);
 
-    if (imageIndex >= m_restirGiPerImage.size() ||
-        imageIndex >= m_restirGiMetaPerImage.size() ||
-        imageIndex >= m_restirValidationPerImage.size() ||
-        imageIndex >= m_restirGiSpatialPerImage.size() ||
-        imageIndex >= m_restirGiSpatialMetaPerImage.size()) {
+    if (historyIndex >= m_restirGiPerImage.size() ||
+        historyIndex >= m_restirGiMetaPerImage.size() ||
+        historyIndex >= m_restirValidationPerImage.size() ||
+        historyIndex >= m_restirGiSpatialPerImage.size() ||
+        historyIndex >= m_restirGiSpatialMetaPerImage.size()) {
         return;
     }
 
-    const vk::ImageSubresourceRange range(
-        vk::ImageAspectFlagBits::eColor,
-        0,
-        1,
-        0,
-        1
-    );
+    const vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
 
     std::array<vk::ImageMemoryBarrier, 5> barriers{};
     barriers[0].oldLayout = vk::ImageLayout::eGeneral;
     barriers[0].newLayout = vk::ImageLayout::eGeneral;
     barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barriers[0].image = *m_restirGiPerImage[imageIndex][writeParity].image;
+    barriers[0].image = *m_restirGiPerImage[historyIndex][writeParity].image;
     barriers[0].subresourceRange = range;
     barriers[0].srcAccessMask = vk::AccessFlagBits::eShaderWrite;
     barriers[0].dstAccessMask = vk::AccessFlagBits::eShaderRead;
@@ -2271,7 +2153,7 @@ void VulkanRenderer::dispatchRestirGiSpatialPass(uint32_t imageIndex, const Fram
     barriers[1].newLayout = vk::ImageLayout::eGeneral;
     barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barriers[1].image = *m_restirGiMetaPerImage[imageIndex][writeParity].image;
+    barriers[1].image = *m_restirGiMetaPerImage[historyIndex][writeParity].image;
     barriers[1].subresourceRange = range;
     barriers[1].srcAccessMask = vk::AccessFlagBits::eShaderWrite;
     barriers[1].dstAccessMask = vk::AccessFlagBits::eShaderRead;
@@ -2280,7 +2162,7 @@ void VulkanRenderer::dispatchRestirGiSpatialPass(uint32_t imageIndex, const Fram
     barriers[2].newLayout = vk::ImageLayout::eGeneral;
     barriers[2].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barriers[2].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barriers[2].image = *m_restirValidationPerImage[imageIndex][writeParity].image;
+    barriers[2].image = *m_restirValidationPerImage[historyIndex][writeParity].image;
     barriers[2].subresourceRange = range;
     barriers[2].srcAccessMask = vk::AccessFlagBits::eShaderWrite;
     barriers[2].dstAccessMask = vk::AccessFlagBits::eShaderRead;
@@ -2289,7 +2171,7 @@ void VulkanRenderer::dispatchRestirGiSpatialPass(uint32_t imageIndex, const Fram
     barriers[3].newLayout = vk::ImageLayout::eGeneral;
     barriers[3].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barriers[3].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barriers[3].image = *m_restirGiSpatialPerImage[imageIndex][writeParity].image;
+    barriers[3].image = *m_restirGiSpatialPerImage[historyIndex][writeParity].image;
     barriers[3].subresourceRange = range;
     barriers[3].srcAccessMask = vk::AccessFlagBits::eShaderWrite;
     barriers[3].dstAccessMask = vk::AccessFlagBits::eShaderWrite;
@@ -2298,46 +2180,31 @@ void VulkanRenderer::dispatchRestirGiSpatialPass(uint32_t imageIndex, const Fram
     barriers[4].newLayout = vk::ImageLayout::eGeneral;
     barriers[4].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barriers[4].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barriers[4].image = *m_restirGiSpatialMetaPerImage[imageIndex][writeParity].image;
+    barriers[4].image = *m_restirGiSpatialMetaPerImage[historyIndex][writeParity].image;
     barriers[4].subresourceRange = range;
     barriers[4].srcAccessMask = vk::AccessFlagBits::eShaderWrite;
     barriers[4].dstAccessMask = vk::AccessFlagBits::eShaderWrite;
 
     m_commandBuffers[imageIndex].pipelineBarrier(
         vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
-        vk::PipelineStageFlagBits::eComputeShader,
-        {},
-        {},
-        {},
-        barriers
-    );
+        vk::PipelineStageFlagBits::eComputeShader, {}, {}, {}, barriers);
 
-    m_commandBuffers[imageIndex].bindPipeline(vk::PipelineBindPoint::eCompute, *m_restirGiSpatialPipeline);
+    m_commandBuffers[imageIndex].bindPipeline(vk::PipelineBindPoint::eCompute,
+                                              *m_restirGiSpatialPipeline);
     const vk::DescriptorSet descriptorSet = *m_restirGiSpatialDescriptorSets[imageIndex];
     m_commandBuffers[imageIndex].bindDescriptorSets(
-        vk::PipelineBindPoint::eCompute,
-        *m_restirGiSpatialPipelineLayout,
-        0,
-        descriptorSet,
-        {}
-    );
+        vk::PipelineBindPoint::eCompute, *m_restirGiSpatialPipelineLayout, 0, descriptorSet, {});
 
     RestirGiSpatialPushConstants push{};
     push.extent = glm::uvec2(extent.width, extent.height);
-    push.invExtent = glm::vec2(
-        1.0f / static_cast<float>(extent.width),
-        1.0f / static_cast<float>(extent.height)
-    );
+    push.invExtent = glm::vec2(1.0f / static_cast<float>(extent.width),
+                               1.0f / static_cast<float>(extent.height));
     push.spatialWeight = glm::clamp(frameData.giLighting.restirSpatialReuse, 0.0f, 0.35f);
     push.lumaPhi = std::max(frameData.giLighting.denoiseLumaPhi, 0.05f);
     push.normalPower = 10.0f;
     push.depthScale = 24.0f;
     m_commandBuffers[imageIndex].pushConstants<RestirGiSpatialPushConstants>(
-        *m_restirGiSpatialPipelineLayout,
-        vk::ShaderStageFlagBits::eCompute,
-        0,
-        push
-    );
+        *m_restirGiSpatialPipelineLayout, vk::ShaderStageFlagBits::eCompute, 0, push);
 
     const uint32_t groupCountX = (extent.width + 7u) / 8u;
     const uint32_t groupCountY = (extent.height + 7u) / 8u;
@@ -2356,43 +2223,45 @@ void VulkanRenderer::clearTemporalGiWriteTargets(uint32_t imageIndex) {
         vk::ClearColorValue clear{};
     };
 
-    const vk::ClearColorValue clearZero(std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 0.0f });
-    const vk::ClearColorValue clearValidation(std::array<float, 4>{ 0.0f, 0.0f, 1.0f, 0.0f });
-    const vk::ClearColorValue clearMeta(std::array<float, 4>{ 1.0f, 0.0f, 0.0f, 0.0f });
-    const vk::ClearColorValue clearNormalRoughness(std::array<float, 4>{ 0.5f, 1.0f, 0.5f, 1.0f });
-    const vk::ClearColorValue clearViewZ(std::array<float, 4>{ -1.0f, 0.0f, 0.0f, 0.0f });
+    const vk::ClearColorValue clearZero(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f});
+    const vk::ClearColorValue clearValidation(std::array<float, 4>{0.0f, 0.0f, 1.0f, 0.0f});
+    const vk::ClearColorValue clearMeta(std::array<float, 4>{1.0f, 0.0f, 0.0f, 0.0f});
+    const vk::ClearColorValue clearNormalRoughness(std::array<float, 4>{0.5f, 1.0f, 0.5f, 1.0f});
+    const vk::ClearColorValue clearViewZ(std::array<float, 4>{-1.0f, 0.0f, 0.0f, 0.0f});
 
     std::vector<ClearTarget> targets;
     targets.reserve(9);
-    auto addTarget = [&](vk::Image image, const vk::ClearColorValue& clearValue) {
+    auto addTarget = [&](vk::Image image, const vk::ClearColorValue &clearValue) {
         if (image == VK_NULL_HANDLE) {
             return;
         }
-        targets.push_back(ClearTarget{ image, clearValue });
+        targets.push_back(ClearTarget{image, clearValue});
     };
 
-    if (imageIndex < m_restirDiWriteParityPerImage.size()) {
-        const uint32_t writeParity = m_restirDiWriteParityPerImage[imageIndex] & 1u;
+    const uint32_t historyIndex = kRestirHistorySlot;
+    if (historyIndex < m_restirDiWriteParityPerImage.size()) {
+        const uint32_t writeParity = m_restirDiWriteParityPerImage[historyIndex] & 1u;
 
-        if (imageIndex < m_restirDiPerImage.size()) {
-            addTarget(*m_restirDiPerImage[imageIndex][writeParity].image, clearZero);
+        if (historyIndex < m_restirDiPerImage.size()) {
+            addTarget(*m_restirDiPerImage[historyIndex][writeParity].image, clearZero);
         }
-        if (imageIndex < m_restirValidationPerImage.size()) {
-            addTarget(*m_restirValidationPerImage[imageIndex][writeParity].image, clearValidation);
+        if (historyIndex < m_restirValidationPerImage.size()) {
+            addTarget(*m_restirValidationPerImage[historyIndex][writeParity].image,
+                      clearValidation);
         }
-        if (imageIndex < m_restirMetaPerImage.size()) {
-            addTarget(*m_restirMetaPerImage[imageIndex][writeParity].image, clearMeta);
+        if (historyIndex < m_restirMetaPerImage.size()) {
+            addTarget(*m_restirMetaPerImage[historyIndex][writeParity].image, clearMeta);
         }
-        if (imageIndex < m_restirGiPerImage.size()) {
-            addTarget(*m_restirGiPerImage[imageIndex][writeParity].image, clearZero);
+        if (historyIndex < m_restirGiPerImage.size()) {
+            addTarget(*m_restirGiPerImage[historyIndex][writeParity].image, clearZero);
         }
-        if (imageIndex < m_restirGiMetaPerImage.size()) {
-            addTarget(*m_restirGiMetaPerImage[imageIndex][writeParity].image, clearMeta);
+        if (historyIndex < m_restirGiMetaPerImage.size()) {
+            addTarget(*m_restirGiMetaPerImage[historyIndex][writeParity].image, clearMeta);
         }
     }
 
     if (!m_nrdPerImage.empty()) {
-        const NrdPerImageResources& nrd = m_nrdPerImage[0];
+        const NrdPerImageResources &nrd = m_nrdPerImage[0];
         addTarget(*nrd.diffIn.image, clearZero);
         addTarget(*nrd.normalRoughnessIn.image, clearNormalRoughness);
         addTarget(*nrd.motionIn.image, clearZero);
@@ -2403,20 +2272,14 @@ void VulkanRenderer::clearTemporalGiWriteTargets(uint32_t imageIndex) {
         return;
     }
 
-    const vk::ImageSubresourceRange range(
-        vk::ImageAspectFlagBits::eColor,
-        0,
-        1,
-        0,
-        1
-    );
+    const vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
 
     std::vector<vk::ImageMemoryBarrier> toTransfer;
     std::vector<vk::ImageMemoryBarrier> toShader;
     toTransfer.reserve(targets.size());
     toShader.reserve(targets.size());
 
-    for (const ClearTarget& target : targets) {
+    for (const ClearTarget &target : targets) {
         vk::ImageMemoryBarrier beforeClear{};
         beforeClear.oldLayout = vk::ImageLayout::eGeneral;
         beforeClear.newLayout = vk::ImageLayout::eGeneral;
@@ -2424,10 +2287,9 @@ void VulkanRenderer::clearTemporalGiWriteTargets(uint32_t imageIndex) {
         beforeClear.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         beforeClear.image = target.image;
         beforeClear.subresourceRange = range;
-        beforeClear.srcAccessMask =
-            vk::AccessFlagBits::eShaderRead |
-            vk::AccessFlagBits::eShaderWrite |
-            vk::AccessFlagBits::eTransferWrite;
+        beforeClear.srcAccessMask = vk::AccessFlagBits::eShaderRead |
+                                    vk::AccessFlagBits::eShaderWrite |
+                                    vk::AccessFlagBits::eTransferWrite;
         beforeClear.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
         toTransfer.push_back(beforeClear);
 
@@ -2440,39 +2302,24 @@ void VulkanRenderer::clearTemporalGiWriteTargets(uint32_t imageIndex) {
         afterClear.subresourceRange = range;
         afterClear.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
         afterClear.dstAccessMask =
-            vk::AccessFlagBits::eShaderRead |
-            vk::AccessFlagBits::eShaderWrite;
+            vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
         toShader.push_back(afterClear);
     }
 
     m_commandBuffers[imageIndex].pipelineBarrier(
-        vk::PipelineStageFlagBits::eFragmentShader |
-        vk::PipelineStageFlagBits::eComputeShader |
-        vk::PipelineStageFlagBits::eTransfer,
-        vk::PipelineStageFlagBits::eTransfer,
-        {},
-        {},
-        {},
-        toTransfer
-    );
+        vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader |
+            vk::PipelineStageFlagBits::eTransfer,
+        vk::PipelineStageFlagBits::eTransfer, {}, {}, {}, toTransfer);
 
-    for (const ClearTarget& target : targets) {
-        m_commandBuffers[imageIndex].clearColorImage(
-            target.image,
-            vk::ImageLayout::eGeneral,
-            target.clear,
-            range
-        );
+    for (const ClearTarget &target : targets) {
+        m_commandBuffers[imageIndex].clearColorImage(target.image, vk::ImageLayout::eGeneral,
+                                                     target.clear, range);
     }
 
-    m_commandBuffers[imageIndex].pipelineBarrier(
-        vk::PipelineStageFlagBits::eTransfer,
-        vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
-        {},
-        {},
-        {},
-        toShader
-    );
+    m_commandBuffers[imageIndex].pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                                                 vk::PipelineStageFlagBits::eFragmentShader |
+                                                     vk::PipelineStageFlagBits::eComputeShader,
+                                                 {}, {}, {}, toShader);
 }
 
 void VulkanRenderer::barrierNrdSignalsForCompute(uint32_t imageIndex) {
@@ -2480,14 +2327,8 @@ void VulkanRenderer::barrierNrdSignalsForCompute(uint32_t imageIndex) {
         return;
     }
 
-    const NrdPerImageResources& nrd = m_nrdPerImage[0];
-    const vk::ImageSubresourceRange range(
-        vk::ImageAspectFlagBits::eColor,
-        0,
-        1,
-        0,
-        1
-    );
+    const NrdPerImageResources &nrd = m_nrdPerImage[0];
+    const vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
 
     auto makeBarrier = [&](vk::Image image) {
         vk::ImageMemoryBarrier barrier{};
@@ -2503,20 +2344,13 @@ void VulkanRenderer::barrierNrdSignalsForCompute(uint32_t imageIndex) {
     };
 
     std::array<vk::ImageMemoryBarrier, 5> barriers = {
-        makeBarrier(*nrd.diffIn.image),
-        makeBarrier(*nrd.normalRoughnessIn.image),
-        makeBarrier(*nrd.motionIn.image),
-        makeBarrier(*nrd.viewZIn.image),
+        makeBarrier(*nrd.diffIn.image),   makeBarrier(*nrd.normalRoughnessIn.image),
+        makeBarrier(*nrd.motionIn.image), makeBarrier(*nrd.viewZIn.image),
         makeBarrier(*nrd.diffOut.image),
     };
-    m_commandBuffers[imageIndex].pipelineBarrier(
-        vk::PipelineStageFlagBits::eFragmentShader,
-        vk::PipelineStageFlagBits::eComputeShader,
-        {},
-        {},
-        {},
-        barriers
-    );
+    m_commandBuffers[imageIndex].pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
+                                                 vk::PipelineStageFlagBits::eComputeShader, {}, {},
+                                                 {}, barriers);
 }
 
 void VulkanRenderer::createTimestampResources() {
@@ -2524,13 +2358,14 @@ void VulkanRenderer::createTimestampResources() {
 
     m_timestampQueriesEnabled = m_context.areTimestampQueriesSupported();
     m_timestampPeriodNanoseconds = m_context.getTimestampPeriodNanoseconds();
-    if (!m_timestampQueriesEnabled || m_timestampPeriodNanoseconds <= 0.0f || m_framebuffers.empty()) {
+    if (!m_timestampQueriesEnabled || m_timestampPeriodNanoseconds <= 0.0f ||
+        m_framebuffers.empty()) {
         m_timestampQueriesEnabled = false;
         m_timestampPeriodNanoseconds = 0.0f;
         return;
     }
 
-    const vk::raii::Device& device = m_context.getDevice();
+    const vk::raii::Device &device = m_context.getDevice();
     m_timestampQueryPools.reserve(m_framebuffers.size());
     for (size_t i = 0; i < m_framebuffers.size(); ++i) {
         vk::QueryPoolCreateInfo queryPoolInfo{};
@@ -2553,19 +2388,13 @@ void VulkanRenderer::updateGpuTimingStatsForImage(uint32_t imageIndex) {
         return;
     }
 
-    const vk::raii::Device& device = m_context.getDevice();
+    const vk::raii::Device &device = m_context.getDevice();
     const vk::QueryPool queryPool = *m_timestampQueryPools[imageIndex];
     std::array<uint64_t, TIMESTAMP_QUERY_COUNT> ticks{};
-    const VkResult result = vkGetQueryPoolResults(
-        static_cast<VkDevice>(*device),
-        static_cast<VkQueryPool>(queryPool),
-        0,
-        TIMESTAMP_QUERY_COUNT,
-        sizeof(ticks),
-        ticks.data(),
-        sizeof(uint64_t),
-        VK_QUERY_RESULT_64_BIT
-    );
+    const VkResult result =
+        vkGetQueryPoolResults(static_cast<VkDevice>(*device), static_cast<VkQueryPool>(queryPool),
+                              0, TIMESTAMP_QUERY_COUNT, sizeof(ticks), ticks.data(),
+                              sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
 
     if (result != VK_SUCCESS) {
         m_lastFrameTimingStats.gpuValid = false;
@@ -2587,102 +2416,99 @@ void VulkanRenderer::updateGpuTimingStatsForImage(uint32_t imageIndex) {
     m_lastFrameTimingStats.gpuFrameMs = deltaMs(ticks[0], ticks[4]);
 }
 
-void VulkanRenderer::ensurePerImageDrawBufferCapacity(
-    uint32_t imageIndex,
-    vk::DeviceSize modelBytes,
-    vk::DeviceSize indirectBytes
-) {
+void VulkanRenderer::ensurePerImageDrawBufferCapacity(uint32_t imageIndex,
+                                                      vk::DeviceSize modelBytes,
+                                                      vk::DeviceSize indirectBytes) {
     if (imageIndex >= m_perImageDrawResources.size()) {
         return;
     }
 
-    PerImageDrawResources& resources = m_perImageDrawResources[imageIndex];
-    const vk::raii::Device& device = m_context.getDevice();
-    const vk::raii::PhysicalDevice& physicalDevice = m_context.getPhysicalDevice();
+    PerImageDrawResources &resources = m_perImageDrawResources[imageIndex];
+    const vk::raii::Device &device = m_context.getDevice();
+    const vk::raii::PhysicalDevice &physicalDevice = m_context.getPhysicalDevice();
 
     const vk::DeviceSize requiredModelBytes = std::max(modelBytes, MIN_MODEL_BUFFER_BYTES);
-    if (resources.modelMatrixCapacityBytes < requiredModelBytes || resources.modelMatrixBuffer == nullptr) {
+    if (resources.modelMatrixCapacityBytes < requiredModelBytes ||
+        resources.modelMatrixBuffer == nullptr) {
         if (resources.modelMatrixMapped != nullptr) {
             resources.modelMatrixBufferMemory.unmapMemory();
             resources.modelMatrixMapped = nullptr;
         }
         resources.modelMatrixBuffer.clear();
         resources.modelMatrixBufferMemory.clear();
-        resources.modelMatrixCapacityBytes = growCapacity(MIN_MODEL_BUFFER_BYTES, requiredModelBytes);
+        resources.modelMatrixCapacityBytes =
+            growCapacity(MIN_MODEL_BUFFER_BYTES, requiredModelBytes);
 
-        VulkanUtils::createBuffer(
-            device,
-            physicalDevice,
-            resources.modelMatrixCapacityBytes,
-            vk::BufferUsageFlagBits::eStorageBuffer,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            resources.modelMatrixBuffer,
-            resources.modelMatrixBufferMemory
-        );
+        VulkanUtils::createBuffer(device, physicalDevice, resources.modelMatrixCapacityBytes,
+                                  vk::BufferUsageFlagBits::eStorageBuffer,
+                                  vk::MemoryPropertyFlagBits::eHostVisible |
+                                      vk::MemoryPropertyFlagBits::eHostCoherent,
+                                  resources.modelMatrixBuffer, resources.modelMatrixBufferMemory);
         resources.modelMatrixMapped = resources.modelMatrixBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
 
         updateModelDescriptorSet(imageIndex);
     }
 
     const vk::DeviceSize requiredIndirectBytes = std::max(indirectBytes, MIN_INDIRECT_BUFFER_BYTES);
-    if (resources.indirectCommandCapacityBytes < requiredIndirectBytes || resources.indirectCommandBuffer == nullptr) {
+    if (resources.indirectCommandCapacityBytes < requiredIndirectBytes ||
+        resources.indirectCommandBuffer == nullptr) {
         if (resources.indirectCommandMapped != nullptr) {
             resources.indirectCommandBufferMemory.unmapMemory();
             resources.indirectCommandMapped = nullptr;
         }
         resources.indirectCommandBuffer.clear();
         resources.indirectCommandBufferMemory.clear();
-        resources.indirectCommandCapacityBytes = growCapacity(MIN_INDIRECT_BUFFER_BYTES, requiredIndirectBytes);
+        resources.indirectCommandCapacityBytes =
+            growCapacity(MIN_INDIRECT_BUFFER_BYTES, requiredIndirectBytes);
 
         VulkanUtils::createBuffer(
-            device,
-            physicalDevice,
-            resources.indirectCommandCapacityBytes,
+            device, physicalDevice, resources.indirectCommandCapacityBytes,
             vk::BufferUsageFlagBits::eIndirectBuffer,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            resources.indirectCommandBuffer,
-            resources.indirectCommandBufferMemory
-        );
-        resources.indirectCommandMapped = resources.indirectCommandBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
+            resources.indirectCommandBuffer, resources.indirectCommandBufferMemory);
+        resources.indirectCommandMapped =
+            resources.indirectCommandBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
     }
 }
 
 void VulkanRenderer::updatePerImageDrawBuffers(
-    uint32_t imageIndex,
-    const std::vector<glm::mat4>& modelMatrices,
-    const std::vector<IndexedIndirectCommand>& indirectCommands
-) {
+    uint32_t imageIndex, const std::vector<glm::mat4> &modelMatrices,
+    const std::vector<IndexedIndirectCommand> &indirectCommands) {
     if (imageIndex >= m_perImageDrawResources.size()) {
         return;
     }
 
-    const vk::DeviceSize modelBytes = static_cast<vk::DeviceSize>(modelMatrices.size() * sizeof(glm::mat4));
+    const vk::DeviceSize modelBytes =
+        static_cast<vk::DeviceSize>(modelMatrices.size() * sizeof(glm::mat4));
     const vk::DeviceSize indirectBytes =
         static_cast<vk::DeviceSize>(indirectCommands.size() * sizeof(IndexedIndirectCommand));
     ensurePerImageDrawBufferCapacity(imageIndex, modelBytes, indirectBytes);
 
-    PerImageDrawResources& resources = m_perImageDrawResources[imageIndex];
+    PerImageDrawResources &resources = m_perImageDrawResources[imageIndex];
 
     if (!modelMatrices.empty() && resources.modelMatrixMapped != nullptr) {
-        std::memcpy(resources.modelMatrixMapped, modelMatrices.data(), static_cast<size_t>(modelBytes));
+        std::memcpy(resources.modelMatrixMapped, modelMatrices.data(),
+                    static_cast<size_t>(modelBytes));
     }
 
     if (!indirectCommands.empty() && resources.indirectCommandMapped != nullptr) {
-        std::memcpy(resources.indirectCommandMapped, indirectCommands.data(), static_cast<size_t>(indirectBytes));
+        std::memcpy(resources.indirectCommandMapped, indirectCommands.data(),
+                    static_cast<size_t>(indirectBytes));
     }
 }
 
 void VulkanRenderer::updateModelDescriptorSet(uint32_t imageIndex) {
-    if (imageIndex >= m_perImageDrawResources.size() || imageIndex >= m_modelDescriptorSets.size()) {
+    if (imageIndex >= m_perImageDrawResources.size() ||
+        imageIndex >= m_modelDescriptorSets.size()) {
         return;
     }
 
-    const PerImageDrawResources& resources = m_perImageDrawResources[imageIndex];
+    const PerImageDrawResources &resources = m_perImageDrawResources[imageIndex];
     if (resources.modelMatrixBuffer == nullptr || resources.modelMatrixCapacityBytes == 0) {
         return;
     }
 
-    const vk::raii::Device& device = m_context.getDevice();
+    const vk::raii::Device &device = m_context.getDevice();
 
     vk::DescriptorBufferInfo bufferInfo{};
     bufferInfo.buffer = *resources.modelMatrixBuffer;
@@ -2696,33 +2522,40 @@ void VulkanRenderer::updateModelDescriptorSet(uint32_t imageIndex) {
     write.descriptorCount = 1;
     write.pBufferInfo = &bufferInfo;
 
-    const std::array<vk::WriteDescriptorSet, 1> writes = { write };
+    const std::array<vk::WriteDescriptorSet, 1> writes = {write};
     device.updateDescriptorSets(writes, {});
 }
 
-void VulkanRenderer::updateGiDescriptorSet(uint32_t imageIndex, const FrameRenderData& frameData, const glm::mat4& viewProjection) {
+void VulkanRenderer::updateGiDescriptorSet(uint32_t imageIndex, const FrameRenderData &frameData,
+                                           const glm::mat4 &viewProjection) {
     if (imageIndex >= m_perImageDrawResources.size() || imageIndex >= m_giDescriptorSets.size()) {
         return;
     }
 
-    PerImageDrawResources& resources = m_perImageDrawResources[imageIndex];
+    PerImageDrawResources &resources = m_perImageDrawResources[imageIndex];
     if (resources.giParamsBuffer == nullptr || resources.giParamsMapped == nullptr) {
         return;
     }
 
+    const uint32_t historyIndex = kRestirHistorySlot;
     GiLightingParamsGpu params{};
     params.header.x = frameData.giLighting.enabled
-        ? std::min(frameData.giLighting.cascadeCount, GI_CASCADE_BINDINGS)
-        : 0u;
+                          ? std::min(frameData.giLighting.cascadeCount, GI_CASCADE_BINDINGS)
+                          : 0u;
     params.header.y = frameData.giLighting.sunShadowsEnabled ? 1u : 0u;
     params.header.z = frameData.giLighting.pathTracingEnabled ? 1u : 0u;
     params.header.w = frameData.giLighting.nrdDebugView;
     params.pathConfig.x = std::max(1u, frameData.giLighting.pathTraceRaysPerPixel);
-    const bool restirHistoryValid =
-        frameData.giLighting.pathTracingEnabled &&
-        !frameData.giLighting.resetHistory &&
-        imageIndex < m_restirDiValidPerImage.size() &&
-        m_restirDiValidPerImage[imageIndex];
+    const bool hasPrevViewProjection = frameData.giLighting.enabled &&
+                                       !frameData.giLighting.resetHistory &&
+                                       historyIndex < m_restirDiPrevViewProjectionPerImage.size() &&
+                                       historyIndex < m_prevViewProjectionValidPerImage.size() &&
+                                       m_prevViewProjectionValidPerImage[historyIndex];
+    const bool hasNrdPrevViewProjection = frameData.giLighting.enabled &&
+                                          !frameData.giLighting.resetHistory &&
+                                          m_nrdPrevMatricesValid;
+    const bool restirHistoryValid = frameData.giLighting.pathTracingEnabled &&
+                                    !frameData.giLighting.resetHistory && hasPrevViewProjection;
     params.pathConfig.y = restirHistoryValid ? 1u : 0u;
     params.pathConfig.z = m_frameCounterLow;
     params.pathConfig.w = frameData.giLighting.resetHistory ? 1u : 0u;
@@ -2731,27 +2564,26 @@ void VulkanRenderer::updateGiDescriptorSet(uint32_t imageIndex, const FrameRende
     params.tracingConfig.y = frameData.giLighting.hardwareRayTracingSupported ? 1u : 0u;
     params.tracingConfig.z =
         (m_giRtDescriptorEnabled && frameData.giLighting.sceneTlas != VK_NULL_HANDLE) ? 1u : 0u;
-    const bool nrdHistoryValid =
-        frameData.giLighting.pathTracingEnabled &&
-        !frameData.giLighting.resetHistory &&
-        imageIndex < m_nrdValidPerImage.size() &&
-        m_nrdValidPerImage[imageIndex];
+    const bool nrdHistoryValid = frameData.giLighting.pathTracingEnabled &&
+                                 !frameData.giLighting.resetHistory && hasNrdPrevViewProjection &&
+                                 historyIndex < m_nrdValidPerImage.size() &&
+                                 m_nrdValidPerImage[historyIndex];
     params.tracingConfig.w = nrdHistoryValid ? 1u : 0u;
     params.tuning.x = frameData.giLighting.baseDiffuse;
     params.tuning.y = frameData.giLighting.giIntensity;
     params.tuning.z = frameData.giLighting.sunIntensity;
     params.tuning.w = frameData.giLighting.sunShadowMinVisibility;
     params.sunDirection = glm::vec4(frameData.giLighting.sunDirection, 0.0f);
-    params.shadowOccupancyMinWordCount = glm::ivec4(
-        frameData.giLighting.shadowOccupancyMinBlocks,
-        static_cast<int32_t>(frameData.giLighting.shadowOccupancyWordCount)
-    );
+    params.shadowOccupancyMinWordCount =
+        glm::ivec4(frameData.giLighting.shadowOccupancyMinBlocks,
+                   static_cast<int32_t>(frameData.giLighting.shadowOccupancyWordCount));
     params.shadowOccupancyDims = glm::uvec4(frameData.giLighting.shadowOccupancyDims, 0u);
     params.shadowWorldBoundsXy = frameData.giLighting.shadowWorldBoundsXy;
     params.shadowWorldBoundsZ = frameData.giLighting.shadowWorldBoundsZ;
     params.shadowParams.x = frameData.giLighting.sunShadowMaxDistance;
     params.shadowParams.y = 0.08f;
-    params.shadowParams.z = static_cast<float>(std::max(1u, frameData.giLighting.pathTraceMaxBounces));
+    params.shadowParams.z =
+        static_cast<float>(std::max(1u, frameData.giLighting.pathTraceMaxBounces));
     params.shadowParams.w = std::max(0.0f, frameData.giLighting.pathTraceSkyIntensity);
     params.restirParams.x = glm::clamp(frameData.giLighting.restirTemporalBlend, 0.0f, 1.0f);
     params.restirParams.y = glm::clamp(frameData.giLighting.restirSpatialReuse, 0.0f, 1.0f);
@@ -2765,25 +2597,14 @@ void VulkanRenderer::updateGiDescriptorSet(uint32_t imageIndex, const FrameRende
     params.denoiseParams.z = std::max(frameData.giLighting.denoiseLumaPhi, 0.01f);
     params.denoiseParams.w = glm::clamp(frameData.giLighting.denoiseMomentBlend, 0.0f, 1.0f);
     params.currViewProjection = viewProjection;
-    const bool hasPrevViewProjection =
-        frameData.giLighting.enabled &&
-        !frameData.giLighting.resetHistory &&
-        imageIndex < m_restirDiPrevViewProjectionPerImage.size() &&
-        imageIndex < m_prevViewProjectionValidPerImage.size() &&
-        m_prevViewProjectionValidPerImage[imageIndex];
-    params.prevViewProjection = hasPrevViewProjection
-        ? m_restirDiPrevViewProjectionPerImage[imageIndex]
-        : viewProjection;
-    const bool hasNrdPrevViewProjection =
-        frameData.giLighting.enabled &&
-        !frameData.giLighting.resetHistory &&
-        m_nrdPrevMatricesValid;
-    params.nrdPrevViewProjection = hasNrdPrevViewProjection
-        ? m_nrdPrevViewProjection
-        : viewProjection;
+    params.prevViewProjection =
+        hasPrevViewProjection ? m_restirDiPrevViewProjectionPerImage[historyIndex] : viewProjection;
+    params.nrdPrevViewProjection =
+        hasNrdPrevViewProjection ? m_nrdPrevViewProjection : viewProjection;
 
     for (uint32_t i = 0; i < params.header.x; ++i) {
-        params.cascades[i].originSpacingBlocks = frameData.giLighting.cascades[i].originSpacingBlocks;
+        params.cascades[i].originSpacingBlocks =
+            frameData.giLighting.cascades[i].originSpacingBlocks;
         params.cascades[i].probeCounts = frameData.giLighting.cascades[i].probeCounts;
     }
     std::memcpy(resources.giParamsMapped, &params, sizeof(params));
@@ -2794,8 +2615,7 @@ void VulkanRenderer::updateGiDescriptorSet(uint32_t imageIndex, const FrameRende
         if (frameData.giLighting.enabled && i < frameData.giLighting.cascadeCount) {
             source = frameData.giLighting.cascades[i].probeBuffer;
         }
-        if (source == VK_NULL_HANDLE &&
-            i < m_giFallbackProbeBuffers.size() &&
+        if (source == VK_NULL_HANDLE && i < m_giFallbackProbeBuffers.size() &&
             m_giFallbackProbeBuffers[i] != nullptr) {
             source = *m_giFallbackProbeBuffers[i];
         }
@@ -2804,10 +2624,10 @@ void VulkanRenderer::updateGiDescriptorSet(uint32_t imageIndex, const FrameRende
         bufferInfos[i].range = VK_WHOLE_SIZE;
     }
 
-    const bool needsTraceOccupancy = frameData.giLighting.sunShadowsEnabled || frameData.giLighting.pathTracingEnabled;
-    VkBuffer shadowSource = needsTraceOccupancy
-        ? frameData.giLighting.shadowOccupancyBuffer
-        : VK_NULL_HANDLE;
+    const bool needsTraceOccupancy =
+        frameData.giLighting.sunShadowsEnabled || frameData.giLighting.pathTracingEnabled;
+    VkBuffer shadowSource =
+        needsTraceOccupancy ? frameData.giLighting.shadowOccupancyBuffer : VK_NULL_HANDLE;
     if (shadowSource == VK_NULL_HANDLE && m_giFallbackShadowOccupancyBuffer != nullptr) {
         shadowSource = *m_giFallbackShadowOccupancyBuffer;
     }
@@ -2843,23 +2663,19 @@ void VulkanRenderer::updateGiDescriptorSet(uint32_t imageIndex, const FrameRende
     vk::DescriptorImageInfo nrdViewZInInfo{};
     vk::DescriptorImageInfo nrdDiffOutInfo{};
     const bool restirReady =
-        imageIndex < m_restirDiPerImage.size() &&
-        imageIndex < m_restirValidationPerImage.size() &&
-        imageIndex < m_restirMetaPerImage.size() &&
-        imageIndex < m_restirGiPerImage.size() &&
-        imageIndex < m_restirGiMetaPerImage.size() &&
-        imageIndex < m_restirGiSpatialPerImage.size() &&
-        imageIndex < m_restirGiSpatialMetaPerImage.size() &&
-        imageIndex < m_restirDiWriteParityPerImage.size() &&
-        m_restirDiSampler != nullptr &&
-        m_restirValidationSampler != nullptr &&
-        m_restirMetaSampler != nullptr &&
-        m_restirGiSampler != nullptr &&
-        m_restirGiMetaSampler != nullptr;
+        historyIndex < m_restirDiPerImage.size() &&
+        historyIndex < m_restirValidationPerImage.size() &&
+        historyIndex < m_restirMetaPerImage.size() && historyIndex < m_restirGiPerImage.size() &&
+        historyIndex < m_restirGiMetaPerImage.size() &&
+        historyIndex < m_restirGiSpatialPerImage.size() &&
+        historyIndex < m_restirGiSpatialMetaPerImage.size() &&
+        historyIndex < m_restirDiWriteParityPerImage.size() && m_restirDiSampler != nullptr &&
+        m_restirValidationSampler != nullptr && m_restirMetaSampler != nullptr &&
+        m_restirGiSampler != nullptr && m_restirGiMetaSampler != nullptr;
     if (restirReady) {
-        const uint32_t writeParity = m_restirDiWriteParityPerImage[imageIndex] & 1u;
+        const uint32_t writeParity = m_restirDiWriteParityPerImage[historyIndex] & 1u;
         const uint32_t readParity = writeParity ^ 1u;
-        const auto& perImage = m_restirDiPerImage[imageIndex];
+        const auto &perImage = m_restirDiPerImage[historyIndex];
         prevRestirInfo.sampler = *m_restirDiSampler;
         prevRestirInfo.imageView = *perImage[readParity].view;
         prevRestirInfo.imageLayout = vk::ImageLayout::eGeneral;
@@ -2867,7 +2683,7 @@ void VulkanRenderer::updateGiDescriptorSet(uint32_t imageIndex, const FrameRende
         currRestirInfo.imageView = *perImage[writeParity].view;
         currRestirInfo.imageLayout = vk::ImageLayout::eGeneral;
 
-        const auto& validationPerImage = m_restirValidationPerImage[imageIndex];
+        const auto &validationPerImage = m_restirValidationPerImage[historyIndex];
         prevValidationInfo.sampler = *m_restirValidationSampler;
         prevValidationInfo.imageView = *validationPerImage[readParity].view;
         prevValidationInfo.imageLayout = vk::ImageLayout::eGeneral;
@@ -2875,7 +2691,7 @@ void VulkanRenderer::updateGiDescriptorSet(uint32_t imageIndex, const FrameRende
         currValidationInfo.imageView = *validationPerImage[writeParity].view;
         currValidationInfo.imageLayout = vk::ImageLayout::eGeneral;
 
-        const auto& metaPerImage = m_restirMetaPerImage[imageIndex];
+        const auto &metaPerImage = m_restirMetaPerImage[historyIndex];
         prevMetaInfo.sampler = *m_restirMetaSampler;
         prevMetaInfo.imageView = *metaPerImage[readParity].view;
         prevMetaInfo.imageLayout = vk::ImageLayout::eGeneral;
@@ -2883,30 +2699,32 @@ void VulkanRenderer::updateGiDescriptorSet(uint32_t imageIndex, const FrameRende
         currMetaInfo.imageView = *metaPerImage[writeParity].view;
         currMetaInfo.imageLayout = vk::ImageLayout::eGeneral;
 
-        const auto& giPerImage = m_restirGiPerImage[imageIndex];
-        const auto& giSpatialPerImage = m_restirGiSpatialPerImage[imageIndex];
+        const auto &giPerImage = m_restirGiPerImage[historyIndex];
+        const auto &giSpatialPerImage = m_restirGiSpatialPerImage[historyIndex];
+        const auto &giHistoryPerImage = kRestirGiUseSpatialHistory ? giSpatialPerImage : giPerImage;
         prevRestirGiInfo.sampler = *m_restirGiSampler;
-        prevRestirGiInfo.imageView = *giSpatialPerImage[readParity].view;
+        prevRestirGiInfo.imageView = *giHistoryPerImage[readParity].view;
         prevRestirGiInfo.imageLayout = vk::ImageLayout::eGeneral;
         currRestirGiInfo.sampler = VK_NULL_HANDLE;
         currRestirGiInfo.imageView = *giPerImage[writeParity].view;
         currRestirGiInfo.imageLayout = vk::ImageLayout::eGeneral;
 
-        const auto& giMetaPerImage = m_restirGiMetaPerImage[imageIndex];
-        const auto& giSpatialMetaPerImage = m_restirGiSpatialMetaPerImage[imageIndex];
+        const auto &giMetaPerImage = m_restirGiMetaPerImage[historyIndex];
+        const auto &giSpatialMetaPerImage = m_restirGiSpatialMetaPerImage[historyIndex];
+        const auto &giHistoryMetaPerImage =
+            kRestirGiUseSpatialHistory ? giSpatialMetaPerImage : giMetaPerImage;
         prevRestirGiMetaInfo.sampler = *m_restirGiMetaSampler;
-        prevRestirGiMetaInfo.imageView = *giSpatialMetaPerImage[readParity].view;
+        prevRestirGiMetaInfo.imageView = *giHistoryMetaPerImage[readParity].view;
         prevRestirGiMetaInfo.imageLayout = vk::ImageLayout::eGeneral;
         currRestirGiMetaInfo.sampler = VK_NULL_HANDLE;
         currRestirGiMetaInfo.imageView = *giMetaPerImage[writeParity].view;
         currRestirGiMetaInfo.imageLayout = vk::ImageLayout::eGeneral;
     }
 
-    const NrdPerImageResources* nrdResources = nullptr;
+    const NrdPerImageResources *nrdResources = nullptr;
     if (!m_nrdPerImage.empty()) {
         nrdResources = &m_nrdPerImage[0];
-    }
-    else if (m_nrdFallbackReady) {
+    } else if (m_nrdFallbackReady) {
         nrdResources = &m_nrdFallback;
     }
     if (nrdResources != nullptr) {
@@ -2926,17 +2744,20 @@ void VulkanRenderer::updateGiDescriptorSet(uint32_t imageIndex, const FrameRende
         nrdViewZInInfo.imageView = *nrdResources->viewZIn.view;
         nrdViewZInInfo.imageLayout = vk::ImageLayout::eGeneral;
 
-        nrdDiffOutInfo.sampler = (m_nrdOutputSampler != nullptr) ? *m_nrdOutputSampler : VK_NULL_HANDLE;
+        nrdDiffOutInfo.sampler =
+            (m_nrdOutputSampler != nullptr) ? *m_nrdOutputSampler : VK_NULL_HANDLE;
         nrdDiffOutInfo.imageView = *nrdResources->diffOut.view;
         nrdDiffOutInfo.imageLayout = vk::ImageLayout::eGeneral;
     } else if (!m_loggedMissingNrdResources) {
-        std::cerr << "[Vulkan][NRD] Missing signal resources, GI descriptors are using null NRD bindings.\n";
+        std::cerr << "[Vulkan][NRD] Missing signal resources, GI descriptors are using null NRD "
+                     "bindings.\n";
         m_loggedMissingNrdResources = true;
     }
 
     std::vector<vk::WriteDescriptorSet> writes;
     writes.reserve(m_giRtDescriptorEnabled ? GI_BINDING_COUNT : GI_RT_SCENE_BINDING);
-    auto pushBufferWrite = [&](uint32_t binding, vk::DescriptorType type, const vk::DescriptorBufferInfo* info) {
+    auto pushBufferWrite = [&](uint32_t binding, vk::DescriptorType type,
+                               const vk::DescriptorBufferInfo *info) {
         vk::WriteDescriptorSet write{};
         write.dstSet = *m_giDescriptorSets[imageIndex];
         write.dstBinding = binding;
@@ -2945,7 +2766,8 @@ void VulkanRenderer::updateGiDescriptorSet(uint32_t imageIndex, const FrameRende
         write.pBufferInfo = info;
         writes.push_back(write);
     };
-    auto pushImageWrite = [&](uint32_t binding, vk::DescriptorType type, const vk::DescriptorImageInfo* info) {
+    auto pushImageWrite = [&](uint32_t binding, vk::DescriptorType type,
+                              const vk::DescriptorImageInfo *info) {
         vk::WriteDescriptorSet write{};
         write.dstSet = *m_giDescriptorSets[imageIndex];
         write.dstBinding = binding;
@@ -2958,44 +2780,36 @@ void VulkanRenderer::updateGiDescriptorSet(uint32_t imageIndex, const FrameRende
     for (uint32_t i = 0; i < GI_CASCADE_BINDINGS; ++i) {
         pushBufferWrite(i, vk::DescriptorType::eStorageBuffer, &bufferInfos[i]);
     }
-    pushBufferWrite(GI_PARAM_BINDING, vk::DescriptorType::eUniformBuffer, &bufferInfos[GI_PARAM_BINDING]);
-    pushBufferWrite(
-        GI_SHADOW_OCCUPANCY_BINDING,
-        vk::DescriptorType::eStorageBuffer,
-        &bufferInfos[GI_SHADOW_OCCUPANCY_BINDING]
-    );
-    pushBufferWrite(GI_MATERIAL_BINDING, vk::DescriptorType::eStorageBuffer, &bufferInfos[GI_MATERIAL_BINDING]);
-    pushImageWrite(GI_RESTIR_DI_PREV_BINDING, vk::DescriptorType::eCombinedImageSampler, &prevRestirInfo);
+    pushBufferWrite(GI_PARAM_BINDING, vk::DescriptorType::eUniformBuffer,
+                    &bufferInfos[GI_PARAM_BINDING]);
+    pushBufferWrite(GI_SHADOW_OCCUPANCY_BINDING, vk::DescriptorType::eStorageBuffer,
+                    &bufferInfos[GI_SHADOW_OCCUPANCY_BINDING]);
+    pushBufferWrite(GI_MATERIAL_BINDING, vk::DescriptorType::eStorageBuffer,
+                    &bufferInfos[GI_MATERIAL_BINDING]);
+    pushImageWrite(GI_RESTIR_DI_PREV_BINDING, vk::DescriptorType::eCombinedImageSampler,
+                   &prevRestirInfo);
     pushImageWrite(GI_RESTIR_DI_CURR_BINDING, vk::DescriptorType::eStorageImage, &currRestirInfo);
-    pushImageWrite(
-        GI_RESTIR_VALIDATION_PREV_BINDING,
-        vk::DescriptorType::eCombinedImageSampler,
-        &prevValidationInfo
-    );
-    pushImageWrite(GI_RESTIR_VALIDATION_CURR_BINDING, vk::DescriptorType::eStorageImage, &currValidationInfo);
-    pushImageWrite(GI_RESTIR_META_PREV_BINDING, vk::DescriptorType::eCombinedImageSampler, &prevMetaInfo);
+    pushImageWrite(GI_RESTIR_VALIDATION_PREV_BINDING, vk::DescriptorType::eCombinedImageSampler,
+                   &prevValidationInfo);
+    pushImageWrite(GI_RESTIR_VALIDATION_CURR_BINDING, vk::DescriptorType::eStorageImage,
+                   &currValidationInfo);
+    pushImageWrite(GI_RESTIR_META_PREV_BINDING, vk::DescriptorType::eCombinedImageSampler,
+                   &prevMetaInfo);
     pushImageWrite(GI_RESTIR_META_CURR_BINDING, vk::DescriptorType::eStorageImage, &currMetaInfo);
-    pushImageWrite(GI_RESTIR_GI_PREV_BINDING, vk::DescriptorType::eCombinedImageSampler, &prevRestirGiInfo);
+    pushImageWrite(GI_RESTIR_GI_PREV_BINDING, vk::DescriptorType::eCombinedImageSampler,
+                   &prevRestirGiInfo);
     pushImageWrite(GI_RESTIR_GI_CURR_BINDING, vk::DescriptorType::eStorageImage, &currRestirGiInfo);
-    pushImageWrite(
-        GI_RESTIR_GI_META_PREV_BINDING,
-        vk::DescriptorType::eCombinedImageSampler,
-        &prevRestirGiMetaInfo
-    );
-    pushImageWrite(GI_RESTIR_GI_META_CURR_BINDING, vk::DescriptorType::eStorageImage, &currRestirGiMetaInfo);
+    pushImageWrite(GI_RESTIR_GI_META_PREV_BINDING, vk::DescriptorType::eCombinedImageSampler,
+                   &prevRestirGiMetaInfo);
+    pushImageWrite(GI_RESTIR_GI_META_CURR_BINDING, vk::DescriptorType::eStorageImage,
+                   &currRestirGiMetaInfo);
     pushImageWrite(GI_NRD_DIFF_IN_BINDING, vk::DescriptorType::eStorageImage, &nrdDiffInInfo);
-    pushImageWrite(
-        GI_NRD_NORMAL_ROUGHNESS_IN_BINDING,
-        vk::DescriptorType::eStorageImage,
-        &nrdNormalRoughnessInInfo
-    );
+    pushImageWrite(GI_NRD_NORMAL_ROUGHNESS_IN_BINDING, vk::DescriptorType::eStorageImage,
+                   &nrdNormalRoughnessInInfo);
     pushImageWrite(GI_NRD_MV_IN_BINDING, vk::DescriptorType::eStorageImage, &nrdMvInInfo);
     pushImageWrite(GI_NRD_VIEWZ_IN_BINDING, vk::DescriptorType::eStorageImage, &nrdViewZInInfo);
-    pushImageWrite(
-        GI_NRD_DIFF_OUT_BINDING,
-        vk::DescriptorType::eCombinedImageSampler,
-        &nrdDiffOutInfo
-    );
+    pushImageWrite(GI_NRD_DIFF_OUT_BINDING, vk::DescriptorType::eCombinedImageSampler,
+                   &nrdDiffOutInfo);
 
     vk::WriteDescriptorSetAccelerationStructureKHR rtSceneInfo{};
     vk::AccelerationStructureKHR rtSceneHandle = frameData.giLighting.sceneTlas;
@@ -3012,12 +2826,12 @@ void VulkanRenderer::updateGiDescriptorSet(uint32_t imageIndex, const FrameRende
         writes.push_back(rtSceneWrite);
     }
 
-    const vk::raii::Device& device = m_context.getDevice();
+    const vk::raii::Device &device = m_context.getDevice();
     device.updateDescriptorSets(writes, {});
 }
 
 void VulkanRenderer::cleanupPerImageDrawResources() {
-    for (PerImageDrawResources& resources : m_perImageDrawResources) {
+    for (PerImageDrawResources &resources : m_perImageDrawResources) {
         if (resources.modelMatrixMapped != nullptr) {
             resources.modelMatrixBufferMemory.unmapMemory();
             resources.modelMatrixMapped = nullptr;
@@ -3066,7 +2880,7 @@ void VulkanRenderer::cleanupGiDescriptorResources() {
 void VulkanRenderer::recreateSwapchainDependentResources() {
     cleanupSwapchainDependentResources();
 
-    const vk::raii::Device& device = m_context.getDevice();
+    const vk::raii::Device &device = m_context.getDevice();
 
     m_renderPass.create(device, m_context.getSwapchainImageFormat(), m_context.getDepthFormat());
     createFramebuffers();
@@ -3082,34 +2896,23 @@ void VulkanRenderer::recreateSwapchainDependentResources() {
 #endif
     createRestirGiSpatialResources();
     const bool useRtShaderVariants = m_context.isHardwareRayTracingSupported();
-    const char* chunkFragShader = useRtShaderVariants ? "triangle_rt.frag.spv" : "triangle.frag.spv";
-    const char* modelFragShader = useRtShaderVariants ? "model_rt.frag.spv" : "model.frag.spv";
-    m_chunkPipeline.create(
-        device,
-        m_renderPass.get(),
-        m_fallbackArrayTexture.getDescriptorSetLayout(),
-        m_modelDescriptorSetLayout,
-        m_giDescriptorSetLayout,
-        PipelineVertexLayout::PackedVoxel,
-        "triangle.vert.spv",
-        chunkFragShader
-    );
-    m_modelPipeline.create(
-        device,
-        m_renderPass.get(),
-        m_fallback2DTexture.getDescriptorSetLayout(),
-        m_modelDescriptorSetLayout,
-        m_giDescriptorSetLayout,
-        PipelineVertexLayout::ModelPosUv,
-        "model.vert.spv",
-        modelFragShader
-    );
+    const char *chunkFragShader =
+        useRtShaderVariants ? "triangle_rt.frag.spv" : "triangle.frag.spv";
+    const char *modelFragShader = useRtShaderVariants ? "model_rt.frag.spv" : "model.frag.spv";
+    m_chunkPipeline.create(device, m_renderPass.get(),
+                           m_fallbackArrayTexture.getDescriptorSetLayout(),
+                           m_modelDescriptorSetLayout, m_giDescriptorSetLayout,
+                           PipelineVertexLayout::PackedVoxel, "triangle.vert.spv", chunkFragShader);
+    m_modelPipeline.create(device, m_renderPass.get(), m_fallback2DTexture.getDescriptorSetLayout(),
+                           m_modelDescriptorSetLayout, m_giDescriptorSetLayout,
+                           PipelineVertexLayout::ModelPosUv, "model.vert.spv", modelFragShader);
     createCommandBuffers();
     createTimestampResources();
     m_frameSync.recreateSwapchainSync(device, m_framebuffers.size());
 
 #if VOXELOPS_IMGUI_VULKAN_BACKEND_AVAILABLE
-    if (ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().BackendRendererUserData != nullptr) {
+    if (ImGui::GetCurrentContext() != nullptr &&
+        ImGui::GetIO().BackendRendererUserData != nullptr) {
         ImGui_ImplVulkan_SetMinImageCount(2);
         ImGui_ImplVulkan_PipelineInfo pipelineInfo{};
         pipelineInfo.RenderPass = *m_renderPass.get();
@@ -3141,14 +2944,9 @@ void VulkanRenderer::cleanupSwapchainDependentResources() {
     m_renderPass.cleanup();
 }
 
-void VulkanRenderer::recordCommandBuffer(
-    uint32_t imageIndex,
-    const glm::mat4& viewProjection,
-    const FrameRenderData& frameData,
-    float& outChunkCpuMs,
-    float& outModelCpuMs,
-    float& outUiCpuMs
-) {
+void VulkanRenderer::recordCommandBuffer(uint32_t imageIndex, const glm::mat4 &viewProjection,
+                                         const FrameRenderData &frameData, float &outChunkCpuMs,
+                                         float &outModelCpuMs, float &outUiCpuMs) {
     const auto measureMs = [](auto start, auto end) -> float {
         return static_cast<float>(std::chrono::duration<double, std::milli>(end - start).count());
     };
@@ -3159,27 +2957,21 @@ void VulkanRenderer::recordCommandBuffer(
     vk::CommandBufferBeginInfo beginInfo{};
     m_commandBuffers[imageIndex].begin(beginInfo);
     if (m_timestampQueriesEnabled && imageIndex < m_timestampQueryPools.size()) {
-        m_commandBuffers[imageIndex].resetQueryPool(*m_timestampQueryPools[imageIndex], 0, TIMESTAMP_QUERY_COUNT);
-        m_commandBuffers[imageIndex].writeTimestamp(
-            vk::PipelineStageFlagBits::eTopOfPipe,
-            *m_timestampQueryPools[imageIndex],
-            0
-        );
+        m_commandBuffers[imageIndex].resetQueryPool(*m_timestampQueryPools[imageIndex], 0,
+                                                    TIMESTAMP_QUERY_COUNT);
+        m_commandBuffers[imageIndex].writeTimestamp(vk::PipelineStageFlagBits::eTopOfPipe,
+                                                    *m_timestampQueryPools[imageIndex], 0);
     }
     clearTemporalGiWriteTargets(imageIndex);
+    const uint32_t historyIndex = kRestirHistorySlot;
 
-    if (imageIndex < m_restirDiPerImage.size() && imageIndex < m_restirDiWriteParityPerImage.size()) {
-        const uint32_t writeParity = m_restirDiWriteParityPerImage[imageIndex] & 1u;
+    if (historyIndex < m_restirDiPerImage.size() &&
+        historyIndex < m_restirDiWriteParityPerImage.size()) {
+        const uint32_t writeParity = m_restirDiWriteParityPerImage[historyIndex] & 1u;
         const uint32_t readParity = writeParity ^ 1u;
-        const auto& perImage = m_restirDiPerImage[imageIndex];
+        const auto &perImage = m_restirDiPerImage[historyIndex];
 
-        const vk::ImageSubresourceRange reservoirRange(
-            vk::ImageAspectFlagBits::eColor,
-            0,
-            1,
-            0,
-            1
-        );
+        const vk::ImageSubresourceRange reservoirRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
         std::array<vk::ImageMemoryBarrier, 2> reservoirBarriers{};
         reservoirBarriers[0].oldLayout = vk::ImageLayout::eGeneral;
         reservoirBarriers[0].newLayout = vk::ImageLayout::eGeneral;
@@ -3199,28 +2991,19 @@ void VulkanRenderer::recordCommandBuffer(
         reservoirBarriers[1].srcAccessMask = vk::AccessFlagBits::eShaderWrite;
         reservoirBarriers[1].dstAccessMask = vk::AccessFlagBits::eShaderWrite;
 
-        m_commandBuffers[imageIndex].pipelineBarrier(
-            vk::PipelineStageFlagBits::eFragmentShader,
-            vk::PipelineStageFlagBits::eFragmentShader,
-            {},
-            {},
-            {},
-            reservoirBarriers
-        );
+        m_commandBuffers[imageIndex].pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
+                                                     vk::PipelineStageFlagBits::eFragmentShader, {},
+                                                     {}, {}, reservoirBarriers);
     }
 
-    if (imageIndex < m_restirValidationPerImage.size() && imageIndex < m_restirDiWriteParityPerImage.size()) {
-        const uint32_t writeParity = m_restirDiWriteParityPerImage[imageIndex] & 1u;
+    if (historyIndex < m_restirValidationPerImage.size() &&
+        historyIndex < m_restirDiWriteParityPerImage.size()) {
+        const uint32_t writeParity = m_restirDiWriteParityPerImage[historyIndex] & 1u;
         const uint32_t readParity = writeParity ^ 1u;
-        const auto& perImage = m_restirValidationPerImage[imageIndex];
+        const auto &perImage = m_restirValidationPerImage[historyIndex];
 
-        const vk::ImageSubresourceRange validationRange(
-            vk::ImageAspectFlagBits::eColor,
-            0,
-            1,
-            0,
-            1
-        );
+        const vk::ImageSubresourceRange validationRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0,
+                                                        1);
         std::array<vk::ImageMemoryBarrier, 2> validationBarriers{};
         validationBarriers[0].oldLayout = vk::ImageLayout::eGeneral;
         validationBarriers[0].newLayout = vk::ImageLayout::eGeneral;
@@ -3240,28 +3023,18 @@ void VulkanRenderer::recordCommandBuffer(
         validationBarriers[1].srcAccessMask = vk::AccessFlagBits::eShaderWrite;
         validationBarriers[1].dstAccessMask = vk::AccessFlagBits::eShaderWrite;
 
-        m_commandBuffers[imageIndex].pipelineBarrier(
-            vk::PipelineStageFlagBits::eFragmentShader,
-            vk::PipelineStageFlagBits::eFragmentShader,
-            {},
-            {},
-            {},
-            validationBarriers
-        );
+        m_commandBuffers[imageIndex].pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
+                                                     vk::PipelineStageFlagBits::eFragmentShader, {},
+                                                     {}, {}, validationBarriers);
     }
 
-    if (imageIndex < m_restirMetaPerImage.size() && imageIndex < m_restirDiWriteParityPerImage.size()) {
-        const uint32_t writeParity = m_restirDiWriteParityPerImage[imageIndex] & 1u;
+    if (historyIndex < m_restirMetaPerImage.size() &&
+        historyIndex < m_restirDiWriteParityPerImage.size()) {
+        const uint32_t writeParity = m_restirDiWriteParityPerImage[historyIndex] & 1u;
         const uint32_t readParity = writeParity ^ 1u;
-        const auto& perImage = m_restirMetaPerImage[imageIndex];
+        const auto &perImage = m_restirMetaPerImage[historyIndex];
 
-        const vk::ImageSubresourceRange metaRange(
-            vk::ImageAspectFlagBits::eColor,
-            0,
-            1,
-            0,
-            1
-        );
+        const vk::ImageSubresourceRange metaRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
         std::array<vk::ImageMemoryBarrier, 2> metaBarriers{};
         metaBarriers[0].oldLayout = vk::ImageLayout::eGeneral;
         metaBarriers[0].newLayout = vk::ImageLayout::eGeneral;
@@ -3281,28 +3054,18 @@ void VulkanRenderer::recordCommandBuffer(
         metaBarriers[1].srcAccessMask = vk::AccessFlagBits::eShaderWrite;
         metaBarriers[1].dstAccessMask = vk::AccessFlagBits::eShaderWrite;
 
-        m_commandBuffers[imageIndex].pipelineBarrier(
-            vk::PipelineStageFlagBits::eFragmentShader,
-            vk::PipelineStageFlagBits::eFragmentShader,
-            {},
-            {},
-            {},
-            metaBarriers
-        );
+        m_commandBuffers[imageIndex].pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
+                                                     vk::PipelineStageFlagBits::eFragmentShader, {},
+                                                     {}, {}, metaBarriers);
     }
 
-    if (imageIndex < m_restirGiPerImage.size() && imageIndex < m_restirDiWriteParityPerImage.size()) {
-        const uint32_t writeParity = m_restirDiWriteParityPerImage[imageIndex] & 1u;
+    if (historyIndex < m_restirGiPerImage.size() &&
+        historyIndex < m_restirDiWriteParityPerImage.size()) {
+        const uint32_t writeParity = m_restirDiWriteParityPerImage[historyIndex] & 1u;
         const uint32_t readParity = writeParity ^ 1u;
-        const auto& perImage = m_restirGiPerImage[imageIndex];
+        const auto &perImage = m_restirGiPerImage[historyIndex];
 
-        const vk::ImageSubresourceRange giRange(
-            vk::ImageAspectFlagBits::eColor,
-            0,
-            1,
-            0,
-            1
-        );
+        const vk::ImageSubresourceRange giRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
         std::array<vk::ImageMemoryBarrier, 2> giBarriers{};
         giBarriers[0].oldLayout = vk::ImageLayout::eGeneral;
         giBarriers[0].newLayout = vk::ImageLayout::eGeneral;
@@ -3322,28 +3085,18 @@ void VulkanRenderer::recordCommandBuffer(
         giBarriers[1].srcAccessMask = vk::AccessFlagBits::eShaderWrite;
         giBarriers[1].dstAccessMask = vk::AccessFlagBits::eShaderWrite;
 
-        m_commandBuffers[imageIndex].pipelineBarrier(
-            vk::PipelineStageFlagBits::eFragmentShader,
-            vk::PipelineStageFlagBits::eFragmentShader,
-            {},
-            {},
-            {},
-            giBarriers
-        );
+        m_commandBuffers[imageIndex].pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
+                                                     vk::PipelineStageFlagBits::eFragmentShader, {},
+                                                     {}, {}, giBarriers);
     }
 
-    if (imageIndex < m_restirGiMetaPerImage.size() && imageIndex < m_restirDiWriteParityPerImage.size()) {
-        const uint32_t writeParity = m_restirDiWriteParityPerImage[imageIndex] & 1u;
+    if (historyIndex < m_restirGiMetaPerImage.size() &&
+        historyIndex < m_restirDiWriteParityPerImage.size()) {
+        const uint32_t writeParity = m_restirDiWriteParityPerImage[historyIndex] & 1u;
         const uint32_t readParity = writeParity ^ 1u;
-        const auto& perImage = m_restirGiMetaPerImage[imageIndex];
+        const auto &perImage = m_restirGiMetaPerImage[historyIndex];
 
-        const vk::ImageSubresourceRange giMetaRange(
-            vk::ImageAspectFlagBits::eColor,
-            0,
-            1,
-            0,
-            1
-        );
+        const vk::ImageSubresourceRange giMetaRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
         std::array<vk::ImageMemoryBarrier, 2> giMetaBarriers{};
         giMetaBarriers[0].oldLayout = vk::ImageLayout::eGeneral;
         giMetaBarriers[0].newLayout = vk::ImageLayout::eGeneral;
@@ -3363,28 +3116,18 @@ void VulkanRenderer::recordCommandBuffer(
         giMetaBarriers[1].srcAccessMask = vk::AccessFlagBits::eShaderWrite;
         giMetaBarriers[1].dstAccessMask = vk::AccessFlagBits::eShaderWrite;
 
-        m_commandBuffers[imageIndex].pipelineBarrier(
-            vk::PipelineStageFlagBits::eFragmentShader,
-            vk::PipelineStageFlagBits::eFragmentShader,
-            {},
-            {},
-            {},
-            giMetaBarriers
-        );
+        m_commandBuffers[imageIndex].pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
+                                                     vk::PipelineStageFlagBits::eFragmentShader, {},
+                                                     {}, {}, giMetaBarriers);
     }
 
-    if (imageIndex < m_restirGiSpatialPerImage.size() && imageIndex < m_restirDiWriteParityPerImage.size()) {
-        const uint32_t writeParity = m_restirDiWriteParityPerImage[imageIndex] & 1u;
+    if (historyIndex < m_restirGiSpatialPerImage.size() &&
+        historyIndex < m_restirDiWriteParityPerImage.size()) {
+        const uint32_t writeParity = m_restirDiWriteParityPerImage[historyIndex] & 1u;
         const uint32_t readParity = writeParity ^ 1u;
-        const auto& perImage = m_restirGiSpatialPerImage[imageIndex];
+        const auto &perImage = m_restirGiSpatialPerImage[historyIndex];
 
-        const vk::ImageSubresourceRange spatialRange(
-            vk::ImageAspectFlagBits::eColor,
-            0,
-            1,
-            0,
-            1
-        );
+        const vk::ImageSubresourceRange spatialRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
         std::array<vk::ImageMemoryBarrier, 2> spatialBarriers{};
         spatialBarriers[0].oldLayout = vk::ImageLayout::eGeneral;
         spatialBarriers[0].newLayout = vk::ImageLayout::eGeneral;
@@ -3407,25 +3150,17 @@ void VulkanRenderer::recordCommandBuffer(
         m_commandBuffers[imageIndex].pipelineBarrier(
             vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
             vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
-            {},
-            {},
-            {},
-            spatialBarriers
-        );
+            {}, {}, {}, spatialBarriers);
     }
 
-    if (imageIndex < m_restirGiSpatialMetaPerImage.size() && imageIndex < m_restirDiWriteParityPerImage.size()) {
-        const uint32_t writeParity = m_restirDiWriteParityPerImage[imageIndex] & 1u;
+    if (historyIndex < m_restirGiSpatialMetaPerImage.size() &&
+        historyIndex < m_restirDiWriteParityPerImage.size()) {
+        const uint32_t writeParity = m_restirDiWriteParityPerImage[historyIndex] & 1u;
         const uint32_t readParity = writeParity ^ 1u;
-        const auto& perImage = m_restirGiSpatialMetaPerImage[imageIndex];
+        const auto &perImage = m_restirGiSpatialMetaPerImage[historyIndex];
 
-        const vk::ImageSubresourceRange spatialMetaRange(
-            vk::ImageAspectFlagBits::eColor,
-            0,
-            1,
-            0,
-            1
-        );
+        const vk::ImageSubresourceRange spatialMetaRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0,
+                                                         1);
         std::array<vk::ImageMemoryBarrier, 2> spatialMetaBarriers{};
         spatialMetaBarriers[0].oldLayout = vk::ImageLayout::eGeneral;
         spatialMetaBarriers[0].newLayout = vk::ImageLayout::eGeneral;
@@ -3448,21 +3183,11 @@ void VulkanRenderer::recordCommandBuffer(
         m_commandBuffers[imageIndex].pipelineBarrier(
             vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
             vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
-            {},
-            {},
-            {},
-            spatialMetaBarriers
-        );
+            {}, {}, {}, spatialMetaBarriers);
     }
 
     if (!m_nrdPerImage.empty()) {
-        const vk::ImageSubresourceRange nrdRange(
-            vk::ImageAspectFlagBits::eColor,
-            0,
-            1,
-            0,
-            1
-        );
+        const vk::ImageSubresourceRange nrdRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
         vk::ImageMemoryBarrier nrdHistoryBarrier{};
         nrdHistoryBarrier.oldLayout = vk::ImageLayout::eGeneral;
         nrdHistoryBarrier.newLayout = vk::ImageLayout::eGeneral;
@@ -3471,25 +3196,21 @@ void VulkanRenderer::recordCommandBuffer(
         nrdHistoryBarrier.image = *m_nrdPerImage[0].diffOut.image;
         nrdHistoryBarrier.subresourceRange = nrdRange;
         nrdHistoryBarrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
-        nrdHistoryBarrier.dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
+        nrdHistoryBarrier.dstAccessMask =
+            vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
         m_commandBuffers[imageIndex].pipelineBarrier(
             vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eFragmentShader,
-            vk::PipelineStageFlagBits::eFragmentShader,
-            {},
-            {},
-            {},
-            nrdHistoryBarrier
-        );
+            vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, nrdHistoryBarrier);
     }
 
     std::array<vk::ClearValue, 2> clearValues{};
-    clearValues[0].color = vk::ClearColorValue(std::array<float, 4>{ 0.05f, 0.07f, 0.10f, 1.0f });
+    clearValues[0].color = vk::ClearColorValue(std::array<float, 4>{0.05f, 0.07f, 0.10f, 1.0f});
     clearValues[1].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
 
     vk::RenderPassBeginInfo renderPassInfo{};
     renderPassInfo.renderPass = *m_renderPass.get();
     renderPassInfo.framebuffer = *m_framebuffers[imageIndex];
-    renderPassInfo.renderArea.offset = vk::Offset2D{ 0, 0 };
+    renderPassInfo.renderArea.offset = vk::Offset2D{0, 0};
     renderPassInfo.renderArea.extent = m_context.getSwapchainExtent();
     renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
     renderPassInfo.pClearValues = clearValues.data();
@@ -3510,7 +3231,7 @@ void VulkanRenderer::recordCommandBuffer(
     m_commandBuffers[imageIndex].setViewport(0, viewport);
 
     vk::Rect2D scissor{};
-    scissor.offset = vk::Offset2D{ 0, 0 };
+    scissor.offset = vk::Offset2D{0, 0};
     scissor.extent = extent;
     m_commandBuffers[imageIndex].setScissor(0, scissor);
 
@@ -3520,19 +3241,20 @@ void VulkanRenderer::recordCommandBuffer(
     const auto chunkCpuStart = std::chrono::steady_clock::now();
 
     if (!frameData.indirectCommands.empty() && imageIndex < m_perImageDrawResources.size()) {
-        const PerImageDrawResources& resources = m_perImageDrawResources[imageIndex];
+        const PerImageDrawResources &resources = m_perImageDrawResources[imageIndex];
         if (resources.indirectCommandBuffer != nullptr) {
             const vk::DeviceSize stride = sizeof(IndexedIndirectCommand);
             const bool supportsMultiDrawIndirect = m_context.isMultiDrawIndirectEnabled();
-            const bool supportsIndirectFirstInstance = m_context.isDrawIndirectFirstInstanceEnabled();
-            for (const RenderIndirectBatch& batch : frameData.indirectBatches) {
-                if (!batch.mesh || batch.commandCount == 0 || batch.firstCommand >= frameData.indirectCommands.size()) {
+            const bool supportsIndirectFirstInstance =
+                m_context.isDrawIndirectFirstInstanceEnabled();
+            for (const RenderIndirectBatch &batch : frameData.indirectBatches) {
+                if (!batch.mesh || batch.commandCount == 0 ||
+                    batch.firstCommand >= frameData.indirectCommands.size()) {
                     continue;
                 }
 
-                const uint32_t maxCommandCount = static_cast<uint32_t>(
-                    frameData.indirectCommands.size() - batch.firstCommand
-                );
+                const uint32_t maxCommandCount =
+                    static_cast<uint32_t>(frameData.indirectCommands.size() - batch.firstCommand);
                 const uint32_t clampedCommandCount = std::min(batch.commandCount, maxCommandCount);
                 if (clampedCommandCount == 0) {
                     continue;
@@ -3546,44 +3268,31 @@ void VulkanRenderer::recordCommandBuffer(
                 }
 
                 const std::array<vk::DescriptorSet, 3> descriptorSets = {
-                    textureDescriptorSet,
-                    modelDescriptorSet,
-                    giDescriptorSet
-                };
-                m_commandBuffers[imageIndex].bindDescriptorSets(
-                    vk::PipelineBindPoint::eGraphics,
-                    *m_chunkPipeline.getLayout(),
-                    0,
-                    descriptorSets,
-                    {}
-                );
+                    textureDescriptorSet, modelDescriptorSet, giDescriptorSet};
+                m_commandBuffers[imageIndex].bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                                                *m_chunkPipeline.getLayout(), 0,
+                                                                descriptorSets, {});
 
                 if (!supportsMultiDrawIndirect && clampedCommandCount > 1) {
                     for (uint32_t i = 0; i < clampedCommandCount; ++i) {
-                        const IndexedIndirectCommand& command = frameData.indirectCommands[batch.firstCommand + i];
+                        const IndexedIndirectCommand &command =
+                            frameData.indirectCommands[batch.firstCommand + i];
                         if (command.indexCount == 0 || command.instanceCount == 0) {
                             continue;
                         }
 
                         if (!supportsIndirectFirstInstance && command.firstInstance != 0) {
                             m_commandBuffers[imageIndex].drawIndexed(
-                                command.indexCount,
-                                command.instanceCount,
-                                command.firstIndex,
-                                command.vertexOffset,
-                                command.firstInstance
-                            );
+                                command.indexCount, command.instanceCount, command.firstIndex,
+                                command.vertexOffset, command.firstInstance);
                             continue;
                         }
 
                         const vk::DeviceSize offset =
                             static_cast<vk::DeviceSize>(batch.firstCommand + i) * stride;
                         m_commandBuffers[imageIndex].drawIndexedIndirect(
-                            *resources.indirectCommandBuffer,
-                            offset,
-                            1,
-                            static_cast<uint32_t>(stride)
-                        );
+                            *resources.indirectCommandBuffer, offset, 1,
+                            static_cast<uint32_t>(stride));
                     }
                     continue;
                 }
@@ -3591,7 +3300,8 @@ void VulkanRenderer::recordCommandBuffer(
                 bool requiresNonZeroFirstInstance = false;
                 if (!supportsIndirectFirstInstance) {
                     for (uint32_t i = 0; i < clampedCommandCount; ++i) {
-                        const IndexedIndirectCommand& command = frameData.indirectCommands[batch.firstCommand + i];
+                        const IndexedIndirectCommand &command =
+                            frameData.indirectCommands[batch.firstCommand + i];
                         if (command.firstInstance != 0) {
                             requiresNonZeroFirstInstance = true;
                             break;
@@ -3600,28 +3310,23 @@ void VulkanRenderer::recordCommandBuffer(
                 }
 
                 if (!requiresNonZeroFirstInstance) {
-                    const vk::DeviceSize offset = static_cast<vk::DeviceSize>(batch.firstCommand) * stride;
+                    const vk::DeviceSize offset =
+                        static_cast<vk::DeviceSize>(batch.firstCommand) * stride;
                     m_commandBuffers[imageIndex].drawIndexedIndirect(
-                        *resources.indirectCommandBuffer,
-                        offset,
-                        clampedCommandCount,
-                        static_cast<uint32_t>(stride)
-                    );
+                        *resources.indirectCommandBuffer, offset, clampedCommandCount,
+                        static_cast<uint32_t>(stride));
                     continue;
                 }
 
                 for (uint32_t i = 0; i < clampedCommandCount; ++i) {
-                    const IndexedIndirectCommand& command = frameData.indirectCommands[batch.firstCommand + i];
+                    const IndexedIndirectCommand &command =
+                        frameData.indirectCommands[batch.firstCommand + i];
                     if (command.indexCount == 0 || command.instanceCount == 0) {
                         continue;
                     }
                     m_commandBuffers[imageIndex].drawIndexed(
-                        command.indexCount,
-                        command.instanceCount,
-                        command.firstIndex,
-                        command.vertexOffset,
-                        command.firstInstance
-                    );
+                        command.indexCount, command.instanceCount, command.firstIndex,
+                        command.vertexOffset, command.firstInstance);
                 }
             }
         }
@@ -3629,11 +3334,8 @@ void VulkanRenderer::recordCommandBuffer(
     const auto chunkCpuEnd = std::chrono::steady_clock::now();
     outChunkCpuMs = measureMs(chunkCpuStart, chunkCpuEnd);
     if (m_timestampQueriesEnabled && imageIndex < m_timestampQueryPools.size()) {
-        m_commandBuffers[imageIndex].writeTimestamp(
-            vk::PipelineStageFlagBits::eBottomOfPipe,
-            *m_timestampQueryPools[imageIndex],
-            1
-        );
+        m_commandBuffers[imageIndex].writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe,
+                                                    *m_timestampQueryPools[imageIndex], 1);
     }
 
     const auto modelCpuStart = std::chrono::steady_clock::now();
@@ -3643,7 +3345,7 @@ void VulkanRenderer::recordCommandBuffer(
 
         const uint32_t modelBaseInstance = static_cast<uint32_t>(frameData.modelMatrices.size());
         uint32_t objectIndex = 0;
-        for (const RenderObject& object : frameData.objects) {
+        for (const RenderObject &object : frameData.objects) {
             const uint32_t firstInstance = modelBaseInstance + objectIndex;
             ++objectIndex;
 
@@ -3651,13 +3353,13 @@ void VulkanRenderer::recordCommandBuffer(
                 continue;
             }
 
-            const std::vector<VkMesh>& meshes = object.model->getMeshes();
+            const std::vector<VkMesh> &meshes = object.model->getMeshes();
             if (meshes.empty()) {
                 continue;
             }
 
             for (size_t meshIndex = 0; meshIndex < meshes.size(); ++meshIndex) {
-                const VkMesh& mesh = meshes[meshIndex];
+                const VkMesh &mesh = meshes[meshIndex];
                 if (mesh.getIndexCount() == 0) {
                     continue;
                 }
@@ -3666,50 +3368,36 @@ void VulkanRenderer::recordCommandBuffer(
 
                 vk::DescriptorSet textureDescriptorSet = m_fallback2DTexture.getDescriptorSet();
                 if (object.meshTextures != nullptr && meshIndex < object.meshTextures->size()) {
-                    const VkTexture* texture = (*object.meshTextures)[meshIndex];
+                    const VkTexture *texture = (*object.meshTextures)[meshIndex];
                     if (texture != nullptr && texture->getDescriptorSet() != VK_NULL_HANDLE) {
                         textureDescriptorSet = texture->getDescriptorSet();
                     }
                 }
 
                 const std::array<vk::DescriptorSet, 3> descriptorSets = {
-                    textureDescriptorSet,
-                    modelDescriptorSet,
-                    giDescriptorSet
-                };
-                m_commandBuffers[imageIndex].bindDescriptorSets(
-                    vk::PipelineBindPoint::eGraphics,
-                    *m_modelPipeline.getLayout(),
-                    0,
-                    descriptorSets,
-                    {}
-                );
-                m_commandBuffers[imageIndex].drawIndexed(
-                    mesh.getIndexCount(),
-                    1,
-                    0,
-                    0,
-                    firstInstance
-                );
+                    textureDescriptorSet, modelDescriptorSet, giDescriptorSet};
+                m_commandBuffers[imageIndex].bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                                                *m_modelPipeline.getLayout(), 0,
+                                                                descriptorSets, {});
+                m_commandBuffers[imageIndex].drawIndexed(mesh.getIndexCount(), 1, 0, 0,
+                                                         firstInstance);
             }
         }
     }
     const auto modelCpuEnd = std::chrono::steady_clock::now();
     outModelCpuMs = measureMs(modelCpuStart, modelCpuEnd);
     if (m_timestampQueriesEnabled && imageIndex < m_timestampQueryPools.size()) {
-        m_commandBuffers[imageIndex].writeTimestamp(
-            vk::PipelineStageFlagBits::eBottomOfPipe,
-            *m_timestampQueryPools[imageIndex],
-            2
-        );
+        m_commandBuffers[imageIndex].writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe,
+                                                    *m_timestampQueryPools[imageIndex], 2);
     }
 
     const auto uiCpuStart = std::chrono::steady_clock::now();
 #if VOXELOPS_IMGUI_VULKAN_BACKEND_AVAILABLE
     if (ImGui::GetCurrentContext() != nullptr) {
-        ImGuiIO& io = ImGui::GetIO();
-        ImDrawData* drawData = ImGui::GetDrawData();
-        if (io.BackendRendererUserData != nullptr && drawData != nullptr && drawData->CmdListsCount > 0) {
+        ImGuiIO &io = ImGui::GetIO();
+        ImDrawData *drawData = ImGui::GetDrawData();
+        if (io.BackendRendererUserData != nullptr && drawData != nullptr &&
+            drawData->CmdListsCount > 0) {
             ImGui_ImplVulkan_RenderDrawData(drawData, *m_commandBuffers[imageIndex]);
         }
     }
@@ -3717,11 +3405,8 @@ void VulkanRenderer::recordCommandBuffer(
     const auto uiCpuEnd = std::chrono::steady_clock::now();
     outUiCpuMs = measureMs(uiCpuStart, uiCpuEnd);
     if (m_timestampQueriesEnabled && imageIndex < m_timestampQueryPools.size()) {
-        m_commandBuffers[imageIndex].writeTimestamp(
-            vk::PipelineStageFlagBits::eBottomOfPipe,
-            *m_timestampQueryPools[imageIndex],
-            3
-        );
+        m_commandBuffers[imageIndex].writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe,
+                                                    *m_timestampQueryPools[imageIndex], 3);
     }
 
     m_commandBuffers[imageIndex].endRenderPass();
@@ -3731,13 +3416,8 @@ void VulkanRenderer::recordCommandBuffer(
 #endif
     dispatchRestirGiSpatialPass(imageIndex, frameData);
     if (m_timestampQueriesEnabled && imageIndex < m_timestampQueryPools.size()) {
-        m_commandBuffers[imageIndex].writeTimestamp(
-            vk::PipelineStageFlagBits::eBottomOfPipe,
-            *m_timestampQueryPools[imageIndex],
-            4
-        );
+        m_commandBuffers[imageIndex].writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe,
+                                                    *m_timestampQueryPools[imageIndex], 4);
     }
     m_commandBuffers[imageIndex].end();
 }
-
-

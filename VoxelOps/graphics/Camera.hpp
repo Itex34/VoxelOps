@@ -5,7 +5,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 class Camera {
-public:
+  public:
     Camera(glm::vec3 startPos);
 
     glm::mat4 getViewMatrix() const;
@@ -17,10 +17,10 @@ public:
     glm::vec3 direction;
     glm::vec3 position;
     glm::vec3 front;
-    glm::vec3 XZfront;// for movement on the XZ plane
+    glm::vec3 XZfront; // for movement on the XZ plane
     glm::vec3 up;
 
-private:
+  private:
     float yaw;
     float pitch;
 };

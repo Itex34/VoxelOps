@@ -1,13 +1,12 @@
 #include "Chunk.hpp"
 
-Chunk::Chunk(glm::ivec3 pos)
-    : position(pos), blocks{}, nonAirCount(0), dirty(true)
-{
+Chunk::Chunk(glm::ivec3 pos) : position(pos), dirty(true), blocks{}, nonAirCount(0) {
     blocks.fill(BlockID::Air);
 }
 
 BlockID Chunk::getBlock(int x, int y, int z) const noexcept {
-    if (!inBounds(x, y, z)) return BlockID::Air;
+    if (!inBounds(x, y, z))
+        return BlockID::Air;
     return blocks[idx(x, y, z)];
 }
 
@@ -24,17 +23,18 @@ void Chunk::setBlock(int x, int y, int z, BlockID id) {
 
     int i = idx(x, y, z);
     BlockID old = blocks[i];
-    if (old == id) return; // no-op, don't mark dirty
+    if (old == id)
+        return; // no-op, don't mark dirty
 
     // update nonAirCount
-    if (old == BlockID::Air && id != BlockID::Air) ++nonAirCount;
-    else if (old != BlockID::Air && id == BlockID::Air) --nonAirCount;
+    if (old == BlockID::Air && id != BlockID::Air)
+        ++nonAirCount;
+    else if (old != BlockID::Air && id == BlockID::Air)
+        --nonAirCount;
 
     blocks[i] = id;
     dirty = true;
 }
-
-
 
 BlockID Chunk::removeBlock(int x, int y, int z) {
 
@@ -47,19 +47,19 @@ BlockID Chunk::removeBlock(int x, int y, int z) {
     BlockID old = blocks[i];
 
     // update nonAirCount
-    if (old != BlockID::Air) --nonAirCount; // if the old block is air no need to chenge the nonAirCount
-
+    if (old != BlockID::Air)
+        --nonAirCount; // if the old block is air no need to chenge the nonAirCount
 
     blocks[i] = BlockID::Air;
     dirty = true;
     return old;
 }
 
-void Chunk::copyBlocks(std::array<BlockID, CHUNK_VOLUME>& out) const noexcept {
+void Chunk::copyBlocks(std::array<BlockID, CHUNK_VOLUME> &out) const noexcept {
     out = blocks;
 }
 
-void Chunk::overwriteBlocks(const std::array<BlockID, CHUNK_VOLUME>& in) noexcept {
+void Chunk::overwriteBlocks(const std::array<BlockID, CHUNK_VOLUME> &in) noexcept {
     blocks = in;
     nonAirCount = 0;
     for (const BlockID block : blocks) {

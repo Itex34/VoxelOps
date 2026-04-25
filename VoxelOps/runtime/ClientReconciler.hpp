@@ -7,12 +7,12 @@
 struct Runtime;
 
 class ClientReconciler {
-public:
+  public:
     struct ServerSnapshot {
         uint32_t serverTick = 0;
         uint32_t ackedInputTick = 0;
-        glm::vec3 position{ 0.0f };
-        glm::vec3 velocity{ 0.0f };
+        glm::vec3 position{0.0f};
+        glm::vec3 velocity{0.0f};
         bool onGround = false;
         bool flyMode = false;
         bool allowFlyMode = false;
@@ -23,5 +23,5 @@ public:
         float jumpBufferTimer = 0.0f;
     };
 
-    bool Apply(Runtime& runtime, const ServerSnapshot& snapshot);
+    bool Apply(Runtime &runtime, const ServerSnapshot &snapshot);
 };

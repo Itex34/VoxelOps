@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace Shared::MeshHitCache {
+namespace Shared { namespace MeshHitCache {
 
 struct TriangleRecord {
     float ax = 0.0f;
@@ -19,7 +19,9 @@ struct TriangleRecord {
     uint8_t region = 1; // 0=Legs, 1=Body, 2=Head
 };
 
-bool Save(const std::string& path, float referenceHeight, const std::vector<TriangleRecord>& triangles);
-bool Load(const std::string& path, float& outReferenceHeight, std::vector<TriangleRecord>& outTriangles);
+bool Save(const std::string &path, float referenceHeight,
+          const std::vector<TriangleRecord> &triangles);
+bool Load(const std::string &path, float &outReferenceHeight,
+          std::vector<TriangleRecord> &outTriangles);
 
-} // namespace Shared::MeshHitCache
+} } // namespace Shared::MeshHitCache

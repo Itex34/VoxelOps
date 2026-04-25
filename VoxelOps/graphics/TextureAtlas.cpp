@@ -16,13 +16,13 @@ struct LoadedImage {
     std::vector<uint8_t> pixels;
 };
 
-bool loadImageFlipped(const char* path, LoadedImage& out) {
+bool loadImageFlipped(const char *path, LoadedImage &out) {
     int width = 0;
     int height = 0;
     int nrChannels = 0;
 
     stbi_set_flip_vertically_on_load(true);
-    unsigned char* data = stbi_load(path, &width, &height, &nrChannels, 0);
+    unsigned char *data = stbi_load(path, &width, &height, &nrChannels, 0);
     if (!data) {
         std::cerr << "Failed to load texture: " << path << '\n';
         return false;
@@ -31,12 +31,13 @@ bool loadImageFlipped(const char* path, LoadedImage& out) {
     out.width = width;
     out.height = height;
     out.channels = nrChannels;
-    out.pixels.assign(data, data + (static_cast<size_t>(width) * static_cast<size_t>(height) * static_cast<size_t>(nrChannels)));
+    out.pixels.assign(data, data + (static_cast<size_t>(width) * static_cast<size_t>(height) *
+                                    static_cast<size_t>(nrChannels)));
     stbi_image_free(data);
     return true;
 }
 
-bool resolveFormats(int channels, GLenum& internalFormat, GLenum& format) {
+bool resolveFormats(int channels, GLenum &internalFormat, GLenum &format) {
     if (channels == 1) {
         internalFormat = GL_R8;
         format = GL_RED;
@@ -55,7 +56,7 @@ bool resolveFormats(int channels, GLenum& internalFormat, GLenum& format) {
     return false;
 }
 
-GLuint createTexture2DFromImage(const LoadedImage& image) {
+GLuint createTexture2DFromImage(const LoadedImage &image) {
     GLenum internalFormat = GL_RGBA8;
     GLenum format = GL_RGBA;
     if (!resolveFormats(image.channels, internalFormat, format)) {
@@ -73,17 +74,8 @@ GLuint createTexture2DFromImage(const LoadedImage& image) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    glTexImage2D(
-        GL_TEXTURE_2D,
-        0,
-        internalFormat,
-        image.width,
-        image.height,
-        0,
-        format,
-        GL_UNSIGNED_BYTE,
-        image.pixels.data()
-    );
+    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, image.width, image.height, 0, format,
+                 GL_UNSIGNED_BYTE, image.pixels.data());
 
 #if defined(GL_MAX_TEXTURE_MAX_ANISOTROPY) && defined(GL_TEXTURE_MAX_ANISOTROPY)
     GLfloat aniso = 1.0f;
@@ -98,15 +90,12 @@ GLuint createTexture2DFromImage(const LoadedImage& image) {
     return textureID;
 }
 
-GLuint createTextureArrayFromAtlasImage(const LoadedImage& atlasImage) {
+GLuint createTextureArrayFromAtlasImage(const LoadedImage &atlasImage) {
     if (atlasImage.width != TEXTURE_ATLAS_SIZE * TILE_RESOLUTION ||
         atlasImage.height != TEXTURE_ATLAS_SIZE * TILE_RESOLUTION) {
-        std::cerr
-            << "Unexpected atlas dimensions: "
-            << atlasImage.width << "x" << atlasImage.height
-            << " expected "
-            << (TEXTURE_ATLAS_SIZE * TILE_RESOLUTION) << "x"
-            << (TEXTURE_ATLAS_SIZE * TILE_RESOLUTION) << '\n';
+        std::cerr << "Unexpected atlas dimensions: " << atlasImage.width << "x" << atlasImage.height
+                  << " expected " << (TEXTURE_ATLAS_SIZE * TILE_RESOLUTION) << "x"
+                  << (TEXTURE_ATLAS_SIZE * TILE_RESOLUTION) << '\n';
         return 0;
     }
 
@@ -118,12 +107,11 @@ GLuint createTextureArrayFromAtlasImage(const LoadedImage& atlasImage) {
     }
 
     constexpr int kLayerCount = TEXTURE_ATLAS_SIZE * TEXTURE_ATLAS_SIZE;
-    const size_t tileRowBytes = static_cast<size_t>(TILE_RESOLUTION) * static_cast<size_t>(atlasImage.channels);
-    std::vector<uint8_t> tilePixels(
-        static_cast<size_t>(TILE_RESOLUTION) *
-        static_cast<size_t>(TILE_RESOLUTION) *
-        static_cast<size_t>(atlasImage.channels)
-    );
+    const size_t tileRowBytes =
+        static_cast<size_t>(TILE_RESOLUTION) * static_cast<size_t>(atlasImage.channels);
+    std::vector<uint8_t> tilePixels(static_cast<size_t>(TILE_RESOLUTION) *
+                                    static_cast<size_t>(TILE_RESOLUTION) *
+                                    static_cast<size_t>(atlasImage.channels));
 
     GLuint textureID = 0;
     glGenTextures(1, &textureID);
@@ -137,18 +125,8 @@ GLuint createTextureArrayFromAtlasImage(const LoadedImage& atlasImage) {
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BASE_LEVEL, 0);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_LEVEL, 0);
 
-    glTexImage3D(
-        GL_TEXTURE_2D_ARRAY,
-        0,
-        internalFormat,
-        TILE_RESOLUTION,
-        TILE_RESOLUTION,
-        kLayerCount,
-        0,
-        format,
-        GL_UNSIGNED_BYTE,
-        nullptr
-    );
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, internalFormat, TILE_RESOLUTION, TILE_RESOLUTION,
+                 kLayerCount, 0, format, GL_UNSIGNED_BYTE, nullptr);
 
     for (int tileY = 0; tileY < TEXTURE_ATLAS_SIZE; ++tileY) {
         for (int tileX = 0; tileX < TEXTURE_ATLAS_SIZE; ++tileX) {
@@ -157,24 +135,15 @@ GLuint createTextureArrayFromAtlasImage(const LoadedImage& atlasImage) {
                 const int srcY = tileY * TILE_RESOLUTION + row;
                 const size_t srcOffset =
                     (static_cast<size_t>(srcY) * static_cast<size_t>(atlasImage.width) +
-                        static_cast<size_t>(tileX * TILE_RESOLUTION)) * static_cast<size_t>(atlasImage.channels);
+                     static_cast<size_t>(tileX * TILE_RESOLUTION)) *
+                    static_cast<size_t>(atlasImage.channels);
                 const size_t dstOffset = static_cast<size_t>(row) * tileRowBytes;
-                std::memcpy(tilePixels.data() + dstOffset, atlasImage.pixels.data() + srcOffset, tileRowBytes);
+                std::memcpy(tilePixels.data() + dstOffset, atlasImage.pixels.data() + srcOffset,
+                            tileRowBytes);
             }
 
-            glTexSubImage3D(
-                GL_TEXTURE_2D_ARRAY,
-                0,
-                0,
-                0,
-                layer,
-                TILE_RESOLUTION,
-                TILE_RESOLUTION,
-                1,
-                format,
-                GL_UNSIGNED_BYTE,
-                tilePixels.data()
-            );
+            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer, TILE_RESOLUTION, TILE_RESOLUTION,
+                            1, format, GL_UNSIGNED_BYTE, tilePixels.data());
         }
     }
 
@@ -182,47 +151,48 @@ GLuint createTextureArrayFromAtlasImage(const LoadedImage& atlasImage) {
     glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
     return textureID;
 }
-}
+} // namespace
 
-TextureAtlas::TextureAtlas(){
-    tileMap["dirt"] = { 0, 0 };
-    tileMap["grass_side"] = { 1, 0 };
-    tileMap["grass_top"] = { 2, 0 };
-    tileMap["stone"] = { 1, 1 };
-	tileMap["bedrock"] = { 2, 1 };
-	tileMap["sand"] = { 3, 0 };
-	tileMap["log_side"] = { 4, 0 };
-	tileMap["log_top"] = { 5, 0 };
-	tileMap["stone_brick"] = { 6, 0 };
-	tileMap["temple_brick"] = { 3, 1 };
-	tileMap["wood"] = { 7, 0 };
-	tileMap["leaves"] = { 0, 1 };
-	tileMap["iron_ore"] = { 1, 3 };
-	tileMap["iron_block"] = { 3, 2 };
-	tileMap["emerald_ore"] = { 4, 2 };
-	tileMap["red_berry"] = { 3, 6 };
-	tileMap["orange_berry"] = { 4, 6 };
-	tileMap["ruby_gem"] = { 0, 3 };
-    tileMap["sapphire_gem"] = { 5, 2 };
-    tileMap["crafting_table_top"] = { 4, 4 };
-    tileMap["crafting_table_bottom"] = { 2, 2 };
-    tileMap["crafting_table_rl_side"] = { 3, 4 };
-    tileMap["crafting_table_fb_side"] = { 5, 4 };
-    tileMap["bomb_top"] = { 7, 7 };
-    tileMap["bomb_bottom"] = { 7, 6 };
-    tileMap["bomb_side"] = { 6, 7 };
-    tileMap["cactus_top"] = { 2, 3 };
-	tileMap["cactus_bottom"] = { 3, 3 };
-    tileMap["cactus_side"] = { 4, 3 };
-    tileMap["ruby_block"] = { 5, 6 };
-    tileMap["sapphire_block"] = { 6, 6 };
+TextureAtlas::TextureAtlas() {
+    tileMap["dirt"] = {0, 0};
+    tileMap["grass_side"] = {1, 0};
+    tileMap["grass_top"] = {2, 0};
+    tileMap["stone"] = {1, 1};
+    tileMap["bedrock"] = {2, 1};
+    tileMap["sand"] = {3, 0};
+    tileMap["log_side"] = {4, 0};
+    tileMap["log_top"] = {5, 0};
+    tileMap["stone_brick"] = {6, 0};
+    tileMap["temple_brick"] = {3, 1};
+    tileMap["wood"] = {7, 0};
+    tileMap["leaves"] = {0, 1};
+    tileMap["iron_ore"] = {1, 3};
+    tileMap["iron_block"] = {3, 2};
+    tileMap["emerald_ore"] = {4, 2};
+    tileMap["red_berry"] = {3, 6};
+    tileMap["orange_berry"] = {4, 6};
+    tileMap["ruby_gem"] = {0, 3};
+    tileMap["sapphire_gem"] = {5, 2};
+    tileMap["crafting_table_top"] = {4, 4};
+    tileMap["crafting_table_bottom"] = {2, 2};
+    tileMap["crafting_table_rl_side"] = {3, 4};
+    tileMap["crafting_table_fb_side"] = {5, 4};
+    tileMap["bomb_top"] = {7, 7};
+    tileMap["bomb_bottom"] = {7, 6};
+    tileMap["bomb_side"] = {6, 7};
+    tileMap["cactus_top"] = {2, 3};
+    tileMap["cactus_bottom"] = {3, 3};
+    tileMap["cactus_side"] = {4, 3};
+    tileMap["ruby_block"] = {5, 6};
+    tileMap["sapphire_block"] = {6, 6};
 
     if (SDL_GL_GetCurrentContext() == nullptr) {
         return;
     }
 
     const std::string atlasPath =
-        Shared::RuntimePaths::ResolveVoxelOpsPath("assets/textures/textureAtlas.png").generic_string();
+        Shared::RuntimePaths::ResolveVoxelOpsPath("assets/textures/textureAtlas.png")
+            .generic_string();
 
     LoadedImage atlasImage;
     if (!loadImageFlipped(atlasPath.c_str(), atlasImage)) {
@@ -238,7 +208,6 @@ TextureAtlas::TextureAtlas(){
     if (!atlasTextureArrayID) {
         throw std::runtime_error("Failed to create texture array from atlas");
     }
-
 }
 
 TextureAtlas::~TextureAtlas() {
@@ -257,5 +226,3 @@ TextureAtlas::~TextureAtlas() {
         atlasTextureID = 0;
     }
 }
-
-

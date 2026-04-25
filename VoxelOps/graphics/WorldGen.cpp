@@ -7,7 +7,7 @@
 #include <cmath>
 #include <random>
 
-void WorldGen::generateInitialChunks(ChunkManager& cm, int radiusChunks) {
+void WorldGen::generateInitialChunks(ChunkManager &cm, int radiusChunks) {
     int minChunkY = WORLD_MIN_Y / CHUNK_SIZE;
     int maxChunkY = WORLD_MAX_Y / CHUNK_SIZE;
 
@@ -21,9 +21,9 @@ void WorldGen::generateInitialChunks(ChunkManager& cm, int radiusChunks) {
     cm.updateDirtyChunks();
 }
 
-void WorldGen::generateChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
+void WorldGen::generateChunkAt(ChunkManager &cm, const glm::ivec3 &pos) {
     auto [it, inserted] = cm.chunkMap.try_emplace(pos, pos);
-    Chunk& chunk = it->second;
+    Chunk &chunk = it->second;
     const bool prevSuppress = cm.suppressSunlightAffectedRebuilds;
     cm.suppressSunlightAffectedRebuilds = true;
 
@@ -50,24 +50,21 @@ void WorldGen::generateChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
             }
             n /= maxAmplitude;
 
-            int height = WORLD_MIN_Y + static_cast<int>((n + 1.0f) * 0.5f * (WORLD_MAX_Y - WORLD_MIN_Y));
+            int height =
+                WORLD_MIN_Y + static_cast<int>((n + 1.0f) * 0.5f * (WORLD_MAX_Y - WORLD_MIN_Y));
 
             for (int y = 0; y < CHUNK_SIZE; ++y) {
                 int worldY = pos.y * CHUNK_SIZE + y;
 
                 if (worldY == WORLD_MIN_Y) {
                     chunk.setBlock(x, y, z, BlockID::Bedrock);
-                }
-                else if (worldY < height - 2) {
+                } else if (worldY < height - 2) {
                     chunk.setBlock(x, y, z, BlockID::Stone);
-                }
-                else if (worldY < height - 1) {
+                } else if (worldY < height - 1) {
                     chunk.setBlock(x, y, z, BlockID::Dirt);
-                }
-                else if (worldY < height) {
+                } else if (worldY < height) {
                     chunk.setBlock(x, y, z, BlockID::Grass);
-                }
-                else {
+                } else {
                     chunk.setBlock(x, y, z, BlockID::Air);
                 }
             }
@@ -96,16 +93,13 @@ void WorldGen::generateChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
     cm.suppressSunlightAffectedRebuilds = prevSuppress;
 }
 
-void WorldGen::placeTree(ChunkManager& cm, Chunk& chunk, const glm::ivec3& basePos, std::mt19937& gen) {
+void WorldGen::placeTree(ChunkManager &cm, Chunk &chunk, const glm::ivec3 &basePos,
+                         std::mt19937 &gen) {
     std::uniform_int_distribution<> trunkHeightDist(10, 14);
     int trunkHeight = trunkHeightDist(gen);
 
-    glm::ivec3 trunkOffsets[4] = {
-        glm::ivec3(0, 0, 0),
-        glm::ivec3(1, 0, 0),
-        glm::ivec3(0, 0, 1),
-        glm::ivec3(1, 0, 1)
-    };
+    glm::ivec3 trunkOffsets[4] = {glm::ivec3(0, 0, 0), glm::ivec3(1, 0, 0), glm::ivec3(0, 0, 1),
+                                  glm::ivec3(1, 0, 1)};
 
     for (int i = 0; i < trunkHeight; ++i) {
         int y = basePos.y + i;
@@ -132,9 +126,11 @@ void WorldGen::placeTree(ChunkManager& cm, Chunk& chunk, const glm::ivec3& baseP
                 if (dist <= crownRadius + 0.25f) {
                     float edgeFactor = (dist / float(crownRadius));
                     float skipProb = glm::smoothstep(0.7f, 1.0f, edgeFactor) * 0.65f;
-                    if (dy == crownBaseYOffset) skipProb *= 0.55f;
+                    if (dy == crownBaseYOffset)
+                        skipProb *= 0.55f;
 
-                    if (holeChance(gen) < skipProb) continue;
+                    if (holeChance(gen) < skipProb)
+                        continue;
 
                     glm::ivec3 leafPos(basePos.x + dx, layerY, basePos.z + dz);
                     if (cm.getBlockSafe(chunk, leafPos) == BlockID::Air) {
@@ -153,7 +149,8 @@ void WorldGen::placeTree(ChunkManager& cm, Chunk& chunk, const glm::ivec3& baseP
             if (dist <= taperRadius + 0.25f) {
                 glm::ivec3 leafPos(basePos.x + dx, taperY, basePos.z + dz);
                 if (cm.getBlockSafe(chunk, leafPos) == BlockID::Air) {
-                    if (dist > (taperRadius - 0.5f) && holeChance(gen) < 0.25f) continue;
+                    if (dist > (taperRadius - 0.5f) && holeChance(gen) < 0.25f)
+                        continue;
                     cm.setBlockSafe(chunk, leafPos, BlockID::Leaves);
                 }
             }
@@ -171,9 +168,9 @@ void WorldGen::placeTree(ChunkManager& cm, Chunk& chunk, const glm::ivec3& baseP
     }
 }
 
-void WorldGen::generateTerrainChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
+void WorldGen::generateTerrainChunkAt(ChunkManager &cm, const glm::ivec3 &pos) {
     auto [it, inserted] = cm.chunkMap.try_emplace(pos, pos);
-    Chunk& chunk = it->second;
+    Chunk &chunk = it->second;
 
     for (int z = 0; z < CHUNK_SIZE; ++z) {
         for (int x = 0; x < CHUNK_SIZE; ++x) {
@@ -193,26 +190,24 @@ void WorldGen::generateTerrainChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
                 frequency *= 2.0f;
                 amplitude *= persistence;
             }
-            if (maxAmplitude > 0.0f) n /= maxAmplitude;
+            if (maxAmplitude > 0.0f)
+                n /= maxAmplitude;
 
-            int height = WORLD_MIN_Y + static_cast<int>((n + 1.0f) * 0.5f * (WORLD_MAX_Y - WORLD_MIN_Y));
+            int height =
+                WORLD_MIN_Y + static_cast<int>((n + 1.0f) * 0.5f * (WORLD_MAX_Y - WORLD_MIN_Y));
 
             for (int y = 0; y < CHUNK_SIZE; ++y) {
                 int worldY = pos.y * CHUNK_SIZE + y;
 
                 if (worldY == WORLD_MIN_Y) {
                     chunk.setBlock(x, y, z, BlockID::Bedrock);
-                }
-                else if (worldY < height - 2) {
+                } else if (worldY < height - 2) {
                     chunk.setBlock(x, y, z, BlockID::Stone);
-                }
-                else if (worldY < height - 1) {
+                } else if (worldY < height - 1) {
                     chunk.setBlock(x, y, z, BlockID::Dirt);
-                }
-                else if (worldY < height) {
+                } else if (worldY < height) {
                     chunk.setBlock(x, y, z, BlockID::Grass);
-                }
-                else {
+                } else {
                     chunk.setBlock(x, y, z, BlockID::Air);
                 }
             }
@@ -223,7 +218,7 @@ void WorldGen::generateTerrainChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
     cm.rebuildColumnSunCache(pos.x, pos.z);
 }
 
-void WorldGen::generateInitialChunksTwoPass(ChunkManager& cm, int radiusChunks) {
+void WorldGen::generateInitialChunksTwoPass(ChunkManager &cm, int radiusChunks) {
     int minChunkY = static_cast<int>(std::floor(float(WORLD_MIN_Y) / CHUNK_SIZE));
     int maxChunkY = static_cast<int>(std::floor(float(WORLD_MAX_Y) / CHUNK_SIZE));
 
@@ -237,8 +232,9 @@ void WorldGen::generateInitialChunksTwoPass(ChunkManager& cm, int radiusChunks) 
 
     const bool prevSuppress = cm.suppressSunlightAffectedRebuilds;
     cm.suppressSunlightAffectedRebuilds = true;
-    for (auto& [pos, chunkRef] : cm.chunkMap) {
-        uint32_t seed = static_cast<uint32_t>((pos.x * 73856093u) ^ (pos.y * 19349663u) ^ (pos.z * 83492791u));
+    for (auto &[pos, chunkRef] : cm.chunkMap) {
+        uint32_t seed =
+            static_cast<uint32_t>((pos.x * 73856093u) ^ (pos.y * 19349663u) ^ (pos.z * 83492791u));
         std::mt19937 gen(seed);
         std::uniform_real_distribution<> chance(0.0, 1.0);
 

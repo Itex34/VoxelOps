@@ -28,7 +28,7 @@ using namespace AppHelpers;
 namespace {
 bool IsScancodeDown(SDL_Scancode scancode) {
     int keyCount = 0;
-    const bool* keys = SDL_GetKeyboardState(&keyCount);
+    const bool *keys = SDL_GetKeyboardState(&keyCount);
     return keys != nullptr && scancode < keyCount && keys[scancode];
 }
 
@@ -36,41 +36,50 @@ bool IsMouseButtonDown(uint8_t button) {
     return (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_MASK(button)) != 0;
 }
 
-std::optional<GunType> GunTypeFromInventoryItemId(uint16_t itemId)
-{
+std::optional<GunType> GunTypeFromInventoryItemId(uint16_t itemId) {
     switch (itemId) {
-    case static_cast<uint16_t>(ITEM_PISTOL): return GunType::Pistol;
-    case static_cast<uint16_t>(ITEM_SNIPER): return GunType::Sniper;
-    default: return std::nullopt;
+    case static_cast<uint16_t>(ITEM_PISTOL):
+        return GunType::Pistol;
+    case static_cast<uint16_t>(ITEM_SNIPER):
+        return GunType::Sniper;
+    default:
+        return std::nullopt;
     }
 }
 
-std::optional<BlockID> BlockTypeFromInventoryItemId(uint16_t itemId)
-{
+std::optional<BlockID> BlockTypeFromInventoryItemId(uint16_t itemId) {
     switch (itemId) {
-    case static_cast<uint16_t>(ITEM_DIRT_BLOCK): return BlockID::Dirt;
-    case static_cast<uint16_t>(ITEM_SAPPHIRE_BLOCK): return BlockID::SapphireBlock;
-    default: return std::nullopt;
+    case static_cast<uint16_t>(ITEM_DIRT_BLOCK):
+        return BlockID::Dirt;
+    case static_cast<uint16_t>(ITEM_SAPPHIRE_BLOCK):
+        return BlockID::SapphireBlock;
+    default:
+        return std::nullopt;
     }
 }
 
-void MarkChunkAndEdgeNeighborsDirty(ChunkManager& chunkManager, const glm::ivec3& worldPos)
-{
+void MarkChunkAndEdgeNeighborsDirty(ChunkManager &chunkManager, const glm::ivec3 &worldPos) {
     const glm::ivec3 chunkPos = chunkManager.worldToChunkPos(worldPos);
     const glm::ivec3 localPos = chunkManager.worldToLocalPos(worldPos);
     chunkManager.markChunkDirty(chunkPos);
-    if (localPos.x == 0) chunkManager.markChunkDirty(chunkPos + glm::ivec3(-1, 0, 0));
-    if (localPos.x == CHUNK_SIZE - 1) chunkManager.markChunkDirty(chunkPos + glm::ivec3(1, 0, 0));
-    if (localPos.y == 0) chunkManager.markChunkDirty(chunkPos + glm::ivec3(0, -1, 0));
-    if (localPos.y == CHUNK_SIZE - 1) chunkManager.markChunkDirty(chunkPos + glm::ivec3(0, 1, 0));
-    if (localPos.z == 0) chunkManager.markChunkDirty(chunkPos + glm::ivec3(0, 0, -1));
-    if (localPos.z == CHUNK_SIZE - 1) chunkManager.markChunkDirty(chunkPos + glm::ivec3(0, 0, 1));
+    if (localPos.x == 0)
+        chunkManager.markChunkDirty(chunkPos + glm::ivec3(-1, 0, 0));
+    if (localPos.x == CHUNK_SIZE - 1)
+        chunkManager.markChunkDirty(chunkPos + glm::ivec3(1, 0, 0));
+    if (localPos.y == 0)
+        chunkManager.markChunkDirty(chunkPos + glm::ivec3(0, -1, 0));
+    if (localPos.y == CHUNK_SIZE - 1)
+        chunkManager.markChunkDirty(chunkPos + glm::ivec3(0, 1, 0));
+    if (localPos.z == 0)
+        chunkManager.markChunkDirty(chunkPos + glm::ivec3(0, 0, -1));
+    if (localPos.z == CHUNK_SIZE - 1)
+        chunkManager.markChunkDirty(chunkPos + glm::ivec3(0, 0, 1));
 }
 
-std::vector<glm::ivec3> CollectChunkAndEdgeNeighbors(const ChunkManager& chunkManager, const glm::ivec3& worldPos)
-{
+std::vector<glm::ivec3> CollectChunkAndEdgeNeighbors(const ChunkManager &chunkManager,
+                                                     const glm::ivec3 &worldPos) {
     std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> chunks;
-    const auto tryInsert = [&](const glm::ivec3& chunkPos) {
+    const auto tryInsert = [&](const glm::ivec3 &chunkPos) {
         if (chunkManager.inBounds(chunkPos)) {
             chunks.insert(chunkPos);
         }
@@ -79,23 +88,29 @@ std::vector<glm::ivec3> CollectChunkAndEdgeNeighbors(const ChunkManager& chunkMa
     const glm::ivec3 localPos = chunkManager.worldToLocalPos(worldPos);
 
     tryInsert(chunkPos);
-    if (localPos.x == 0) tryInsert(chunkPos + glm::ivec3(-1, 0, 0));
-    if (localPos.x == CHUNK_SIZE - 1) tryInsert(chunkPos + glm::ivec3(1, 0, 0));
-    if (localPos.y == 0) tryInsert(chunkPos + glm::ivec3(0, -1, 0));
-    if (localPos.y == CHUNK_SIZE - 1) tryInsert(chunkPos + glm::ivec3(0, 1, 0));
-    if (localPos.z == 0) tryInsert(chunkPos + glm::ivec3(0, 0, -1));
-    if (localPos.z == CHUNK_SIZE - 1) tryInsert(chunkPos + glm::ivec3(0, 0, 1));
+    if (localPos.x == 0)
+        tryInsert(chunkPos + glm::ivec3(-1, 0, 0));
+    if (localPos.x == CHUNK_SIZE - 1)
+        tryInsert(chunkPos + glm::ivec3(1, 0, 0));
+    if (localPos.y == 0)
+        tryInsert(chunkPos + glm::ivec3(0, -1, 0));
+    if (localPos.y == CHUNK_SIZE - 1)
+        tryInsert(chunkPos + glm::ivec3(0, 1, 0));
+    if (localPos.z == 0)
+        tryInsert(chunkPos + glm::ivec3(0, 0, -1));
+    if (localPos.z == CHUNK_SIZE - 1)
+        tryInsert(chunkPos + glm::ivec3(0, 0, 1));
 
     std::vector<glm::ivec3> out;
     out.reserve(chunks.size());
-    for (const glm::ivec3& c : chunks) {
+    for (const glm::ivec3 &c : chunks) {
         out.push_back(c);
     }
     return out;
 }
-}
+} // namespace
 
-void App::pollEvents(Runtime& runtime) {
+void App::pollEvents(Runtime &runtime) {
     SDL_Event event;
     const SDL_WindowID windowId = (m_Window != nullptr) ? SDL_GetWindowID(m_Window) : 0;
     while (SDL_PollEvent(&event)) {
@@ -115,9 +130,11 @@ void App::pollEvents(Runtime& runtime) {
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
         case SDL_EVENT_WINDOW_RESIZED:
             if (event.window.windowID == windowId && runtime.inputCallbacks) {
-                runtime.inputCallbacks->framebuffer_size_callback(m_Window, event.window.data1, event.window.data2);
+                runtime.inputCallbacks->framebuffer_size_callback(m_Window, event.window.data1,
+                                                                  event.window.data2);
                 if (m_RenderApi == RenderApi::Vulkan) {
-                    if (auto* vulkanDevice = dynamic_cast<VulkanRenderDevice*>(runtime.renderer.get())) {
+                    if (auto *vulkanDevice =
+                            dynamic_cast<VulkanRenderDevice *>(runtime.renderer.get())) {
                         vulkanDevice->onWindowResized(event.window.data1, event.window.data2);
                     }
                 }
@@ -128,24 +145,16 @@ void App::pollEvents(Runtime& runtime) {
             break;
         case SDL_EVENT_MOUSE_MOTION:
             if (event.motion.windowID == windowId && runtime.inputCallbacks) {
-                runtime.inputCallbacks->mouse_motion_callback(
-                    m_Window,
-                    event.motion.x,
-                    event.motion.y,
-                    event.motion.xrel,
-                    event.motion.yrel,
-                    m_UseDebugCamera
-                );
+                runtime.inputCallbacks->mouse_motion_callback(m_Window, event.motion.x,
+                                                              event.motion.y, event.motion.xrel,
+                                                              event.motion.yrel, m_UseDebugCamera);
             }
             break;
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
         case SDL_EVENT_MOUSE_BUTTON_UP:
             if (event.button.windowID == windowId && runtime.inputCallbacks) {
                 runtime.inputCallbacks->mouse_button_callback(
-                    m_Window,
-                    event.button.button,
-                    event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
-                );
+                    m_Window, event.button.button, event.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
             }
             break;
         default:
@@ -154,7 +163,7 @@ void App::pollEvents(Runtime& runtime) {
     }
 }
 
-void App::updateDebugCamera(Runtime& runtime) {
+void App::updateDebugCamera(Runtime &runtime) {
     if (m_UseDebugCamera && m_Window && SDL_GetWindowRelativeMouseMode(m_Window)) {
         float mouseDx = 0.0f;
         float mouseDy = 0.0f;
@@ -162,8 +171,7 @@ void App::updateDebugCamera(Runtime& runtime) {
         runtime.yaw += (mouseDx * 0.1f);
         runtime.pitch -= (mouseDy * 0.1f);
         runtime.pitch = glm::clamp(runtime.pitch, -89.0f, 89.0f);
-    }
-    else {
+    } else {
         float mouseX = 0.0f;
         float mouseY = 0.0f;
         SDL_GetMouseState(&mouseX, &mouseY);
@@ -174,12 +182,20 @@ void App::updateDebugCamera(Runtime& runtime) {
     const bool keyboardBlockedByUi = IsImGuiTextInputActive();
     glm::vec3 moveDir(0.0f);
     if (!keyboardBlockedByUi) {
-        if (IsScancodeDown(SDL_SCANCODE_U)) moveDir += runtime.debugCamera.XZfront;
-        if (IsScancodeDown(SDL_SCANCODE_J)) moveDir -= runtime.debugCamera.XZfront;
-        if (IsScancodeDown(SDL_SCANCODE_H)) moveDir -= glm::normalize(glm::cross(runtime.debugCamera.front, runtime.debugCamera.up));
-        if (IsScancodeDown(SDL_SCANCODE_K)) moveDir += glm::normalize(glm::cross(runtime.debugCamera.front, runtime.debugCamera.up));
-        if (IsScancodeDown(SDL_SCANCODE_RALT)) moveDir += runtime.debugCamera.up;
-        if (IsScancodeDown(SDL_SCANCODE_V)) moveDir -= runtime.debugCamera.up;
+        if (IsScancodeDown(SDL_SCANCODE_U))
+            moveDir += runtime.debugCamera.XZfront;
+        if (IsScancodeDown(SDL_SCANCODE_J))
+            moveDir -= runtime.debugCamera.XZfront;
+        if (IsScancodeDown(SDL_SCANCODE_H))
+            moveDir -=
+                glm::normalize(glm::cross(runtime.debugCamera.front, runtime.debugCamera.up));
+        if (IsScancodeDown(SDL_SCANCODE_K))
+            moveDir +=
+                glm::normalize(glm::cross(runtime.debugCamera.front, runtime.debugCamera.up));
+        if (IsScancodeDown(SDL_SCANCODE_RALT))
+            moveDir += runtime.debugCamera.up;
+        if (IsScancodeDown(SDL_SCANCODE_V))
+            moveDir -= runtime.debugCamera.up;
     }
 
     if (glm::length(moveDir) > 0.0f) {
@@ -201,15 +217,13 @@ void App::updateDebugCamera(Runtime& runtime) {
     runtime.debugCamera.updateRotation(runtime.yaw, runtime.pitch);
 }
 
-
-void App::updateToggleStates(Runtime& runtime) {
+void App::updateToggleStates(Runtime &runtime) {
     const bool keyboardBlockedByUi = IsImGuiTextInputActive();
     const bool textInputBlocked =
-        (ImGui::GetCurrentContext() != nullptr) &&
-        ImGui::GetIO().WantTextInput;
+        (ImGui::GetCurrentContext() != nullptr) && ImGui::GetIO().WantTextInput;
     const auto refreshCursorState = [&]() {
-        GameData::cursorEnabled =
-            m_ForceCursorEnabled || m_ShowDebugUi || m_ShowInventoryUi || !runtime.clientNet.IsConnected();
+        GameData::cursorEnabled = m_ForceCursorEnabled || m_ShowDebugUi || m_ShowInventoryUi ||
+                                  !runtime.clientNet.IsConnected();
         applyMouseInputModes();
     };
 
@@ -264,11 +278,8 @@ void App::updateToggleStates(Runtime& runtime) {
     }
     m_WasEscapePressed = isEscapePressed;
 
-    const bool canRecaptureCursor =
-        runtime.clientNet.IsConnected() &&
-        !m_ShowDebugUi &&
-        !m_ShowInventoryUi &&
-        m_ForceCursorEnabled;
+    const bool canRecaptureCursor = runtime.clientNet.IsConnected() && !m_ShowDebugUi &&
+                                    !m_ShowInventoryUi && m_ForceCursorEnabled;
     const bool primaryMouseDown = IsMouseButtonDown(SDL_BUTTON_LEFT);
     if (canRecaptureCursor && primaryMouseDown && !textInputBlocked) {
         m_ForceCursorEnabled = false;
@@ -276,10 +287,11 @@ void App::updateToggleStates(Runtime& runtime) {
     }
 }
 
-void App::processHotbarSelection(Runtime& runtime) {
+void App::processHotbarSelection(Runtime &runtime) {
     const bool keyboardBlockedByUi = IsImGuiTextInputActive();
     for (uint16_t i = 0; i < static_cast<uint16_t>(kHotbarSlots); ++i) {
-        const SDL_Scancode scancode = static_cast<SDL_Scancode>(SDL_SCANCODE_1 + static_cast<int>(i));
+        const SDL_Scancode scancode =
+            static_cast<SDL_Scancode>(SDL_SCANCODE_1 + static_cast<int>(i));
         const bool pressed = IsScancodeDown(scancode);
         if (!keyboardBlockedByUi && pressed && !m_WasHotbarSelectPressed[i]) {
             runtime.activeHotbarSlot = i;
@@ -288,7 +300,7 @@ void App::processHotbarSelection(Runtime& runtime) {
     }
 }
 
-void App::syncEquippedGunFromInventory(Runtime& runtime) {
+void App::syncEquippedGunFromInventory(Runtime &runtime) {
     if (m_RenderApi == RenderApi::Vulkan) {
         runtime.equippedGun = nullptr;
         return;
@@ -302,7 +314,7 @@ void App::syncEquippedGunFromInventory(Runtime& runtime) {
         runtime.activeHotbarSlot = 0;
     }
 
-    const Slot& activeSlot = runtime.inventoryUi->slots()[runtime.activeHotbarSlot];
+    const Slot &activeSlot = runtime.inventoryUi->slots()[runtime.activeHotbarSlot];
     if (Inventory::IsEmpty(activeSlot) || !Inventory::IsValidItemId(activeSlot.itemId)) {
         runtime.equippedGun = nullptr;
         return;
@@ -317,8 +329,7 @@ void App::syncEquippedGunFromInventory(Runtime& runtime) {
     (void)equipGun(runtime, *selectedGunType);
 }
 
-
-void App::processWorldInteraction(Runtime& runtime) {
+void App::processWorldInteraction(Runtime &runtime) {
     const bool rightPressed = IsMouseButtonDown(SDL_BUTTON_RIGHT);
     const bool rightClicked = rightPressed && !m_WasWorldInteractPressed;
     m_WasWorldInteractPressed = rightPressed;
@@ -335,13 +346,11 @@ void App::processWorldInteraction(Runtime& runtime) {
     bool hasActiveItem = false;
     ItemType activeItemType = ItemType::Other;
     std::optional<BlockID> activeBlockType = std::nullopt;
-    if (
-        runtime.inventoryUi &&
-        runtime.inventoryUi->hasSnapshot() &&
-        runtime.activeHotbarSlot < static_cast<uint16_t>(kHotbarSlots)
-    ) {
+    if (runtime.inventoryUi && runtime.inventoryUi->hasSnapshot() &&
+        runtime.activeHotbarSlot < static_cast<uint16_t>(kHotbarSlots)) {
         activeSlot = runtime.inventoryUi->slots()[runtime.activeHotbarSlot];
-        hasActiveItem = !Inventory::IsEmpty(activeSlot) && Inventory::IsValidItemId(activeSlot.itemId);
+        hasActiveItem =
+            !Inventory::IsEmpty(activeSlot) && Inventory::IsValidItemId(activeSlot.itemId);
         if (hasActiveItem) {
             activeItemType = Items::ItemDatabase[activeSlot.itemId].type;
             activeBlockType = BlockTypeFromInventoryItemId(activeSlot.itemId);
@@ -354,46 +363,42 @@ void App::processWorldInteraction(Runtime& runtime) {
 
     Ray ray(runtime.player->getCamera().position, runtime.player->getCamera().front);
     const RayResult hitResult = runtime.rayManager.rayHasBlockIntersectSingle(
-        ray, *runtime.chunkManager, runtime.player->maxReach
-    );
+        ray, *runtime.chunkManager, runtime.player->maxReach);
     if (!hitResult.hit) {
         return;
     }
 
     if (hasActiveItem && activeItemType == ItemType::Block && activeBlockType.has_value()) {
         const glm::ivec3 placePos = hitResult.adjacentAirBlockWorld;
-        const BlockID previousBlock = runtime.chunkManager->getBlockGlobal(placePos.x, placePos.y, placePos.z);
+        const BlockID previousBlock =
+            runtime.chunkManager->getBlockGlobal(placePos.x, placePos.y, placePos.z);
         if (previousBlock != BlockID::Air) {
             return;
         }
 
         if (!runtime.clientNet.IsConnected()) {
-            runtime.chunkManager->setBlockGlobal(placePos.x, placePos.y, placePos.z, *activeBlockType);
+            runtime.chunkManager->setBlockGlobal(placePos.x, placePos.y, placePos.z,
+                                                 *activeBlockType);
             MarkChunkAndEdgeNeighborsDirty(*runtime.chunkManager, placePos);
             return;
         }
 
         BlockPlaceRequest request{};
         request.requestId = runtime.nextBlockPlaceRequestId++;
-        request.edits.push_back(BlockPlaceEdit{
-            placePos.x,
-            placePos.y,
-            placePos.z,
-            static_cast<uint8_t>(*activeBlockType)
-        });
+        request.edits.push_back(BlockPlaceEdit{placePos.x, placePos.y, placePos.z,
+                                               static_cast<uint8_t>(*activeBlockType)});
 
         if (runtime.clientNet.SendBlockPlaceRequest(request)) {
-            runtime.chunkManager->setBlockGlobal(placePos.x, placePos.y, placePos.z, *activeBlockType);
+            runtime.chunkManager->setBlockGlobal(placePos.x, placePos.y, placePos.z,
+                                                 *activeBlockType);
             MarkChunkAndEdgeNeighborsDirty(*runtime.chunkManager, placePos);
 
             Runtime::PendingBlockPlaceRequest pending{};
             pending.createdAt = GetTimeSeconds();
             pending.affectedChunks = CollectChunkAndEdgeNeighbors(*runtime.chunkManager, placePos);
-            pending.edits.push_back(Runtime::PendingBlockPlaceEdit{
-                placePos,
-                static_cast<uint8_t>(previousBlock),
-                static_cast<uint8_t>(*activeBlockType)
-            });
+            pending.edits.push_back(
+                Runtime::PendingBlockPlaceEdit{placePos, static_cast<uint8_t>(previousBlock),
+                                               static_cast<uint8_t>(*activeBlockType)});
             runtime.pendingBlockPlaceRequests[request.requestId] = std::move(pending);
         }
         return;
@@ -405,18 +410,15 @@ void App::processWorldInteraction(Runtime& runtime) {
     }
 
     const glm::ivec3 breakPos = hitResult.hitBlockWorld;
-    const BlockID previousBlock = runtime.chunkManager->getBlockGlobal(breakPos.x, breakPos.y, breakPos.z);
+    const BlockID previousBlock =
+        runtime.chunkManager->getBlockGlobal(breakPos.x, breakPos.y, breakPos.z);
     if (previousBlock == BlockID::Air) {
         return;
     }
 
     BlockBreakRequest request{};
     request.requestId = runtime.nextBlockBreakRequestId++;
-    request.edits.push_back(BlockBreakEdit{
-        breakPos.x,
-        breakPos.y,
-        breakPos.z
-    });
+    request.edits.push_back(BlockBreakEdit{breakPos.x, breakPos.y, breakPos.z});
 
     if (runtime.clientNet.SendBlockBreakRequest(request)) {
         runtime.chunkManager->playerBreakBlockAt(breakPos);
@@ -424,16 +426,13 @@ void App::processWorldInteraction(Runtime& runtime) {
         Runtime::PendingBlockBreakRequest pending{};
         pending.createdAt = GetTimeSeconds();
         pending.affectedChunks = CollectChunkAndEdgeNeighbors(*runtime.chunkManager, breakPos);
-        pending.edits.push_back(Runtime::PendingBlockBreakEdit{
-            breakPos,
-            static_cast<uint8_t>(previousBlock)
-        });
+        pending.edits.push_back(
+            Runtime::PendingBlockBreakEdit{breakPos, static_cast<uint8_t>(previousBlock)});
         runtime.pendingBlockBreakRequests[request.requestId] = std::move(pending);
     }
 }
 
-
-void App::processShooting(Runtime& runtime) {
+void App::processShooting(Runtime &runtime) {
     if (!runtime.localPlayerAlive) {
         return;
     }
@@ -458,7 +457,7 @@ void App::processShooting(Runtime& runtime) {
         return;
     }
 
-    const Camera& cam = runtime.player->getCamera();
+    const Camera &cam = runtime.player->getCamera();
     const float dirLenSq = glm::dot(cam.front, cam.front);
     if (!std::isfinite(dirLenSq) || dirLenSq < 1e-8f) {
         return;
@@ -470,21 +469,13 @@ void App::processShooting(Runtime& runtime) {
     const uint32_t clientTick = runtime.hasAppliedServerTick ? runtime.lastAppliedServerTick : 0u;
     const uint32_t seed = shotId ^ (clientTick * 2654435761u);
 
-    if (runtime.clientNet.SendShootRequest(
-        shotId,
-        clientTick,
-        runtime.equippedGun->getWeaponId(),
-        shootPos,
-        shootDir,
-        seed,
-        0
-    )) {
+    if (runtime.clientNet.SendShootRequest(shotId, clientTick, runtime.equippedGun->getWeaponId(),
+                                           shootPos, shootDir, seed, 0)) {
         runtime.lastShootSendTime = now;
     }
 }
 
-
-void App::processMovementNetworking(Runtime& runtime) {
+void App::processMovementNetworking(Runtime &runtime) {
     runtime.clientNet.Poll();
     if (runtime.inventoryUi) {
         runtime.inventoryUi->consumeNetwork(runtime.clientNet);
@@ -492,15 +483,15 @@ void App::processMovementNetworking(Runtime& runtime) {
     processHotbarSelection(runtime);
     syncEquippedGunFromInventory(runtime);
 
-    const std::string& statusNow = runtime.clientNet.GetConnectionStatusText();
+    const std::string &statusNow = runtime.clientNet.GetConnectionStatusText();
     if (statusNow != runtime.lastConnectionStatus) {
         std::cout << "[net] status: " << statusNow << "\n";
         runtime.lastConnectionStatus = statusNow;
         if (runtime.clientNet.IsConnected()) {
             runtime.usernamePromptError.clear();
-        }
-        else if (statusNow.find("username already taken") != std::string::npos) {
-            runtime.usernamePromptError = "Username already taken. Enter a different username and retry.";
+        } else if (statusNow.find("username already taken") != std::string::npos) {
+            runtime.usernamePromptError =
+                "Username already taken. Enter a different username and retry.";
         }
     }
 
@@ -519,8 +510,7 @@ void App::processMovementNetworking(Runtime& runtime) {
             runtime.nextReconnectAttemptTime = now + (started ? backoff : 2.0);
             runtime.reconnectBackoffSeconds = std::min(runtime.reconnectBackoffSeconds * 1.5, 8.0);
         }
-    }
-    else {
+    } else {
         runtime.reconnectBackoffSeconds = 1.0;
     }
 
@@ -531,15 +521,13 @@ void App::processMovementNetworking(Runtime& runtime) {
             continue;
         }
         if (shootResult.didHit) {
-            std::cout
-                << "[shoot] hit id=" << shootResult.hitEntityId
-                << " dmg=" << shootResult.damageApplied
-                << " at=(" << shootResult.hitX << "," << shootResult.hitY << "," << shootResult.hitZ << ")\n";
-        }
-        else {
-            std::cout
-                << "[shoot] miss"
-                << " at=(" << shootResult.hitX << "," << shootResult.hitY << "," << shootResult.hitZ << ")\n";
+            std::cout << "[shoot] hit id=" << shootResult.hitEntityId
+                      << " dmg=" << shootResult.damageApplied << " at=(" << shootResult.hitX << ","
+                      << shootResult.hitY << "," << shootResult.hitZ << ")\n";
+        } else {
+            std::cout << "[shoot] miss"
+                      << " at=(" << shootResult.hitX << "," << shootResult.hitY << ","
+                      << shootResult.hitZ << ")\n";
         }
     }
 
@@ -572,19 +560,17 @@ void App::processMovementNetworking(Runtime& runtime) {
 
     WorldItemSnapshot worldItemSnapshot{};
     while (runtime.clientNet.PopWorldItemSnapshot(worldItemSnapshot)) {
-        if (
-            runtime.lastWorldItemSnapshotTick != 0 &&
-            !IsNewerU32(worldItemSnapshot.serverTick, runtime.lastWorldItemSnapshotTick)
-        ) {
+        if (runtime.lastWorldItemSnapshotTick != 0 &&
+            !IsNewerU32(worldItemSnapshot.serverTick, runtime.lastWorldItemSnapshotTick)) {
             continue;
         }
         runtime.lastWorldItemSnapshotTick = worldItemSnapshot.serverTick;
 
         std::unordered_set<uint64_t> seenIds;
         seenIds.reserve(worldItemSnapshot.items.size());
-        for (const WorldItemState& itemState : worldItemSnapshot.items) {
+        for (const WorldItemState &itemState : worldItemSnapshot.items) {
             seenIds.insert(itemState.id);
-            Runtime::WorldItemVisual& item = runtime.worldItems[itemState.id];
+            Runtime::WorldItemVisual &item = runtime.worldItems[itemState.id];
             const glm::vec3 snapshotPos(itemState.px, itemState.py, itemState.pz);
             if (item.id == 0) {
                 item.position = snapshotPos;
@@ -600,8 +586,7 @@ void App::processMovementNetworking(Runtime& runtime) {
         for (auto it = runtime.worldItems.begin(); it != runtime.worldItems.end();) {
             if (seenIds.find(it->first) == seenIds.end()) {
                 it = runtime.worldItems.erase(it);
-            }
-            else {
+            } else {
                 ++it;
             }
         }
@@ -630,7 +615,7 @@ void App::processMovementNetworking(Runtime& runtime) {
         queuedSnapshotFrames.push_back(snapshotFrame);
     }
 
-    for (const PlayerSnapshotFrame& frame : queuedSnapshotFrames) {
+    for (const PlayerSnapshotFrame &frame : queuedSnapshotFrames) {
         if (runtime.hasReceivedSelfSnapshotTick &&
             !IsNewerU32(frame.serverTick, runtime.lastReceivedSelfSnapshotTick)) {
             continue;
@@ -638,8 +623,8 @@ void App::processMovementNetworking(Runtime& runtime) {
 
         runtime.snapshotInterpolator.PushFrame(frame);
 
-        const PlayerSnapshot* localSnapshot = nullptr;
-        for (const PlayerSnapshot& snapshot : frame.players) {
+        const PlayerSnapshot *localSnapshot = nullptr;
+        for (const PlayerSnapshot &snapshot : frame.players) {
             if (snapshot.id == frame.selfPlayerId) {
                 localSnapshot = &snapshot;
                 break;
@@ -678,7 +663,7 @@ void App::processMovementNetworking(Runtime& runtime) {
 
         std::unordered_map<PlayerID, PlayerState> newestRemotePlayers;
         newestRemotePlayers.reserve(interpolated.size());
-        for (const SnapshotInterpolator::InterpolatedPlayer& snapshot : interpolated) {
+        for (const SnapshotInterpolator::InterpolatedPlayer &snapshot : interpolated) {
             if (runtime.hasLocalPlayerId && snapshot.id == runtime.localPlayerId) {
                 continue;
             }
@@ -687,14 +672,11 @@ void App::processMovementNetworking(Runtime& runtime) {
             }
             PlayerState remoteState;
             remoteState.position = snapshot.position;
-            remoteState.rotation = glm::angleAxis(
-                glm::radians(ToModelYawDegrees(
-                    NormalizeYawDegrees(snapshot.yawDegrees),
-                    kDefaultPlayerModelYawInvert,
-                    kDefaultPlayerModelYawOffsetDeg
-                )),
-                glm::vec3(0.0f, 1.0f, 0.0f)
-            );
+            remoteState.rotation =
+                glm::angleAxis(glm::radians(ToModelYawDegrees(
+                                   NormalizeYawDegrees(snapshot.yawDegrees),
+                                   kDefaultPlayerModelYawInvert, kDefaultPlayerModelYawOffsetDeg)),
+                               glm::vec3(0.0f, 1.0f, 0.0f));
             remoteState.scale = glm::vec3(1.0f);
             remoteState.weaponId = snapshot.weaponId;
             newestRemotePlayers[snapshot.id] = remoteState;
@@ -727,13 +709,14 @@ void App::processMovementNetworking(Runtime& runtime) {
             runtime.rbDiagActive = true;
             runtime.rbDiagUntil = now + Runtime::RespawnDiagDurationSeconds;
             runtime.rbDiagNextHeartbeatAt = now;
-            std::cout
-                << "[rbdiag/client] respawn start"
-                << " serverTick=" << runtime.lastAppliedServerTick
-                << " ackedInputTick=" << runtime.lastAckedInputTick
-                << " pos=(" << newestServerPos.x << "," << newestServerPos.y << "," << newestServerPos.z << ")"
-                << " vel=(" << newestServerVel.x << "," << newestServerVel.y << "," << newestServerVel.z << ")"
-                << "\n";
+            std::cout << "[rbdiag/client] respawn start"
+                      << " serverTick=" << runtime.lastAppliedServerTick
+                      << " ackedInputTick=" << runtime.lastAckedInputTick << " pos=("
+                      << newestServerPos.x << "," << newestServerPos.y << "," << newestServerPos.z
+                      << ")"
+                      << " vel=(" << newestServerVel.x << "," << newestServerVel.y << ","
+                      << newestServerVel.z << ")"
+                      << "\n";
         }
         if (runtime.renderStateNeedsResync) {
             const Player::SimulationState state = runtime.player->captureSimulationState();
@@ -796,26 +779,25 @@ void App::processMovementNetworking(Runtime& runtime) {
         runtime.rbDiagNextHeartbeatAt = now + 1.0;
         const Player::SimulationState simState = runtime.player->captureSimulationState();
         const ClientNetwork::ChunkQueueDepths queueDepths = runtime.clientNet.GetChunkQueueDepths();
-        const int32_t unackedTicks = static_cast<int32_t>(runtime.inputTickCounter - runtime.lastAckedInputTick);
-        std::cout
-            << "[rbdiag/client] heartbeat"
-            << " serverTick=" << runtime.lastAppliedServerTick
-            << " ackedInputTick=" << runtime.lastAckedInputTick
-            << " inputTickCounter=" << runtime.inputTickCounter
-            << " unackedTicks=" << unackedTicks
-            << " pendingInputs=" << runtime.pendingInputs.size()
-            << " alive=" << (runtime.localPlayerAlive ? 1 : 0)
-            << " respawnSeconds=" << runtime.localRespawnSeconds
-            << " health=" << runtime.localHealth
-            << " pos=(" << simState.position.x << "," << simState.position.y << "," << simState.position.z << ")"
-            << " vel=(" << simState.velocity.x << "," << simState.velocity.y << "," << simState.velocity.z << ")"
-            << " onGround=" << (simState.onGround ? 1 : 0)
-            << " missingChunkSolid=" << (runtime.player->isTreatMissingCollisionAsSolid() ? 1 : 0)
-            << " queue(data/delta/unload)=("
-            << queueDepths.chunkData << "/"
-            << queueDepths.chunkDelta << "/"
-            << queueDepths.chunkUnload << ")"
-            << "\n";
+        const int32_t unackedTicks =
+            static_cast<int32_t>(runtime.inputTickCounter - runtime.lastAckedInputTick);
+        std::cout << "[rbdiag/client] heartbeat"
+                  << " serverTick=" << runtime.lastAppliedServerTick
+                  << " ackedInputTick=" << runtime.lastAckedInputTick
+                  << " inputTickCounter=" << runtime.inputTickCounter
+                  << " unackedTicks=" << unackedTicks
+                  << " pendingInputs=" << runtime.pendingInputs.size()
+                  << " alive=" << (runtime.localPlayerAlive ? 1 : 0)
+                  << " respawnSeconds=" << runtime.localRespawnSeconds
+                  << " health=" << runtime.localHealth << " pos=(" << simState.position.x << ","
+                  << simState.position.y << "," << simState.position.z << ")"
+                  << " vel=(" << simState.velocity.x << "," << simState.velocity.y << ","
+                  << simState.velocity.z << ")"
+                  << " onGround=" << (simState.onGround ? 1 : 0) << " missingChunkSolid="
+                  << (runtime.player->isTreatMissingCollisionAsSolid() ? 1 : 0)
+                  << " queue(data/delta/unload)=(" << queueDepths.chunkData << "/"
+                  << queueDepths.chunkDelta << "/" << queueDepths.chunkUnload << ")"
+                  << "\n";
     }
 
     const bool respawnClickDown = IsMouseButtonDown(SDL_BUTTON_LEFT);
@@ -834,10 +816,8 @@ void App::processMovementNetworking(Runtime& runtime) {
     constexpr size_t kMaxInputSendsPerFrame = 4;
     size_t inputSendsThisFrame = 0;
 
-    while (
-        now - runtime.lastInputSendTime >= Runtime::InputSendInterval &&
-        inputSendsThisFrame < kMaxInputSendsPerFrame
-    ) {
+    while (now - runtime.lastInputSendTime >= Runtime::InputSendInterval &&
+           inputSendsThisFrame < kMaxInputSendsPerFrame) {
         runtime.lastInputSendTime += Runtime::InputSendInterval;
 
         // Capture fresh input directly from keyboard (avoids 1-frame delay from m_networkInput)
@@ -848,12 +828,13 @@ void App::processMovementNetworking(Runtime& runtime) {
             input.flags = 0;
             input.flyMode = false;
         }
-        
+
         PlayerInput packet;
         packet.inputTick = runtime.inputTickCounter++;
         packet.inputFlags = input.flags;
         packet.flyMode = input.flyMode ? 1 : 0;
-        packet.weaponId = runtime.equippedGun ? runtime.equippedGun->getWeaponId() : kInventoryEmptyItemId;
+        packet.weaponId =
+            runtime.equippedGun ? runtime.equippedGun->getWeaponId() : kInventoryEmptyItemId;
         packet.yaw = input.yaw;
         packet.pitch = input.pitch;
         packet.moveX = input.moveX;
@@ -872,13 +853,11 @@ void App::processMovementNetworking(Runtime& runtime) {
             }
 
             size_t resentCopies = 0;
-            for (
-                auto pendingIt = runtime.pendingInputs.rbegin();
-                pendingIt != runtime.pendingInputs.rend() &&
-                resentCopies < Runtime::InputRedundancyCopies;
-                ++pendingIt
-            ) {
-                const PlayerInput& resendPacket = pendingIt->packet;
+            for (auto pendingIt = runtime.pendingInputs.rbegin();
+                 pendingIt != runtime.pendingInputs.rend() &&
+                 resentCopies < Runtime::InputRedundancyCopies;
+                 ++pendingIt) {
+                const PlayerInput &resendPacket = pendingIt->packet;
                 if (resendPacket.inputTick == packet.inputTick) {
                     continue;
                 }
@@ -900,18 +879,16 @@ void App::processMovementNetworking(Runtime& runtime) {
     }
 
     const glm::vec3 requestPos = runtime.player->getPosition();
-    const glm::ivec3 worldPos(
-        static_cast<int>(std::floor(requestPos.x)),
-        static_cast<int>(std::floor(requestPos.y)),
-        static_cast<int>(std::floor(requestPos.z))
-    );
+    const glm::ivec3 worldPos(static_cast<int>(std::floor(requestPos.x)),
+                              static_cast<int>(std::floor(requestPos.y)),
+                              static_cast<int>(std::floor(requestPos.z)));
     const glm::ivec3 centerChunk = runtime.chunkManager->worldToChunkPos(worldPos);
-    const uint16_t viewDistance = static_cast<uint16_t>(std::max<int>(2, runtime.player->renderDistance));
-    const bool centerChanged =
-        !runtime.hasLastChunkRequestCenter ||
-        centerChunk.x != runtime.lastChunkRequestCenter.x ||
-        centerChunk.y != runtime.lastChunkRequestCenter.y ||
-        centerChunk.z != runtime.lastChunkRequestCenter.z;
+    const uint16_t viewDistance =
+        static_cast<uint16_t>(std::max<int>(2, runtime.player->renderDistance));
+    const bool centerChanged = !runtime.hasLastChunkRequestCenter ||
+                               centerChunk.x != runtime.lastChunkRequestCenter.x ||
+                               centerChunk.y != runtime.lastChunkRequestCenter.y ||
+                               centerChunk.z != runtime.lastChunkRequestCenter.z;
     const bool allowBurstRequest =
         !runtime.hasLastChunkRequestCenter ||
         (now - runtime.lastChunkRequestSendTime >= Runtime::ChunkRequestCenterChangeMinInterval);
@@ -921,8 +898,7 @@ void App::processMovementNetworking(Runtime& runtime) {
         runtime.lastChunkRequestCenter = centerChunk;
         runtime.hasLastChunkRequestCenter = true;
         (void)runtime.clientNet.SendChunkRequest(centerChunk, viewDistance);
-    }
-    else if (now - runtime.lastChunkRequestSendTime >= Runtime::ChunkRequestSendInterval) {
+    } else if (now - runtime.lastChunkRequestSendTime >= Runtime::ChunkRequestSendInterval) {
         runtime.lastChunkRequestSendTime = now;
         runtime.lastChunkRequestCenter = centerChunk;
         runtime.hasLastChunkRequestCenter = true;
@@ -930,12 +906,11 @@ void App::processMovementNetworking(Runtime& runtime) {
     }
 }
 
-
-void App::processChunkStreaming(Runtime& runtime, bool prioritizeMovement) {
+void App::processChunkStreaming(Runtime &runtime, bool prioritizeMovement) {
     constexpr double kChunkResyncCooldownSec = 0.25;
     static std::unordered_map<glm::ivec3, double, IVec3Hash> s_chunkResyncCooldownUntil;
 
-    const auto requestChunkResync = [&](const glm::ivec3& chunkPos, bool force) {
+    const auto requestChunkResync = [&](const glm::ivec3 &chunkPos, bool force) {
         const double nowSec = GetTimeSeconds();
         auto it = s_chunkResyncCooldownUntil.find(chunkPos);
         if (!force && it != s_chunkResyncCooldownUntil.end() && nowSec < it->second) {
@@ -943,84 +918,66 @@ void App::processChunkStreaming(Runtime& runtime, bool prioritizeMovement) {
         }
         s_chunkResyncCooldownUntil[chunkPos] = nowSec + kChunkResyncCooldownSec;
         if (!runtime.clientNet.SendChunkResyncRequest(chunkPos)) {
-            std::cerr
-                << "[chunk/resync] failed to request full chunk ("
-                << chunkPos.x << "," << chunkPos.y << "," << chunkPos.z << ")\n";
+            std::cerr << "[chunk/resync] failed to request full chunk (" << chunkPos.x << ","
+                      << chunkPos.y << "," << chunkPos.z << ")\n";
         }
     };
 
     const int64_t chunkApplyBudgetUs = prioritizeMovement
-        ? Runtime::ChunkApplyBudgetUsUnderInputPressure
-        : Runtime::ChunkApplyBudgetUs;
+                                           ? Runtime::ChunkApplyBudgetUsUnderInputPressure
+                                           : Runtime::ChunkApplyBudgetUs;
     const auto chunkApplyStart = std::chrono::steady_clock::now();
     const auto withinChunkApplyBudget = [&]() -> bool {
         const auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - chunkApplyStart
-        ).count();
+                                   std::chrono::steady_clock::now() - chunkApplyStart)
+                                   .count();
         return elapsedUs < chunkApplyBudgetUs;
     };
     size_t chunkDataApplied = 0;
 
     ChunkData chunkData;
-    while (
-        chunkDataApplied < Runtime::MaxChunkDataApplyPerFrame &&
-        withinChunkApplyBudget() &&
-        runtime.clientNet.PopChunkData(chunkData)
-    ) {
+    while (chunkDataApplied < Runtime::MaxChunkDataApplyPerFrame && withinChunkApplyBudget() &&
+           runtime.clientNet.PopChunkData(chunkData)) {
         runtime.chunkManager->applyNetworkChunkData(chunkData);
         ++chunkDataApplied;
     }
 
     ChunkDelta chunkDelta;
     size_t chunkDeltaApplied = 0;
-    while (
-        chunkDeltaApplied < Runtime::MaxChunkDeltaApplyPerFrame &&
-        withinChunkApplyBudget() &&
-        runtime.clientNet.PopChunkDelta(chunkDelta)
-    ) {
-        const NetworkChunkDeltaApplyResult deltaResult = runtime.chunkManager->applyNetworkChunkDelta(chunkDelta);
-        if (
-            deltaResult == NetworkChunkDeltaApplyResult::MissingBaseChunk ||
-            deltaResult == NetworkChunkDeltaApplyResult::VersionGap
-        ) {
-            requestChunkResync(glm::ivec3(chunkDelta.chunkX, chunkDelta.chunkY, chunkDelta.chunkZ), false);
+    while (chunkDeltaApplied < Runtime::MaxChunkDeltaApplyPerFrame && withinChunkApplyBudget() &&
+           runtime.clientNet.PopChunkDelta(chunkDelta)) {
+        const NetworkChunkDeltaApplyResult deltaResult =
+            runtime.chunkManager->applyNetworkChunkDelta(chunkDelta);
+        if (deltaResult == NetworkChunkDeltaApplyResult::MissingBaseChunk ||
+            deltaResult == NetworkChunkDeltaApplyResult::VersionGap) {
+            requestChunkResync(glm::ivec3(chunkDelta.chunkX, chunkDelta.chunkY, chunkDelta.chunkZ),
+                               false);
         }
         ++chunkDeltaApplied;
     }
 
     ChunkUnload chunkUnload;
     size_t chunkUnloadApplied = 0;
-    while (
-        chunkUnloadApplied < Runtime::MaxChunkUnloadApplyPerFrame &&
-        withinChunkApplyBudget() &&
-        runtime.clientNet.PopChunkUnload(chunkUnload)
-    ) {
+    while (chunkUnloadApplied < Runtime::MaxChunkUnloadApplyPerFrame && withinChunkApplyBudget() &&
+           runtime.clientNet.PopChunkUnload(chunkUnload)) {
         runtime.chunkManager->applyNetworkChunkUnload(chunkUnload);
         ++chunkUnloadApplied;
     }
 
     BlockPlaceResult blockPlaceResult;
     size_t blockPlaceResultsApplied = 0;
-    while (
-        blockPlaceResultsApplied < Runtime::MaxBlockPlaceResultsPerFrame &&
-        runtime.clientNet.PopBlockPlaceResult(blockPlaceResult)
-    ) {
+    while (blockPlaceResultsApplied < Runtime::MaxBlockPlaceResultsPerFrame &&
+           runtime.clientNet.PopBlockPlaceResult(blockPlaceResult)) {
         auto pendingIt = runtime.pendingBlockPlaceRequests.find(blockPlaceResult.requestId);
         if (blockPlaceResult.accepted == 0) {
             if (pendingIt != runtime.pendingBlockPlaceRequests.end()) {
-                for (const Runtime::PendingBlockPlaceEdit& edit : pendingIt->second.edits) {
+                for (const Runtime::PendingBlockPlaceEdit &edit : pendingIt->second.edits) {
                     const BlockID predictedId = static_cast<BlockID>(edit.newBlockId);
                     const BlockID rollbackId = static_cast<BlockID>(edit.oldBlockId);
-                    if (
-                        runtime.chunkManager->getBlockGlobal(edit.worldPos.x, edit.worldPos.y, edit.worldPos.z) ==
-                        predictedId
-                    ) {
-                        runtime.chunkManager->setBlockGlobal(
-                            edit.worldPos.x,
-                            edit.worldPos.y,
-                            edit.worldPos.z,
-                            rollbackId
-                        );
+                    if (runtime.chunkManager->getBlockGlobal(edit.worldPos.x, edit.worldPos.y,
+                                                             edit.worldPos.z) == predictedId) {
+                        runtime.chunkManager->setBlockGlobal(edit.worldPos.x, edit.worldPos.y,
+                                                             edit.worldPos.z, rollbackId);
                         MarkChunkAndEdgeNeighborsDirty(*runtime.chunkManager, edit.worldPos);
                     }
                 }
@@ -1028,17 +985,16 @@ void App::processChunkStreaming(Runtime& runtime, bool prioritizeMovement) {
 
             std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> chunksToResync;
             if (pendingIt != runtime.pendingBlockPlaceRequests.end()) {
-                for (const glm::ivec3& chunkPos : pendingIt->second.affectedChunks) {
+                for (const glm::ivec3 &chunkPos : pendingIt->second.affectedChunks) {
                     chunksToResync.insert(chunkPos);
                 }
-            }
-            else {
-                for (const BlockPlaceChunkCoord& coord : blockPlaceResult.correctiveChunks) {
+            } else {
+                for (const BlockPlaceChunkCoord &coord : blockPlaceResult.correctiveChunks) {
                     chunksToResync.insert(glm::ivec3(coord.chunkX, coord.chunkY, coord.chunkZ));
                 }
             }
 
-            for (const glm::ivec3& chunkPos : chunksToResync) {
+            for (const glm::ivec3 &chunkPos : chunksToResync) {
                 requestChunkResync(chunkPos, true);
             }
         }
@@ -1050,35 +1006,31 @@ void App::processChunkStreaming(Runtime& runtime, bool prioritizeMovement) {
     }
 
     const double nowSec = GetTimeSeconds();
-    for (auto it = runtime.pendingBlockPlaceRequests.begin(); it != runtime.pendingBlockPlaceRequests.end();) {
+    for (auto it = runtime.pendingBlockPlaceRequests.begin();
+         it != runtime.pendingBlockPlaceRequests.end();) {
         if ((nowSec - it->second.createdAt) > 1.5) {
-            for (const glm::ivec3& chunkPos : it->second.affectedChunks) {
+            for (const glm::ivec3 &chunkPos : it->second.affectedChunks) {
                 requestChunkResync(chunkPos, true);
             }
             it = runtime.pendingBlockPlaceRequests.erase(it);
-        }
-        else {
+        } else {
             ++it;
         }
     }
 
     BlockBreakResult blockBreakResult;
     size_t blockBreakResultsApplied = 0;
-    while (
-        blockBreakResultsApplied < Runtime::MaxBlockBreakResultsPerFrame &&
-        runtime.clientNet.PopBlockBreakResult(blockBreakResult)
-    ) {
+    while (blockBreakResultsApplied < Runtime::MaxBlockBreakResultsPerFrame &&
+           runtime.clientNet.PopBlockBreakResult(blockBreakResult)) {
         auto pendingIt = runtime.pendingBlockBreakRequests.find(blockBreakResult.requestId);
         if (blockBreakResult.accepted == 0) {
             if (pendingIt != runtime.pendingBlockBreakRequests.end()) {
-                for (const Runtime::PendingBlockBreakEdit& edit : pendingIt->second.edits) {
-                    if (runtime.chunkManager->getBlockGlobal(edit.worldPos.x, edit.worldPos.y, edit.worldPos.z) == BlockID::Air) {
-                        runtime.chunkManager->setBlockGlobal(
-                            edit.worldPos.x,
-                            edit.worldPos.y,
-                            edit.worldPos.z,
-                            static_cast<BlockID>(edit.oldBlockId)
-                        );
+                for (const Runtime::PendingBlockBreakEdit &edit : pendingIt->second.edits) {
+                    if (runtime.chunkManager->getBlockGlobal(edit.worldPos.x, edit.worldPos.y,
+                                                             edit.worldPos.z) == BlockID::Air) {
+                        runtime.chunkManager->setBlockGlobal(edit.worldPos.x, edit.worldPos.y,
+                                                             edit.worldPos.z,
+                                                             static_cast<BlockID>(edit.oldBlockId));
                         MarkChunkAndEdgeNeighborsDirty(*runtime.chunkManager, edit.worldPos);
                     }
                 }
@@ -1086,17 +1038,16 @@ void App::processChunkStreaming(Runtime& runtime, bool prioritizeMovement) {
 
             std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> chunksToResync;
             if (pendingIt != runtime.pendingBlockBreakRequests.end()) {
-                for (const glm::ivec3& chunkPos : pendingIt->second.affectedChunks) {
+                for (const glm::ivec3 &chunkPos : pendingIt->second.affectedChunks) {
                     chunksToResync.insert(chunkPos);
                 }
-            }
-            else {
-                for (const BlockBreakChunkCoord& coord : blockBreakResult.correctiveChunks) {
+            } else {
+                for (const BlockBreakChunkCoord &coord : blockBreakResult.correctiveChunks) {
                     chunksToResync.insert(glm::ivec3(coord.chunkX, coord.chunkY, coord.chunkZ));
                 }
             }
 
-            for (const glm::ivec3& chunkPos : chunksToResync) {
+            for (const glm::ivec3 &chunkPos : chunksToResync) {
                 requestChunkResync(chunkPos, true);
             }
         }
@@ -1107,24 +1058,24 @@ void App::processChunkStreaming(Runtime& runtime, bool prioritizeMovement) {
         ++blockBreakResultsApplied;
     }
 
-    for (auto it = runtime.pendingBlockBreakRequests.begin(); it != runtime.pendingBlockBreakRequests.end();) {
+    for (auto it = runtime.pendingBlockBreakRequests.begin();
+         it != runtime.pendingBlockBreakRequests.end();) {
         if ((nowSec - it->second.createdAt) > 1.5) {
-            for (const glm::ivec3& chunkPos : it->second.affectedChunks) {
+            for (const glm::ivec3 &chunkPos : it->second.affectedChunks) {
                 requestChunkResync(chunkPos, true);
             }
             it = runtime.pendingBlockBreakRequests.erase(it);
-        }
-        else {
+        } else {
             ++it;
         }
     }
 
     const size_t maxChunkMeshBuilds = prioritizeMovement
-        ? Runtime::MaxChunkMeshBuildsPerFrameUnderInputPressure
-        : Runtime::MaxChunkMeshBuildsPerFrame;
+                                          ? Runtime::MaxChunkMeshBuildsPerFrameUnderInputPressure
+                                          : Runtime::MaxChunkMeshBuildsPerFrame;
     const int64_t chunkMeshBuildBudgetUs = prioritizeMovement
-        ? Runtime::ChunkMeshBuildBudgetUsUnderInputPressure
-        : Runtime::ChunkMeshBuildBudgetUs;
+                                               ? Runtime::ChunkMeshBuildBudgetUsUnderInputPressure
+                                               : Runtime::ChunkMeshBuildBudgetUs;
     runtime.chunkManager->updateDirtyChunks(maxChunkMeshBuilds, chunkMeshBuildBudgetUs);
 
     const double now = GetTimeSeconds();
@@ -1133,18 +1084,17 @@ void App::processChunkStreaming(Runtime& runtime, bool prioritizeMovement) {
         const ClientNetwork::ChunkQueueDepths queueDepths = runtime.clientNet.GetChunkQueueDepths();
 
         const glm::vec3 pos = runtime.player->getPosition();
-        const glm::ivec3 worldPos(
-            static_cast<int>(std::floor(pos.x)),
-            static_cast<int>(std::floor(pos.y)),
-            static_cast<int>(std::floor(pos.z))
-        );
+        const glm::ivec3 worldPos(static_cast<int>(std::floor(pos.x)),
+                                  static_cast<int>(std::floor(pos.y)),
+                                  static_cast<int>(std::floor(pos.z)));
         const glm::ivec3 centerChunk = runtime.chunkManager->worldToChunkPos(worldPos);
         const int viewDistance = std::max<int>(2, runtime.player->renderDistance);
-        const int64_t radius2 = static_cast<int64_t>(viewDistance) * static_cast<int64_t>(viewDistance);
+        const int64_t radius2 =
+            static_cast<int64_t>(viewDistance) * static_cast<int64_t>(viewDistance);
         const int minChunkY = WORLD_MIN_Y / CHUNK_SIZE;
         const int maxChunkY = WORLD_MAX_Y / CHUNK_SIZE;
 
-        const auto& chunks = runtime.chunkManager->getChunks();
+        const auto &chunks = runtime.chunkManager->getChunks();
         size_t desired = 0;
         size_t loaded = 0;
         std::vector<glm::ivec3> missingSamples;
@@ -1159,37 +1109,30 @@ void App::processChunkStreaming(Runtime& runtime, bool prioritizeMovement) {
                 }
                 for (int y = minChunkY; y <= maxChunkY; ++y) {
                     const glm::ivec3 cp(x, y, z);
-                    if (!runtime.chunkManager->inBounds(cp)) continue;
+                    if (!runtime.chunkManager->inBounds(cp))
+                        continue;
                     ++desired;
                     if (chunks.find(cp) != chunks.end()) {
                         ++loaded;
-                    }
-                    else if (missingSamples.size() < 8) {
+                    } else if (missingSamples.size() < 8) {
                         missingSamples.push_back(cp);
                     }
                 }
             }
         }
 
-        std::cerr
-            << "[chunk/client] coverage center=("
-            << centerChunk.x << "," << centerChunk.y << "," << centerChunk.z << ")"
-            << " viewDist=" << viewDistance
-            << " desired=" << desired
-            << " loaded=" << loaded
-            << " missing=" << (desired - loaded)
-            << " queue(data/delta/unload)=("
-            << queueDepths.chunkData << "/"
-            << queueDepths.chunkDelta << "/"
-            << queueDepths.chunkUnload << ")"
-            << " applied(data/delta/unload)=("
-            << chunkDataApplied << "/"
-            << chunkDeltaApplied << "/"
-            << chunkUnloadApplied << ")\n";
+        std::cerr << "[chunk/client] coverage center=(" << centerChunk.x << "," << centerChunk.y
+                  << "," << centerChunk.z << ")"
+                  << " viewDist=" << viewDistance << " desired=" << desired << " loaded=" << loaded
+                  << " missing=" << (desired - loaded) << " queue(data/delta/unload)=("
+                  << queueDepths.chunkData << "/" << queueDepths.chunkDelta << "/"
+                  << queueDepths.chunkUnload << ")"
+                  << " applied(data/delta/unload)=(" << chunkDataApplied << "/" << chunkDeltaApplied
+                  << "/" << chunkUnloadApplied << ")\n";
 
         if (!missingSamples.empty()) {
             std::cerr << "[chunk/client] missing samples:";
-            for (const glm::ivec3& cp : missingSamples) {
+            for (const glm::ivec3 &cp : missingSamples) {
                 std::cerr << " (" << cp.x << "," << cp.y << "," << cp.z << ")";
             }
             std::cerr << "\n";
@@ -1197,13 +1140,12 @@ void App::processChunkStreaming(Runtime& runtime, bool prioritizeMovement) {
     }
 }
 
-
-void App::processFrame(Runtime& runtime) {
+void App::processFrame(Runtime &runtime) {
     const auto perfFrameStart = std::chrono::steady_clock::now();
-    const auto toMs = [](const auto& start, const auto& end) -> float {
+    const auto toMs = [](const auto &start, const auto &end) -> float {
         return static_cast<float>(
-            std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()
-        ) * 0.001f;
+                   std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()) *
+               0.001f;
     };
 
     const double frameNow = GetTimeSeconds();
@@ -1221,16 +1163,14 @@ void App::processFrame(Runtime& runtime) {
         constexpr double kFrameTimeLogThresholdMs = 12.5;
         constexpr double kFrameTimeLogCooldownSec = 0.5;
         const double frameMs = frameDeltaSeconds * 1000.0;
-        if (frameMs >= kFrameTimeLogThresholdMs && (frameNow - s_lastFrameTimeLog) >= kFrameTimeLogCooldownSec) {
-            const ClientNetwork::ChunkQueueDepths queueDepths = runtime.clientNet.GetChunkQueueDepths();
+        if (frameMs >= kFrameTimeLogThresholdMs &&
+            (frameNow - s_lastFrameTimeLog) >= kFrameTimeLogCooldownSec) {
+            const ClientNetwork::ChunkQueueDepths queueDepths =
+                runtime.clientNet.GetChunkQueueDepths();
             const double fps = frameMs > 0.0 ? (1000.0 / frameMs) : 0.0;
-            std::cerr
-                << "[frame] slow frameMs=" << frameMs
-                << " fps=" << fps
-                << " queue(data/delta/unload)=("
-                << queueDepths.chunkData << "/"
-                << queueDepths.chunkDelta << "/"
-                << queueDepths.chunkUnload << ")\n";
+            std::cerr << "[frame] slow frameMs=" << frameMs << " fps=" << fps
+                      << " queue(data/delta/unload)=(" << queueDepths.chunkData << "/"
+                      << queueDepths.chunkDelta << "/" << queueDepths.chunkUnload << ")\n";
             s_lastFrameTimeLog = frameNow;
         }
     }
@@ -1248,9 +1188,7 @@ void App::processFrame(Runtime& runtime) {
         GameData::cursorEnabled = true;
     }
     GameData::gameplayInputEnabled =
-        runtime.clientNet.IsConnected() &&
-        !m_ShowDebugUi &&
-        !m_ForceCursorEnabled;
+        runtime.clientNet.IsConnected() && !m_ShowDebugUi && !m_ForceCursorEnabled;
 
     runtime.inputCallbacks->processInput(m_Window);
     applyMouseInputModes();
@@ -1258,7 +1196,8 @@ void App::processFrame(Runtime& runtime) {
     const auto perfInputEnd = std::chrono::steady_clock::now();
     runtime.perfInputMs = toMs(perfInputStart, perfInputEnd);
 
-    const double maxAccumulatedTime = Runtime::LocalPredictionStep * static_cast<double>(Runtime::MaxLocalPredictionStepsPerFrame);
+    const double maxAccumulatedTime = Runtime::LocalPredictionStep *
+                                      static_cast<double>(Runtime::MaxLocalPredictionStepsPerFrame);
     if (runtime.localSimAccumulator > maxAccumulatedTime) {
         runtime.localSimAccumulator = maxAccumulatedTime;
     }
@@ -1278,10 +1217,8 @@ void App::processFrame(Runtime& runtime) {
 
     size_t localPredictionSteps = 0;
     if (runtime.localPlayerAlive) {
-        while (
-            runtime.localSimAccumulator >= Runtime::LocalPredictionStep &&
-            localPredictionSteps < Runtime::MaxLocalPredictionStepsPerFrame
-        ) {
+        while (runtime.localSimAccumulator >= Runtime::LocalPredictionStep &&
+               localPredictionSteps < Runtime::MaxLocalPredictionStepsPerFrame) {
             runtime.player->update(m_Window, Runtime::LocalPredictionStep);
             runtime.localSimAccumulator -= Runtime::LocalPredictionStep;
             runtime.renderPrevSimState = runtime.renderCurrSimState;
@@ -1292,14 +1229,12 @@ void App::processFrame(Runtime& runtime) {
             // Keep input sampling responsive even on very high FPS frames.
             runtime.player->update(m_Window, 0.0);
         }
-        if (
-            localPredictionSteps == Runtime::MaxLocalPredictionStepsPerFrame &&
-            runtime.localSimAccumulator >= Runtime::LocalPredictionStep
-        ) {
-            runtime.localSimAccumulator = std::fmod(runtime.localSimAccumulator, Runtime::LocalPredictionStep);
+        if (localPredictionSteps == Runtime::MaxLocalPredictionStepsPerFrame &&
+            runtime.localSimAccumulator >= Runtime::LocalPredictionStep) {
+            runtime.localSimAccumulator =
+                std::fmod(runtime.localSimAccumulator, Runtime::LocalPredictionStep);
         }
-    }
-    else {
+    } else {
         runtime.localSimAccumulator = 0.0;
         runtime.renderStateNeedsResync = false;
         const Player::SimulationState frozenState = runtime.player->captureSimulationState();
@@ -1317,11 +1252,14 @@ void App::processFrame(Runtime& runtime) {
     runtime.perfGameplayMs = toMs(perfGameplayStart, perfGameplayEnd);
 
     const auto perfRenderStart = std::chrono::steady_clock::now();
-    const Player::SimulationState simStateAfterPrediction = runtime.player->captureSimulationState();
-    const glm::vec3 renderStateError = simStateAfterPrediction.position - runtime.renderCurrSimState.position;
+    const Player::SimulationState simStateAfterPrediction =
+        runtime.player->captureSimulationState();
+    const glm::vec3 renderStateError =
+        simStateAfterPrediction.position - runtime.renderCurrSimState.position;
     const float renderStateErrorSq = glm::dot(renderStateError, renderStateError);
     const float renderLatencyBlend = LatencyCorrectionBlend(runtime.clientNet);
-    const float renderSnapDist = Runtime::BasicAuthReconcileTeleportDistance + 5.5f + (4.0f * renderLatencyBlend);
+    const float renderSnapDist =
+        Runtime::BasicAuthReconcileTeleportDistance + 5.5f + (4.0f * renderLatencyBlend);
     const float renderStateSnapDistSq = renderSnapDist * renderSnapDist;
     if (renderStateErrorSq > renderStateSnapDistSq) {
         runtime.renderPrevSimState = simStateAfterPrediction;
@@ -1329,19 +1267,13 @@ void App::processFrame(Runtime& runtime) {
         runtime.hasSmoothedPlayerCameraPos = false;
     }
 
-    const Camera& latestCamera = runtime.player->getCamera();
+    const Camera &latestCamera = runtime.player->getCamera();
     runtime.interpolatedPlayerCamera = latestCamera;
 
     const float simAlpha = std::clamp(
-        static_cast<float>(runtime.localSimAccumulator / Runtime::LocalPredictionStep),
-        0.0f,
-        1.0f
-    );
-    const glm::vec3 interpolatedBodyPos = glm::mix(
-        runtime.renderPrevSimState.position,
-        runtime.renderCurrSimState.position,
-        simAlpha
-    );
+        static_cast<float>(runtime.localSimAccumulator / Runtime::LocalPredictionStep), 0.0f, 1.0f);
+    const glm::vec3 interpolatedBodyPos = glm::mix(runtime.renderPrevSimState.position,
+                                                   runtime.renderCurrSimState.position, simAlpha);
     const glm::vec3 extrapolatedBodyPos =
         runtime.renderCurrSimState.position +
         runtime.renderCurrSimState.velocity * static_cast<float>(runtime.localSimAccumulator);
@@ -1349,24 +1281,19 @@ void App::processFrame(Runtime& runtime) {
     // Extra render extrapolation tends to overshoot during rapid strafe-turns
     // and shows up as visible camera jitter.
     float renderExtrapolationBlend = 0.0f;
-    glm::vec3 targetBodyPos = glm::mix(
-        interpolatedBodyPos,
-        extrapolatedBodyPos,
-        renderExtrapolationBlend
-    );
+    glm::vec3 targetBodyPos =
+        glm::mix(interpolatedBodyPos, extrapolatedBodyPos, renderExtrapolationBlend);
     const glm::vec3 renderLead = targetBodyPos - runtime.renderCurrSimState.position;
     const float renderLeadLenSq = glm::dot(renderLead, renderLead);
     const float renderLeadMaxSq = Runtime::RenderLeadMaxDistance * Runtime::RenderLeadMaxDistance;
     if (renderLeadLenSq > renderLeadMaxSq && renderLeadLenSq > 1e-8f) {
         const float renderLeadLen = std::sqrt(renderLeadLenSq);
         targetBodyPos = runtime.renderCurrSimState.position +
-            renderLead * (Runtime::RenderLeadMaxDistance / renderLeadLen);
+                        renderLead * (Runtime::RenderLeadMaxDistance / renderLeadLen);
     }
-    const float interpolatedStepOffset = glm::mix(
-        runtime.renderPrevSimState.stepUpVisualOffset,
-        runtime.renderCurrSimState.stepUpVisualOffset,
-        simAlpha
-    );
+    const float interpolatedStepOffset =
+        glm::mix(runtime.renderPrevSimState.stepUpVisualOffset,
+                 runtime.renderCurrSimState.stepUpVisualOffset, simAlpha);
     const float eyeHeight = Shared::PlayerData::GetMovementSettings().eyeHeight;
     const glm::vec3 targetCameraPos =
         targetBodyPos + glm::vec3(0.0f, eyeHeight - interpolatedStepOffset, 0.0f);
@@ -1374,24 +1301,19 @@ void App::processFrame(Runtime& runtime) {
     runtime.hasSmoothedPlayerCameraPos = true;
     runtime.interpolatedPlayerCamera.position = targetCameraPos;
 
-    const float worldItemBlend = std::clamp(
-        1.0f - std::exp(-14.0f * static_cast<float>(GameData::deltaTime)),
-        0.0f,
-        1.0f
-    );
-    for (auto& [_, item] : runtime.worldItems) {
+    const float worldItemBlend =
+        std::clamp(1.0f - std::exp(-14.0f * static_cast<float>(GameData::deltaTime)), 0.0f, 1.0f);
+    for (auto &[_, item] : runtime.worldItems) {
         item.position = glm::mix(item.position, item.targetPosition, worldItemBlend);
     }
 
-    const Camera& activeCamera = m_UseDebugCamera
-        ? runtime.debugCamera
-        : runtime.interpolatedPlayerCamera;
-    const Camera& cullingCamera = runtime.interpolatedPlayerCamera;
-    VulkanRenderDevice* vulkanDevice = nullptr;
+    const Camera &activeCamera =
+        m_UseDebugCamera ? runtime.debugCamera : runtime.interpolatedPlayerCamera;
+    const Camera &cullingCamera = runtime.interpolatedPlayerCamera;
+    VulkanRenderDevice *vulkanDevice = nullptr;
     if (m_RenderApi == RenderApi::Vulkan) {
-        vulkanDevice = dynamic_cast<VulkanRenderDevice*>(runtime.renderer.get());
-    }
-    else {
+        vulkanDevice = dynamic_cast<VulkanRenderDevice *>(runtime.renderer.get());
+    } else {
         const float sunDirLenSq = glm::dot(m_SunDirection, m_SunDirection);
         if (!std::isfinite(sunDirLenSq) || sunDirLenSq <= 1e-8f) {
             m_SunDirection = glm::vec3(0.0f, 1.0f, 0.0f);
@@ -1424,8 +1346,7 @@ void App::processFrame(Runtime& runtime) {
                 if (m_UseDebugCamera) {
                     renderRemotePlayerGuns(runtime, activeCamera);
                 }
-            }
-        };
+            }};
         runtime.renderer->renderFrame(frameParams);
         if (!m_UseDebugCamera && runtime.localPlayerAlive) {
             renderHeldGun(runtime, runtime.interpolatedPlayerCamera);
@@ -1435,9 +1356,11 @@ void App::processFrame(Runtime& runtime) {
     if (runtime.debugUi) {
         runtime.debugUi->drawCrosshair(!GameData::cursorEnabled && runtime.localPlayerAlive);
         if (runtime.debugUi->isVisible()) {
-            const ClientNetwork::ChunkQueueDepths queueDepths = runtime.clientNet.GetChunkQueueDepths();
+            const ClientNetwork::ChunkQueueDepths queueDepths =
+                runtime.clientNet.GetChunkQueueDepths();
             UiFrameData frameData;
-            frameData.fps = (GameData::deltaTime > 1e-6) ? static_cast<float>(1.0 / GameData::deltaTime) : 0.0f;
+            frameData.fps =
+                (GameData::deltaTime > 1e-6) ? static_cast<float>(1.0 / GameData::deltaTime) : 0.0f;
             frameData.frameMs = static_cast<float>(GameData::deltaTime * 1000.0);
             frameData.playerPosition = runtime.player->getPosition();
             frameData.playerVelocity = runtime.player->getVelocity();
@@ -1464,7 +1387,8 @@ void App::processFrame(Runtime& runtime) {
             frameData.perfPresentMs = runtime.perfPresentMs;
             frameData.perfChunkStreamingMs = runtime.perfChunkStreamingMs;
             if (vulkanDevice != nullptr) {
-                const VulkanRenderDevice::TimingSnapshot& vkTimings = vulkanDevice->getLastTimingSnapshot();
+                const VulkanRenderDevice::TimingSnapshot &vkTimings =
+                    vulkanDevice->getLastTimingSnapshot();
                 frameData.vulkanTimingValid = true;
                 frameData.vkCpuCommandRecordMs = vkTimings.cpuCommandRecordMs;
                 frameData.vkCpuChunkPassMs = vkTimings.cpuChunkPassMs;
@@ -1506,7 +1430,8 @@ void App::processFrame(Runtime& runtime) {
             mutableState.sunShadowDirectionalBias = &m_SunShadowDirectionalBias;
             mutableState.sunShadowLowSunBiasBoost = &m_SunShadowLowSunBiasBoost;
             mutableState.sunShadowFrontFaceCullAtLowSun = &m_SunShadowFrontFaceCullAtLowSun;
-            mutableState.sunShadowFrontFaceCullGrazingThreshold = &m_SunShadowFrontFaceCullGrazingThreshold;
+            mutableState.sunShadowFrontFaceCullGrazingThreshold =
+                &m_SunShadowFrontFaceCullGrazingThreshold;
             mutableState.skyExposure = &m_SkyExposure;
             mutableState.giTracingBackendPreference =
                 (vulkanDevice != nullptr) ? &GameData::giTracingBackendPreference : nullptr;
@@ -1526,8 +1451,8 @@ void App::processFrame(Runtime& runtime) {
             }
         }
 
-        GameData::cursorEnabled =
-            m_ForceCursorEnabled || m_ShowDebugUi || m_ShowInventoryUi || !runtime.clientNet.IsConnected();
+        GameData::cursorEnabled = m_ForceCursorEnabled || m_ShowDebugUi || m_ShowInventoryUi ||
+                                  !runtime.clientNet.IsConnected();
         applyMouseInputModes();
 
         drawConnectionPrompt(runtime);
@@ -1546,21 +1471,15 @@ void App::processFrame(Runtime& runtime) {
             safeSunDir = glm::vec3(0.25f, 0.85f, 0.42f);
         }
         safeSunDir = glm::normalize(safeSunDir);
-        vulkanDevice->renderFrameVulkan(
-            *runtime.chunkManager,
-            activeCamera,
-            cullingCamera,
-            *runtime.player,
-            safeSunDir
-        );
+        vulkanDevice->renderFrameVulkan(*runtime.chunkManager, activeCamera, cullingCamera,
+                                        *runtime.player, safeSunDir);
     }
 
     static bool f11PressedLastFrame = false;
 
     bool f11PressedNow = IsScancodeDown(SDL_SCANCODE_F11);
 
-    if (f11PressedNow && !f11PressedLastFrame)
-    {
+    if (f11PressedNow && !f11PressedLastFrame) {
         toggleFullscreen(m_Window);
     }
 
@@ -1579,11 +1498,11 @@ void App::processFrame(Runtime& runtime) {
 
     const ClientNetwork::ChunkQueueDepths queueDepths = runtime.clientNet.GetChunkQueueDepths();
     const bool frameUnderPressure = GameData::deltaTime > (Runtime::LocalPredictionStep * 1.2);
-    const bool chunkBacklog =
-        queueDepths.chunkData > (Runtime::MaxChunkDataApplyPerFrame * 3) ||
-        queueDepths.chunkDelta > (Runtime::MaxChunkDeltaApplyPerFrame * 3) ||
-        queueDepths.chunkUnload > (Runtime::MaxChunkUnloadApplyPerFrame * 3);
-    const bool prioritizeMovement = (localPredictionSteps > 1) || frameUnderPressure || chunkBacklog;
+    const bool chunkBacklog = queueDepths.chunkData > (Runtime::MaxChunkDataApplyPerFrame * 3) ||
+                              queueDepths.chunkDelta > (Runtime::MaxChunkDeltaApplyPerFrame * 3) ||
+                              queueDepths.chunkUnload > (Runtime::MaxChunkUnloadApplyPerFrame * 3);
+    const bool prioritizeMovement =
+        (localPredictionSteps > 1) || frameUnderPressure || chunkBacklog;
     const auto perfChunkStart = std::chrono::steady_clock::now();
     processChunkStreaming(runtime, prioritizeMovement);
     const auto perfChunkEnd = std::chrono::steady_clock::now();
@@ -1592,4 +1511,3 @@ void App::processFrame(Runtime& runtime) {
     const auto perfFrameEnd = std::chrono::steady_clock::now();
     runtime.perfFrameCpuMs = toMs(perfFrameStart, perfFrameEnd);
 }
-

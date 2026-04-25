@@ -15,13 +15,13 @@ using namespace AppHelpers;
 
 namespace {
 RenderApi ParseRenderApiFromEnv() {
-    const char* renderApiEnv = std::getenv("VOXELOPS_RENDER_API");
+    const char *renderApiEnv = std::getenv("VOXELOPS_RENDER_API");
     if (renderApiEnv == nullptr) {
         return RenderApi::OpenGL;
     }
 
     std::string apiName = TrimAscii(std::string_view(renderApiEnv));
-    for (char& c : apiName) {
+    for (char &c : apiName) {
         if (c >= 'A' && c <= 'Z') {
             c = static_cast<char>(c - 'A' + 'a');
         }
@@ -32,9 +32,9 @@ RenderApi ParseRenderApiFromEnv() {
     }
     return RenderApi::OpenGL;
 }
-}
+} // namespace
 
-void App::shutdown(Runtime& runtime) {
+void App::shutdown(Runtime &runtime) {
     runtime.clientNet.Shutdown();
     m_worldItemRenderer.shutdown();
     if (runtime.debugUi) {
@@ -63,8 +63,7 @@ void App::shutdown(Runtime& runtime) {
     SDL_Quit();
 }
 
-
-int App::Run(int argc, char** argv) {
+int App::Run(int argc, char **argv) {
     LaunchOptions options;
     if (!ParseLaunchOptions(argc, argv, options)) {
         PrintUsage();
@@ -88,8 +87,7 @@ int App::Run(int argc, char** argv) {
 
     m_RenderApi = ParseRenderApiFromEnv();
     std::cout << "[App] Requested render API: "
-        << ((m_RenderApi == RenderApi::Vulkan) ? "Vulkan" : "OpenGL")
-        << "\n";
+              << ((m_RenderApi == RenderApi::Vulkan) ? "Vulkan" : "OpenGL") << "\n";
 
     if (!initWindowAndContext()) {
         return -1;
@@ -103,9 +101,11 @@ int App::Run(int argc, char** argv) {
         return -1;
     }
     if (m_RenderApi == RenderApi::Vulkan) {
-        VulkanRenderDevice* vulkanDevice = dynamic_cast<VulkanRenderDevice*>(runtime.renderer.get());
+        VulkanRenderDevice *vulkanDevice =
+            dynamic_cast<VulkanRenderDevice *>(runtime.renderer.get());
         if (vulkanDevice == nullptr) {
-            std::cerr << "[App] Render API selection mismatch: Vulkan requested but Vulkan device cast failed.\n";
+            std::cerr << "[App] Render API selection mismatch: Vulkan requested but Vulkan device "
+                         "cast failed.\n";
             return -1;
         }
         if (!vulkanDevice->initialize(m_Window)) {

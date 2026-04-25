@@ -7,22 +7,16 @@
 
 Sky::Sky() = default;
 
-Sky::~Sky()
-{
+Sky::~Sky() {
     shutdown();
 }
 
-void Sky::initialize(const char* vertexShaderPath, const char* fragmentShaderPath)
-{
+void Sky::initialize(const char *vertexShaderPath, const char *fragmentShaderPath) {
     shutdown();
 
     m_Shader = std::make_unique<Shader>(vertexShaderPath, fragmentShaderPath);
 
-    const float skyVerts[] = {
-        -1.0f, -1.0f,
-         3.0f, -1.0f,
-        -1.0f,  3.0f
-    };
+    const float skyVerts[] = {-1.0f, -1.0f, 3.0f, -1.0f, -1.0f, 3.0f};
 
     glGenVertexArrays(1, &m_VAO);
     glGenBuffers(1, &m_VBO);
@@ -30,12 +24,11 @@ void Sky::initialize(const char* vertexShaderPath, const char* fragmentShaderPat
     glBindBuffer(GL_ARRAY_BUFFER, m_VBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(skyVerts), skyVerts, GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
     glBindVertexArray(0);
 }
 
-void Sky::shutdown()
-{
+void Sky::shutdown() {
     if (m_VAO != 0) {
         glDeleteVertexArrays(1, &m_VAO);
         m_VAO = 0;
@@ -47,8 +40,7 @@ void Sky::shutdown()
     m_Shader.reset();
 }
 
-void Sky::render(const glm::mat4& projection, const glm::mat4& view) const
-{
+void Sky::render(const glm::mat4 &projection, const glm::mat4 &view) const {
     if (!m_Shader || m_VAO == 0) {
         return;
     }
@@ -72,22 +64,18 @@ void Sky::render(const glm::mat4& projection, const glm::mat4& view) const
     glDepthMask(GL_TRUE);
 }
 
-void Sky::setSunDir(const glm::vec3& sunDir)
-{
+void Sky::setSunDir(const glm::vec3 &sunDir) {
     m_SunDir = glm::normalize(sunDir);
 }
 
-const glm::vec3& Sky::getSunDir() const noexcept
-{
+const glm::vec3 &Sky::getSunDir() const noexcept {
     return m_SunDir;
 }
 
-void Sky::setExposure(float exposure) noexcept
-{
+void Sky::setExposure(float exposure) noexcept {
     m_Exposure = std::clamp(exposure, 0.05f, 8.0f);
 }
 
-float Sky::getExposure() const noexcept
-{
+float Sky::getExposure() const noexcept {
     return m_Exposure;
 }

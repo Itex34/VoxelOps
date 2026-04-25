@@ -6,25 +6,14 @@
 
 #include "../voxels/Voxel.hpp"
 
-
 Lighting::Lighting(int chunkSize_)
-    : chunkSize(chunkSize_),
-    chunkSizePlus1(chunkSize_ + 1),
-    paddedSize(chunkSize_ + 3) // PAD = 1
-{
-}
+    : chunkSize(chunkSize_), chunkSizePlus1(chunkSize_ + 1), paddedSize(chunkSize_ + 3) // PAD = 1
+{}
 
-
-void Lighting::prepareChunkSunlight(
-    const Chunk& chunk,
-    const glm::ivec3& chunkPos,
-    const Chunk* neighbors[6],
-    uint8_t* sunlightBuffer,
-    float sunFalloff,
-    const TopOccluderGetter& getTopOccluderY,
-    const uint8_t* solidPadded
-)
-{
+void Lighting::prepareChunkSunlight(const Chunk &chunk, const glm::ivec3 &chunkPos,
+                                    const Chunk *neighbors[6], uint8_t *sunlightBuffer,
+                                    float sunFalloff, const TopOccluderGetter &getTopOccluderY,
+                                    const uint8_t *solidPadded) {
     (void)sunFalloff;
     std::fill_n(sunlightBuffer, kPaddedVolume, uint8_t(0));
 
@@ -51,13 +40,15 @@ void Lighting::prepareChunkSunlight(
                 int topOccluderY = std::numeric_limits<int>::min();
                 for (int ox = 0; ox <= 1; ++ox) {
                     for (int oz = 0; oz <= 1; ++oz) {
-                        topOccluderY = std::max(topOccluderY, getTopOccluderY(worldX + ox - 1, worldZ + oz - 1));
+                        topOccluderY = std::max(topOccluderY,
+                                                getTopOccluderY(worldX + ox - 1, worldZ + oz - 1));
                     }
                 }
 
                 for (int y = chunkSize + 1; y >= -1; --y) {
                     const int worldY = chunkWorldMinY + y;
-                    const int blockedLayers = (worldY <= topOccluderY) ? (topOccluderY - worldY + 1) : 0;
+                    const int blockedLayers =
+                        (worldY <= topOccluderY) ? (topOccluderY - worldY + 1) : 0;
                     const int light = std::max(0, 15 - blockedLayers * 2);
                     sunlightBuffer[cornerIndexPadded(x, y, z)] = uint8_t(light);
                 }
@@ -70,11 +61,10 @@ void Lighting::prepareChunkSunlight(
         for (int x = -1; x <= chunkSize + 1; ++x) {
             uint8_t light = 15;
             for (int y = chunkSize + 1; y >= -1; --y) {
-                const bool blocked =
-                    (solidPadded[solidIndex(x - 1, y, z - 1)] != 0) |
-                    (solidPadded[solidIndex(x, y, z - 1)] != 0) |
-                    (solidPadded[solidIndex(x - 1, y, z)] != 0) |
-                    (solidPadded[solidIndex(x, y, z)] != 0);
+                const bool blocked = (solidPadded[solidIndex(x - 1, y, z - 1)] != 0) |
+                                     (solidPadded[solidIndex(x, y, z - 1)] != 0) |
+                                     (solidPadded[solidIndex(x - 1, y, z)] != 0) ||
+                                     (solidPadded[solidIndex(x, y, z)] != 0);
 
                 if (blocked) {
                     light = (light > 2) ? uint8_t(light - 2) : uint8_t(0);
@@ -85,32 +75,22 @@ void Lighting::prepareChunkSunlight(
     }
 }
 
-
-void Lighting::buildSolidPadded(
-    const Chunk& chunk,
-    const Chunk* neighbors[6],
-    uint8_t* solidPadded
-)
-{
+void Lighting::buildSolidPadded(const Chunk &chunk, const Chunk *neighbors[6],
+                                uint8_t *solidPadded) {
     for (int z = -2; z <= chunkSize + 1; ++z) {
         for (int y = -2; y <= chunkSize + 1; ++y) {
             const int zy = kSolidSize * ((y + kSolidPad) + kSolidSize * (z + kSolidPad));
             for (int x = -2; x <= chunkSize + 1; ++x) {
-                solidPadded[(x + kSolidPad) + zy] = uint8_t(isSolidSafePadded(x, y, z, chunk, neighbors) ? 1 : 0);
+                solidPadded[(x + kSolidPad) + zy] =
+                    uint8_t(isSolidSafePadded(x, y, z, chunk, neighbors) ? 1 : 0);
             }
         }
     }
 }
 
-
-void Lighting::prepareChunkAO(
-    const Chunk& chunk,
-    const glm::ivec3& chunkPos,
-    const Chunk* neighbors[6],
-    uint8_t* aoBuffer,
-    const uint8_t* solidPadded
-)
-{
+void Lighting::prepareChunkAO(const Chunk &chunk, const glm::ivec3 &chunkPos,
+                              const Chunk *neighbors[6], uint8_t *aoBuffer,
+                              const uint8_t *solidPadded) {
     (void)chunkPos;
     const int paddedStrideZ = kPaddedSize * kPaddedSize;
     std::fill_n(aoBuffer, kPaddedVolume, uint8_t(15)); // full light
@@ -149,18 +129,16 @@ void Lighting::prepareChunkAO(
     }
 }
 
-
-// lighting helper: compute corner indices for a face in the exact order that the mesh emits vtx[0..3].
+// lighting helper: compute corner indices for a face in the exact order that the mesh emits
+// vtx[0..3].
 void Lighting::faceCornerIndicesForCell(
-    int sx, int sy, int sz,   // sampling cell base (see notes below)
-    int face,                 // 0..5 (same enum as your mesher)
-    int outIdx[4]             // returns 4 corner indices in BL, BR, TR, TL order
-) const
-{
+    int sx, int sy, int sz, // sampling cell base (see notes below)
+    int face,               // 0..5 (same enum as your mesher)
+    int outIdx[4]           // returns 4 corner indices in BL, BR, TR, TL order
+) const {
     auto idx = [&](int X, int Y, int Z) { return cornerIndexPadded(X, Y, Z); };
 
-    switch (face)
-    {
+    switch (face) {
     case 0: // +X
         // BL, BR, TR, TL  (match your vtx layout)
         outIdx[0] = idx(sx + 1, sy, sz);

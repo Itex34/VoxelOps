@@ -42,7 +42,7 @@ constexpr size_t kMaxBlockPlaceResultQueueDepth = 128;
 constexpr size_t kMaxBlockBreakResultQueueDepth = 128;
 constexpr size_t kMaxMessagesPerPoll = 128;
 constexpr int64_t kMessagePollBudgetUs = 2000;
-constexpr const char* kClientIdentityFileName = "client_identity.txt";
+constexpr const char *kClientIdentityFileName = "client_identity.txt";
 constexpr bool kEnableClientNetProfiling = false;
 
 struct ClientNetProfileState {
@@ -56,26 +56,18 @@ struct ClientNetProfileState {
     int64_t maxPollUs = 0;
 };
 
-ClientNetProfileState& GetClientNetProfileState()
-{
+ClientNetProfileState &GetClientNetProfileState() {
     static ClientNetProfileState state;
     return state;
 }
 
-void RecordClientNetProfile(
-    ClientNetwork* net,
-    int64_t pollUs,
-    int64_t callbackUs,
-    int64_t recvUs,
-    uint64_t messages,
-    uint64_t bytes
-)
-{
+void RecordClientNetProfile(ClientNetwork *net, int64_t pollUs, int64_t callbackUs, int64_t recvUs,
+                            uint64_t messages, uint64_t bytes) {
     if (!kEnableClientNetProfiling || net == nullptr) {
         return;
     }
 
-    ClientNetProfileState& state = GetClientNetProfileState();
+    ClientNetProfileState &state = GetClientNetProfileState();
     state.polls += 1;
     state.messages += messages;
     state.bytes += bytes;
@@ -85,9 +77,8 @@ void RecordClientNetProfile(
     state.maxPollUs = std::max(state.maxPollUs, pollUs);
 
     const auto now = std::chrono::steady_clock::now();
-    const double elapsedSec = std::chrono::duration_cast<std::chrono::duration<double>>(
-        now - state.lastLog
-    ).count();
+    const double elapsedSec =
+        std::chrono::duration_cast<std::chrono::duration<double>>(now - state.lastLog).count();
     if (elapsedSec < 1.0) {
         return;
     }
@@ -98,24 +89,16 @@ void RecordClientNetProfile(
     const double avgCallbackMs = static_cast<double>(state.totalCallbackUs) / (polls * 1000.0);
     const double avgRecvMs = static_cast<double>(state.totalRecvUs) / (polls * 1000.0);
     const double maxPollMs = static_cast<double>(state.maxPollUs) / 1000.0;
-    const double avgMsgUs = (state.messages > 0)
-        ? (static_cast<double>(state.totalRecvUs) / msgs)
-        : 0.0;
+    const double avgMsgUs =
+        (state.messages > 0) ? (static_cast<double>(state.totalRecvUs) / msgs) : 0.0;
 
     const ClientNetwork::ChunkQueueDepths queueDepths = net->GetChunkQueueDepths();
-    std::cerr
-        << "[net/profile] polls=" << state.polls
-        << " msgs=" << state.messages
-        << " bytes=" << state.bytes
-        << " pollAvgMs=" << std::fixed << std::setprecision(3) << avgPollMs
-        << " pollMaxMs=" << maxPollMs
-        << " cbAvgMs=" << avgCallbackMs
-        << " recvAvgMs=" << avgRecvMs
-        << " msgAvgUs=" << avgMsgUs
-        << " queue(data/delta/unload)=("
-        << queueDepths.chunkData << "/"
-        << queueDepths.chunkDelta << "/"
-        << queueDepths.chunkUnload << ")\n";
+    std::cerr << "[net/profile] polls=" << state.polls << " msgs=" << state.messages
+              << " bytes=" << state.bytes << " pollAvgMs=" << std::fixed << std::setprecision(3)
+              << avgPollMs << " pollMaxMs=" << maxPollMs << " cbAvgMs=" << avgCallbackMs
+              << " recvAvgMs=" << avgRecvMs << " msgAvgUs=" << avgMsgUs
+              << " queue(data/delta/unload)=(" << queueDepths.chunkData << "/"
+              << queueDepths.chunkDelta << "/" << queueDepths.chunkUnload << ")\n";
 
     state.lastLog = now;
     state.polls = 0;
@@ -127,16 +110,13 @@ void RecordClientNetProfile(
     state.maxPollUs = 0;
 }
 
-template <typename T>
-void TrimQueueToDepth(std::deque<T>& queue, size_t maxDepth)
-{
+template <typename T> void TrimQueueToDepth(std::deque<T> &queue, size_t maxDepth) {
     while (queue.size() > maxDepth) {
         queue.pop_front();
     }
 }
 
-std::string TrimAscii(std::string value)
-{
+std::string TrimAscii(std::string value) {
     size_t begin = 0;
     while (begin < value.size() && std::isspace(static_cast<unsigned char>(value[begin])) != 0) {
         ++begin;
@@ -151,17 +131,11 @@ std::string TrimAscii(std::string value)
     return value.substr(begin, end - begin);
 }
 
-bool IsValidIdentityChar(char c)
-{
-    return
-        (c >= 'a' && c <= 'z') ||
-        (c >= '0' && c <= '9') ||
-        c == '_' ||
-        c == '-';
+bool IsValidIdentityChar(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
 }
 
-std::string NormalizeIdentity(std::string identity)
-{
+std::string NormalizeIdentity(std::string identity) {
     identity = TrimAscii(std::move(identity));
     std::string out;
     out.reserve(identity.size());
@@ -174,8 +148,7 @@ std::string NormalizeIdentity(std::string identity)
     return out;
 }
 
-bool IsValidIdentity(const std::string& identity)
-{
+bool IsValidIdentity(const std::string &identity) {
     if (identity.empty() || identity.size() > kMaxConnectIdentityChars) {
         return false;
     }
@@ -187,17 +160,15 @@ bool IsValidIdentity(const std::string& identity)
     return true;
 }
 
-std::filesystem::path ResolveIdentityFilePath()
-{
-    const char* localAppData = std::getenv("LOCALAPPDATA");
+std::filesystem::path ResolveIdentityFilePath() {
+    const char *localAppData = std::getenv("LOCALAPPDATA");
     if (localAppData != nullptr && localAppData[0] != '\0') {
         return std::filesystem::path(localAppData) / "VoxelOps" / kClientIdentityFileName;
     }
     return std::filesystem::current_path() / kClientIdentityFileName;
 }
 
-std::string GenerateIdentityToken()
-{
+std::string GenerateIdentityToken() {
     std::random_device rd;
     std::mt19937_64 rng(rd());
     std::uniform_int_distribution<uint32_t> dist(0u, 0xFFFFFFFFu);
@@ -216,8 +187,7 @@ std::string GenerateIdentityToken()
     return token;
 }
 
-bool TryParseKillFeedMessage(const std::string& message, ClientNetwork::KillFeedEvent& out)
-{
+bool TryParseKillFeedMessage(const std::string &message, ClientNetwork::KillFeedEvent &out) {
     constexpr std::string_view kPrefix = "KILLFEED|";
     if (message.size() <= kPrefix.size() || message.rfind(kPrefix.data(), 0) != 0) {
         return false;
@@ -245,8 +215,7 @@ bool TryParseKillFeedMessage(const std::string& message, ClientNetwork::KillFeed
             return false;
         }
         weaponId = static_cast<uint16_t>(weaponRaw);
-    }
-    catch (...) {
+    } catch (...) {
         return false;
     }
 
@@ -256,8 +225,7 @@ bool TryParseKillFeedMessage(const std::string& message, ClientNetwork::KillFeed
     return !out.killer.empty() && !out.victim.empty();
 }
 
-bool ParseIntToken(std::string_view token, int& out)
-{
+bool ParseIntToken(std::string_view token, int &out) {
     if (token.empty()) {
         return false;
     }
@@ -286,8 +254,7 @@ bool ParseIntToken(std::string_view token, int& out)
     return true;
 }
 
-bool ParseUint32Token(std::string_view token, uint32_t& out)
-{
+bool ParseUint32Token(std::string_view token, uint32_t &out) {
     if (token.empty()) {
         return false;
     }
@@ -305,8 +272,7 @@ bool ParseUint32Token(std::string_view token, uint32_t& out)
     return true;
 }
 
-inline bool ReadU8(const uint8_t* data, size_t size, size_t& offset, uint8_t& out)
-{
+inline bool ReadU8(const uint8_t *data, size_t size, size_t &offset, uint8_t &out) {
     if (!data || offset + 1 > size) {
         return false;
     }
@@ -314,32 +280,27 @@ inline bool ReadU8(const uint8_t* data, size_t size, size_t& offset, uint8_t& ou
     return true;
 }
 
-inline bool ReadU16LE(const uint8_t* data, size_t size, size_t& offset, uint16_t& out)
-{
+inline bool ReadU16LE(const uint8_t *data, size_t size, size_t &offset, uint16_t &out) {
     if (!data || offset + 2 > size) {
         return false;
     }
-    out = static_cast<uint16_t>(data[offset]) |
-        (static_cast<uint16_t>(data[offset + 1]) << 8);
+    out = static_cast<uint16_t>(data[offset]) | (static_cast<uint16_t>(data[offset + 1]) << 8);
     offset += 2;
     return true;
 }
 
-inline bool ReadU32LE(const uint8_t* data, size_t size, size_t& offset, uint32_t& out)
-{
+inline bool ReadU32LE(const uint8_t *data, size_t size, size_t &offset, uint32_t &out) {
     if (!data || offset + 4 > size) {
         return false;
     }
-    out = static_cast<uint32_t>(data[offset]) |
-        (static_cast<uint32_t>(data[offset + 1]) << 8) |
-        (static_cast<uint32_t>(data[offset + 2]) << 16) |
-        (static_cast<uint32_t>(data[offset + 3]) << 24);
+    out = static_cast<uint32_t>(data[offset]) | (static_cast<uint32_t>(data[offset + 1]) << 8) |
+          (static_cast<uint32_t>(data[offset + 2]) << 16) |
+          (static_cast<uint32_t>(data[offset + 3]) << 24);
     offset += 4;
     return true;
 }
 
-inline bool ReadI32LE(const uint8_t* data, size_t size, size_t& offset, int32_t& out)
-{
+inline bool ReadI32LE(const uint8_t *data, size_t size, size_t &offset, int32_t &out) {
     uint32_t raw = 0;
     if (!ReadU32LE(data, size, offset, raw)) {
         return false;
@@ -348,8 +309,7 @@ inline bool ReadI32LE(const uint8_t* data, size_t size, size_t& offset, int32_t&
     return true;
 }
 
-inline bool ReadU64LE(const uint8_t* data, size_t size, size_t& offset, uint64_t& out)
-{
+inline bool ReadU64LE(const uint8_t *data, size_t size, size_t &offset, uint64_t &out) {
     if (!data || offset + 8 > size) {
         return false;
     }
@@ -362,8 +322,7 @@ inline bool ReadU64LE(const uint8_t* data, size_t size, size_t& offset, uint64_t
     return true;
 }
 
-inline bool ReadF32LE(const uint8_t* data, size_t size, size_t& offset, float& out)
-{
+inline bool ReadF32LE(const uint8_t *data, size_t size, size_t &offset, float &out) {
     uint32_t raw = 0;
     if (!ReadU32LE(data, size, offset, raw)) {
         return false;
@@ -372,8 +331,7 @@ inline bool ReadF32LE(const uint8_t* data, size_t size, size_t& offset, float& o
     return true;
 }
 
-bool ParseConnectResponsePacket(const uint8_t* data, size_t size, ConnectResponse& out)
-{
+bool ParseConnectResponsePacket(const uint8_t *data, size_t size, ConnectResponse &out) {
     size_t offset = 0;
     uint8_t type = 0;
     uint8_t ok = 0;
@@ -383,11 +341,9 @@ bool ParseConnectResponsePacket(const uint8_t* data, size_t size, ConnectRespons
     uint16_t protocolVersion = 0;
     if (!ReadU8(data, size, offset, type) ||
         type != static_cast<uint8_t>(PacketType::ConnectResponse) ||
-        !ReadU8(data, size, offset, ok) ||
-        !ReadU8(data, size, offset, reason) ||
+        !ReadU8(data, size, offset, ok) || !ReadU8(data, size, offset, reason) ||
         !ReadU16LE(data, size, offset, protocolVersion) ||
-        !ReadU8(data, size, offset, assignedLen) ||
-        !ReadU8(data, size, offset, messageLen)) {
+        !ReadU8(data, size, offset, assignedLen) || !ReadU8(data, size, offset, messageLen)) {
         return false;
     }
     if (assignedLen > kMaxConnectUsernameChars || messageLen > kMaxConnectMessageChars) {
@@ -400,14 +356,13 @@ bool ParseConnectResponsePacket(const uint8_t* data, size_t size, ConnectRespons
     out.ok = (ok != 0) ? 1u : 0u;
     out.reason = static_cast<ConnectRejectReason>(reason);
     out.serverProtocolVersion = protocolVersion;
-    out.assignedUsername.assign(reinterpret_cast<const char*>(data + offset), assignedLen);
+    out.assignedUsername.assign(reinterpret_cast<const char *>(data + offset), assignedLen);
     offset += assignedLen;
-    out.message.assign(reinterpret_cast<const char*>(data + offset), messageLen);
+    out.message.assign(reinterpret_cast<const char *>(data + offset), messageLen);
     return true;
 }
 
-bool ParsePlayerSnapshotFramePacket(const uint8_t* data, size_t size, PlayerSnapshotFrame& out)
-{
+bool ParsePlayerSnapshotFramePacket(const uint8_t *data, size_t size, PlayerSnapshotFrame &out) {
     constexpr size_t kSnapshotEntryBytes = 8 + (8 * 4) + 3 + 2 + 4 + 1 + 4 + 1 + 4 + 4;
     size_t offset = 0;
     uint8_t type = 0;
@@ -457,19 +412,14 @@ bool ParsePlayerSnapshotFramePacket(const uint8_t* data, size_t size, PlayerSnap
     return offset == size;
 }
 
-bool ParseChunkDataPacket(const uint8_t* data, size_t size, ChunkData& out)
-{
+bool ParseChunkDataPacket(const uint8_t *data, size_t size, ChunkData &out) {
     size_t offset = 0;
     uint8_t type = 0;
     uint32_t payloadSize = 0;
-    if (!ReadU8(data, size, offset, type) ||
-        type != static_cast<uint8_t>(PacketType::ChunkData) ||
-        !ReadI32LE(data, size, offset, out.chunkX) ||
-        !ReadI32LE(data, size, offset, out.chunkY) ||
-        !ReadI32LE(data, size, offset, out.chunkZ) ||
-        !ReadU64LE(data, size, offset, out.version) ||
-        !ReadU8(data, size, offset, out.flags) ||
-        !ReadU32LE(data, size, offset, payloadSize)) {
+    if (!ReadU8(data, size, offset, type) || type != static_cast<uint8_t>(PacketType::ChunkData) ||
+        !ReadI32LE(data, size, offset, out.chunkX) || !ReadI32LE(data, size, offset, out.chunkY) ||
+        !ReadI32LE(data, size, offset, out.chunkZ) || !ReadU64LE(data, size, offset, out.version) ||
+        !ReadU8(data, size, offset, out.flags) || !ReadU32LE(data, size, offset, payloadSize)) {
         return false;
     }
     if (offset + payloadSize != size) {
@@ -482,15 +432,12 @@ bool ParseChunkDataPacket(const uint8_t* data, size_t size, ChunkData& out)
     return true;
 }
 
-bool ParseChunkDeltaPacket(const uint8_t* data, size_t size, ChunkDelta& out)
-{
+bool ParseChunkDeltaPacket(const uint8_t *data, size_t size, ChunkDelta &out) {
     size_t offset = 0;
     uint8_t type = 0;
     uint32_t editCount = 0;
-    if (!ReadU8(data, size, offset, type) ||
-        type != static_cast<uint8_t>(PacketType::ChunkDelta) ||
-        !ReadI32LE(data, size, offset, out.chunkX) ||
-        !ReadI32LE(data, size, offset, out.chunkY) ||
+    if (!ReadU8(data, size, offset, type) || type != static_cast<uint8_t>(PacketType::ChunkDelta) ||
+        !ReadI32LE(data, size, offset, out.chunkX) || !ReadI32LE(data, size, offset, out.chunkY) ||
         !ReadI32LE(data, size, offset, out.chunkZ) ||
         !ReadU64LE(data, size, offset, out.resultingVersion) ||
         !ReadU32LE(data, size, offset, editCount)) {
@@ -504,10 +451,8 @@ bool ParseChunkDeltaPacket(const uint8_t* data, size_t size, ChunkDelta& out)
     out.edits.reserve(editCount);
     for (uint32_t i = 0; i < editCount; ++i) {
         ChunkDeltaOp op{};
-        if (!ReadU8(data, size, offset, op.x) ||
-            !ReadU8(data, size, offset, op.y) ||
-            !ReadU8(data, size, offset, op.z) ||
-            !ReadU8(data, size, offset, op.blockId)) {
+        if (!ReadU8(data, size, offset, op.x) || !ReadU8(data, size, offset, op.y) ||
+            !ReadU8(data, size, offset, op.z) || !ReadU8(data, size, offset, op.blockId)) {
             return false;
         }
         out.edits.push_back(op);
@@ -515,22 +460,19 @@ bool ParseChunkDeltaPacket(const uint8_t* data, size_t size, ChunkDelta& out)
     return offset == size;
 }
 
-bool ParseChunkUnloadPacket(const uint8_t* data, size_t size, ChunkUnload& out)
-{
+bool ParseChunkUnloadPacket(const uint8_t *data, size_t size, ChunkUnload &out) {
     size_t offset = 0;
     uint8_t type = 0;
     if (!ReadU8(data, size, offset, type) ||
         type != static_cast<uint8_t>(PacketType::ChunkUnload) ||
-        !ReadI32LE(data, size, offset, out.chunkX) ||
-        !ReadI32LE(data, size, offset, out.chunkY) ||
+        !ReadI32LE(data, size, offset, out.chunkX) || !ReadI32LE(data, size, offset, out.chunkY) ||
         !ReadI32LE(data, size, offset, out.chunkZ)) {
         return false;
     }
     return offset == size;
 }
 
-bool ParseShootResultPacket(const uint8_t* data, size_t size, ShootResult& out)
-{
+bool ParseShootResultPacket(const uint8_t *data, size_t size, ShootResult &out) {
     size_t offset = 0;
     uint8_t type = 0;
     uint32_t entityRaw = 0;
@@ -538,12 +480,9 @@ bool ParseShootResultPacket(const uint8_t* data, size_t size, ShootResult& out)
         type != static_cast<uint8_t>(PacketType::ShootResult) ||
         !ReadU32LE(data, size, offset, out.clientShotId) ||
         !ReadU32LE(data, size, offset, out.serverTick) ||
-        !ReadU8(data, size, offset, out.accepted) ||
-        !ReadU8(data, size, offset, out.didHit) ||
-        !ReadU32LE(data, size, offset, entityRaw) ||
-        !ReadF32LE(data, size, offset, out.hitX) ||
-        !ReadF32LE(data, size, offset, out.hitY) ||
-        !ReadF32LE(data, size, offset, out.hitZ) ||
+        !ReadU8(data, size, offset, out.accepted) || !ReadU8(data, size, offset, out.didHit) ||
+        !ReadU32LE(data, size, offset, entityRaw) || !ReadF32LE(data, size, offset, out.hitX) ||
+        !ReadF32LE(data, size, offset, out.hitY) || !ReadF32LE(data, size, offset, out.hitZ) ||
         !ReadF32LE(data, size, offset, out.normalX) ||
         !ReadF32LE(data, size, offset, out.normalY) ||
         !ReadF32LE(data, size, offset, out.normalZ) ||
@@ -556,8 +495,8 @@ bool ParseShootResultPacket(const uint8_t* data, size_t size, ShootResult& out)
     return offset == size;
 }
 
-bool ParseInventoryActionResultPacket(const uint8_t* data, size_t size, InventoryActionResult& out)
-{
+bool ParseInventoryActionResultPacket(const uint8_t *data, size_t size,
+                                      InventoryActionResult &out) {
     if (!data || size < 1) {
         return false;
     }
@@ -570,8 +509,7 @@ bool ParseInventoryActionResultPacket(const uint8_t* data, size_t size, Inventor
     return true;
 }
 
-bool ParseInventorySnapshotPacket(const uint8_t* data, size_t size, InventorySnapshot& out)
-{
+bool ParseInventorySnapshotPacket(const uint8_t *data, size_t size, InventorySnapshot &out) {
     if (!data || size < 1) {
         return false;
     }
@@ -584,8 +522,7 @@ bool ParseInventorySnapshotPacket(const uint8_t* data, size_t size, InventorySna
     return true;
 }
 
-bool ParseWorldItemSnapshotPacket(const uint8_t* data, size_t size, WorldItemSnapshot& out)
-{
+bool ParseWorldItemSnapshotPacket(const uint8_t *data, size_t size, WorldItemSnapshot &out) {
     if (!data || size < 1) {
         return false;
     }
@@ -598,8 +535,7 @@ bool ParseWorldItemSnapshotPacket(const uint8_t* data, size_t size, WorldItemSna
     return true;
 }
 
-bool ParseBlockPlaceResultPacket(const uint8_t* data, size_t size, BlockPlaceResult& out)
-{
+bool ParseBlockPlaceResultPacket(const uint8_t *data, size_t size, BlockPlaceResult &out) {
     if (!data || size < 1) {
         return false;
     }
@@ -612,8 +548,7 @@ bool ParseBlockPlaceResultPacket(const uint8_t* data, size_t size, BlockPlaceRes
     return true;
 }
 
-bool ParseBlockBreakResultPacket(const uint8_t* data, size_t size, BlockBreakResult& out)
-{
+bool ParseBlockBreakResultPacket(const uint8_t *data, size_t size, BlockBreakResult &out) {
     if (!data || size < 1) {
         return false;
     }
@@ -626,8 +561,7 @@ bool ParseBlockBreakResultPacket(const uint8_t* data, size_t size, BlockBreakRes
     return true;
 }
 
-bool ResolveHostToAddress(std::string_view host, uint16_t port, SteamNetworkingIPAddr& outAddr)
-{
+bool ResolveHostToAddress(std::string_view host, uint16_t port, SteamNetworkingIPAddr &outAddr) {
     if (host.empty()) {
         return false;
     }
@@ -648,7 +582,7 @@ bool ResolveHostToAddress(std::string_view host, uint16_t port, SteamNetworkingI
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_protocol = IPPROTO_UDP;
 
-    addrinfo* results = nullptr;
+    addrinfo *results = nullptr;
     const int gaiError = getaddrinfo(hostStr.c_str(), nullptr, &hints, &results);
     if (gaiError != 0 || results == nullptr) {
         if (results != nullptr) {
@@ -659,17 +593,15 @@ bool ResolveHostToAddress(std::string_view host, uint16_t port, SteamNetworkingI
 
     bool found = false;
     char addressBuffer[INET6_ADDRSTRLEN] = {};
-    for (addrinfo* it = results; it != nullptr; it = it->ai_next) {
-        const void* rawAddress = nullptr;
+    for (addrinfo *it = results; it != nullptr; it = it->ai_next) {
+        const void *rawAddress = nullptr;
         if (it->ai_family == AF_INET) {
-            const sockaddr_in* addr4 = reinterpret_cast<const sockaddr_in*>(it->ai_addr);
+            const sockaddr_in *addr4 = reinterpret_cast<const sockaddr_in *>(it->ai_addr);
             rawAddress = &addr4->sin_addr;
-        }
-        else if (it->ai_family == AF_INET6) {
-            const sockaddr_in6* addr6 = reinterpret_cast<const sockaddr_in6*>(it->ai_addr);
+        } else if (it->ai_family == AF_INET6) {
+            const sockaddr_in6 *addr6 = reinterpret_cast<const sockaddr_in6 *>(it->ai_addr);
             rawAddress = &addr6->sin6_addr;
-        }
-        else {
+        } else {
             continue;
         }
 
@@ -693,8 +625,7 @@ bool ResolveHostToAddress(std::string_view host, uint16_t port, SteamNetworkingI
     return found;
 }
 
-bool TryParseScoreboardMessage(const std::string& message, ClientNetwork::ScoreboardSnapshot& out)
-{
+bool TryParseScoreboardMessage(const std::string &message, ClientNetwork::ScoreboardSnapshot &out) {
     constexpr std::string_view kPrefix = "SCOREBOARD|";
     if (message.size() <= kPrefix.size() || message.rfind(kPrefix.data(), 0) != 0) {
         return false;
@@ -755,18 +686,23 @@ bool TryParseScoreboardMessage(const std::string& message, ClientNetwork::Scoreb
     snapshot.remainingSeconds = remaining;
     snapshot.matchEnded = (endedRaw != 0);
     snapshot.matchStarted = (startedRaw != 0);
-    snapshot.winner = (fields[winnerIndex] == "-") ? std::string() : std::string(fields[winnerIndex]);
+    snapshot.winner =
+        (fields[winnerIndex] == "-") ? std::string() : std::string(fields[winnerIndex]);
     snapshot.entries.reserve(static_cast<size_t>(expectedCount));
 
     for (size_t i = 0; i < static_cast<size_t>(expectedCount); ++i) {
         const std::string_view entryField = fields[entriesStartIndex + i];
         const size_t c1 = entryField.find(',');
-        if (c1 == std::string_view::npos) return false;
+        if (c1 == std::string_view::npos)
+            return false;
         const size_t c2 = entryField.find(',', c1 + 1);
-        if (c2 == std::string_view::npos) return false;
+        if (c2 == std::string_view::npos)
+            return false;
         const size_t c3 = entryField.find(',', c2 + 1);
-        if (c3 == std::string_view::npos) return false;
-        if (entryField.find(',', c3 + 1) != std::string_view::npos) return false;
+        if (c3 == std::string_view::npos)
+            return false;
+        if (entryField.find(',', c3 + 1) != std::string_view::npos)
+            return false;
 
         const std::string_view name = entryField.substr(0, c1);
         const std::string_view killsTok = entryField.substr(c1 + 1, c2 - c1 - 1);
@@ -798,7 +734,7 @@ bool TryParseScoreboardMessage(const std::string& message, ClientNetwork::Scoreb
     out = std::move(snapshot);
     return true;
 }
-}
+} // namespace
 
 ClientNetwork::ClientNetwork() = default;
 
@@ -807,7 +743,8 @@ ClientNetwork::~ClientNetwork() {
 }
 
 bool ClientNetwork::Start() {
-    if (m_started.load()) return true;
+    if (m_started.load())
+        return true;
     SteamNetworkingErrMsg err;
     if (!GameNetworkingSockets_Init(nullptr, err)) {
         std::cerr << "GNS init failed: " << err << "\n";
@@ -828,7 +765,8 @@ bool ClientNetwork::ConnectTo(std::string_view host, uint16_t port) {
 
     std::string hostTrimmed(host);
     size_t begin = 0;
-    while (begin < hostTrimmed.size() && std::isspace(static_cast<unsigned char>(hostTrimmed[begin])) != 0) {
+    while (begin < hostTrimmed.size() &&
+           std::isspace(static_cast<unsigned char>(hostTrimmed[begin])) != 0) {
         ++begin;
     }
     size_t end = hostTrimmed.size();
@@ -895,7 +833,8 @@ bool ClientNetwork::SendConnectRequest(std::string_view requestedUsername) {
     req.requestedUsername.assign(requestedUsername.begin(), requestedUsername.end());
     const std::vector<uint8_t> out = req.serialize();
 
-    EResult r = SteamNetworkingSockets()->SendMessageToConnection(m_conn, out.data(), (uint32_t)out.size(), k_nSteamNetworkingSend_Reliable, nullptr);
+    EResult r = SteamNetworkingSockets()->SendMessageToConnection(
+        m_conn, out.data(), (uint32_t)out.size(), k_nSteamNetworkingSend_Reliable, nullptr);
     if (r != k_EResultOK) {
         std::cerr << "SendConnectRequest: SendMessageToConnection failed: " << r << "\n";
         SetConnectionStatus(ConnectionState::Disconnected, "failed to send connect request");
@@ -905,8 +844,9 @@ bool ClientNetwork::SendConnectRequest(std::string_view requestedUsername) {
     return true;
 }
 
-bool ClientNetwork::SendPosition(uint32_t seq, const glm::vec3& pos, const glm::vec3& vel) {
-    if (m_conn == k_HSteamNetConnection_Invalid) return false;
+bool ClientNetwork::SendPosition(uint32_t seq, const glm::vec3 &pos, const glm::vec3 &vel) {
+    if (m_conn == k_HSteamNetConnection_Invalid)
+        return false;
     std::vector<uint8_t> out;
     out.push_back(static_cast<uint8_t>(PacketType::PlayerPosition));
     AppendUint32LE(out, seq);
@@ -917,33 +857,25 @@ bool ClientNetwork::SendPosition(uint32_t seq, const glm::vec3& pos, const glm::
     AppendFloatLE(out, vel.y);
     AppendFloatLE(out, vel.z);
     EResult r = SteamNetworkingSockets()->SendMessageToConnection(
-        m_conn,
-        out.data(),
-        (uint32_t)out.size(),
-        k_nSteamNetworkingSend_UnreliableNoDelay,
-        nullptr
-    );
+        m_conn, out.data(), (uint32_t)out.size(), k_nSteamNetworkingSend_UnreliableNoDelay,
+        nullptr);
     return (r == k_EResultOK);
 }
 
-bool ClientNetwork::SendPlayerInput(const PlayerInput& input)
-{
-    if (!IsConnected()) return false;
+bool ClientNetwork::SendPlayerInput(const PlayerInput &input) {
+    if (!IsConnected())
+        return false;
 
     const std::vector<uint8_t> out = input.serialize();
     const EResult r = SteamNetworkingSockets()->SendMessageToConnection(
-        m_conn,
-        out.data(),
-        static_cast<uint32_t>(out.size()),
-        k_nSteamNetworkingSend_UnreliableNoDelay,
-        nullptr
-    );
+        m_conn, out.data(), static_cast<uint32_t>(out.size()),
+        k_nSteamNetworkingSend_UnreliableNoDelay, nullptr);
     return (r == k_EResultOK);
 }
 
-bool ClientNetwork::SendRespawnRequest()
-{
-    if (!IsConnected()) return false;
+bool ClientNetwork::SendRespawnRequest() {
+    if (!IsConnected())
+        return false;
 
     static constexpr char kPayload[] = "RESPAWN";
     std::vector<uint8_t> out;
@@ -952,18 +884,14 @@ bool ClientNetwork::SendRespawnRequest()
     out.insert(out.end(), kPayload, kPayload + (sizeof(kPayload) - 1));
 
     const EResult r = SteamNetworkingSockets()->SendMessageToConnection(
-        m_conn,
-        out.data(),
-        static_cast<uint32_t>(out.size()),
-        k_nSteamNetworkingSend_Reliable,
-        nullptr
-    );
+        m_conn, out.data(), static_cast<uint32_t>(out.size()), k_nSteamNetworkingSend_Reliable,
+        nullptr);
     return (r == k_EResultOK);
 }
 
-bool ClientNetwork::SendChunkResyncRequest(const glm::ivec3& chunkPos)
-{
-    if (!IsConnected()) return false;
+bool ClientNetwork::SendChunkResyncRequest(const glm::ivec3 &chunkPos) {
+    if (!IsConnected())
+        return false;
 
     std::string payload = "CHUNK_RESYNC|";
     payload += std::to_string(chunkPos.x);
@@ -978,63 +906,47 @@ bool ClientNetwork::SendChunkResyncRequest(const glm::ivec3& chunkPos)
     out.insert(out.end(), payload.begin(), payload.end());
 
     const EResult r = SteamNetworkingSockets()->SendMessageToConnection(
-        m_conn,
-        out.data(),
-        static_cast<uint32_t>(out.size()),
-        k_nSteamNetworkingSend_Reliable,
-        nullptr
-    );
+        m_conn, out.data(), static_cast<uint32_t>(out.size()), k_nSteamNetworkingSend_Reliable,
+        nullptr);
     return (r == k_EResultOK);
 }
 
-bool ClientNetwork::SendInventoryActionRequest(const InventoryActionRequest& request)
-{
-    if (!IsConnected()) return false;
+bool ClientNetwork::SendInventoryActionRequest(const InventoryActionRequest &request) {
+    if (!IsConnected())
+        return false;
 
     const std::vector<uint8_t> out = request.serialize();
     const EResult r = SteamNetworkingSockets()->SendMessageToConnection(
-        m_conn,
-        out.data(),
-        static_cast<uint32_t>(out.size()),
-        k_nSteamNetworkingSend_Reliable,
-        nullptr
-    );
+        m_conn, out.data(), static_cast<uint32_t>(out.size()), k_nSteamNetworkingSend_Reliable,
+        nullptr);
     return (r == k_EResultOK);
 }
 
-bool ClientNetwork::SendBlockPlaceRequest(const BlockPlaceRequest& request)
-{
-    if (!IsConnected()) return false;
+bool ClientNetwork::SendBlockPlaceRequest(const BlockPlaceRequest &request) {
+    if (!IsConnected())
+        return false;
 
     const std::vector<uint8_t> out = request.serialize();
     const EResult r = SteamNetworkingSockets()->SendMessageToConnection(
-        m_conn,
-        out.data(),
-        static_cast<uint32_t>(out.size()),
-        k_nSteamNetworkingSend_Reliable,
-        nullptr
-    );
+        m_conn, out.data(), static_cast<uint32_t>(out.size()), k_nSteamNetworkingSend_Reliable,
+        nullptr);
     return (r == k_EResultOK);
 }
 
-bool ClientNetwork::SendBlockBreakRequest(const BlockBreakRequest& request)
-{
-    if (!IsConnected()) return false;
+bool ClientNetwork::SendBlockBreakRequest(const BlockBreakRequest &request) {
+    if (!IsConnected())
+        return false;
 
     const std::vector<uint8_t> out = request.serialize();
     const EResult r = SteamNetworkingSockets()->SendMessageToConnection(
-        m_conn,
-        out.data(),
-        static_cast<uint32_t>(out.size()),
-        k_nSteamNetworkingSend_Reliable,
-        nullptr
-    );
+        m_conn, out.data(), static_cast<uint32_t>(out.size()), k_nSteamNetworkingSend_Reliable,
+        nullptr);
     return (r == k_EResultOK);
 }
 
-bool ClientNetwork::SendChunkRequest(const glm::ivec3& centerChunk, uint16_t viewDistance)
-{
-    if (!IsConnected()) return false;
+bool ClientNetwork::SendChunkRequest(const glm::ivec3 &centerChunk, uint16_t viewDistance) {
+    if (!IsConnected())
+        return false;
 
     ChunkRequest request;
     request.chunkX = centerChunk.x;
@@ -1044,35 +956,28 @@ bool ClientNetwork::SendChunkRequest(const glm::ivec3& centerChunk, uint16_t vie
 
     std::vector<uint8_t> out = request.serialize();
     EResult r = SteamNetworkingSockets()->SendMessageToConnection(
-        m_conn,
-        out.data(),
-        (uint32_t)out.size(),
-        k_nSteamNetworkingSend_Reliable,
-        nullptr
-    );
+        m_conn, out.data(), (uint32_t)out.size(), k_nSteamNetworkingSend_Reliable, nullptr);
     return (r == k_EResultOK);
 }
 
 void ClientNetwork::Poll() {
-    if (!m_started.load()) return;
+    if (!m_started.load())
+        return;
 
     const auto pollTotalStart = std::chrono::steady_clock::now();
 
-
     SteamNetworkingSockets()->RunCallbacks();
     const auto afterCallbacks = std::chrono::steady_clock::now();
-    const int64_t callbackUs = std::chrono::duration_cast<std::chrono::microseconds>(
-        afterCallbacks - pollTotalStart
-    ).count();
-
-
+    const int64_t callbackUs =
+        std::chrono::duration_cast<std::chrono::microseconds>(afterCallbacks - pollTotalStart)
+            .count();
 
     // receive messages on the connection (drain)
     if (m_conn == k_HSteamNetConnection_Invalid) {
         const auto pollTotalEnd = std::chrono::steady_clock::now();
-        const int64_t pollUs = std::chrono::duration_cast<std::chrono::microseconds>(
-            pollTotalEnd - pollTotalStart
-        ).count();
+        const int64_t pollUs =
+            std::chrono::duration_cast<std::chrono::microseconds>(pollTotalEnd - pollTotalStart)
+                .count();
         RecordClientNetProfile(this, pollUs, callbackUs, 0, 0, 0);
         return;
     }
@@ -1081,20 +986,16 @@ void ClientNetwork::Poll() {
         if (info.m_eState == k_ESteamNetworkingConnectionState_Connected && m_registered) {
             if (m_assignedUsername.empty()) {
                 SetConnectionStatus(ConnectionState::Connected, "connected");
+            } else {
+                SetConnectionStatus(ConnectionState::Connected,
+                                    std::string("connected as ") + m_assignedUsername);
             }
-            else {
-                SetConnectionStatus(ConnectionState::Connected, std::string("connected as ") + m_assignedUsername);
-            }
-        }
-        else if (info.m_eState == k_ESteamNetworkingConnectionState_Connecting && !m_registered) {
+        } else if (info.m_eState == k_ESteamNetworkingConnectionState_Connecting && !m_registered) {
             if (m_connectionState != ConnectionState::Connecting) {
                 SetConnectionStatus(ConnectionState::Connecting, "connecting");
             }
-        }
-        else if (
-            info.m_eState == k_ESteamNetworkingConnectionState_ClosedByPeer ||
-            info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally
-            ) {
+        } else if (info.m_eState == k_ESteamNetworkingConnectionState_ClosedByPeer ||
+                   info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally) {
             std::string reason = "connection closed";
             if (info.m_szEndDebug[0] != '\0') {
                 reason = info.m_szEndDebug;
@@ -1105,33 +1006,28 @@ void ClientNetwork::Poll() {
             m_assignedUsername.clear();
             SetConnectionStatus(ConnectionState::Disconnected, reason);
             const auto pollTotalEnd = std::chrono::steady_clock::now();
-            const int64_t pollUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                pollTotalEnd - pollTotalStart
-            ).count();
+            const int64_t pollUs =
+                std::chrono::duration_cast<std::chrono::microseconds>(pollTotalEnd - pollTotalStart)
+                    .count();
             RecordClientNetProfile(this, pollUs, callbackUs, 0, 0, 0);
             return;
         }
     }
 
-
     const auto pollBudgetStart = std::chrono::steady_clock::now();
     size_t drainedMessages = 0;
     uint64_t drainedBytes = 0;
-    SteamNetworkingMessage_t* pMsg = nullptr;
-    while (
-        drainedMessages < kMaxMessagesPerPoll &&
-        SteamNetworkingSockets()->ReceiveMessagesOnConnection(m_conn, &pMsg, 1) > 0 &&
-        pMsg
-        ) {
-        const uint8_t* data = reinterpret_cast<const uint8_t*>(pMsg->m_pData);
+    SteamNetworkingMessage_t *pMsg = nullptr;
+    while (drainedMessages < kMaxMessagesPerPoll &&
+           SteamNetworkingSockets()->ReceiveMessagesOnConnection(m_conn, &pMsg, 1) > 0 && pMsg) {
+        const uint8_t *data = reinterpret_cast<const uint8_t *>(pMsg->m_pData);
         uint32_t cb = pMsg->m_cbSize;
 
         if (cb >= 1) {
             PacketType type = static_cast<PacketType>(data[0]);
 
             bool highPriority =
-                (type == PacketType::PlayerSnapshot) ||
-                (type == PacketType::ShootResult);
+                (type == PacketType::PlayerSnapshot) || (type == PacketType::ShootResult);
 
             OnMessage(data, cb);
 
@@ -1140,8 +1036,8 @@ void ClientNetwork::Poll() {
 
             if (!highPriority) {
                 const int64_t elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                    std::chrono::steady_clock::now() - pollBudgetStart
-                ).count();
+                                              std::chrono::steady_clock::now() - pollBudgetStart)
+                                              .count();
 
                 if (elapsedUs >= kMessagePollBudgetUs) {
                     break;
@@ -1153,12 +1049,12 @@ void ClientNetwork::Poll() {
     }
 
     const auto pollTotalEnd = std::chrono::steady_clock::now();
-    const int64_t pollUs = std::chrono::duration_cast<std::chrono::microseconds>(
-        pollTotalEnd - pollTotalStart
-    ).count();
-    const int64_t recvUs = std::chrono::duration_cast<std::chrono::microseconds>(
-        pollTotalEnd - pollBudgetStart
-    ).count();
+    const int64_t pollUs =
+        std::chrono::duration_cast<std::chrono::microseconds>(pollTotalEnd - pollTotalStart)
+            .count();
+    const int64_t recvUs =
+        std::chrono::duration_cast<std::chrono::microseconds>(pollTotalEnd - pollBudgetStart)
+            .count();
     RecordClientNetProfile(this, pollUs, callbackUs, recvUs, drainedMessages, drainedBytes);
 }
 
@@ -1192,29 +1088,30 @@ void ClientNetwork::Shutdown() {
     }
 }
 
-
-void ClientNetwork::AppendUint32LE(std::vector<uint8_t>& out, uint32_t v) {
+void ClientNetwork::AppendUint32LE(std::vector<uint8_t> &out, uint32_t v) {
     out.push_back((v >> 0) & 0xFF);
     out.push_back((v >> 8) & 0xFF);
     out.push_back((v >> 16) & 0xFF);
     out.push_back((v >> 24) & 0xFF);
 }
-void ClientNetwork::AppendFloatLE(std::vector<uint8_t>& out, float f) {
+void ClientNetwork::AppendFloatLE(std::vector<uint8_t> &out, float f) {
     uint32_t u;
     static_assert(sizeof(u) == sizeof(f), "float size mismatch");
     std::memcpy(&u, &f, sizeof(u));
     AppendUint32LE(out, u);
 }
-uint32_t ClientNetwork::ReadUint32LE(const uint8_t* ptr) {
-    return (uint32_t)ptr[0] | ((uint32_t)ptr[1] << 8) | ((uint32_t)ptr[2] << 16) | ((uint32_t)ptr[3] << 24);
+uint32_t ClientNetwork::ReadUint32LE(const uint8_t *ptr) {
+    return (uint32_t)ptr[0] | ((uint32_t)ptr[1] << 8) | ((uint32_t)ptr[2] << 16) |
+           ((uint32_t)ptr[3] << 24);
 }
-float ClientNetwork::ReadFloatLE(const uint8_t* ptr) {
+float ClientNetwork::ReadFloatLE(const uint8_t *ptr) {
     uint32_t u = ReadUint32LE(ptr);
-    float f; std::memcpy(&f, &u, sizeof(f));
+    float f;
+    std::memcpy(&f, &u, sizeof(f));
     return f;
 }
 
-void ClientNetwork::OnMessage(const uint8_t* data, uint32_t size) {
+void ClientNetwork::OnMessage(const uint8_t *data, uint32_t size) {
     uint8_t t = data[0];
     if (static_cast<PacketType>(t) == PacketType::ConnectResponse) {
         ConnectResponse resp;
@@ -1224,7 +1121,8 @@ void ClientNetwork::OnMessage(const uint8_t* data, uint32_t size) {
             m_assignedUsername.clear();
             SetConnectionStatus(ConnectionState::Disconnected, "malformed connect response", false);
             if (m_conn != k_HSteamNetConnection_Invalid) {
-                SteamNetworkingSockets()->CloseConnection(m_conn, 0, "malformed connect response", false);
+                SteamNetworkingSockets()->CloseConnection(m_conn, 0, "malformed connect response",
+                                                          false);
                 m_conn = k_HSteamNetConnection_Invalid;
             }
             return;
@@ -1233,31 +1131,33 @@ void ClientNetwork::OnMessage(const uint8_t* data, uint32_t size) {
         if (resp.ok != 0) {
             m_registered = true;
             m_assignedUsername = resp.assignedUsername;
-            const std::string displayName = m_assignedUsername.empty() ? std::string("connected") : ("connected as " + m_assignedUsername);
+            const std::string displayName = m_assignedUsername.empty()
+                                                ? std::string("connected")
+                                                : ("connected as " + m_assignedUsername);
             SetConnectionStatus(ConnectionState::Connected, displayName);
             std::cout << "[net] registered by server";
             if (!m_assignedUsername.empty()) {
                 std::cout << " as " << m_assignedUsername;
             }
             std::cout << "\n";
-        }
-        else {
+        } else {
             m_registered = false;
             m_assignedUsername.clear();
-            std::string reason = resp.message.empty() ? std::string("registration rejected") : resp.message;
+            std::string reason =
+                resp.message.empty() ? std::string("registration rejected") : resp.message;
             std::cout << "[net] registration rejected by server: " << reason << "\n";
 
             if (resp.reason == ConnectRejectReason::IdentityInUse) {
                 // Allow multiple local clients by falling back to a per-process transient identity.
                 m_useTransientIdentity = true;
                 m_clientIdentity.clear();
-                std::cout << "[net] identity conflict detected; rotating to transient identity for retry\n";
+                std::cout << "[net] identity conflict detected; rotating to transient identity for "
+                             "retry\n";
             }
 
-            const bool fatalMismatch =
-                (resp.reason == ConnectRejectReason::ProtocolMismatch) ||
-                (resp.reason == ConnectRejectReason::InvalidIdentity) ||
-                (resp.reason == ConnectRejectReason::UsernameTaken);
+            const bool fatalMismatch = (resp.reason == ConnectRejectReason::ProtocolMismatch) ||
+                                       (resp.reason == ConnectRejectReason::InvalidIdentity) ||
+                                       (resp.reason == ConnectRejectReason::UsernameTaken);
             SetConnectionStatus(ConnectionState::Disconnected, reason, !fatalMismatch);
 
             if (m_conn != k_HSteamNetConnection_Invalid) {
@@ -1271,7 +1171,7 @@ void ClientNetwork::OnMessage(const uint8_t* data, uint32_t size) {
     if (static_cast<PacketType>(t) == PacketType::Message) {
         // simple text message from server
         if (size > 1) {
-            std::string s(reinterpret_cast<const char*>(data + 1), size - 1);
+            std::string s(reinterpret_cast<const char *>(data + 1), size - 1);
             if (s == "server_heartbeat") {
                 return;
             }
@@ -1325,7 +1225,7 @@ void ClientNetwork::OnMessage(const uint8_t* data, uint32_t size) {
         {
             std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
             if (m_chunkDataQueue.size() >= kMaxChunkDataQueueDepth) {
-                const ChunkData& dropped = m_chunkDataQueue.front();
+                const ChunkData &dropped = m_chunkDataQueue.front();
                 droppedChunkPos = glm::ivec3(dropped.chunkX, dropped.chunkY, dropped.chunkZ);
                 m_chunkDataQueue.pop_front();
                 droppedChunkData = true;
@@ -1337,10 +1237,10 @@ void ClientNetwork::OnMessage(const uint8_t* data, uint32_t size) {
             static uint64_t s_droppedChunkDataCount = 0;
             ++s_droppedChunkDataCount;
             if (s_droppedChunkDataCount <= 20 || (s_droppedChunkDataCount % 100) == 0) {
-                std::cerr
-                    << "[net] chunk data queue overflow, resync requested chunk=("
-                    << droppedChunkPos.x << "," << droppedChunkPos.y << "," << droppedChunkPos.z << ")"
-                    << " count=" << s_droppedChunkDataCount << "\n";
+                std::cerr << "[net] chunk data queue overflow, resync requested chunk=("
+                          << droppedChunkPos.x << "," << droppedChunkPos.y << ","
+                          << droppedChunkPos.z << ")"
+                          << " count=" << s_droppedChunkDataCount << "\n";
             }
             (void)SendChunkResyncRequest(droppedChunkPos);
         }
@@ -1469,31 +1369,34 @@ void ClientNetwork::OnMessage(const uint8_t* data, uint32_t size) {
     }
 }
 
-
-
 bool ClientNetwork::SendShootRequest(uint32_t clientShotId, uint32_t clientTick, uint16_t weaponId,
-    const glm::vec3& pos, const glm::vec3& dir,
-    uint32_t seed, uint8_t inputFlags)
-{
-    if (!IsConnected()) return false;
+                                     const glm::vec3 &pos, const glm::vec3 &dir, uint32_t seed,
+                                     uint8_t inputFlags) {
+    if (!IsConnected())
+        return false;
 
     ShootRequest req;
     req.clientShotId = clientShotId;
     req.clientTick = clientTick;
     req.weaponId = weaponId;
-    req.posX = pos.x; req.posY = pos.y; req.posZ = pos.z;
-    req.dirX = dir.x; req.dirY = dir.y; req.dirZ = dir.z;
+    req.posX = pos.x;
+    req.posY = pos.y;
+    req.posZ = pos.z;
+    req.dirX = dir.x;
+    req.dirY = dir.y;
+    req.dirZ = dir.z;
     req.seed = seed;
     req.inputFlags = inputFlags;
 
     std::vector<uint8_t> buf = req.serialize();
-    // Use reliable for simplicity (authoritative events); you can switch to unreliable if you add retries
-    EResult r = SteamNetworkingSockets()->SendMessageToConnection(m_conn, buf.data(), (uint32_t)buf.size(), k_nSteamNetworkingSend_Reliable, nullptr);
+    // Use reliable for simplicity (authoritative events); you can switch to unreliable if you add
+    // retries
+    EResult r = SteamNetworkingSockets()->SendMessageToConnection(
+        m_conn, buf.data(), (uint32_t)buf.size(), k_nSteamNetworkingSend_Reliable, nullptr);
     return (r == k_EResultOK);
 }
 
-bool ClientNetwork::IsConnected() const
-{
+bool ClientNetwork::IsConnected() const {
     if (!m_started.load() || m_conn == k_HSteamNetConnection_Invalid || !m_registered) {
         return false;
     }
@@ -1505,39 +1408,30 @@ bool ClientNetwork::IsConnected() const
     return info.m_eState == k_ESteamNetworkingConnectionState_Connected;
 }
 
-ClientNetwork::ConnectionState ClientNetwork::GetConnectionState() const noexcept
-{
+ClientNetwork::ConnectionState ClientNetwork::GetConnectionState() const noexcept {
     return m_connectionState;
 }
 
-const std::string& ClientNetwork::GetConnectionStatusText() const noexcept
-{
+const std::string &ClientNetwork::GetConnectionStatusText() const noexcept {
     return m_connectionStatus;
 }
 
-const std::string& ClientNetwork::GetAssignedUsername() const noexcept
-{
+const std::string &ClientNetwork::GetAssignedUsername() const noexcept {
     return m_assignedUsername;
 }
 
-bool ClientNetwork::ShouldAutoReconnect() const noexcept
-{
+bool ClientNetwork::ShouldAutoReconnect() const noexcept {
     return m_allowAutoReconnect;
 }
 
-int ClientNetwork::GetPingMs() const noexcept
-{
+int ClientNetwork::GetPingMs() const noexcept {
     if (!IsConnected()) {
         return -1;
     }
 
     SteamNetConnectionRealTimeStatus_t status{};
-    const EResult r = SteamNetworkingSockets()->GetConnectionRealTimeStatus(
-        m_conn,
-        &status,
-        0,
-        nullptr
-    );
+    const EResult r =
+        SteamNetworkingSockets()->GetConnectionRealTimeStatus(m_conn, &status, 0, nullptr);
     if (r != k_EResultOK) {
         return -1;
     }
@@ -1545,8 +1439,7 @@ int ClientNetwork::GetPingMs() const noexcept
     return status.m_nPing;
 }
 
-bool ClientNetwork::PopChunkData(ChunkData& out)
-{
+bool ClientNetwork::PopChunkData(ChunkData &out) {
     std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
     if (m_chunkDataQueue.empty()) {
         return false;
@@ -1556,8 +1449,7 @@ bool ClientNetwork::PopChunkData(ChunkData& out)
     return true;
 }
 
-bool ClientNetwork::PopChunkDelta(ChunkDelta& out)
-{
+bool ClientNetwork::PopChunkDelta(ChunkDelta &out) {
     std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
     if (m_chunkDeltaQueue.empty()) {
         return false;
@@ -1567,8 +1459,7 @@ bool ClientNetwork::PopChunkDelta(ChunkDelta& out)
     return true;
 }
 
-bool ClientNetwork::PopChunkUnload(ChunkUnload& out)
-{
+bool ClientNetwork::PopChunkUnload(ChunkUnload &out) {
     std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
     if (m_chunkUnloadQueue.empty()) {
         return false;
@@ -1578,8 +1469,7 @@ bool ClientNetwork::PopChunkUnload(ChunkUnload& out)
     return true;
 }
 
-bool ClientNetwork::PopPlayerSnapshot(PlayerSnapshotFrame& out)
-{
+bool ClientNetwork::PopPlayerSnapshot(PlayerSnapshotFrame &out) {
     std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
     if (m_playerSnapshotQueue.empty()) {
         return false;
@@ -1589,8 +1479,7 @@ bool ClientNetwork::PopPlayerSnapshot(PlayerSnapshotFrame& out)
     return true;
 }
 
-bool ClientNetwork::PopShootResult(ShootResult& out)
-{
+bool ClientNetwork::PopShootResult(ShootResult &out) {
     std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
     if (m_shootResultQueue.empty()) {
         return false;
@@ -1600,8 +1489,7 @@ bool ClientNetwork::PopShootResult(ShootResult& out)
     return true;
 }
 
-bool ClientNetwork::PopInventoryActionResult(InventoryActionResult& out)
-{
+bool ClientNetwork::PopInventoryActionResult(InventoryActionResult &out) {
     std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
     if (m_inventoryActionResultQueue.empty()) {
         return false;
@@ -1611,8 +1499,7 @@ bool ClientNetwork::PopInventoryActionResult(InventoryActionResult& out)
     return true;
 }
 
-bool ClientNetwork::PopInventorySnapshot(InventorySnapshot& out)
-{
+bool ClientNetwork::PopInventorySnapshot(InventorySnapshot &out) {
     std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
     if (m_inventorySnapshotQueue.empty()) {
         return false;
@@ -1622,8 +1509,7 @@ bool ClientNetwork::PopInventorySnapshot(InventorySnapshot& out)
     return true;
 }
 
-bool ClientNetwork::PopWorldItemSnapshot(WorldItemSnapshot& out)
-{
+bool ClientNetwork::PopWorldItemSnapshot(WorldItemSnapshot &out) {
     std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
     if (m_worldItemSnapshotQueue.empty()) {
         return false;
@@ -1633,8 +1519,7 @@ bool ClientNetwork::PopWorldItemSnapshot(WorldItemSnapshot& out)
     return true;
 }
 
-bool ClientNetwork::PopBlockPlaceResult(BlockPlaceResult& out)
-{
+bool ClientNetwork::PopBlockPlaceResult(BlockPlaceResult &out) {
     std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
     if (m_blockPlaceResultQueue.empty()) {
         return false;
@@ -1644,8 +1529,7 @@ bool ClientNetwork::PopBlockPlaceResult(BlockPlaceResult& out)
     return true;
 }
 
-bool ClientNetwork::PopBlockBreakResult(BlockBreakResult& out)
-{
+bool ClientNetwork::PopBlockBreakResult(BlockBreakResult &out) {
     std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
     if (m_blockBreakResultQueue.empty()) {
         return false;
@@ -1655,8 +1539,7 @@ bool ClientNetwork::PopBlockBreakResult(BlockBreakResult& out)
     return true;
 }
 
-bool ClientNetwork::PopKillFeedEvent(KillFeedEvent& out)
-{
+bool ClientNetwork::PopKillFeedEvent(KillFeedEvent &out) {
     std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
     if (m_killFeedQueue.empty()) {
         return false;
@@ -1666,8 +1549,7 @@ bool ClientNetwork::PopKillFeedEvent(KillFeedEvent& out)
     return true;
 }
 
-bool ClientNetwork::PopScoreboardSnapshot(ScoreboardSnapshot& out)
-{
+bool ClientNetwork::PopScoreboardSnapshot(ScoreboardSnapshot &out) {
     std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
     if (m_scoreboardQueue.empty()) {
         return false;
@@ -1677,8 +1559,7 @@ bool ClientNetwork::PopScoreboardSnapshot(ScoreboardSnapshot& out)
     return true;
 }
 
-ClientNetwork::ChunkQueueDepths ClientNetwork::GetChunkQueueDepths()
-{
+ClientNetwork::ChunkQueueDepths ClientNetwork::GetChunkQueueDepths() {
     std::lock_guard<std::mutex> lk(m_chunkQueueMutex);
     ChunkQueueDepths depths;
     depths.chunkData = m_chunkDataQueue.size();
@@ -1687,8 +1568,7 @@ ClientNetwork::ChunkQueueDepths ClientNetwork::GetChunkQueueDepths()
     return depths;
 }
 
-bool ClientNetwork::EnsureClientIdentity()
-{
+bool ClientNetwork::EnsureClientIdentity() {
     if (IsValidIdentity(m_clientIdentity)) {
         return true;
     }
@@ -1733,11 +1613,9 @@ bool ClientNetwork::EnsureClientIdentity()
     return true;
 }
 
-void ClientNetwork::SetConnectionStatus(ConnectionState state, std::string text, bool allowReconnect)
-{
+void ClientNetwork::SetConnectionStatus(ConnectionState state, std::string text,
+                                        bool allowReconnect) {
     m_connectionState = state;
     m_connectionStatus = std::move(text);
     m_allowAutoReconnect = allowReconnect;
 }
-
-

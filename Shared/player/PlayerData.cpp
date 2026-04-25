@@ -2,7 +2,7 @@
 
 namespace Shared::PlayerData {
 
-const MovementSettings& GetMovementSettings() {
+const MovementSettings &GetMovementSettings() {
     static const MovementSettings kSettings{};
     return kSettings;
 }

@@ -3,15 +3,14 @@
 #include <algorithm>
 #include <cfloat>
 
-RayManager::RayManager() {
+RayManager::RayManager() {}
 
-}
-
-RayResult RayManager::rayHasBlockIntersectSingle(const Ray& ray, const ChunkManager& chunkManager, float maxDistance) {
+RayResult RayManager::rayHasBlockIntersectSingle(const Ray &ray, const ChunkManager &chunkManager,
+                                                 float maxDistance) {
     RayResult result{};
     result.hit = false;
     result.distance = maxDistance;
-    
+
     glm::vec3 rayDir = glm::normalize(ray.direction);
     //// ====== 1. Setup DDA for block traversal ======
     glm::ivec3 currentBlock = glm::floor(ray.origin); // starting voxel
@@ -24,13 +23,10 @@ RayResult RayManager::rayHasBlockIntersectSingle(const Ray& ray, const ChunkMana
     // Compute tMax and tDelta
     for (int i = 0; i < 3; i++) {
         if (rayDir[i] != 0.0f) {
-            float nextBoundary = (step[i] > 0)
-                ? (currentBlock[i] + 1.0f)
-                : (currentBlock[i]);
+            float nextBoundary = (step[i] > 0) ? (currentBlock[i] + 1.0f) : (currentBlock[i]);
             tMax[i] = (nextBoundary - ray.origin[i]) / rayDir[i];
             tDelta[i] = std::abs(1.0f / rayDir[i]);
-        }
-        else {
+        } else {
             tMax[i] = FLT_MAX;
             tDelta[i] = FLT_MAX;
         }
@@ -38,17 +34,18 @@ RayResult RayManager::rayHasBlockIntersectSingle(const Ray& ray, const ChunkMana
 
     // ====== Traverse blocks ======
     for (int i = 0; i < 1024; i++) { // safety cap
-        float traveled = std::min({ tMax.x, tMax.y, tMax.z });
+        float traveled = std::min({tMax.x, tMax.y, tMax.z});
         if (traveled > maxDistance)
             break;
 
         // Get the chunk this block belongs to
         glm::ivec3 chunkCoords = chunkManager.worldToChunkPos(currentBlock);
 
-        if (const ServerChunk* chunk = chunkManager.getChunkIfExists(chunkCoords)) {
+        if (const ServerChunk *chunk = chunkManager.getChunkIfExists(chunkCoords)) {
             const glm::ivec3 blockInChunk = currentBlock - chunk->getWorldPosition();
             if (ServerChunk::inBounds(blockInChunk.x, blockInChunk.y, blockInChunk.z)) {
-                BlockID block = chunk->getBlockUnchecked(blockInChunk.x, blockInChunk.y, blockInChunk.z);
+                BlockID block =
+                    chunk->getBlockUnchecked(blockInChunk.x, blockInChunk.y, blockInChunk.z);
                 if (block != BlockID::Air) {
                     result.hit = true;
                     result.hitBlockWorld = currentBlock;
@@ -64,48 +61,36 @@ RayResult RayManager::rayHasBlockIntersectSingle(const Ray& ray, const ChunkMana
             if (tMax.x < tMax.z) {
                 currentBlock.x += step.x;
                 tMax.x += tDelta.x;
-            }
-            else {
+            } else {
                 currentBlock.z += step.z;
                 tMax.z += tDelta.z;
             }
-        }
-        else {
+        } else {
             if (tMax.y < tMax.z) {
                 currentBlock.y += step.y;
                 tMax.y += tDelta.y;
-            }
-            else {
+            } else {
                 currentBlock.z += step.z;
                 tMax.z += tDelta.z;
             }
         }
-
-
     }
-    
-
-
 
     return result; // no hit found
 }
 
-
-RayResult RayManager::rayHasBlockIntersectSinglePrecise(const Ray& ray, const ChunkManager& chunkManager, float maxDistance) {
+RayResult RayManager::rayHasBlockIntersectSinglePrecise(const Ray &ray,
+                                                        const ChunkManager &chunkManager,
+                                                        float maxDistance) {
     return rayHasBlockIntersectSingle(ray, chunkManager, maxDistance);
 }
 
-
-
-RayResult RayManager::rayHasBlockIntersectBatch(std::list<Ray>& rays) {
-	RayResult result{};
-	result.hit = false;
-	result.distance = 0.0f;
-	for (auto& ray : rays) {
-		(void)ray;
-	}
-	return result;
+RayResult RayManager::rayHasBlockIntersectBatch(std::list<Ray> &rays) {
+    RayResult result{};
+    result.hit = false;
+    result.distance = 0.0f;
+    for (auto &ray : rays) {
+        (void)ray;
+    }
+    return result;
 }
-
-
-

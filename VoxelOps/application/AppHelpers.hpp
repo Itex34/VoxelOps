@@ -16,7 +16,7 @@ class Gun;
 namespace AppHelpers {
 
 bool IsImGuiTextInputActive();
-float LatencyCorrectionBlend(const ClientNetwork& net);
+float LatencyCorrectionBlend(const ClientNetwork &net);
 double GetTimeSeconds() noexcept;
 
 struct GunDefinition {
@@ -35,10 +35,10 @@ struct GunDefinition {
 };
 
 std::span<const GunDefinition> GetGunDefinitions();
-const GunDefinition* FindGunDefinition(GunType gunType);
-const GunDefinition* FindGunDefinitionByWeaponId(uint16_t weaponId);
-std::string ResolveGunModelPath(const GunDefinition& definition);
-std::unique_ptr<Gun> BuildGunFromDefinition(const GunDefinition& definition);
+const GunDefinition *FindGunDefinition(GunType gunType);
+const GunDefinition *FindGunDefinitionByWeaponId(uint16_t weaponId);
+std::string ResolveGunModelPath(const GunDefinition &definition);
+std::unique_ptr<Gun> BuildGunFromDefinition(const GunDefinition &definition);
 
 float NormalizeYawDegrees(float yawDegrees);
 float ToModelYawDegrees(float lookYawDegrees, bool invertYaw, float yawOffsetDeg);
@@ -65,10 +65,10 @@ struct LaunchOptions {
 };
 
 void PrintUsage();
-bool ParsePort(std::string_view text, uint16_t& outPort);
+bool ParsePort(std::string_view text, uint16_t &outPort);
 std::string TrimAscii(std::string_view text);
-bool ParseHost(std::string_view text, std::string& outHost);
-bool ParseServerEndpoint(std::string_view text, std::string& outIp, uint16_t& outPort);
-bool ParseLaunchOptions(int argc, char** argv, LaunchOptions& outOptions);
+bool ParseHost(std::string_view text, std::string &outHost);
+bool ParseServerEndpoint(std::string_view text, std::string &outIp, uint16_t &outPort);
+bool ParseLaunchOptions(int argc, char **argv, LaunchOptions &outOptions);
 
 } // namespace AppHelpers

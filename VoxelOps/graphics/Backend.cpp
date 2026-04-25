@@ -6,12 +6,13 @@
 #include <iostream>
 
 namespace {
-bool hasExtension(const char* extensionName) {
+bool hasExtension(const char *extensionName) {
     GLint extensionCount = 0;
     glGetIntegerv(GL_NUM_EXTENSIONS, &extensionCount);
 
     for (GLint i = 0; i < extensionCount; ++i) {
-        const char* extension = reinterpret_cast<const char*>(glGetStringi(GL_EXTENSIONS, static_cast<GLuint>(i)));
+        const char *extension =
+            reinterpret_cast<const char *>(glGetStringi(GL_EXTENSIONS, static_cast<GLuint>(i)));
         if (extension && std::strcmp(extension, extensionName) == 0) {
             return true;
         }
@@ -32,16 +33,18 @@ std::string_view backendName(GraphicsBackend backend) {
         return "Unknown";
     }
 }
-}
+} // namespace
 
 Backend::Backend() {
     if (!GLAD_GL_VERSION_1_0) {
-        std::cerr << "[Backend] GLAD is not initialized. Construct Backend only after gladLoadGLLoader.\n";
+        std::cerr << "[Backend] GLAD is not initialized. Construct Backend only after "
+                     "gladLoadGLLoader.\n";
         std::abort();
     }
 
     if (glGetString(GL_VERSION) == nullptr) {
-        std::cerr << "[Backend] No active OpenGL context. Construct Backend only after context creation.\n";
+        std::cerr << "[Backend] No active OpenGL context. Construct Backend only after context "
+                     "creation.\n";
         std::abort();
     }
 
@@ -50,20 +53,20 @@ Backend::Backend() {
 
     const bool hasCoreMDI = isAtLeast(OpenGLVersionMajor, OpenGLVersionMinor, 4, 3);
     supportsMDI = hasCoreMDI || hasExtension("GL_ARB_multi_draw_indirect");
-    const bool hasCoreShaderDrawParameters = isAtLeast(OpenGLVersionMajor, OpenGLVersionMinor, 4, 6);
-    supportsShaderDrawParameters = hasCoreShaderDrawParameters || hasExtension("GL_ARB_shader_draw_parameters");
+    const bool hasCoreShaderDrawParameters =
+        isAtLeast(OpenGLVersionMajor, OpenGLVersionMinor, 4, 6);
+    supportsShaderDrawParameters =
+        hasCoreShaderDrawParameters || hasExtension("GL_ARB_shader_draw_parameters");
 
     activeBackend = chooseBackend();
     initialized = true;
 
     static bool loggedStartupCaps = false;
     if (!loggedStartupCaps) {
-        std::cout
-            << "[Backend] OpenGL " << OpenGLVersionMajor << "." << OpenGLVersionMinor
-            << " | MDI: " << (supportsMDI ? "yes" : "no")
-            << " | ShaderDrawParams: " << (supportsShaderDrawParameters ? "yes" : "no")
-            << " | Tier: " << backendName(activeBackend)
-            << "\n";
+        std::cout << "[Backend] OpenGL " << OpenGLVersionMajor << "." << OpenGLVersionMinor
+                  << " | MDI: " << (supportsMDI ? "yes" : "no")
+                  << " | ShaderDrawParams: " << (supportsShaderDrawParameters ? "yes" : "no")
+                  << " | Tier: " << backendName(activeBackend) << "\n";
         loggedStartupCaps = true;
     }
 }

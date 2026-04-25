@@ -12,51 +12,50 @@ class Camera;
 enum class GunType : uint16_t;
 
 class App {
-public:
+  public:
     App() = default;
 
-    int Run(int argc, char** argv);
+    int Run(int argc, char **argv);
     void Exit();
 
-private:
-
+  private:
     bool initWindowAndContext();
-    void initCallbacks(Runtime& runtime);
-    void initRenderResources(Runtime& runtime);
-    void initUi(Runtime& runtime);
-    void initGameplay(Runtime& runtime);
-    void preloadGuns(Runtime& runtime);
-    void configureBackendPolicy(Runtime& runtime);
-    void initNetworking(Runtime& runtime);
-    bool beginConnectionAttempt(Runtime& runtime);
-    void drawConnectionPrompt(Runtime& runtime);
-    void processFrame(Runtime& runtime);
-    void shutdown(Runtime& runtime);
+    void initCallbacks(Runtime &runtime);
+    void initRenderResources(Runtime &runtime);
+    void initUi(Runtime &runtime);
+    void initGameplay(Runtime &runtime);
+    void preloadGuns(Runtime &runtime);
+    void configureBackendPolicy(Runtime &runtime);
+    void initNetworking(Runtime &runtime);
+    bool beginConnectionAttempt(Runtime &runtime);
+    void drawConnectionPrompt(Runtime &runtime);
+    void processFrame(Runtime &runtime);
+    void shutdown(Runtime &runtime);
 
-    void updateDebugCamera(Runtime& runtime);
-    void updateToggleStates(Runtime& runtime);
-    void processWorldInteraction(Runtime& runtime);
-    void processShooting(Runtime& runtime);
-    void processMovementNetworking(Runtime& runtime);
-    void processHotbarSelection(Runtime& runtime);
-    void syncEquippedGunFromInventory(Runtime& runtime);
-    void processChunkStreaming(Runtime& runtime, bool prioritizeMovement);
-    void drawKillFeed(Runtime& runtime);
-    void drawScoreboard(Runtime& runtime);
-    void drawPingCounter(Runtime& runtime);
-    void drawPlayerHud(Runtime& runtime);
-    void drawDeathOverlay(Runtime& runtime);
-    void renderWorldItems(Runtime& runtime, const Camera& activeCamera);
-    bool equipGun(Runtime& runtime, GunType gunType);
-    void renderRemotePlayerGuns(Runtime& runtime, const Camera& activeCamera);
-    void renderHeldGun(Runtime& runtime, const Camera& activeCamera);
+    void updateDebugCamera(Runtime &runtime);
+    void updateToggleStates(Runtime &runtime);
+    void processWorldInteraction(Runtime &runtime);
+    void processShooting(Runtime &runtime);
+    void processMovementNetworking(Runtime &runtime);
+    void processHotbarSelection(Runtime &runtime);
+    void syncEquippedGunFromInventory(Runtime &runtime);
+    void processChunkStreaming(Runtime &runtime, bool prioritizeMovement);
+    void drawKillFeed(Runtime &runtime);
+    void drawScoreboard(Runtime &runtime);
+    void drawPingCounter(Runtime &runtime);
+    void drawPlayerHud(Runtime &runtime);
+    void drawDeathOverlay(Runtime &runtime);
+    void renderWorldItems(Runtime &runtime, const Camera &activeCamera);
+    bool equipGun(Runtime &runtime, GunType gunType);
+    void renderRemotePlayerGuns(Runtime &runtime, const Camera &activeCamera);
+    void renderHeldGun(Runtime &runtime, const Camera &activeCamera);
     void applyMouseInputModes();
-    void pollEvents(Runtime& runtime);
+    void pollEvents(Runtime &runtime);
 
     void updateFPSCounter();
-    void toggleFullscreen(SDL_Window* window);
-    
-    SDL_Window* m_Window = nullptr;
+    void toggleFullscreen(SDL_Window *window);
+
+    SDL_Window *m_Window = nullptr;
     SDL_GLContext m_GlContext = nullptr;
     RenderApi m_RenderApi = RenderApi::OpenGL;
     bool m_ShouldQuit = false;
@@ -72,7 +71,8 @@ private:
     bool m_EnableRawMouseInput = true;
     float m_SkyExposure = 4.2f;
     glm::vec3 m_SunDirection = glm::vec3(0.0f, 0.43496552f, 0.90044713f);
-    glm::vec3 m_SunShadowDirectionalBias = glm::vec3(0.00067f, 0.000115f, 0.0f); // x=+Y, y=side, z=-Y
+    glm::vec3 m_SunShadowDirectionalBias =
+        glm::vec3(0.00067f, 0.000115f, 0.0f); // x=+Y, y=side, z=-Y
     float m_SunShadowLowSunBiasBoost = 5.8f;
     bool m_SunShadowFrontFaceCullAtLowSun = true;
     float m_SunShadowFrontFaceCullGrazingThreshold = 0.78f;

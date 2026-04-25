@@ -1,18 +1,17 @@
 #include "RayManager.hpp"
 #include "../player/Player.hpp"
 
-RayManager::RayManager() {
+RayManager::RayManager() {}
 
-}
-
-RayResult RayManager::rayHasBlockIntersectSingle(const Ray& ray, const ChunkManager& chunkManager, float maxDistance) {
+RayResult RayManager::rayHasBlockIntersectSingle(const Ray &ray, const ChunkManager &chunkManager,
+                                                 float maxDistance) {
     RayResult result{};
     result.hit = false;
     result.hitBlockWorld = glm::ivec3(0);
     result.adjacentAirBlockWorld = glm::ivec3(0);
     result.hitChunk = glm::ivec3(0);
     result.distance = maxDistance;
-    
+
     glm::vec3 rayDir = glm::normalize(ray.direction);
     //// ====== 1. Setup DDA for block traversal ======
     glm::ivec3 currentBlock = glm::floor(ray.origin); // starting voxel
@@ -27,13 +26,10 @@ RayResult RayManager::rayHasBlockIntersectSingle(const Ray& ray, const ChunkMana
     // Compute tMax and tDelta
     for (int i = 0; i < 3; i++) {
         if (rayDir[i] != 0.0f) {
-            float nextBoundary = (step[i] > 0)
-                ? (currentBlock[i] + 1.0f)
-                : (currentBlock[i]);
+            float nextBoundary = (step[i] > 0) ? (currentBlock[i] + 1.0f) : (currentBlock[i]);
             tMax[i] = (nextBoundary - ray.origin[i]) / rayDir[i];
             tDelta[i] = std::abs(1.0f / rayDir[i]);
-        }
-        else {
+        } else {
             tMax[i] = std::numeric_limits<float>::max();
             tDelta[i] = std::numeric_limits<float>::max();
         }
@@ -41,7 +37,7 @@ RayResult RayManager::rayHasBlockIntersectSingle(const Ray& ray, const ChunkMana
 
     // ====== Traverse blocks ======
     for (int i = 0; i < 1024; i++) { // safety cap
-        float traveled = std::min({ tMax.x, tMax.y, tMax.z });
+        float traveled = std::min({tMax.x, tMax.y, tMax.z});
         if (traveled > maxDistance)
             break;
 
@@ -49,18 +45,19 @@ RayResult RayManager::rayHasBlockIntersectSingle(const Ray& ray, const ChunkMana
         glm::ivec3 chunkCoords = chunkManager.worldToChunkPos(currentBlock);
 
         if (chunkManager.getChunks().contains(chunkCoords)) {
-            const Chunk& chunk = chunkManager.getChunks().at(chunkCoords);
+            const Chunk &chunk = chunkManager.getChunks().at(chunkCoords);
 
             glm::ivec3 blockInChunk = currentBlock - chunk.getWorldPosition();
 
             if (chunk.inBounds(blockInChunk.x, blockInChunk.y, blockInChunk.z)) {
 
-
-                BlockID block = chunk.getBlockUnchecked(blockInChunk.x, blockInChunk.y, blockInChunk.z);
+                BlockID block =
+                    chunk.getBlockUnchecked(blockInChunk.x, blockInChunk.y, blockInChunk.z);
                 if (block != BlockID::Air) {
                     result.hit = true;
                     result.hitBlockWorld = currentBlock;
-                    result.adjacentAirBlockWorld = hasPreviousBlock ? previousBlock : (currentBlock - step);
+                    result.adjacentAirBlockWorld =
+                        hasPreviousBlock ? previousBlock : (currentBlock - step);
                     result.hitChunk = chunkCoords;
                     result.distance = traveled;
                     return result;
@@ -75,39 +72,27 @@ RayResult RayManager::rayHasBlockIntersectSingle(const Ray& ray, const ChunkMana
             if (tMax.x < tMax.z) {
                 currentBlock.x += step.x;
                 tMax.x += tDelta.x;
-            }
-            else {
+            } else {
                 currentBlock.z += step.z;
                 tMax.z += tDelta.z;
             }
-        }
-        else {
+        } else {
             if (tMax.y < tMax.z) {
                 currentBlock.y += step.y;
                 tMax.y += tDelta.y;
-            }
-            else {
+            } else {
                 currentBlock.z += step.z;
                 tMax.z += tDelta.z;
             }
         }
-
-
     }
-    
 
     return result; // no hit found
 }
 
-
-
-RayShootHit RayManager::rayShoot(
-    const glm::vec3& origin,
-    const glm::vec3& dir,
-    const ChunkManager& chunkManager,
-    const std::vector<Player*>& players,
-    float maxDistance)
-{
+RayShootHit RayManager::rayShoot(const glm::vec3 &origin, const glm::vec3 &dir,
+                                 const ChunkManager &chunkManager,
+                                 const std::vector<Player *> &players, float maxDistance) {
     RayShootHit result{};
     result.hit = false;
     result.type = RayShootHit::Type::None;
@@ -121,11 +106,11 @@ RayShootHit RayManager::rayShoot(
     glm::vec3 tDelta;
     for (int i = 0; i < 3; ++i) {
         if (rayDir[i] != 0.0f) {
-            float nextBoundary = (step[i] > 0) ? (currentBlock[i] + 1.0f) : static_cast<float>(currentBlock[i]);
+            float nextBoundary =
+                (step[i] > 0) ? (currentBlock[i] + 1.0f) : static_cast<float>(currentBlock[i]);
             tMax[i] = (nextBoundary - origin[i]) / rayDir[i];
             tDelta[i] = std::abs(1.0f / rayDir[i]);
-        }
-        else {
+        } else {
             tMax[i] = tDelta[i] = std::numeric_limits<float>::max();
         }
     }
@@ -134,7 +119,7 @@ RayShootHit RayManager::rayShoot(
     {
         glm::ivec3 chunkCoords = chunkManager.worldToChunkPos(currentBlock);
         if (chunkManager.getChunks().contains(chunkCoords)) {
-            const Chunk& chunk = chunkManager.getChunks().at(chunkCoords);
+            const Chunk &chunk = chunkManager.getChunks().at(chunkCoords);
             glm::ivec3 blockInChunk = currentBlock - chunk.getWorldPosition();
             if (chunk.inBounds(blockInChunk.x, blockInChunk.y, blockInChunk.z)) {
                 BlockID b = chunk.getBlockUnchecked(blockInChunk.x, blockInChunk.y, blockInChunk.z);
@@ -145,7 +130,8 @@ RayShootHit RayManager::rayShoot(
                     result.chunkPos = chunkCoords;
                     result.hitPoint = origin;
                     result.distance = 0.0f;
-                    // We still should check players: if a player is at distance 0 as well, player can override
+                    // We still should check players: if a player is at distance 0 as well, player
+                    // can override
                 }
             }
         }
@@ -155,38 +141,42 @@ RayShootHit RayManager::rayShoot(
     // allow player hits at < result.distance. If not hit yet, traverse until first block hit.
     const int MAX_STEPS = 1024;
     for (int i = 0; i < MAX_STEPS; ++i) {
-        float traveled = std::min({ tMax.x, tMax.y, tMax.z });
-        if (traveled > maxDistance) break;
+        float traveled = std::min({tMax.x, tMax.y, tMax.z});
+        if (traveled > maxDistance)
+            break;
 
         // If current best hit is closer than the next boundary, we can stop block traversal.
-        if (result.hit && result.distance <= traveled) break;
+        if (result.hit && result.distance <= traveled)
+            break;
 
         // step to next voxel
         if (tMax.x < tMax.y) {
             if (tMax.x < tMax.z) {
-                currentBlock.x += step.x; tMax.x += tDelta.x;
+                currentBlock.x += step.x;
+                tMax.x += tDelta.x;
+            } else {
+                currentBlock.z += step.z;
+                tMax.z += tDelta.z;
             }
-            else {
-                currentBlock.z += step.z; tMax.z += tDelta.z;
-            }
-        }
-        else {
+        } else {
             if (tMax.y < tMax.z) {
-                currentBlock.y += step.y; tMax.y += tDelta.y;
-            }
-            else {
-                currentBlock.z += step.z; tMax.z += tDelta.z;
+                currentBlock.y += step.y;
+                tMax.y += tDelta.y;
+            } else {
+                currentBlock.z += step.z;
+                tMax.z += tDelta.z;
             }
         }
 
         glm::ivec3 chunkCoords = chunkManager.worldToChunkPos(currentBlock);
         if (chunkManager.getChunks().contains(chunkCoords)) {
-            const Chunk& chunk = chunkManager.getChunks().at(chunkCoords);
+            const Chunk &chunk = chunkManager.getChunks().at(chunkCoords);
             glm::ivec3 blockInChunk = currentBlock - chunk.getWorldPosition();
             if (chunk.inBounds(blockInChunk.x, blockInChunk.y, blockInChunk.z)) {
                 BlockID b = chunk.getBlockUnchecked(blockInChunk.x, blockInChunk.y, blockInChunk.z);
                 if (b != BlockID::Air) {
-                    float hitDistance = std::min({ tMax.x, tMax.y, tMax.z }); // distance at which we entered this block
+                    float hitDistance = std::min(
+                        {tMax.x, tMax.y, tMax.z}); // distance at which we entered this block
                     if (!result.hit || hitDistance < result.distance) {
                         result.hit = true;
                         result.type = RayShootHit::Type::Block;
@@ -195,21 +185,24 @@ RayShootHit RayManager::rayShoot(
                         result.hitPoint = origin + rayDir * hitDistance;
                         result.distance = hitDistance;
                     }
-                    // we don't break immediately here because a player could be closer than this block.
-                    // but since we keep result.distance as the closest block, we'll use it to prune player hits later.
+                    // we don't break immediately here because a player could be closer than this
+                    // block. but since we keep result.distance as the closest block, we'll use it
+                    // to prune player hits later.
                 }
             }
         }
     }
 
     // ===== Check players (only accept hits closer than the nearest block found so far) =====
-    for (Player* player : players) {
-        if (!player) continue;
+    for (Player *player : players) {
+        if (!player)
+            continue;
 
         glm::mat4 modelMatrix = player->getModelMatrix();
-        const auto& hitboxes = player->getHitboxes();
+        const auto &hitboxes = player->getHitboxes();
 
-        HitResult hit = HitboxManager::raycastHitboxes(origin, dir, hitboxes, modelMatrix, maxDistance);
+        HitResult hit =
+            HitboxManager::raycastHitboxes(origin, dir, hitboxes, modelMatrix, maxDistance);
 
         if (hit.hit && hit.distance < result.distance) {
             result.hit = true;
@@ -224,14 +217,9 @@ RayShootHit RayManager::rayShoot(
     return result;
 }
 
-
-
-RayResult RayManager::rayHasBlockIntersectBatch(std::list<Ray>& rays) {
-	RayResult result;
-	for (auto& ray : rays) {
-		return result;
-	}
+RayResult RayManager::rayHasBlockIntersectBatch(std::list<Ray> &rays) {
+    RayResult result;
+    for (auto &ray : rays) {
+        return result;
+    }
 }
-
-
-

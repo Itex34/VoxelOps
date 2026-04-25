@@ -5,8 +5,7 @@
 #include <algorithm>
 #include <cmath>
 
-static int FloorDiv(int a, int b)
-{
+static int FloorDiv(int a, int b) {
     int q = a / b;
     const int r = a % b;
     if ((r != 0) && ((r > 0) != (b > 0))) {
@@ -15,8 +14,9 @@ static int FloorDiv(int a, int b)
     return q;
 }
 
-void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, const glm::ivec3& centerChunk, uint16_t viewDistance)
-{
+void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn,
+                                                  const glm::ivec3 &centerChunk,
+                                                  uint16_t viewDistance) {
     constexpr size_t kMaxChunkPrepQueuePerUpdate = 128;
     constexpr size_t kMaxPendingChunkData = 256;
     constexpr size_t kMaxChunkUnloadsPerUpdate = 24;
@@ -29,7 +29,8 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
     const int maxChunkY = FloorDiv(WORLD_MAX_Y, CHUNK_SIZE);
     const int radius = static_cast<int>(clampedViewDistance);
     const int64_t radius2 = static_cast<int64_t>(radius) * static_cast<int64_t>(radius);
-    desired.reserve(static_cast<size_t>((radius * 2 + 1) * (radius * 2 + 1) * (maxChunkY - minChunkY + 1)));
+    desired.reserve(
+        static_cast<size_t>((radius * 2 + 1) * (radius * 2 + 1) * (maxChunkY - minChunkY + 1)));
 
     for (int x = centerChunk.x - radius; x <= centerChunk.x + radius; ++x) {
         const int64_t dx = static_cast<int64_t>(x - centerChunk.x);
@@ -44,14 +45,15 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
                 if (!m_chunkManager.inBounds(pos)) {
                     continue;
                 }
-                desired.insert(ChunkCoord{ x, y, z });
+                desired.insert(ChunkCoord{x, y, z});
             }
         }
     }
 
     std::unordered_set<ChunkCoord, ChunkCoordHash> currentlyStreamed;
     std::unordered_set<ChunkCoord, ChunkCoordHash> pendingPossiblySent;
-    std::unordered_map<ChunkCoord, std::chrono::steady_clock::time_point, ChunkCoordHash> pendingChunkData;
+    std::unordered_map<ChunkCoord, std::chrono::steady_clock::time_point, ChunkCoordHash>
+        pendingChunkData;
     {
         std::lock_guard<std::mutex> lk(m_mutex);
         auto it = m_clients.find(conn);
@@ -65,15 +67,15 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
 
         currentlyStreamed = it->second.streamedChunks;
         pendingPossiblySent.reserve(it->second.pendingChunkData.size());
-        for (const auto& entry : it->second.pendingChunkData) {
+        for (const auto &entry : it->second.pendingChunkData) {
             pendingPossiblySent.insert(entry.first);
         }
 
-        for (auto pIt = it->second.pendingChunkData.begin(); pIt != it->second.pendingChunkData.end();) {
+        for (auto pIt = it->second.pendingChunkData.begin();
+             pIt != it->second.pendingChunkData.end();) {
             if (desired.find(pIt->first) == desired.end()) {
                 pIt = it->second.pendingChunkData.erase(pIt);
-            }
-            else {
+            } else {
                 ++pIt;
             }
         }
@@ -85,7 +87,7 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
 
     std::vector<ChunkCoord> toLoad;
     toLoad.reserve(desired.size());
-    for (const ChunkCoord& c : desired) {
+    for (const ChunkCoord &c : desired) {
         if (currentlyStreamed.find(c) != currentlyStreamed.end()) {
             continue;
         }
@@ -106,7 +108,7 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
         // Top-most chunk layers are often sparse; bias one layer down to prioritize terrain.
         --verticalAnchorY;
     }
-    std::sort(toLoad.begin(), toLoad.end(), [&](const ChunkCoord& a, const ChunkCoord& b) {
+    std::sort(toLoad.begin(), toLoad.end(), [&](const ChunkCoord &a, const ChunkCoord &b) {
         const int adx = a.x - centerChunk.x;
         const int adz = a.z - centerChunk.z;
         const int bdx = b.x - centerChunk.x;
@@ -131,26 +133,28 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
             return aVert < bVert;
         }
 
-        if (a.x != b.x) return a.x < b.x;
-        if (a.y != b.y) return a.y < b.y;
+        if (a.x != b.x)
+            return a.x < b.x;
+        if (a.y != b.y)
+            return a.y < b.y;
         return a.z < b.z;
     });
 
     std::unordered_set<ChunkCoord, ChunkCoordHash> toUnloadSet;
     toUnloadSet.reserve(currentlyStreamed.size() + pendingPossiblySent.size());
-    for (const ChunkCoord& c : currentlyStreamed) {
+    for (const ChunkCoord &c : currentlyStreamed) {
         if (desired.find(c) == desired.end()) {
             toUnloadSet.insert(c);
         }
     }
-    for (const ChunkCoord& c : pendingPossiblySent) {
+    for (const ChunkCoord &c : pendingPossiblySent) {
         if (desired.find(c) == desired.end()) {
             toUnloadSet.insert(c);
         }
     }
     std::vector<ChunkCoord> toUnload;
     toUnload.reserve(toUnloadSet.size());
-    for (const ChunkCoord& c : toUnloadSet) {
+    for (const ChunkCoord &c : toUnloadSet) {
         toUnload.push_back(c);
     }
 
@@ -159,7 +163,7 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
     size_t sentThisUpdate = 0;
     bool stoppedByPendingCap = false;
     bool stoppedByPrepCap = false;
-    for (const ChunkCoord& c : toLoad) {
+    for (const ChunkCoord &c : toLoad) {
         const bool isRetry = pendingChunkData.find(c) != pendingChunkData.end();
         if (queuedPrepThisUpdate >= kMaxChunkPrepQueuePerUpdate) {
             break;
@@ -178,7 +182,8 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
             auto it = m_clients.find(conn);
             if (it != m_clients.end()) {
                 // Mark as pending as soon as chunk work is queued to enforce backpressure.
-                const bool wasPending = it->second.pendingChunkData.find(c) != it->second.pendingChunkData.end();
+                const bool wasPending =
+                    it->second.pendingChunkData.find(c) != it->second.pendingChunkData.end();
                 it->second.pendingChunkData[c] = now;
                 if (!wasPending) {
                     ++pendingCount;
@@ -190,43 +195,37 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
 
     const size_t sendQueueDepth = GetChunkSendQueueDepthForClient(conn);
 
-    static std::unordered_map<HSteamNetConnection, std::chrono::steady_clock::time_point> s_lastProgressLog;
-    auto& lastLog = s_lastProgressLog[conn];
+    static std::unordered_map<HSteamNetConnection, std::chrono::steady_clock::time_point>
+        s_lastProgressLog;
+    auto &lastLog = s_lastProgressLog[conn];
     if (ServerDiagFlags::g_enableChunkDiagnostics.load(std::memory_order_acquire) &&
         (now - lastLog) >= std::chrono::seconds(1)) {
         lastLog = now;
-        std::cerr
-            << "[chunk/stream] progress conn=" << conn
-            << " desired=" << desired.size()
-            << " streamed=" << currentlyStreamed.size()
-            << " pending=" << pendingCount
-            << " toLoad=" << toLoad.size()
-            << " queuedPrepNow=" << queuedPrepThisUpdate
-            << " sentNow=" << sentThisUpdate
-            << " pendingCapHit=" << (stoppedByPendingCap ? 1 : 0)
-            << " prepCapHit=" << (stoppedByPrepCap ? 1 : 0)
-            << " sendQueue=" << sendQueueDepth
-            << " center=(" << centerChunk.x << "," << centerChunk.y << "," << centerChunk.z << ")"
-            << " viewDist=" << clampedViewDistance << "\n";
+        std::cerr << "[chunk/stream] progress conn=" << conn << " desired=" << desired.size()
+                  << " streamed=" << currentlyStreamed.size() << " pending=" << pendingCount
+                  << " toLoad=" << toLoad.size() << " queuedPrepNow=" << queuedPrepThisUpdate
+                  << " sentNow=" << sentThisUpdate
+                  << " pendingCapHit=" << (stoppedByPendingCap ? 1 : 0)
+                  << " prepCapHit=" << (stoppedByPrepCap ? 1 : 0) << " sendQueue=" << sendQueueDepth
+                  << " center=(" << centerChunk.x << "," << centerChunk.y << "," << centerChunk.z
+                  << ")"
+                  << " viewDist=" << clampedViewDistance << "\n";
     }
 
     if (ServerDiagFlags::g_enableChunkDiagnostics.load(std::memory_order_acquire) &&
         !toLoad.empty() && queuedPrepThisUpdate == 0 && sentThisUpdate == 0) {
-        std::cerr
-            << "[chunk/stream] stalled load window conn=" << conn
-            << " desired=" << desired.size()
-            << " toLoad=" << toLoad.size()
-            << " streamed=" << currentlyStreamed.size()
-            << " pending=" << pendingCount
-            << " pendingCap=" << kMaxPendingChunkData
-            << " prepQueueCap=" << kMaxChunkPrepQueue
-            << " sendQueue=" << sendQueueDepth
-            << " center=(" << centerChunk.x << "," << centerChunk.y << "," << centerChunk.z << ")"
-            << " viewDist=" << clampedViewDistance << "\n";
+        std::cerr << "[chunk/stream] stalled load window conn=" << conn
+                  << " desired=" << desired.size() << " toLoad=" << toLoad.size()
+                  << " streamed=" << currentlyStreamed.size() << " pending=" << pendingCount
+                  << " pendingCap=" << kMaxPendingChunkData
+                  << " prepQueueCap=" << kMaxChunkPrepQueue << " sendQueue=" << sendQueueDepth
+                  << " center=(" << centerChunk.x << "," << centerChunk.y << "," << centerChunk.z
+                  << ")"
+                  << " viewDist=" << clampedViewDistance << "\n";
     }
 
     size_t unloadsSentThisUpdate = 0;
-    for (const ChunkCoord& c : toUnload) {
+    for (const ChunkCoord &c : toUnload) {
         if (unloadsSentThisUpdate >= kMaxChunkUnloadsPerUpdate) {
             break;
         }
@@ -243,31 +242,20 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn, cons
         }
     }
 
-    if (
-        ServerDiagFlags::g_enableChunkDiagnostics.load(std::memory_order_acquire) &&
-        toUnload.size() > unloadsSentThisUpdate &&
-        unloadsSentThisUpdate > 0
-    ) {
-        std::cerr
-            << "[chunk/stream] unload throttle conn=" << conn
-            << " requested=" << toUnload.size()
-            << " sentNow=" << unloadsSentThisUpdate
-            << " deferred=" << (toUnload.size() - unloadsSentThisUpdate)
-            << " cap=" << kMaxChunkUnloadsPerUpdate
-            << "\n";
+    if (ServerDiagFlags::g_enableChunkDiagnostics.load(std::memory_order_acquire) &&
+        toUnload.size() > unloadsSentThisUpdate && unloadsSentThisUpdate > 0) {
+        std::cerr << "[chunk/stream] unload throttle conn=" << conn
+                  << " requested=" << toUnload.size() << " sentNow=" << unloadsSentThisUpdate
+                  << " deferred=" << (toUnload.size() - unloadsSentThisUpdate)
+                  << " cap=" << kMaxChunkUnloadsPerUpdate << "\n";
     }
 }
 
-void ServerNetwork::HandlePlayerInputPacket(
-    HSteamNetConnection incoming,
-    const void* data,
-    uint32_t size,
-    uint64_t& playerInputPacketsThisLoop
-)
-{
+void ServerNetwork::HandlePlayerInputPacket(HSteamNetConnection incoming, const void *data,
+                                            uint32_t size, uint64_t &playerInputPacketsThisLoop) {
     ++playerInputPacketsThisLoop;
     PlayerInput input{};
-    if (!NetPacket::ParsePlayerInputPacket(reinterpret_cast<const uint8_t*>(data), size, input)) {
+    if (!NetPacket::ParsePlayerInputPacket(reinterpret_cast<const uint8_t *>(data), size, input)) {
         std::cout << "[recv] malformed PlayerInput (size=" << size << ")\n";
         return;
     }
@@ -285,22 +273,17 @@ void ServerNetwork::HandlePlayerInputPacket(
     if (!username.empty() && playerId != 0) {
         m_playerManager.enqueuePlayerInput(playerId, input);
         m_playerManager.setEquippedWeapon(playerId, input.weaponId);
-    }
-    else {
-        std::cout << "[input] unregistered conn = " << incoming << " tick = " << input.inputTick << "\n";
+    } else {
+        std::cout << "[input] unregistered conn = " << incoming << " tick = " << input.inputTick
+                  << "\n";
     }
 }
 
-void ServerNetwork::HandleChunkRequestPacket(
-    HSteamNetConnection incoming,
-    const void* data,
-    uint32_t size,
-    uint64_t& chunkRequestPacketsThisLoop
-)
-{
+void ServerNetwork::HandleChunkRequestPacket(HSteamNetConnection incoming, const void *data,
+                                             uint32_t size, uint64_t &chunkRequestPacketsThisLoop) {
     ++chunkRequestPacketsThisLoop;
     ChunkRequest req{};
-    if (!NetPacket::ParseChunkRequestPacket(reinterpret_cast<const uint8_t*>(data), size, req)) {
+    if (!NetPacket::ParseChunkRequestPacket(reinterpret_cast<const uint8_t *>(data), size, req)) {
         std::cout << "[recv] malformed ChunkRequest (size=" << size << ")\n";
         return;
     }
@@ -314,24 +297,17 @@ void ServerNetwork::HandleChunkRequestPacket(
         if (it != m_clients.end() && !it->second.username.empty() && it->second.playerId != 0) {
             const auto now = std::chrono::steady_clock::now();
             const bool hadInterest = it->second.hasChunkInterest;
-            const bool centerChanged =
-                !hadInterest ||
-                it->second.interestCenterChunk.x != centerChunk.x ||
-                it->second.interestCenterChunk.y != centerChunk.y ||
-                it->second.interestCenterChunk.z != centerChunk.z;
-            const bool viewChanged =
-                !hadInterest ||
-                it->second.viewDistance != clampedViewDistance;
+            const bool centerChanged = !hadInterest ||
+                                       it->second.interestCenterChunk.x != centerChunk.x ||
+                                       it->second.interestCenterChunk.y != centerChunk.y ||
+                                       it->second.interestCenterChunk.z != centerChunk.z;
+            const bool viewChanged = !hadInterest || it->second.viewDistance != clampedViewDistance;
 
             it->second.interestCenterChunk = centerChunk;
             it->second.viewDistance = clampedViewDistance;
             it->second.hasChunkInterest = true;
 
-            if (
-                centerChanged ||
-                viewChanged ||
-                now >= it->second.nextChunkInterestUpdateAt
-            ) {
+            if (centerChanged || viewChanged || now >= it->second.nextChunkInterestUpdateAt) {
                 it->second.chunkInterestDirty = true;
                 it->second.nextChunkInterestUpdateAt = std::chrono::steady_clock::time_point::min();
             }

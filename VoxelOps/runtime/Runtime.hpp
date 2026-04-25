@@ -24,11 +24,10 @@
 #include <cstdint>
 #include <memory>
 
-
 struct CallbackContext {
-    InputCallbacks* inputCallbacks = nullptr;
-    ISkyBackend* skyBackend = nullptr;
-    bool* useDebugCamera = nullptr;
+    InputCallbacks *inputCallbacks = nullptr;
+    ISkyBackend *skyBackend = nullptr;
+    bool *useDebugCamera = nullptr;
 };
 
 struct Runtime {
@@ -50,8 +49,8 @@ struct Runtime {
     std::unique_ptr<InventoryUI> inventoryUi;
 
     Frustum frustum;
-    Camera debugCamera{ glm::vec3(0.0f, 100.0f, 0.0f) };
-    Camera interpolatedPlayerCamera{ glm::vec3(0.0f) };
+    Camera debugCamera{glm::vec3(0.0f, 100.0f, 0.0f)};
+    Camera interpolatedPlayerCamera{glm::vec3(0.0f)};
 
     bool supportsGL43Shaders = false;
     bool chunkUniformsInitialized = false;
@@ -79,9 +78,9 @@ struct Runtime {
         uint64_t id = 0;
         uint16_t itemId = 0;
         uint16_t quantity = 0;
-        glm::vec3 position{ 0.0f };
-        glm::vec3 targetPosition{ 0.0f };
-        glm::vec3 velocity{ 0.0f };
+        glm::vec3 position{0.0f};
+        glm::vec3 targetPosition{0.0f};
+        glm::vec3 velocity{0.0f};
     };
     std::deque<PendingInputEntry> pendingInputs;
     static constexpr size_t MaxPendingInputs = 256;
@@ -112,7 +111,7 @@ struct Runtime {
     std::string usernamePromptError;
     uint32_t nextClientShotId = 1;
     struct PendingBlockPlaceEdit {
-        glm::ivec3 worldPos{ 0 };
+        glm::ivec3 worldPos{0};
         uint8_t oldBlockId = 0;
         uint8_t newBlockId = 0;
     };
@@ -122,7 +121,7 @@ struct Runtime {
         double createdAt = 0.0;
     };
     struct PendingBlockBreakEdit {
-        glm::ivec3 worldPos{ 0 };
+        glm::ivec3 worldPos{0};
         uint8_t oldBlockId = 0;
     };
     struct PendingBlockBreakRequest {
@@ -138,15 +137,17 @@ struct Runtime {
     uint16_t activeHotbarSlot = 0;
     GunType equippedGunType = kDefaultGunType;
     std::unordered_map<uint16_t, std::unique_ptr<Gun>> preloadedGuns;
-    Gun* equippedGun = nullptr;
+    Gun *equippedGun = nullptr;
     glm::vec3 equippedGunViewOffset = glm::vec3(0.20f, -0.20f, -0.45f);
     glm::vec3 equippedGunViewScale = glm::vec3(0.10f);
     glm::vec3 equippedGunViewEulerDeg = glm::vec3(0.0f, 180.0f, 0.0f);
     static constexpr double InputSendInterval = 1.0 / 60.0; // 60 Hz
-    static constexpr double LocalPredictionStep = 1.0 / 60.0; // match authoritative server tick for replay parity
+    static constexpr double LocalPredictionStep =
+        1.0 / 60.0; // match authoritative server tick for replay parity
     static constexpr size_t MaxLocalPredictionStepsPerFrame = 8;
-    static constexpr float BasicAuthReconcileDeadzone = 0.08f;  // For reconciliation threshold
-    static constexpr float BasicAuthReconcileTeleportDistance = 2.0f;  // For large correction detection
+    static constexpr float BasicAuthReconcileDeadzone = 0.08f; // For reconciliation threshold
+    static constexpr float BasicAuthReconcileTeleportDistance =
+        2.0f; // For large correction detection
     static constexpr float RenderLeadMaxDistance = 0.40f;
     static constexpr float RenderExtrapolationBlend = 0.60f;
     static constexpr float RenderExtrapolationSpeedMin = 0.20f;
@@ -156,8 +157,10 @@ struct Runtime {
     static constexpr float RenderIdleSettleSpeedThreshold = 0.20f;
     static constexpr float RenderIdleSettleHz = 28.0f;
     static constexpr size_t InputRedundancyCopies = 1;
-    static constexpr double ChunkRequestSendInterval = 0.5; // 2 Hz baseline + immediate on center changes
-    static constexpr double ChunkRequestCenterChangeMinInterval = 1.0 / 8.0; // cap center-change churn during correction jitter
+    static constexpr double ChunkRequestSendInterval =
+        0.5; // 2 Hz baseline + immediate on center changes
+    static constexpr double ChunkRequestCenterChangeMinInterval =
+        1.0 / 8.0; // cap center-change churn during correction jitter
     static constexpr size_t MaxChunkDataApplyPerFrame = 12;
     static constexpr size_t MaxChunkDeltaApplyPerFrame = 48;
     static constexpr size_t MaxChunkUnloadApplyPerFrame = 64;
@@ -172,7 +175,7 @@ struct Runtime {
     static constexpr double RespawnMissingChunkGraceSeconds = 1.25;
     static constexpr double RespawnDiagDurationSeconds = 10.0;
     double lastChunkCoverageLogTime = 0.0;
-    glm::ivec3 lastChunkRequestCenter{ 0 };
+    glm::ivec3 lastChunkRequestCenter{0};
     bool hasLastChunkRequestCenter = false;
     bool renderStateNeedsResync = false;
     bool justRespawned = false;
@@ -183,7 +186,7 @@ struct Runtime {
     Player::SimulationState renderPrevSimState{};
     Player::SimulationState renderCurrSimState{};
     bool hasRenderSimState = false;
-    glm::vec3 smoothedPlayerCameraPos{ 0.0f };
+    glm::vec3 smoothedPlayerCameraPos{0.0f};
     bool hasSmoothedPlayerCameraPos = false;
     float perfFrameCpuMs = 0.0f;
     float perfInputMs = 0.0f;

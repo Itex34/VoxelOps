@@ -5,7 +5,7 @@
 #include "ChunkManager.hpp"
 #include "Vulkan/graphics/Mesh.hpp"
 #include "Vulkan/graphics/Model.hpp"
-#include "Vulkan/graphics/Texture.hpp"
+#include "Vulkan/graphics/VkTexture.hpp"
 #include "Vulkan/renderer/GiClipmapPlan.hpp"
 #include "Vulkan/renderer/RenderFrameData.hpp"
 #include "Vulkan/vulkan/UploadContext.hpp"
@@ -23,7 +23,7 @@ class Camera;
 class Player;
 
 class VulkanRenderDevice final : public IRenderDevice {
-public:
+  public:
     struct TimingSnapshot {
         bool gpuValid = false;
         float gpuFrameMs = 0.0f;
@@ -53,14 +53,11 @@ public:
     VulkanRenderDevice();
     ~VulkanRenderDevice() override;
 
-    bool initialize(SDL_Window* window);
+    bool initialize(SDL_Window *window);
     void onWindowResized(int width, int height);
-    void renderFrameVulkan(
-        ChunkManager& chunkManager,
-        const Camera& activeCamera,
-        const Camera& cullingCamera,
-        const Player& player,
-        const glm::vec3& sunDirection);
+    void renderFrameVulkan(ChunkManager &chunkManager, const Camera &activeCamera,
+                           const Camera &cullingCamera, const Player &player,
+                           const glm::vec3 &sunDirection);
     VkInstance getVkInstanceHandle() const noexcept;
     VkPhysicalDevice getVkPhysicalDeviceHandle() const noexcept;
     VkDevice getVkDeviceHandle() const noexcept;
@@ -68,7 +65,9 @@ public:
     VkQueue getVkGraphicsQueueHandle() const noexcept;
     VkRenderPass getVkRenderPassHandle() const noexcept;
     uint32_t getVkSwapchainImageCount() const noexcept;
-    const TimingSnapshot& getLastTimingSnapshot() const noexcept { return m_lastTimingSnapshot; }
+    const TimingSnapshot &getLastTimingSnapshot() const noexcept {
+        return m_lastTimingSnapshot;
+    }
 
     int getOpenGLVersionMajor() const noexcept override;
     int getOpenGLVersionMinor() const noexcept override;
@@ -76,12 +75,12 @@ public:
     std::string_view getActiveBackendName() const noexcept override;
     bool isMDIUsable() const noexcept override;
 
-    void renderFrame(RenderFrameParams& params) override;
+    void renderFrame(RenderFrameParams &params) override;
     void shutdown() override;
 
     std::string_view getApiName() const noexcept override;
 
-private:
+  private:
     struct VulkanChunkMesh {
         VkMesh mesh;
         uint64_t revision = 0;
@@ -107,25 +106,23 @@ private:
     void resetGiClipmaps();
     bool initGiComputeResources();
     void resetGiComputeResources();
-    bool dispatchGiProbeCompute(
-        ChunkManager& chunkManager,
-        const GiClipmapPlan::GiFrameBudget& frameBudget,
-        uint32_t cascadeCount
-    );
-    void updateGiProbes(ChunkManager& chunkManager, const glm::vec3& probeAnchorPosition);
+    bool dispatchGiProbeCompute(ChunkManager &chunkManager,
+                                const GiClipmapPlan::GiFrameBudget &frameBudget,
+                                uint32_t cascadeCount);
+    void updateGiProbes(ChunkManager &chunkManager, const glm::vec3 &probeAnchorPosition);
     void cleanupRemotePlayerAssets();
-    void syncChunkMeshes(ChunkManager& chunkManager, const glm::ivec3& cullingChunk);
-    void retireChunkMesh(VkMesh&& mesh);
+    void syncChunkMeshes(ChunkManager &chunkManager, const glm::ivec3 &cullingChunk);
+    void retireChunkMesh(VkMesh &&mesh);
     void collectRetiredChunkMeshes();
     void initRayTracingScene();
     void collectRetiredRayTracingResources();
     void resetRayTracingScene();
-    bool uploadChunkRayTracingGeometry(const glm::ivec3& chunkPos, const CpuChunkMesh& cpuMesh);
-    void removeChunkRayTracingGeometry(const glm::ivec3& chunkPos);
+    bool uploadChunkRayTracingGeometry(const glm::ivec3 &chunkPos, const CpuChunkMesh &cpuMesh);
+    void removeChunkRayTracingGeometry(const glm::ivec3 &chunkPos);
     bool rebuildRayTracingScene();
     void cleanupChunkMeshes();
 
-    SDL_Window* m_window = nullptr;
+    SDL_Window *m_window = nullptr;
     std::unique_ptr<VulkanContext> m_context;
     std::unique_ptr<VulkanRenderer> m_renderer;
     UploadContext m_uploadContext;
@@ -133,7 +130,7 @@ private:
     bool m_atlasTextureLoaded = false;
     std::unique_ptr<VkModel> m_remotePlayerModel;
     std::vector<VkTexture> m_remotePlayerTextures;
-    std::vector<const VkTexture*> m_remotePlayerTextureViews;
+    std::vector<const VkTexture *> m_remotePlayerTextureViews;
     bool m_remotePlayerAssetsLoaded = false;
     bool m_warnedRemotePlayerAssets = false;
 
@@ -146,7 +143,8 @@ private:
     std::vector<RetiredChunkMesh> m_retiredChunkMeshes;
     FrameRenderData m_frameData;
     GiClipmapPlan::GiClipmapConfig m_giConfig = GiClipmapPlan::makeDefaultConfig();
-    std::array<GiClipmapPlan::GiCascadeRuntimeState, GiClipmapPlan::MAX_CASCADES> m_giCascadeRuntime{};
+    std::array<GiClipmapPlan::GiCascadeRuntimeState, GiClipmapPlan::MAX_CASCADES>
+        m_giCascadeRuntime{};
     std::unique_ptr<GiComputeState> m_giComputeState;
     std::unique_ptr<RtSceneState> m_rtSceneState;
     bool m_rtSceneDirty = false;
@@ -161,8 +159,8 @@ private:
     bool m_lastTraceSceneValid = false;
     VkBuffer m_lastTraceOccupancyBuffer = VK_NULL_HANDLE;
     VkBuffer m_lastTraceMaterialBuffer = VK_NULL_HANDLE;
-    glm::ivec3 m_lastTraceOccupancyMinBlocks{ 0 };
-    glm::uvec3 m_lastTraceOccupancyDims{ 0u };
+    glm::ivec3 m_lastTraceOccupancyMinBlocks{0};
+    glm::uvec3 m_lastTraceOccupancyDims{0u};
     uint32_t m_lastTraceOccupancyWordCount = 0;
     float m_lastTraceSunShadowMaxDistance = 64.0f;
     GiRuntimeStats m_lastGiStats{};
@@ -171,5 +169,3 @@ private:
     bool m_loggedGiTracingBackend = false;
     GiTracingBackend m_lastGiTracingBackend = GiTracingBackend::SoftwareDda;
 };
-
-

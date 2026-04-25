@@ -20,7 +20,7 @@ bool OpenGLRenderDevice::isMDIUsable() const noexcept {
     return m_renderer.isMDIUsable();
 }
 
-void OpenGLRenderDevice::renderFrame(RenderFrameParams& params) {
+void OpenGLRenderDevice::renderFrame(RenderFrameParams &params) {
     m_renderer.renderFrame(params);
 }
 

@@ -9,4 +9,3 @@ extern std::atomic<bool> g_enableServerPerfDiagnostics;
 extern std::atomic<bool> g_enableRespawnRubberbandDiagnostics;
 
 } // namespace ServerDiagFlags
-

@@ -16,10 +16,11 @@ add_executable(VoxelOps-Headless
     "voxels/ServerChunk.cpp" 
     
     "player/ServerPlayer.cpp"
-    "graphics/ChunkManager.cpp"
-    "graphics/WorldGen.cpp"
+    "world/ChunkManager.cpp"
+    "world/WorldGen.cpp"
      
     "physics/Raycast.cpp" 
+    "physics/HitDetectionSystem.cpp"
     
     "network/ServerNetwork.cpp"
     "network/ServerNetworkBlockEdits.cpp"
@@ -44,8 +45,22 @@ add_executable(VoxelOps-Headless
     "player/Hitbox.cpp" 
     "gun/Gun.cpp"
     "player/PlayerManager.cpp"
+    "player/PlayerLifecycle.cpp"
+    "player/PlayerUpdateSystem.cpp"
+    "player/inventory/PlayerInventorySystem.cpp"
+    "gameplay/combat/PlayerCombatSystem.cpp"
+    "gameplay/combat/LagCompensationSystem.cpp"
+    "gameplay/combat/ShootValidationSystem.cpp"
+    "gameplay/combat/DamageSystem.cpp"
+    "gameplay/combat/CombatFeedbackSystem.cpp"
+    "gameplay/combat/ShootSystem.cpp"
     
-)
+    "network/snapshots/PlayerSnapshotSerializer.cpp" 
+    "network/snapshots/PlayerSnapshotSystem.cpp"
+    "player/ServerMovementSimulation.cpp"
+    "network/PlayerInputBuffer.cpp"
+    "world/WorldRaycast.cpp"
+    "gameplay/spawn/Respawning.cpp")
 
 find_package(glm CONFIG REQUIRED)
 find_package(GameNetworkingSockets CONFIG REQUIRED)

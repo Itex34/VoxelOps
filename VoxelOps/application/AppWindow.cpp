@@ -15,7 +15,7 @@ using namespace AppHelpers;
 
 namespace {
 std::string toLowerCopy(std::string value) {
-    for (char& c : value) {
+    for (char &c : value) {
         if (c >= 'A' && c <= 'Z') {
             c = static_cast<char>(c - 'A' + 'a');
         }
@@ -23,8 +23,8 @@ std::string toLowerCopy(std::string value) {
     return value;
 }
 
-bool tryParseBoolEnv(const char* name, bool& outValue) {
-    const char* raw = std::getenv(name);
+bool tryParseBoolEnv(const char *name, bool &outValue) {
+    const char *raw = std::getenv(name);
     if (raw == nullptr) {
         return false;
     }
@@ -47,19 +47,18 @@ bool isBenchmarkModeEnabled() {
 }
 
 std::optional<int> getSwapIntervalOverrideFromEnv() {
-    const char* raw = std::getenv("VOXELOPS_GL_SWAP_INTERVAL");
+    const char *raw = std::getenv("VOXELOPS_GL_SWAP_INTERVAL");
     if (raw == nullptr) {
         return std::nullopt;
     }
 
     try {
         return std::stoi(TrimAscii(std::string_view(raw)));
-    }
-    catch (...) {
+    } catch (...) {
         return std::nullopt;
     }
 }
-}
+} // namespace
 
 void App::updateFPSCounter() {
     GameData::frameCount++;
@@ -77,7 +76,6 @@ void App::updateFPSCounter() {
     }
 }
 
-
 void App::applyMouseInputModes() {
     if (!m_Window) {
         return;
@@ -94,11 +92,9 @@ void App::applyMouseInputModes() {
     }
 }
 
-
 void App::Exit() {
     m_ShouldQuit = true;
 }
-
 
 bool App::initWindowAndContext() {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -107,12 +103,8 @@ bool App::initWindowAndContext() {
     }
 
     if (m_RenderApi == RenderApi::Vulkan) {
-        m_Window = SDL_CreateWindow(
-            "Voxel Ops",
-            GameData::screenWidth,
-            GameData::screenHeight,
-            SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE
-        );
+        m_Window = SDL_CreateWindow("Voxel Ops", GameData::screenWidth, GameData::screenHeight,
+                                    SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
         if (!m_Window) {
             std::cerr << "SDL_CreateWindow (Vulkan) failed: " << SDL_GetError() << "\n";
             SDL_Quit();
@@ -123,7 +115,7 @@ bool App::initWindowAndContext() {
         return true;
     }
 
-    const auto createWindowForVersion = [&](int major, int minor) -> SDL_Window* {
+    const auto createWindowForVersion = [&](int major, int minor) -> SDL_Window * {
         SDL_GL_ResetAttributes();
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, major);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, minor);
@@ -131,12 +123,8 @@ bool App::initWindowAndContext() {
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
         SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
         SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-        return SDL_CreateWindow(
-            "Voxel Ops",
-            GameData::screenWidth,
-            GameData::screenHeight,
-            SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE
-        );
+        return SDL_CreateWindow("Voxel Ops", GameData::screenWidth, GameData::screenHeight,
+                                SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
     };
 
     m_Window = createWindowForVersion(4, 3);
@@ -171,15 +159,14 @@ bool App::initWindowAndContext() {
     int swapInterval = 0;
     if (const std::optional<int> envSwapInterval = getSwapIntervalOverrideFromEnv()) {
         swapInterval = *envSwapInterval;
-    }
-    else if (isBenchmarkModeEnabled()) {
+    } else if (isBenchmarkModeEnabled()) {
         swapInterval = 0;
     }
 
     if (!SDL_GL_SetSwapInterval(swapInterval)) {
-        std::cerr << "SDL_GL_SetSwapInterval(" << swapInterval << ") failed: " << SDL_GetError() << "\n";
-    }
-    else {
+        std::cerr << "SDL_GL_SetSwapInterval(" << swapInterval << ") failed: " << SDL_GetError()
+                  << "\n";
+    } else {
         std::cout << "[App] OpenGL swap interval: " << swapInterval << "\n";
     }
 
@@ -198,9 +185,7 @@ bool App::initWindowAndContext() {
     return true;
 }
 
-
-void App::toggleFullscreen(SDL_Window* window)
-{
+void App::toggleFullscreen(SDL_Window *window) {
     if (!window) {
         return;
     }

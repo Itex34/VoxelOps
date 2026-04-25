@@ -11,8 +11,8 @@
 struct UiFrameData {
     float fps = 0.0f;
     float frameMs = 0.0f;
-    glm::vec3 playerPosition{ 0.0f };
-    glm::vec3 playerVelocity{ 0.0f };
+    glm::vec3 playerPosition{0.0f};
+    glm::vec3 playerVelocity{0.0f};
     bool flyMode = false;
     bool onGround = false;
     uint16_t renderDistance = 0;
@@ -60,27 +60,27 @@ struct UiFrameData {
 };
 
 struct UiMutableState {
-    bool* useDebugCamera = nullptr;
-    bool* toggleWireframe = nullptr;
-    bool* toggleChunkBorders = nullptr;
-    bool* toggleDebugFrustum = nullptr;
-    uint16_t* renderDistance = nullptr;
-    bool* cursorEnabled = nullptr;
-    bool* rawMouseInputEnabled = nullptr;
+    bool *useDebugCamera = nullptr;
+    bool *toggleWireframe = nullptr;
+    bool *toggleChunkBorders = nullptr;
+    bool *toggleDebugFrustum = nullptr;
+    uint16_t *renderDistance = nullptr;
+    bool *cursorEnabled = nullptr;
+    bool *rawMouseInputEnabled = nullptr;
     bool rawMouseInputSupported = true;
-    glm::vec3* gunViewOffset = nullptr;
-    glm::vec3* gunViewScale = nullptr;
-    glm::vec3* gunViewEulerDeg = nullptr;
-    glm::vec3* sunDirection = nullptr;
-    glm::vec3* sunShadowDirectionalBias = nullptr; // x=+Y, y=side, z=-Y
-    float* sunShadowLowSunBiasBoost = nullptr;
-    bool* sunShadowFrontFaceCullAtLowSun = nullptr;
-    float* sunShadowFrontFaceCullGrazingThreshold = nullptr;
-    float* skyExposure = nullptr;
+    glm::vec3 *gunViewOffset = nullptr;
+    glm::vec3 *gunViewScale = nullptr;
+    glm::vec3 *gunViewEulerDeg = nullptr;
+    glm::vec3 *sunDirection = nullptr;
+    glm::vec3 *sunShadowDirectionalBias = nullptr; // x=+Y, y=side, z=-Y
+    float *sunShadowLowSunBiasBoost = nullptr;
+    bool *sunShadowFrontFaceCullAtLowSun = nullptr;
+    float *sunShadowFrontFaceCullGrazingThreshold = nullptr;
+    float *skyExposure = nullptr;
     // 0 = Auto, 1 = Software DDA, 2 = Hardware RT
-    int* giTracingBackendPreference = nullptr;
+    int *giTracingBackendPreference = nullptr;
     // 0 = Off, 1 = Diff Radiance, 2 = Hit Distance, 3 = Normal, 4 = Motion, 5 = ViewZ
-    int* giNrdDebugView = nullptr;
+    int *giNrdDebugView = nullptr;
 };
 
 struct UiVulkanInitInfo {
@@ -96,27 +96,23 @@ struct UiVulkanInitInfo {
 };
 
 class DebugUi {
-public:
-    bool initialize(SDL_Window* window, SDL_GLContext glContext, const char* glslVersion);
-    bool initializeForVulkan(SDL_Window* window, const UiVulkanInitInfo& initInfo);
-    void processEvent(const SDL_Event& event);
+  public:
+    bool initialize(SDL_Window *window, SDL_GLContext glContext, const char *glslVersion);
+    bool initializeForVulkan(SDL_Window *window, const UiVulkanInitInfo &initInfo);
+    void processEvent(const SDL_Event &event);
     void shutdown();
 
     void beginFrame();
     void drawCrosshair(bool enabled);
-    void drawMainWindow(const UiFrameData& data, UiMutableState& state);
+    void drawMainWindow(const UiFrameData &data, UiMutableState &state);
     void render();
 
     void setVisible(bool visible) noexcept;
     void toggleVisible() noexcept;
     [[nodiscard]] bool isVisible() const noexcept;
 
-private:
-    enum class BackendType : uint8_t {
-        None = 0,
-        OpenGL = 1,
-        Vulkan = 2
-    };
+  private:
+    enum class BackendType : uint8_t { None = 0, OpenGL = 1, Vulkan = 2 };
 
     bool m_initialized = false;
     bool m_visible = true;

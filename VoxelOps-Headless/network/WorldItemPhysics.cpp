@@ -1,6 +1,6 @@
 #include "WorldItemPhysics.hpp"
 
-#include "../graphics/ChunkManager.hpp"
+#include "../world/ChunkManager.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -10,15 +10,10 @@ constexpr float kMaxAxisStepDistance = 0.24f;
 constexpr float kGroundProbeDistance = 0.04f;
 constexpr float kMaxNudgeUp = 0.40f;
 constexpr float kMinHorizontalSleepSpeed = 0.01f;
-}
+} // namespace
 
-void WorldItemPhysicsSystem::Step(
-    WorldItemEntity& item,
-    float deltaSeconds,
-    float tickRateHz,
-    const ChunkManager& chunkManager
-)
-{
+void WorldItemPhysicsSystem::Step(WorldItemEntity &item, float deltaSeconds, float tickRateHz,
+                                  const ChunkManager &chunkManager) {
     if (!std::isfinite(deltaSeconds) || deltaSeconds <= 0.0f) {
         return;
     }
@@ -33,12 +28,14 @@ void WorldItemPhysicsSystem::Step(
     }
 
     glm::vec3 position = item.position;
-    auto overlap = chunkManager.queryAabbCollision(position, kCollisionRadius, kCollisionHeight, true);
+    auto overlap =
+        chunkManager.queryAabbCollision(position, kCollisionRadius, kCollisionHeight, true);
     if (overlap.collided) {
         const int maxNudgeSteps = static_cast<int>(std::ceil(kMaxNudgeUp / kGroundProbeDistance));
         for (int i = 0; i < maxNudgeSteps; ++i) {
             position.y += kGroundProbeDistance;
-            overlap = chunkManager.queryAabbCollision(position, kCollisionRadius, kCollisionHeight, true);
+            overlap =
+                chunkManager.queryAabbCollision(position, kCollisionRadius, kCollisionHeight, true);
             if (!overlap.collided) {
                 break;
             }
@@ -58,12 +55,14 @@ void WorldItemPhysicsSystem::Step(
             continue;
         }
 
-        const int steps = std::max(1, static_cast<int>(std::ceil(std::abs(move) / kMaxAxisStepDistance)));
+        const int steps =
+            std::max(1, static_cast<int>(std::ceil(std::abs(move) / kMaxAxisStepDistance)));
         const float stepMove = move / static_cast<float>(steps);
         for (int i = 0; i < steps; ++i) {
             glm::vec3 candidate = position;
             candidate[axis] += stepMove;
-            const auto query = chunkManager.queryAabbCollision(candidate, kCollisionRadius, kCollisionHeight, true);
+            const auto query = chunkManager.queryAabbCollision(candidate, kCollisionRadius,
+                                                               kCollisionHeight, true);
             if (!query.collided) {
                 position = candidate;
                 continue;
@@ -80,7 +79,8 @@ void WorldItemPhysicsSystem::Step(
     if (!onGround) {
         glm::vec3 probe = position;
         probe.y -= kGroundProbeDistance;
-        const auto query = chunkManager.queryAabbCollision(probe, kCollisionRadius, kCollisionHeight, true);
+        const auto query =
+            chunkManager.queryAabbCollision(probe, kCollisionRadius, kCollisionHeight, true);
         onGround = query.collided;
     }
 

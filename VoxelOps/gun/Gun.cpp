@@ -6,25 +6,17 @@
 #include <stdexcept>
 
 // Constructor
-Gun::Gun(GunType inType, float inFireInterval, float inReloadTime, unsigned int inMaxAmmo) noexcept :
-    gunType(inType),
-    reloadTime(inReloadTime),
-    fireInterval(inFireInterval),
-    timeSinceLastShot(0.0f),
-    wantsToFire(false),
-    isReloading(false),
-    reloadTimer(0.0f),
-    maxAmmo(inMaxAmmo),
-    currentAmmo(inMaxAmmo)
-{
-}
+Gun::Gun(GunType inType, float inFireInterval, float inReloadTime, unsigned int inMaxAmmo) noexcept
+    : gunType(inType), reloadTime(inReloadTime), fireInterval(inFireInterval),
+      timeSinceLastShot(0.0f), wantsToFire(false), isReloading(false), reloadTimer(0.0f),
+      maxAmmo(inMaxAmmo), currentAmmo(inMaxAmmo) {}
 
 // Public API
 void Gun::requestFire() noexcept {
     wantsToFire = true;
 }
 
-void Gun::update(const glm::vec3& rayOrigin, const glm::vec3& rayDirection, float deltaTime) {
+void Gun::update(const glm::vec3 &rayOrigin, const glm::vec3 &rayDirection, float deltaTime) {
     // Advance timers
     timeSinceLastShot += deltaTime;
 
@@ -57,7 +49,7 @@ void Gun::update(const glm::vec3& rayOrigin, const glm::vec3& rayDirection, floa
     // std::cout << "Current ammo: " << currentAmmo << "\n";
 }
 
-void Gun::fire(const glm::vec3& rayOrigin, const glm::vec3& rayDirection) {
+void Gun::fire(const glm::vec3 &rayOrigin, const glm::vec3 &rayDirection) {
     glm::vec3 normDirection = glm::normalize(rayDirection);
 
     // Default behavior: assume no hit and set hitPoint to max distance.
@@ -84,10 +76,12 @@ void Gun::fire(const glm::vec3& rayOrigin, const glm::vec3& rayDirection) {
     // =========================
 
     // Visual / audio effects, recoil, etc. should be triggered here or via a callback.
-    std::cout << "Fired. Endpoint: (" << hitPoint.x << ", " << hitPoint.y << ", " << hitPoint.z << ")\n";
+    std::cout << "Fired. Endpoint: (" << hitPoint.x << ", " << hitPoint.y << ", " << hitPoint.z
+              << ")\n";
 }
 
-void Gun::render(const glm::vec3& position, const glm::quat& rotation, const glm::vec3& scale, Shader& shader) const {
+void Gun::render(const glm::vec3 &position, const glm::quat &rotation, const glm::vec3 &scale,
+                 Shader &shader) const {
     if (gunModel) {
         gunModel->draw(position, rotation, scale, shader);
     }
@@ -102,7 +96,7 @@ void Gun::reload() noexcept {
     std::cout << "Reloading...\n";
 }
 
-bool Gun::loadModel(const std::string& path) {
+bool Gun::loadModel(const std::string &path) {
     if (SDL_GL_GetCurrentContext() == nullptr) {
         gunModel.reset();
         return false;
@@ -112,18 +106,20 @@ bool Gun::loadModel(const std::string& path) {
         auto m = std::make_unique<Model>(path);
         gunModel = std::move(m);
         return true;
-    }
-    catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::cerr << "Failed to load model '" << path << "': " << e.what() << "\n";
         gunModel.reset();
         return false;
     }
 }
 
-void Gun::tryFireIfReady(const glm::vec3& rayOrigin, const glm::vec3& rayDirection) {
-    if (!wantsToFire) return;
-    if (isReloading) return;
-    if (timeSinceLastShot < fireInterval) return;
+void Gun::tryFireIfReady(const glm::vec3 &rayOrigin, const glm::vec3 &rayDirection) {
+    if (!wantsToFire)
+        return;
+    if (isReloading)
+        return;
+    if (timeSinceLastShot < fireInterval)
+        return;
     if (currentAmmo == 0) {
         reload();
         return;
@@ -132,7 +128,8 @@ void Gun::tryFireIfReady(const glm::vec3& rayOrigin, const glm::vec3& rayDirecti
     fire(rayOrigin, rayDirection);
 
     timeSinceLastShot = 0.0f;
-    if (currentAmmo > 0) --currentAmmo;
+    if (currentAmmo > 0)
+        --currentAmmo;
 
     if (currentAmmo == 0) {
         reload();

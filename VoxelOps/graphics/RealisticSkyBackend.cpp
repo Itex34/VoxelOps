@@ -12,41 +12,38 @@
 namespace {
 constexpr float kMetersToKilometers = 0.001f;
 
-float clampPositive(float v, float minValue)
-{
+float clampPositive(float v, float minValue) {
     return (v < minValue) ? minValue : v;
 }
 
-void applyVisibilityKmPreset(
-    pbrsky::AtmosphereInfo& ioInfo,
-    float visibilityKm,
-    float singleScatteringAlbedo,
-    float miePhaseG)
-{
+void applyVisibilityKmPreset(pbrsky::AtmosphereInfo &ioInfo, float visibilityKm,
+                             float singleScatteringAlbedo, float miePhaseG) {
     const float vKm = clampPositive(visibilityKm, 0.2f);
     const float betaExt = 3.912f / vKm; // Koschmieder law, km^-1.
     const float albedo = std::clamp(singleScatteringAlbedo, 0.01f, 0.99f);
     const float betaSca = betaExt * albedo;
     const float betaAbs = betaExt - betaSca;
 
-    ioInfo.mie_extinction = { betaExt, betaExt, betaExt };
-    ioInfo.mie_scattering = { betaSca, betaSca, betaSca };
-    ioInfo.mie_absorption = { betaAbs, betaAbs, betaAbs };
+    ioInfo.mie_extinction = {betaExt, betaExt, betaExt};
+    ioInfo.mie_scattering = {betaSca, betaSca, betaSca};
+    ioInfo.mie_absorption = {betaAbs, betaAbs, betaAbs};
     ioInfo.mie_phase_g = std::clamp(miePhaseG, 0.0f, 0.995f);
 }
 
-const char* presetName(SkyAtmospherePreset preset)
-{
+const char *presetName(SkyAtmospherePreset preset) {
     switch (preset) {
-    case SkyAtmospherePreset::Clear: return "clear";
-    case SkyAtmospherePreset::Hazy: return "hazy";
-    case SkyAtmospherePreset::Foggy: return "foggy";
-    default: return "unknown";
+    case SkyAtmospherePreset::Clear:
+        return "clear";
+    case SkyAtmospherePreset::Hazy:
+        return "hazy";
+    case SkyAtmospherePreset::Foggy:
+        return "foggy";
+    default:
+        return "unknown";
     }
 }
 
-void drainPendingGlErrors(const char* stageTag)
-{
+void drainPendingGlErrors(const char *stageTag) {
     unsigned int firstError = GL_NO_ERROR;
     int count = 0;
     for (;;) {
@@ -69,10 +66,9 @@ void drainPendingGlErrors(const char* stageTag)
         }
     }
 }
-}
+} // namespace
 
-void RealisticSkyBackend::initialize()
-{
+void RealisticSkyBackend::initialize() {
     if (!m_Renderer.initialise()) {
         std::cerr << "[Sky] Failed to initialize realistic PBR sky backend.\n";
         m_Initialized = false;
@@ -102,8 +98,7 @@ void RealisticSkyBackend::initialize()
     applySunToRenderer();
 }
 
-void RealisticSkyBackend::shutdown()
-{
+void RealisticSkyBackend::shutdown() {
     if (m_Initialized) {
         m_Renderer.clearExternalSceneTextures();
         m_Renderer.clearExternalShadowMapTexture();
@@ -112,16 +107,14 @@ void RealisticSkyBackend::shutdown()
     m_Initialized = false;
 }
 
-void RealisticSkyBackend::resize(int width, int height)
-{
+void RealisticSkyBackend::resize(int width, int height) {
     if (!m_Initialized) {
         return;
     }
     m_Renderer.resize(width, height);
 }
 
-void RealisticSkyBackend::setCameraFromActiveCamera(const Camera& activeCamera)
-{
+void RealisticSkyBackend::setCameraFromActiveCamera(const Camera &activeCamera) {
     if (!m_Initialized) {
         return;
     }
@@ -135,16 +128,14 @@ void RealisticSkyBackend::setCameraFromActiveCamera(const Camera& activeCamera)
     m_Renderer.setViewPitch(pitchRad);
 }
 
-void RealisticSkyBackend::setViewFovYDegrees(float fovYDegrees)
-{
+void RealisticSkyBackend::setViewFovYDegrees(float fovYDegrees) {
     if (!m_Initialized) {
         return;
     }
     m_Renderer.setMainCameraFovYDegrees(fovYDegrees);
 }
 
-void RealisticSkyBackend::render(const glm::mat4& projection, const glm::mat4& view) const
-{
+void RealisticSkyBackend::render(const glm::mat4 &projection, const glm::mat4 &view) const {
     (void)projection;
     (void)view;
     if (!m_Initialized) {
@@ -156,8 +147,7 @@ void RealisticSkyBackend::render(const glm::mat4& projection, const glm::mat4& v
     m_Renderer.render();
 }
 
-void RealisticSkyBackend::setSunDir(const glm::vec3& sunDir)
-{
+void RealisticSkyBackend::setSunDir(const glm::vec3 &sunDir) {
     const float lenSq = glm::dot(sunDir, sunDir);
     if (lenSq <= 1e-8f) {
         return;
@@ -168,57 +158,50 @@ void RealisticSkyBackend::setSunDir(const glm::vec3& sunDir)
     }
 }
 
-const glm::vec3& RealisticSkyBackend::getSunDir() const noexcept
-{
+const glm::vec3 &RealisticSkyBackend::getSunDir() const noexcept {
     return m_SunDir;
 }
 
-void RealisticSkyBackend::setExposure(float exposure)
-{
+void RealisticSkyBackend::setExposure(float exposure) {
     m_Exposure = std::clamp(exposure, 0.05f, 8.0f);
     if (m_Initialized) {
         applySunToRenderer();
     }
 }
 
-float RealisticSkyBackend::getExposure() const noexcept
-{
+float RealisticSkyBackend::getExposure() const noexcept {
     return m_Exposure;
 }
 
-bool RealisticSkyBackend::encodesOutputToSrgb() const noexcept
-{
+bool RealisticSkyBackend::encodesOutputToSrgb() const noexcept {
     return true;
 }
 
-bool RealisticSkyBackend::requiresExternalSceneTextures() const noexcept
-{
+bool RealisticSkyBackend::requiresExternalSceneTextures() const noexcept {
     return true;
 }
 
-void RealisticSkyBackend::setExternalSceneTextures(unsigned int sceneColorTex, unsigned int sceneLinearDepthTex)
-{
+void RealisticSkyBackend::setExternalSceneTextures(unsigned int sceneColorTex,
+                                                   unsigned int sceneLinearDepthTex) {
     if (!m_Initialized) {
         return;
     }
     m_Renderer.setExternalSceneTextures(sceneColorTex, sceneLinearDepthTex);
 }
 
-void RealisticSkyBackend::clearExternalSceneTextures()
-{
+void RealisticSkyBackend::clearExternalSceneTextures() {
     if (!m_Initialized) {
         return;
     }
     m_Renderer.clearExternalSceneTextures();
 }
 
-bool RealisticSkyBackend::supportsExternalShadowMap() const noexcept
-{
+bool RealisticSkyBackend::supportsExternalShadowMap() const noexcept {
     return true;
 }
 
-void RealisticSkyBackend::setExternalShadowMap(unsigned int shadowDepthCompareTex, const glm::mat4& shadowViewProj)
-{
+void RealisticSkyBackend::setExternalShadowMap(unsigned int shadowDepthCompareTex,
+                                               const glm::mat4 &shadowViewProj) {
     if (!m_Initialized) {
         return;
     }
@@ -226,45 +209,39 @@ void RealisticSkyBackend::setExternalShadowMap(unsigned int shadowDepthCompareTe
     m_Renderer.setExternalShadowViewProj(glm::value_ptr(shadowViewProj));
 }
 
-void RealisticSkyBackend::clearExternalShadowMap()
-{
+void RealisticSkyBackend::clearExternalShadowMap() {
     if (!m_Initialized) {
         return;
     }
     m_Renderer.clearExternalShadowMapTexture();
 }
 
-bool RealisticSkyBackend::supportsAtmospherePresets() const noexcept
-{
+bool RealisticSkyBackend::supportsAtmospherePresets() const noexcept {
     return true;
 }
 
-void RealisticSkyBackend::setAtmospherePreset(SkyAtmospherePreset preset)
-{
+void RealisticSkyBackend::setAtmospherePreset(SkyAtmospherePreset preset) {
     m_AtmospherePreset = preset;
     if (m_Initialized) {
         applyAtmospherePresetToRenderer();
-        std::cout << "[Sky] Realistic atmosphere preset switched to " << presetName(m_AtmospherePreset) << ".\n";
+        std::cout << "[Sky] Realistic atmosphere preset switched to "
+                  << presetName(m_AtmospherePreset) << ".\n";
     }
 }
 
-SkyAtmospherePreset RealisticSkyBackend::getAtmospherePreset() const noexcept
-{
+SkyAtmospherePreset RealisticSkyBackend::getAtmospherePreset() const noexcept {
     return m_AtmospherePreset;
 }
 
-pbrsky::Vec3 RealisticSkyBackend::toPbrPositionKm(const glm::vec3& voxelPositionMeters)
-{
+pbrsky::Vec3 RealisticSkyBackend::toPbrPositionKm(const glm::vec3 &voxelPositionMeters) {
     // VoxelOps is meters + Y-up. PbrSkyLib expects kilometers + Z-up.
-    return pbrsky::Vec3{
-        voxelPositionMeters.x * kMetersToKilometers,
-        voxelPositionMeters.z * kMetersToKilometers,
-        voxelPositionMeters.y * kMetersToKilometers
-    };
+    return pbrsky::Vec3{voxelPositionMeters.x * kMetersToKilometers,
+                        voxelPositionMeters.z * kMetersToKilometers,
+                        voxelPositionMeters.y * kMetersToKilometers};
 }
 
-void RealisticSkyBackend::toPbrYawPitch(const glm::vec3& voxelDir, float& outYawRad, float& outPitchRad)
-{
+void RealisticSkyBackend::toPbrYawPitch(const glm::vec3 &voxelDir, float &outYawRad,
+                                        float &outPitchRad) {
     const float lenSq = glm::dot(voxelDir, voxelDir);
     if (lenSq <= 1e-8f) {
         outYawRad = 0.0f;
@@ -279,8 +256,7 @@ void RealisticSkyBackend::toPbrYawPitch(const glm::vec3& voxelDir, float& outYaw
     outPitchRad = std::asin(clampedZ);
 }
 
-void RealisticSkyBackend::applySunToRenderer()
-{
+void RealisticSkyBackend::applySunToRenderer() {
     float sunYawRad = 0.0f;
     float sunPitchRad = 0.0f;
     toPbrYawPitch(m_SunDir, sunYawRad, sunPitchRad);
@@ -289,8 +265,7 @@ void RealisticSkyBackend::applySunToRenderer()
     m_Renderer.setSunIlluminanceScale(1.12f * m_Exposure);
 }
 
-void RealisticSkyBackend::applyAtmospherePresetToRenderer()
-{
+void RealisticSkyBackend::applyAtmospherePresetToRenderer() {
     pbrsky::AtmosphereInfo info = m_BaseAtmosphereInfo;
 
     switch (m_AtmospherePreset) {

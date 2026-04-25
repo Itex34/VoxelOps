@@ -12,33 +12,31 @@ struct PlayerSnapshot;
 class ChunkManager;
 
 class PlayerManager {
-public:
+  public:
     PlayerManager();
     ~PlayerManager() = default;
 
     // Called when a new connection is accepted
-    PlayerID onPlayerConnect(std::shared_ptr<ConnectionHandle> conn, const glm::vec3& spawnPos);
+    PlayerID onPlayerConnect(std::shared_ptr<ConnectionHandle> conn, const glm::vec3 &spawnPos);
 
     // Called to explicitly disconnect
     bool removePlayer(PlayerID id);
 
     // Called by network code when a heartbeat or data arrives to update lastHeartbeat
     bool touchHeartbeat(PlayerID id);
-    bool enqueuePlayerInput(PlayerID id, const PlayerInput& input);
+    bool enqueuePlayerInput(PlayerID id, const PlayerInput &input);
     bool setFlyModeAllowed(PlayerID id, bool allowed);
     bool setEquippedWeapon(PlayerID id, uint16_t weaponId);
     void SetDebugLoggingEnabled(bool enabled);
     bool IsDebugLoggingEnabled();
 
     // Main tick. deltaSeconds: time elapsed since last tick (use fixed timestep ideally).
-    void update(double deltaSeconds, ChunkManager& chunkManager);
+    void update(double deltaSeconds, ChunkManager &chunkManager);
 
     // Build a snapshot for sending (returns raw bytes to send to a client)
     std::vector<uint8_t> buildSnapshotFor(PlayerID recipientId, uint32_t serverTick);
-    std::vector<std::vector<uint8_t>> buildSnapshotsForRecipients(
-        const std::vector<PlayerID>& recipientIds,
-        uint32_t serverTick
-    );
+    std::vector<std::vector<uint8_t>>
+    buildSnapshotsForRecipients(const std::vector<PlayerID> &recipientIds, uint32_t serverTick);
 
     // Send snapshots to all players (calls connection->send). This is a convenience
     // that iterates players and uses buildSnapshotFor.
@@ -48,46 +46,28 @@ public:
     std::optional<ServerPlayer> getPlayerCopy(PlayerID id);
     std::vector<ServerPlayer> getAllPlayersCopy();
     std::vector<ServerPlayerCombatSnapshot> getAllCombatSnapshotsCopy(bool aliveOnly = false);
-    bool applyDamage(PlayerID id, float damage, float& outHealthAfter, bool& outKilled);
+    bool applyDamage(PlayerID id, float damage, float &outHealthAfter, bool &outKilled);
     bool requestRespawn(PlayerID id);
-    bool applyInventoryAction(
-        PlayerID id,
-        const InventoryActionRequest& request,
-        InventoryActionResult& outResult,
-        InventorySnapshot& outSnapshot
-    );
-    bool getInventorySnapshot(PlayerID id, InventorySnapshot& outSnapshot);
-    bool getInventorySlot(PlayerID id, uint16_t slotIndex, Slot& outSlot);
-    bool appendItemsToInventory(
-        PlayerID id,
-        uint16_t itemId,
-        uint16_t quantity,
-        uint16_t& outAcceptedQuantity,
-        InventorySnapshot* outSnapshot = nullptr
-    );
+    bool applyInventoryAction(PlayerID id, const InventoryActionRequest &request,
+                              InventoryActionResult &outResult, InventorySnapshot &outSnapshot);
+    bool getInventorySnapshot(PlayerID id, InventorySnapshot &outSnapshot);
+    bool getInventorySlot(PlayerID id, uint16_t slotIndex, Slot &outSlot);
+    bool appendItemsToInventory(PlayerID id, uint16_t itemId, uint16_t quantity,
+                                uint16_t &outAcceptedQuantity,
+                                InventorySnapshot *outSnapshot = nullptr);
 
-private:
+  private:
     PlayerID addPlayerInternal();
-    glm::vec3 chooseRespawnPositionLocked(PlayerID respawningId) const;
-    void respawnPlayerLocked(ServerPlayer& player, const glm::vec3& position);
 
-    bool checkCollision(const ServerPlayer& p, const glm::vec3& pos, ChunkManager& chunkManager) const;
-    void moveAndCollide(
-        ServerPlayer& p,
-        const glm::vec3& delta,
-        ChunkManager& chunkManager,
-        bool allowStepUp
-    );
-    void simulatePhysicsFor(ServerPlayer& p, double dt, ChunkManager& chunkManager);
-    void sendBytes(const std::shared_ptr<ConnectionHandle>& conn, const std::vector<uint8_t>& buf);
+    void sendBytes(const std::shared_ptr<ConnectionHandle> &conn, const std::vector<uint8_t> &buf);
 
     std::unordered_map<PlayerID, ServerPlayer> playersById;
     std::list<PlayerID> playersOrder; // insertion order / iteration order
 
     std::mutex mtx;
-    std::atomic<PlayerID> nextId{ 1 };
+    std::atomic<PlayerID> nextId{1};
 
     // Config
-    std::chrono::seconds heartbeatTimeout{ 300 };
-    std::chrono::milliseconds respawnDelay{ 3000 };
+    std::chrono::seconds heartbeatTimeout{300};
+    std::chrono::milliseconds respawnDelay{3000};
 };

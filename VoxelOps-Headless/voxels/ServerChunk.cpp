@@ -8,9 +8,7 @@
 #include <iomanip>
 
 // ---- constructor ----------------------------------------------------------------
-ServerChunk::ServerChunk(glm::ivec3 pos)
-    : position(pos)
-{
+ServerChunk::ServerChunk(glm::ivec3 pos) : position(pos) {
     // initialize all to "air" (assume BlockID(0) == air)
     m_blocks.fill(static_cast<BlockID>(0));
     m_nonAirCount = 0;
@@ -22,7 +20,8 @@ ServerChunk::ServerChunk(glm::ivec3 pos)
 // ---- accessors ------------------------------------------------------------------
 // getBlock: shared lock for concurrent readers; updates last-access atomically
 BlockID ServerChunk::getBlock(int x, int y, int z) const noexcept {
-    if (!inBounds(x, y, z)) return static_cast<BlockID>(0);
+    if (!inBounds(x, y, z))
+        return static_cast<BlockID>(0);
     std::shared_lock<std::shared_mutex> lk(m_mutex);
     touchLockedAtomic();
     return m_blocks[idx(x, y, z)];
@@ -43,7 +42,8 @@ bool ServerChunk::isCompletelyAir() const noexcept {
 
 // ---- edit application -----------------------------------------------------------
 int64_t ServerChunk::applyEdit(int x, int y, int z, BlockID id) {
-    if (!inBounds(x, y, z)) return m_version.load(std::memory_order_acquire);
+    if (!inBounds(x, y, z))
+        return m_version.load(std::memory_order_acquire);
     std::unique_lock<std::shared_mutex> lk(m_mutex);
     const int index = idx(x, y, z);
     BlockID prev = m_blocks[index];
@@ -58,8 +58,10 @@ int64_t ServerChunk::applyEdit(int x, int y, int z, BlockID id) {
     }
 
     // update non-air count
-    if (prev == static_cast<BlockID>(0) && id != static_cast<BlockID>(0)) ++m_nonAirCount;
-    else if (prev != static_cast<BlockID>(0) && id == static_cast<BlockID>(0)) --m_nonAirCount;
+    if (prev == static_cast<BlockID>(0) && id != static_cast<BlockID>(0))
+        ++m_nonAirCount;
+    else if (prev != static_cast<BlockID>(0) && id == static_cast<BlockID>(0))
+        --m_nonAirCount;
 
     m_blocks[index] = id;
 
@@ -73,7 +75,8 @@ int64_t ServerChunk::applyEdit(int x, int y, int z, BlockID id) {
     op.resultingVersion = newVersion;
 
     m_editLog.push_back(op);
-    if (m_editLog.size() > m_maxEditLog) m_editLog.pop_front();
+    if (m_editLog.size() > m_maxEditLog)
+        m_editLog.pop_front();
 
     touchLockedAtomic();
     m_dirty.store(true, std::memory_order_relaxed);
@@ -81,13 +84,15 @@ int64_t ServerChunk::applyEdit(int x, int y, int z, BlockID id) {
 }
 
 // ---- diff generation -----------------------------------------------------------
-std::optional<std::vector<EditOp>> ServerChunk::diffSince(int64_t knownVersion, size_t maxOps) const {
+std::optional<std::vector<EditOp>> ServerChunk::diffSince(int64_t knownVersion,
+                                                          size_t maxOps) const {
     std::shared_lock<std::shared_mutex> lk(m_mutex);
     touchLockedAtomic();
 
     // If no edits, and knownVersion == current, return empty vector (no change)
     if (m_editLog.empty()) {
-        if (knownVersion >= m_version.load(std::memory_order_acquire)) return std::vector<EditOp>{};
+        if (knownVersion >= m_version.load(std::memory_order_acquire))
+            return std::vector<EditOp>{};
         // else: there were changes but log was empty? fallthrough to resync logic
     }
 
@@ -101,10 +106,11 @@ std::optional<std::vector<EditOp>> ServerChunk::diffSince(int64_t knownVersion, 
 
     std::vector<EditOp> out;
     out.reserve(std::min(maxOps, m_editLog.size()));
-    for (const auto& op : m_editLog) {
+    for (const auto &op : m_editLog) {
         if (op.resultingVersion > knownVersion) {
             out.push_back(op);
-            if (out.size() >= maxOps) break;
+            if (out.size() >= maxOps)
+                break;
         }
     }
     return out;
@@ -130,30 +136,33 @@ std::vector<ClientId> ServerChunk::getSubscribers() const {
 }
 
 // ---- serialization helpers -----------------------------------------------------
-void ServerChunk::fillRawVoxelBytes(uint8_t* outBuf, size_t bufSize) const {
+void ServerChunk::fillRawVoxelBytes(uint8_t *outBuf, size_t bufSize) const {
     const size_t need = CHUNK_VOLUME * sizeof(BlockID);
-    if (bufSize < need) return;
+    if (bufSize < need)
+        return;
     // safe copy under shared lock for consistency
     std::shared_lock<std::shared_mutex> lk(m_mutex);
     std::memcpy(outBuf, m_blocks.data(), need);
 }
 
-void ServerChunk::loadRawVoxelBytes(const uint8_t* data, size_t bufSize) {
+void ServerChunk::loadRawVoxelBytes(const uint8_t *data, size_t bufSize) {
     const size_t need = CHUNK_VOLUME * sizeof(BlockID);
-    if (bufSize < need) return;
+    if (bufSize < need)
+        return;
     // must hold exclusive lock when mutating
     std::unique_lock<std::shared_mutex> lk(m_mutex);
     std::memcpy(m_blocks.data(), data, need);
     // recompute nonAirCount
     uint16_t count = 0;
     for (size_t i = 0; i < CHUNK_VOLUME; ++i) {
-        if (m_blocks[i] != static_cast<BlockID>(0)) ++count;
+        if (m_blocks[i] != static_cast<BlockID>(0))
+            ++count;
     }
     m_nonAirCount = count;
 }
 
 // Note: for production replace compressBlob/decompressBlob with LZ4 (fast) or similar
-std::vector<uint8_t> ServerChunk::compressBlob(const uint8_t* data, size_t size) {
+std::vector<uint8_t> ServerChunk::compressBlob(const uint8_t *data, size_t size) {
     // PASS-THROUGH implementation: no compression. Replace with LZ4 for production.
     std::vector<uint8_t> out;
     out.resize(size);
@@ -161,7 +170,7 @@ std::vector<uint8_t> ServerChunk::compressBlob(const uint8_t* data, size_t size)
     return out;
 }
 
-std::vector<uint8_t> ServerChunk::decompressBlob(const uint8_t* data, size_t size) {
+std::vector<uint8_t> ServerChunk::decompressBlob(const uint8_t *data, size_t size) {
     // PASS-THROUGH implementation: no compression. Replace with LZ4 for production.
     std::vector<uint8_t> out;
     out.resize(size);
@@ -192,11 +201,12 @@ std::vector<uint8_t> ServerChunk::serializeCompressed() const {
         out.push_back(static_cast<uint8_t>((u >> 8) & 0xFF));
         out.push_back(static_cast<uint8_t>((u >> 16) & 0xFF));
         out.push_back(static_cast<uint8_t>((u >> 24) & 0xFF));
-        };
+    };
     auto append64 = [&out](int64_t v) {
         uint64_t u = static_cast<uint64_t>(v);
-        for (int i = 0; i < 8; ++i) out.push_back(static_cast<uint8_t>((u >> (8 * i)) & 0xFF));
-        };
+        for (int i = 0; i < 8; ++i)
+            out.push_back(static_cast<uint8_t>((u >> (8 * i)) & 0xFF));
+    };
 
     append32(position.x);
     append32(position.y);
@@ -208,41 +218,56 @@ std::vector<uint8_t> ServerChunk::serializeCompressed() const {
     return out;
 }
 
-bool ServerChunk::deserializeCompressed(const std::vector<uint8_t>& blob) {
-    if (blob.size() < (4 + 4 + 4 + 8 + 1 + 4)) return false;
+bool ServerChunk::deserializeCompressed(const std::vector<uint8_t> &blob) {
+    if (blob.size() < (4 + 4 + 4 + 8 + 1 + 4))
+        return false;
     size_t offset = 0;
-    auto read32 = [&](int32_t& v)->bool {
-        if (offset + 4 > blob.size()) return false;
-        uint32_t u = (uint32_t)blob[offset] | ((uint32_t)blob[offset + 1] << 8) | ((uint32_t)blob[offset + 2] << 16) | ((uint32_t)blob[offset + 3] << 24);
+    auto read32 = [&](int32_t &v) -> bool {
+        if (offset + 4 > blob.size())
+            return false;
+        uint32_t u = (uint32_t)blob[offset] | ((uint32_t)blob[offset + 1] << 8) |
+                     ((uint32_t)blob[offset + 2] << 16) | ((uint32_t)blob[offset + 3] << 24);
         v = static_cast<int32_t>(u);
         offset += 4;
         return true;
-        };
-    auto read64 = [&](int64_t& v)->bool {
-        if (offset + 8 > blob.size()) return false;
+    };
+    auto read64 = [&](int64_t &v) -> bool {
+        if (offset + 8 > blob.size())
+            return false;
         uint64_t u = 0;
-        for (int i = 0; i < 8; ++i) u |= (uint64_t)blob[offset + i] << (8 * i);
+        for (int i = 0; i < 8; ++i)
+            u |= (uint64_t)blob[offset + i] << (8 * i);
         v = static_cast<int64_t>(u);
         offset += 8;
         return true;
-        };
+    };
 
     int32_t cx, cy, cz;
-    if (!read32(cx)) return false;
-    if (!read32(cy)) return false;
-    if (!read32(cz)) return false;
+    if (!read32(cx))
+        return false;
+    if (!read32(cy))
+        return false;
+    if (!read32(cz))
+        return false;
     int64_t version;
-    if (!read64(version)) return false;
-    if (offset + 1 > blob.size()) return false;
+    if (!read64(version))
+        return false;
+    if (offset + 1 > blob.size())
+        return false;
     uint8_t flags = blob[offset++];
     int32_t dataSize;
-    if (!read32(dataSize)) return false;
-    if (dataSize < 0) return false;
-    if (offset + static_cast<size_t>(dataSize) > blob.size()) return false;
+    if (!read32(dataSize))
+        return false;
+    if (dataSize < 0)
+        return false;
+    if (offset + static_cast<size_t>(dataSize) > blob.size())
+        return false;
 
     // decompress (stub)
-    std::vector<uint8_t> decompressed = decompressBlob(blob.data() + offset, static_cast<size_t>(dataSize));
-    if (decompressed.size() < CHUNK_VOLUME * sizeof(BlockID)) return false;
+    std::vector<uint8_t> decompressed =
+        decompressBlob(blob.data() + offset, static_cast<size_t>(dataSize));
+    if (decompressed.size() < CHUNK_VOLUME * sizeof(BlockID))
+        return false;
 
     {
         std::unique_lock<std::shared_mutex> lk(m_mutex);
@@ -258,7 +283,8 @@ bool ServerChunk::deserializeCompressed(const std::vector<uint8_t>& blob) {
         m_nonAirCount = count;
         m_version.store(version, std::memory_order_release);
         m_dirty.store(false, std::memory_order_relaxed);
-        // note: we do not populate editLog from serialization; editLog is for runtime edits. clear it.
+        // note: we do not populate editLog from serialization; editLog is for runtime edits. clear
+        // it.
         m_editLog.clear();
         touchLockedAtomic();
     }
@@ -266,25 +292,30 @@ bool ServerChunk::deserializeCompressed(const std::vector<uint8_t>& blob) {
 }
 
 // ---- disk persistence ----------------------------------------------------------
-bool ServerChunk::saveToDisk(const std::string& path) const {
+bool ServerChunk::saveToDisk(const std::string &path) const {
     auto blob = serializeCompressed();
-    if (blob.empty()) return false;
+    if (blob.empty())
+        return false;
     std::ofstream fout(path, std::ios::binary | std::ios::out | std::ios::trunc);
-    if (!fout) return false;
-    fout.write(reinterpret_cast<const char*>(blob.data()), static_cast<std::streamsize>(blob.size()));
+    if (!fout)
+        return false;
+    fout.write(reinterpret_cast<const char *>(blob.data()),
+               static_cast<std::streamsize>(blob.size()));
     return !!fout;
 }
 
-bool ServerChunk::loadFromDisk(const std::string& path) {
+bool ServerChunk::loadFromDisk(const std::string &path) {
     std::ifstream fin(path, std::ios::binary | std::ios::in);
-    if (!fin) return false;
+    if (!fin)
+        return false;
     fin.seekg(0, std::ios::end);
     std::streamoff sz = fin.tellg();
-    if (sz <= 0) return false;
+    if (sz <= 0)
+        return false;
     fin.seekg(0, std::ios::beg);
     std::vector<uint8_t> buf(static_cast<size_t>(sz));
-    fin.read(reinterpret_cast<char*>(buf.data()), sz);
-    if (!fin) return false;
+    fin.read(reinterpret_cast<char *>(buf.data()), sz);
+    if (!fin)
+        return false;
     return deserializeCompressed(buf);
 }
-

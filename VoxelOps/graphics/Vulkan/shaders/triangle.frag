@@ -61,7 +61,7 @@ layout(set = 2, binding = 14) uniform sampler2D prevRestirGiMetaSampler;
 layout(set = 2, binding = 15, rgba16f) uniform writeonly image2D currRestirGiMetaImage;
 layout(set = 2, binding = 16, rgba16f) uniform writeonly image2D nrdInDiffRadianceHitDistImage;
 layout(set = 2, binding = 17, rgba16f) uniform writeonly image2D nrdInNormalRoughnessImage;
-layout(set = 2, binding = 18, rg16f) uniform writeonly image2D nrdInMotionImage;
+layout(set = 2, binding = 18, rgba16f) uniform writeonly image2D nrdInMotionImage;
 layout(set = 2, binding = 19, r32f) uniform writeonly image2D nrdInViewZImage;
 layout(set = 2, binding = 20) uniform sampler2D nrdOutDiffRadianceHitDistSampler;
 #ifdef VOXELOPS_RAY_QUERY
@@ -335,7 +335,7 @@ vec3 materialEmission(uint materialId) {
     case 15u: return vec3(2.30, 1.15, 0.22); // OrangeBerry
     case 16u: return vec3(0.22, 0.95, 2.40); // SapphireGem
     case 17u: return vec3(2.20, 0.30, 0.45); // RubyGem
-    case 21u: return vec3(1.20, 0.10, 0.16); // RubyBlock
+    case 21u: return vec3(100.20, 0.10, 0.16); // RubyBlock
     case 22u: return vec3(0.10, 0.38, 100.25); // SapphireBlock
     default: return vec3(0.0);
     }
@@ -632,10 +632,7 @@ PathTraceResult tracePathTracedIndirect(vec3 worldPos, vec3 normal) {
     outResult.candidatePdf = 1.0 / kPi;
     outResult.candidateHitDistance = maxDistance;
 
-    uint reservoirRng = initSeed(
-        worldPos + (surfaceNormal * 7.13),
-        giParams.pathConfig.z ^ 0x6d2b79f5u
-    );
+    uint reservoirRng = initStableSeed(worldPos + (surfaceNormal * 7.13));
     float reservoirWeightSum = 0.0;
     float hitDistanceAccum = 0.0;
 
@@ -807,14 +804,24 @@ float depthRelativeDelta(float depthA, float depthB) {
     return abs(depthA - depthB) / denom;
 }
 
-bool projectWorldToUv(mat4 viewProjection, vec3 worldPos, out vec2 uv) {
+bool projectWorldToUvRaw(mat4 viewProjection, vec3 worldPos, out vec2 uv, out float clipW) {
     vec4 clip = viewProjection * vec4(worldPos, 1.0);
-    if (clip.w <= 1.0e-5) {
+    clipW = clip.w;
+    if (abs(clip.w) <= 1.0e-5) {
         uv = vec2(0.0);
         return false;
     }
 
     uv = (clip.xy / clip.w) * 0.5 + 0.5;
+    return true;
+}
+
+bool projectWorldToUv(mat4 viewProjection, vec3 worldPos, out vec2 uv) {
+    float clipW = 0.0;
+    if (!projectWorldToUvRaw(viewProjection, worldPos, uv, clipW)) {
+        return false;
+    }
+
     if (any(lessThan(uv, vec2(0.001))) || any(greaterThan(uv, vec2(0.999)))) {
         return false;
     }
@@ -822,27 +829,22 @@ bool projectWorldToUv(mat4 viewProjection, vec3 worldPos, out vec2 uv) {
 }
 
 vec2 getCurrentSurfaceUv(vec3 worldPos) {
-    vec2 currUv = gl_FragCoord.xy * giParams.restirParams.zw;
-    vec2 projectedUv = vec2(0.0);
-    if (projectWorldToUv(giParams.currViewProjection, worldPos, projectedUv)) {
-        currUv = projectedUv;
-    }
-    return currUv;
+    return gl_FragCoord.xy * giParams.restirParams.zw;
 }
 
-vec2 computeNrdScreenMotion(vec3 worldPos) {
-    vec2 currUv = vec2(0.0);
+vec3 computeNrdScreenMotion(vec3 worldPos, float viewZ) {
+    vec2 currUv = gl_FragCoord.xy * giParams.restirParams.zw;
     vec2 prevUv = vec2(0.0);
-    if (!projectWorldToUv(giParams.currViewProjection, worldPos, currUv)) {
-        return vec2(0.0);
+    float prevClipW = 0.0;
+    if (!projectWorldToUvRaw(giParams.nrdPrevViewProjection, worldPos, prevUv, prevClipW)) {
+        return vec3(0.0);
     }
-    if (!projectWorldToUv(giParams.nrdPrevViewProjection, worldPos, prevUv)) {
-        return vec2(0.0);
-    }
+
     vec2 uvDelta = prevUv - currUv;
     vec2 invExtent = max(giParams.restirParams.zw, vec2(1.0e-6));
     vec2 extent = 1.0 / invExtent;
-    return uvDelta * extent;
+    float prevViewZ = -prevClipW;
+    return vec3(uvDelta * extent, prevViewZ - viewZ);
 }
 
 vec4 packNrdNormalRoughness(vec3 normal, float roughness) {
@@ -880,19 +882,19 @@ void writeNrdInputs(
     float maxDistance
 ) {
     ivec2 pixel = ivec2(gl_FragCoord.xy);
-    vec2 motion = computeNrdScreenMotion(worldPos);
     vec3 encodedRadiance = nrdLinearToYCoCg(max(diffuseRadianceIn, vec3(0.0)));
     float safeViewZ = viewZ;
     if (abs(safeViewZ) < 1.0e-4) {
         safeViewZ = (safeViewZ < 0.0) ? -1.0e-4 : 1.0e-4;
     }
+    vec3 motion = computeNrdScreenMotion(worldPos, safeViewZ);
     vec4 diffRadianceHitDistIn = vec4(
         encodedRadiance,
         getNrdNormHitDistance(hitDistance, viewZ, roughness)
     );
     imageStore(nrdInDiffRadianceHitDistImage, pixel, diffRadianceHitDistIn);
     imageStore(nrdInNormalRoughnessImage, pixel, packNrdNormalRoughness(normal, roughness));
-    imageStore(nrdInMotionImage, pixel, vec4(motion, 0.0, 0.0));
+    imageStore(nrdInMotionImage, pixel, vec4(motion, 0.0));
     imageStore(nrdInViewZImage, pixel, vec4(safeViewZ, 0.0, 0.0, 0.0));
 }
 
@@ -906,7 +908,7 @@ vec3 visualizeNrdInput(
     vec3 diffuseRadiance,
     float hitDistance,
     vec3 normal,
-    vec2 motion,
+    vec3 motion,
     float viewZ,
     float maxDistance
 ) {
@@ -921,7 +923,7 @@ vec3 visualizeNrdInput(
         return (safeNormalize(normal) * 0.5) + 0.5;
     }
     if (debugView == 4u) {
-        float uvMotion = length(motion * giParams.restirParams.zw);
+        float uvMotion = length(motion.xy * giParams.restirParams.zw);
         float m = clamp(uvMotion * 48.0, 0.0, 1.0);
         return vec3(m);
     }
@@ -998,7 +1000,10 @@ vec3 resolveRestirGiFinal(
     float motionWeight = 1.0 - smoothstep(0.006, 0.060, motion);
     float temporalBlend = clamp(giParams.denoiseParams.x, 0.0, 0.98);
     float historyMWeight = clamp(0.20 + ((prevReservoirM - 1.0) * (0.80 / 7.0)), 0.20, 1.0);
+    float darkTemporalBoost = 1.0 - smoothstep(0.03, 0.20, baseLuma);
+    historyMWeight = max(historyMWeight, mix(0.20, 0.60, darkTemporalBoost));
     float temporalWeight = temporalBlend * centerValidation * motionWeight * historyMWeight;
+    temporalWeight = clamp(temporalWeight * mix(1.0, 1.25, darkTemporalBoost), 0.0, 0.995);
     vec3 temporalIndirect = mix(baseIndirect, prevEstimate, temporalWeight);
 
     const vec2 offsets[4] = vec2[](
@@ -1118,9 +1123,9 @@ vec4 applyRestirDiTemporal(
         }
 
         float candidateDirect = max(dot(previousReservoir.rgb, kLumaWeights), 1.0e-4);
-        float lumaDenom = max(max(currentDirectLuma, candidateDirect), 0.05);
+        float lumaDenom = max(max(currentDirectLuma, candidateDirect), 0.14);
         float lumaDelta = abs(candidateDirect - currentDirectLuma) / lumaDenom;
-        float reject = smoothstep(0.15, 0.45, lumaDelta);
+        float reject = smoothstep(0.24, 0.92, lumaDelta);
 
         float reuseWeight = motionWeight * motionAttenuation * (1.0 - reject);
         reuseWeight *= spatialKernel[i];
@@ -1162,8 +1167,10 @@ vec4 applyRestirDiTemporal(
 
     float normalizedM = clamp((outReservoirM - 1.0) * (1.0 / 7.0), 0.0, 1.0);
     float historyConfidence = normalizedM * motionAttenuation * centerValidationWeight;
-    historyConfidence *= (1.0 - smoothstep(0.35, 0.85, maxDisocclusion));
-    historyConfidence = clamp(historyConfidence, 0.0, 1.0);
+    historyConfidence *= (1.0 - smoothstep(0.45, 0.95, maxDisocclusion));
+    float directDarkBoost = 1.0 + (1.0 - smoothstep(0.03, 0.20, currentDirectLuma)) * 0.22;
+    float directTemporalStrength = mix(0.55, 1.0, clamp(giParams.restirParams.x, 0.0, 1.0));
+    historyConfidence = clamp(historyConfidence * directDarkBoost * directTemporalStrength, 0.0, 0.98);
 
     float resolvedLuma = mix(currentDirectLuma, reservoirDirectLuma, historyConfidence);
     float directFloor = max(0.02, currentAlbedoLuma * 0.04);
@@ -1188,6 +1195,7 @@ vec4 applyRestirGiTemporal(
 ) {
     const vec3 kLumaWeights = vec3(0.2126, 0.7152, 0.0722);
     float currentIndirectLuma = max(dot(currentIndirect, kLumaWeights), 1.0e-4);
+    float darkAccumulationBoost = 1.0 - smoothstep(0.03, 0.20, currentIndirectLuma);
     vec3 currentDir = safeNormalize(currentCandidateDirection);
     float currentPdf = max(currentCandidatePdf, 1.0e-4);
     vec3 selectedSample = currentCandidateRadiance;
@@ -1230,7 +1238,7 @@ vec4 applyRestirGiTemporal(
         1.0
     );
 
-    float selectedReject = 1.0;
+    float centerReject = 1.0;
     for (int i = 0; i < 1; ++i) {
         vec2 sampleUv = prevUv + (reuseOffsets[i] * texel);
         if (any(lessThan(sampleUv, vec2(0.001))) || any(greaterThan(sampleUv, vec2(0.999)))) {
@@ -1267,9 +1275,15 @@ vec4 applyRestirGiTemporal(
             currentIndirect + reconClampSpan
         );
         float candidateIndirect = max(dot(reconnectedRadiance, kLumaWeights), 1.0e-4);
-        float lumaDenom = max(max(currentIndirectLuma, candidateIndirect), 0.08);
+        float lumaDenomFloor = mix(0.20, 0.65, darkAccumulationBoost);
+        float lumaDenom = max(max(currentIndirectLuma, candidateIndirect), lumaDenomFloor);
         float lumaDelta = abs(candidateIndirect - currentIndirectLuma) / lumaDenom;
-        float reject = smoothstep(0.20, 0.65, lumaDelta);
+        float rejectLow = mix(0.32, 0.52, darkAccumulationBoost);
+        float rejectHigh = mix(1.20, 1.85, darkAccumulationBoost);
+        float reject = smoothstep(rejectLow, rejectHigh, lumaDelta);
+        if (i == 0) {
+            centerReject = reject;
+        }
 
         float reuseWeight = motionWeight * motionAttenuation * (1.0 - reject) * validationWeight;
         reuseWeight *= spatialKernel[i];
@@ -1289,7 +1303,6 @@ vec4 applyRestirGiTemporal(
                     selectedSample = reconnectedRadiance;
                     selectedDirection = previousDirection;
                     selectedPdf = previousPdf;
-                    selectedReject = reject;
                 }
             }
         }
@@ -1306,9 +1319,15 @@ vec4 applyRestirGiTemporal(
     reservoirIndirect = clamp(reservoirIndirect, currentIndirect - clampSpan, currentIndirect + clampSpan);
 
     float normalizedM = clamp((outReservoirM - 1.0) * (1.0 / 7.0), 0.0, 1.0);
-    float historyConfidence = normalizedM * motionAttenuation * centerValidationWeight * (1.0 - selectedReject);
-    historyConfidence *= (1.0 - smoothstep(0.35, 0.85, maxDisocclusion));
-    historyConfidence = clamp(historyConfidence, 0.0, 0.90);
+    float historyMFloor = mix(0.18, 0.55, darkAccumulationBoost);
+    float historyMWeight = max(normalizedM, historyMFloor);
+    float historyConfidence = historyMWeight * motionAttenuation * centerValidationWeight * (1.0 - centerReject);
+    float disocclusionReject = smoothstep(0.45, 0.95, maxDisocclusion);
+    float disocclusionScale = mix(1.0, 0.45, darkAccumulationBoost);
+    historyConfidence *= (1.0 - (disocclusionReject * disocclusionScale));
+    float giDarkBoost = 1.0 + (darkAccumulationBoost * 0.45);
+    float giTemporalStrength = mix(0.60, 1.0, clamp(giParams.restirParams.x, 0.0, 1.0));
+    historyConfidence = clamp(historyConfidence * giDarkBoost * giTemporalStrength, 0.0, 0.985);
     outResolvedIndirect = mix(currentIndirect, reservoirIndirect, historyConfidence);
     outResolvedIndirect = max(outResolvedIndirect, vec3(0.0));
     outSelectedDirection = safeNormalize(selectedDirection);
@@ -1373,38 +1392,12 @@ void main() {
             denoiseMoment1,
             denoiseMoment2
         );
-        vec2 screenUv = gl_FragCoord.xy * giParams.restirParams.zw;
         vec3 nrdResolvedIndirect = finalResolvedIndirect;
         if (giParams.tracingConfig.w != 0u) {
-            vec2 historyUv = screenUv;
             vec2 prevUv = vec2(0.0);
             if (projectWorldToUv(giParams.nrdPrevViewProjection, inWorldPos, prevUv)) {
-                historyUv = prevUv;
+                nrdResolvedIndirect = sampleNrdDiffuseHistory(prevUv);
             }
-            vec3 historyIndirect = sampleNrdDiffuseHistory(historyUv);
-            vec4 prevValidation = texture(prevRestirValidationSampler, historyUv);
-            vec3 prevNormal = octDecode(prevValidation.xy);
-            float prevDepth = prevValidation.z;
-            float prevAlbedo = prevValidation.w;
-            float depthReject = smoothstep(0.010, 0.080, depthRelativeDelta(prevDepth, validationDepth));
-            float normalReject = 1.0 - smoothstep(0.72, 0.96, dot(prevNormal, safeNormalize(normalWs)));
-            float albedoReject = smoothstep(0.05, 0.16, abs(prevAlbedo - currentAlbedoLuma));
-            float historyValidation = 1.0 - clamp(max(depthReject, max(normalReject, albedoReject)), 0.0, 1.0);
-            float historyMotion = length(historyUv - screenUv);
-            float historyMotionWeight = 1.0 - smoothstep(0.006, 0.060, historyMotion);
-
-            float baseLuma = max(luminance(finalResolvedIndirect), 0.0);
-            float historyLuma = max(luminance(historyIndirect), 0.0);
-            float sigma = sqrt(max(denoiseMoment2 - (denoiseMoment1 * denoiseMoment1), 1.0e-5));
-            float lumaPhi = max(giParams.denoiseParams.z, 0.05);
-            float clampRadius = (lumaPhi * sigma) + (0.03 + currentAlbedoLuma * 0.04);
-            float clampedHistoryLuma = clamp(historyLuma, max(baseLuma - clampRadius, 0.0), baseLuma + clampRadius);
-            if (historyLuma > 1.0e-4) {
-                historyIndirect *= clampedHistoryLuma / historyLuma;
-            }
-
-            float historyWeight = clamp(historyValidation * historyMotionWeight, 0.0, 1.0);
-            nrdResolvedIndirect = mix(finalResolvedIndirect, historyIndirect, historyWeight);
         }
         float direct = resolvedDirect;
         vec3 litLinear = texel.rgb * (vec3(giParams.tuning.x + direct) + (nrdResolvedIndirect * giParams.tuning.y));
@@ -1435,7 +1428,7 @@ void main() {
             nrdMaxDistance
         );
         if (nrdDebugView != 0u) {
-            vec2 nrdMotion = computeNrdScreenMotion(inWorldPos);
+            vec3 nrdMotion = computeNrdScreenMotion(inWorldPos, getNrdViewZ());
             vec3 debugColor = visualizeNrdInput(
                 nrdDebugView,
                 nrdInputRadiance,
@@ -1472,7 +1465,7 @@ void main() {
         nrdMaxDistance
     );
     if (nrdDebugView != 0u) {
-        vec2 nrdMotion = computeNrdScreenMotion(inWorldPos);
+        vec3 nrdMotion = computeNrdScreenMotion(inWorldPos, getNrdViewZ());
         vec3 debugColor = visualizeNrdInput(
             nrdDebugView,
             gi,

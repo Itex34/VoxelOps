@@ -6,7 +6,6 @@
 #include "Voxel.hpp"
 #include <glm/vec3.hpp>
 
-
 constexpr int CHUNK_SIZE = 16;
 constexpr int CHUNK_VOLUME = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
 
@@ -22,7 +21,7 @@ struct AABB {
 };
 
 class Chunk {
-public:
+  public:
     explicit Chunk(glm::ivec3 pos = glm::ivec3(0));
 
     // Safe accessor: returns Air for out-of-bounds
@@ -36,10 +35,12 @@ public:
 
     BlockID removeBlock(int x, int y, int z);
 
-    void copyBlocks(std::array<BlockID, CHUNK_VOLUME>& out) const noexcept;
-    void overwriteBlocks(const std::array<BlockID, CHUNK_VOLUME>& in) noexcept;
+    void copyBlocks(std::array<BlockID, CHUNK_VOLUME> &out) const noexcept;
+    void overwriteBlocks(const std::array<BlockID, CHUNK_VOLUME> &in) noexcept;
 
-    bool isCompletelyAir() const noexcept { return nonAirCount == 0; }
+    bool isCompletelyAir() const noexcept {
+        return nonAirCount == 0;
+    }
 
     glm::ivec3 position;
     std::atomic<bool> dirty = true;
@@ -54,18 +55,14 @@ public:
         return (unsigned)x < CHUNK_SIZE && (unsigned)y < CHUNK_SIZE && (unsigned)z < CHUNK_SIZE;
     }
 
+    int8_t lowestPotentialOccludersYvalue[16][16]; // [+x -> -x][+z -> -z]
 
-    int8_t lowestPotentialOccludersYvalue[16][16];// [+x -> -x][+z -> -z]
-
-    int8_t sunLitBlocksYvalue[16][16];// [+x -> -x][+z -> -z]
-private:
+    int8_t sunLitBlocksYvalue[16][16]; // [+x -> -x][+z -> -z]
+  private:
     std::array<BlockID, CHUNK_VOLUME> blocks;
     uint16_t nonAirCount = 0; // max 4096 (16^3) -> fits uint16_t
 
     static inline constexpr int idx(int x, int y, int z) noexcept {
         return x + CHUNK_SIZE * (y + CHUNK_SIZE * z);
     }
-
-
-
 };

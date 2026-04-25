@@ -6,8 +6,6 @@
 #include <array>
 #include <cstdint>
 
-
-
 struct QuadKey {
     uint32_t x0, y0, z0;
     uint32_t x1, y1, z1;
@@ -16,11 +14,11 @@ struct QuadKey {
     uint8_t axis;
     int8_t sign;
 
-    bool operator==(QuadKey const&) const = default;
+    bool operator==(QuadKey const &) const = default;
 };
 
 struct QuadKeyHash {
-    size_t operator()(QuadKey const& k) const noexcept {
+    size_t operator()(QuadKey const &k) const noexcept {
         uint64_t a = ((uint64_t)k.x0 << 32) ^ (k.y0 << 16) ^ k.z0;
         uint64_t b = ((uint64_t)k.x1 << 32) ^ (k.y1 << 16) ^ k.z1;
         uint64_t c = ((uint64_t)k.x2 << 32) ^ (k.y2 << 16) ^ k.z2;
@@ -37,8 +35,8 @@ struct GreedyCell {
     int16_t sx = 0;
     int16_t sy = 0;
     int16_t sz = 0;
-    uint8_t ao[4] = { 0,0,0,0 };
-    uint8_t sun[4] = { 0,0,0,0 };
+    uint8_t ao[4] = {0, 0, 0, 0};
+    uint8_t sun[4] = {0, 0, 0, 0};
     uint32_t lightKey = 0;
     uint64_t mergeKey = 0;
 };
@@ -61,99 +59,73 @@ struct MeshBuildProfileSnapshot {
     uint64_t greedyEmitUs = 0;
 };
 
-
 class ChunkMeshBuilder {
-public:
-
+  public:
     using SunTopGetter = std::function<int(int, int)>;
 
-    BuiltChunkMesh buildChunkMesh(
-        const Chunk& center,
-        const Chunk* neighbors[6],
-        const glm::ivec3& chunkPos,
-        const TextureAtlas& atlas,
-        bool enableAO,
-        bool enableShadows,
-        const SunTopGetter& getSunTopY = SunTopGetter{}
-    );
+    BuiltChunkMesh buildChunkMesh(const Chunk &center, const Chunk *neighbors[6],
+                                  const glm::ivec3 &chunkPos, const TextureAtlas &atlas,
+                                  bool enableAO, bool enableShadows,
+                                  const SunTopGetter &getSunTopY = SunTopGetter{});
 
     static MeshBuildProfileSnapshot getProfileSnapshot();
     static void resetProfileSnapshot();
 
-
-private:
+  private:
     std::unordered_map<QuadKey, uint16_t, QuadKeyHash> quadEmitMap;
-    std::unordered_map<QuadKey, std::pair<std::array<uint8_t, 4>, std::array<uint8_t, 4>>, QuadKeyHash> quadMap;
+    std::unordered_map<QuadKey, std::pair<std::array<uint8_t, 4>, std::array<uint8_t, 4>>,
+                       QuadKeyHash>
+        quadMap;
 
-    inline BlockID getBlockWithNeighbors(
-        int x, int y, int z,
-        const Chunk& chunk,
-        const Chunk* neighbors[6]
-    ) noexcept
-    {
-        if ((unsigned)x < CHUNK_SIZE &&
-            (unsigned)y < CHUNK_SIZE &&
-            (unsigned)z < CHUNK_SIZE)
-        {
+    inline BlockID getBlockWithNeighbors(int x, int y, int z, const Chunk &chunk,
+                                         const Chunk *neighbors[6]) noexcept {
+        if ((unsigned)x < CHUNK_SIZE && (unsigned)y < CHUNK_SIZE && (unsigned)z < CHUNK_SIZE) {
             return chunk.getBlockUnchecked(x, y, z);
         }
 
         if (x < 0) {
-            const Chunk* n = neighbors[1]; // -X
+            const Chunk *n = neighbors[1]; // -X
             return n ? n->getBlockUnchecked(x + CHUNK_SIZE, y, z) : BlockID::Air;
         }
         if (x >= CHUNK_SIZE) {
-            const Chunk* n = neighbors[0]; // +X
+            const Chunk *n = neighbors[0]; // +X
             return n ? n->getBlockUnchecked(x - CHUNK_SIZE, y, z) : BlockID::Air;
         }
         if (y < 0) {
-            const Chunk* n = neighbors[3]; // -Y
+            const Chunk *n = neighbors[3]; // -Y
             return n ? n->getBlockUnchecked(x, y + CHUNK_SIZE, z) : BlockID::Air;
         }
         if (y >= CHUNK_SIZE) {
-            const Chunk* n = neighbors[2]; // +Y
+            const Chunk *n = neighbors[2]; // +Y
             return n ? n->getBlockUnchecked(x, y - CHUNK_SIZE, z) : BlockID::Air;
         }
         if (z < 0) {
-            const Chunk* n = neighbors[5]; // -Z
+            const Chunk *n = neighbors[5]; // -Z
             return n ? n->getBlockUnchecked(x, y, z + CHUNK_SIZE) : BlockID::Air;
         }
         if (z >= CHUNK_SIZE) {
-            const Chunk* n = neighbors[4]; // +Z
+            const Chunk *n = neighbors[4]; // +Z
             return n ? n->getBlockUnchecked(x, y, z - CHUNK_SIZE) : BlockID::Air;
         }
 
         return BlockID::Air;
     }
 
-
-
-
-    inline BlockID getBlockSafe(
-        int x, int y, int z,
-        const Chunk& chunk,
-        const Chunk* neighbors[6]
-    ) noexcept
-    {
+    inline BlockID getBlockSafe(int x, int y, int z, const Chunk &chunk,
+                                const Chunk *neighbors[6]) noexcept {
         // hard reject unsupported vertical access
         if (y < -1 || y > CHUNK_SIZE)
             return BlockID::Air;
 
         int oob =
-            (x < 0 || x >= CHUNK_SIZE) +
-            (y < 0 || y >= CHUNK_SIZE) +
-            (z < 0 || z >= CHUNK_SIZE);
+            (x < 0 || x >= CHUNK_SIZE) + (y < 0 || y >= CHUNK_SIZE) + (z < 0 || z >= CHUNK_SIZE);
 
         if (oob == 0)
             return chunk.getBlockUnchecked(x, y, z);
 
         if (oob == 1)
-            return getBlockWithNeighbors( x, y, z , chunk, neighbors);
+            return getBlockWithNeighbors(x, y, z, chunk, neighbors);
 
         return BlockID::Air;
     }
-
 };
-
-
-

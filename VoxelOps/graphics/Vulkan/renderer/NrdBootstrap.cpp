@@ -35,33 +35,32 @@ inline uint16_t clampDimToU16(uint32_t v) {
     return static_cast<uint16_t>(std::min<uint32_t>(v, std::numeric_limits<uint16_t>::max()));
 }
 
-inline void copyMat4(const glm::mat4& src, float* dst16) {
+inline void copyMat4(const glm::mat4 &src, float *dst16) {
     std::memcpy(dst16, glm::value_ptr(src), sizeof(float) * 16u);
 }
 
 inline glm::mat4 makeIdentity() {
     return glm::mat4(1.0f);
 }
-}
+} // namespace
 
 struct NrdBootstrap::Impl {
 #if defined(_WIN32) && VOXELOPS_NRD_HEADERS
-    using PfnCreateInstance = nrd::Result(NRD_CALL*)(const nrd::InstanceCreationDesc&, nrd::Instance*&);
-    using PfnDestroyInstance = void(NRD_CALL*)(nrd::Instance&);
-    using PfnGetLibraryDesc = const nrd::LibraryDesc* (NRD_CALL*)();
-    using PfnGetInstanceDesc = const nrd::InstanceDesc* (NRD_CALL*)(const nrd::Instance&);
-    using PfnSetCommonSettings = nrd::Result(NRD_CALL*)(nrd::Instance&, const nrd::CommonSettings&);
-    using PfnSetDenoiserSettings = nrd::Result(NRD_CALL*)(nrd::Instance&, nrd::Identifier, const void*);
-    using PfnGetComputeDispatches = nrd::Result(NRD_CALL*)(
-        nrd::Instance&,
-        const nrd::Identifier*,
-        uint32_t,
-        const nrd::DispatchDesc*&,
-        uint32_t&
-    );
+    using PfnCreateInstance = nrd::Result(NRD_CALL *)(const nrd::InstanceCreationDesc &,
+                                                      nrd::Instance *&);
+    using PfnDestroyInstance = void(NRD_CALL *)(nrd::Instance &);
+    using PfnGetLibraryDesc = const nrd::LibraryDesc *(NRD_CALL *)();
+    using PfnGetInstanceDesc = const nrd::InstanceDesc *(NRD_CALL *)(const nrd::Instance &);
+    using PfnSetCommonSettings = nrd::Result(NRD_CALL *)(nrd::Instance &,
+                                                         const nrd::CommonSettings &);
+    using PfnSetDenoiserSettings = nrd::Result(NRD_CALL *)(nrd::Instance &, nrd::Identifier,
+                                                           const void *);
+    using PfnGetComputeDispatches = nrd::Result(NRD_CALL *)(nrd::Instance &,
+                                                            const nrd::Identifier *, uint32_t,
+                                                            const nrd::DispatchDesc *&, uint32_t &);
 
     HMODULE module = nullptr;
-    nrd::Instance* instance = nullptr;
+    nrd::Instance *instance = nullptr;
     glm::mat4 prevWorldToView = makeIdentity();
     glm::mat4 prevViewToClip = makeIdentity();
     bool hasPrevMatrices = false;
@@ -77,9 +76,7 @@ struct NrdBootstrap::Impl {
 #endif
 };
 
-NrdBootstrap::NrdBootstrap()
-    : m_impl(std::make_unique<Impl>()) {
-}
+NrdBootstrap::NrdBootstrap() : m_impl(std::make_unique<Impl>()) {}
 
 NrdBootstrap::~NrdBootstrap() noexcept {
     shutdown();
@@ -93,12 +90,13 @@ void NrdBootstrap::init() {
 
 #if !defined(_WIN32) || !VOXELOPS_NRD_HEADERS
     if (!m_loggedUnavailable) {
-        std::cout << "[NRD] Bootstrap unavailable (requires Windows build and NRD headers)." << "\n";
+        std::cout << "[NRD] Bootstrap unavailable (requires Windows build and NRD headers)."
+                  << "\n";
         m_loggedUnavailable = true;
     }
     return;
 #else
-    auto loadProc = [this](const char* name, FARPROC& outProc) -> bool {
+    auto loadProc = [this](const char *name, FARPROC &outProc) -> bool {
         outProc = GetProcAddress(m_impl->module, name);
         if (outProc == nullptr) {
             std::cerr << "[NRD] Missing export: " << name << "\n";
@@ -108,7 +106,8 @@ void NrdBootstrap::init() {
     };
 
     std::vector<std::string> candidateDlls;
-    if (const char* envPath = std::getenv("VOXELOPS_NRD_DLL"); envPath != nullptr && envPath[0] != '\0') {
+    if (const char *envPath = std::getenv("VOXELOPS_NRD_DLL");
+        envPath != nullptr && envPath[0] != '\0') {
         candidateDlls.emplace_back(envPath);
     }
     if (VOXELOPS_NRD_DLL_PATH[0] != '\0') {
@@ -116,7 +115,7 @@ void NrdBootstrap::init() {
     }
     candidateDlls.emplace_back("NRD.dll");
 
-    for (const std::string& candidate : candidateDlls) {
+    for (const std::string &candidate : candidateDlls) {
         m_impl->module = LoadLibraryA(candidate.c_str());
         if (m_impl->module != nullptr) {
             std::cout << "[NRD] Loaded: " << candidate << "\n";
@@ -175,22 +174,22 @@ void NrdBootstrap::init() {
 
     const nrd::Result createResult = m_impl->createInstance(instanceCreationDesc, m_impl->instance);
     if (createResult != nrd::Result::SUCCESS || m_impl->instance == nullptr) {
-        std::cerr << "[NRD] CreateInstance failed with code " << static_cast<uint32_t>(createResult) << "\n";
+        std::cerr << "[NRD] CreateInstance failed with code " << static_cast<uint32_t>(createResult)
+                  << "\n";
         return;
     }
 
-    if (const nrd::LibraryDesc* libraryDesc = m_impl->getLibraryDesc(); libraryDesc != nullptr) {
+    if (const nrd::LibraryDesc *libraryDesc = m_impl->getLibraryDesc(); libraryDesc != nullptr) {
         m_libraryDescData = libraryDesc;
-        std::cout
-            << "[NRD] API ready. Version "
-            << static_cast<uint32_t>(libraryDesc->versionMajor) << "."
-            << static_cast<uint32_t>(libraryDesc->versionMinor) << "."
-            << static_cast<uint32_t>(libraryDesc->versionBuild)
-            << " (normalEncoding=" << static_cast<uint32_t>(libraryDesc->normalEncoding)
-            << ", roughnessEncoding=" << static_cast<uint32_t>(libraryDesc->roughnessEncoding)
-            << ")\n";
+        std::cout << "[NRD] API ready. Version " << static_cast<uint32_t>(libraryDesc->versionMajor)
+                  << "." << static_cast<uint32_t>(libraryDesc->versionMinor) << "."
+                  << static_cast<uint32_t>(libraryDesc->versionBuild)
+                  << " (normalEncoding=" << static_cast<uint32_t>(libraryDesc->normalEncoding)
+                  << ", roughnessEncoding=" << static_cast<uint32_t>(libraryDesc->roughnessEncoding)
+                  << ")\n";
     }
-    if (const nrd::InstanceDesc* instanceDesc = m_impl->getInstanceDesc(*m_impl->instance); instanceDesc != nullptr) {
+    if (const nrd::InstanceDesc *instanceDesc = m_impl->getInstanceDesc(*m_impl->instance);
+        instanceDesc != nullptr) {
         m_instanceDescData = instanceDesc;
     }
 
@@ -227,16 +226,11 @@ void NrdBootstrap::shutdown() {
     m_dispatchDescData = nullptr;
 }
 
-void NrdBootstrap::updateFrame(
-    const glm::mat4& viewMatrix,
-    const glm::mat4& projectionMatrix,
-    const glm::mat4& prevViewMatrix,
-    const glm::mat4& prevProjectionMatrix,
-    bool hasPrevMatrices,
-    const FrameRenderData& frameData,
-    uint32_t renderWidth,
-    uint32_t renderHeight
-) {
+void NrdBootstrap::updateFrame(const glm::mat4 &viewMatrix, const glm::mat4 &projectionMatrix,
+                               const glm::mat4 &prevViewMatrix,
+                               const glm::mat4 &prevProjectionMatrix, bool hasPrevMatrices,
+                               const FrameRenderData &frameData, uint32_t renderWidth,
+                               uint32_t renderHeight) {
     m_dispatchDescData = nullptr;
     m_lastDispatchCount = 0;
 
@@ -264,7 +258,8 @@ void NrdBootstrap::updateFrame(
 
     nrd::CommonSettings commonSettings{};
     copyMat4(projectionMatrix, commonSettings.viewToClipMatrix);
-    copyMat4(hasPrevMatrices ? prevProjectionMatrix : projectionMatrix, commonSettings.viewToClipMatrixPrev);
+    copyMat4(hasPrevMatrices ? prevProjectionMatrix : projectionMatrix,
+             commonSettings.viewToClipMatrixPrev);
     copyMat4(viewMatrix, commonSettings.worldToViewMatrix);
     copyMat4(hasPrevMatrices ? prevViewMatrix : viewMatrix, commonSettings.worldToViewMatrixPrev);
     commonSettings.resourceSize[0] = clampDimToU16(renderWidth);
@@ -277,18 +272,19 @@ void NrdBootstrap::updateFrame(
     commonSettings.rectSizePrev[1] = commonSettings.resourceSize[1];
     commonSettings.motionVectorScale[0] = 1.0f / static_cast<float>(std::max(1u, renderWidth));
     commonSettings.motionVectorScale[1] = 1.0f / static_cast<float>(std::max(1u, renderHeight));
-    commonSettings.motionVectorScale[2] = 0.0f;
+    commonSettings.motionVectorScale[2] = 1.0f;
     commonSettings.viewZScale = 1.0f;
     commonSettings.disocclusionThreshold = 0.01f;
     commonSettings.disocclusionThresholdAlternate = 0.10f;
     commonSettings.frameIndex = m_frameIndex++;
     commonSettings.accumulationMode = frameData.giLighting.resetHistory
-        ? nrd::AccumulationMode::RESTART
-        : nrd::AccumulationMode::CONTINUE;
+                                          ? nrd::AccumulationMode::RESTART
+                                          : nrd::AccumulationMode::CONTINUE;
 
     const nrd::Result commonResult = m_impl->setCommonSettings(*m_impl->instance, commonSettings);
     if (commonResult != nrd::Result::SUCCESS) {
-        std::cerr << "[NRD] SetCommonSettings failed with code " << static_cast<uint32_t>(commonResult) << "\n";
+        std::cerr << "[NRD] SetCommonSettings failed with code "
+                  << static_cast<uint32_t>(commonResult) << "\n";
         return;
     }
 
@@ -296,8 +292,10 @@ void NrdBootstrap::updateFrame(
     const float temporalBlend = glm::clamp(frameData.giLighting.denoiseTemporalBlend, 0.0f, 1.0f);
     const float accumulationTimeSec = 0.10f + (temporalBlend * 0.90f);
     const uint32_t maxFrames = nrd::GetMaxAccumulatedFrameNum(accumulationTimeSec, 60.0f);
-    reblurSettings.maxAccumulatedFrameNum = std::clamp(maxFrames, 1u, nrd::REBLUR_MAX_HISTORY_FRAME_NUM);
-    reblurSettings.maxFastAccumulatedFrameNum = std::max(1u, reblurSettings.maxAccumulatedFrameNum / 5u);
+    reblurSettings.maxAccumulatedFrameNum =
+        std::clamp(maxFrames, 1u, nrd::REBLUR_MAX_HISTORY_FRAME_NUM);
+    reblurSettings.maxFastAccumulatedFrameNum =
+        std::max(1u, reblurSettings.maxAccumulatedFrameNum / 5u);
     reblurSettings.maxStabilizedFrameNum = reblurSettings.maxAccumulatedFrameNum;
     reblurSettings.enableAntiFirefly = true;
     reblurSettings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::AREA_3X3;
@@ -305,17 +303,19 @@ void NrdBootstrap::updateFrame(
     const nrd::Result settingsResult =
         m_impl->setDenoiserSettings(*m_impl->instance, kNrdDenoiserId, &reblurSettings);
     if (settingsResult != nrd::Result::SUCCESS) {
-        std::cerr << "[NRD] SetDenoiserSettings failed with code " << static_cast<uint32_t>(settingsResult) << "\n";
+        std::cerr << "[NRD] SetDenoiserSettings failed with code "
+                  << static_cast<uint32_t>(settingsResult) << "\n";
         return;
     }
 
-    const nrd::Identifier denoiserIds[] = { kNrdDenoiserId };
-    const nrd::DispatchDesc* dispatchDescs = nullptr;
+    const nrd::Identifier denoiserIds[] = {kNrdDenoiserId};
+    const nrd::DispatchDesc *dispatchDescs = nullptr;
     uint32_t dispatchCount = 0;
-    const nrd::Result dispatchResult =
-        m_impl->getComputeDispatches(*m_impl->instance, denoiserIds, 1u, dispatchDescs, dispatchCount);
+    const nrd::Result dispatchResult = m_impl->getComputeDispatches(
+        *m_impl->instance, denoiserIds, 1u, dispatchDescs, dispatchCount);
     if (dispatchResult != nrd::Result::SUCCESS) {
-        std::cerr << "[NRD] GetComputeDispatches failed with code " << static_cast<uint32_t>(dispatchResult) << "\n";
+        std::cerr << "[NRD] GetComputeDispatches failed with code "
+                  << static_cast<uint32_t>(dispatchResult) << "\n";
         return;
     }
 

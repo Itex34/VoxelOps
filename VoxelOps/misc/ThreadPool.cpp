@@ -1,7 +1,8 @@
 #include "ThreadPool.hpp"
 
 ThreadPool::ThreadPool(size_t threadCount) {
-    if (threadCount <= 0) threadCount = 1;
+    if (threadCount <= 0)
+        threadCount = 1;
 
     for (size_t i = 0; i < threadCount; i++) {
         workers.emplace_back([this] { workerLoop(); });
@@ -12,12 +13,13 @@ ThreadPool::~ThreadPool() {
     stop = true;
     cv.notify_all();
 
-    for (auto& t : workers) {
-        if (t.joinable()) t.join();
+    for (auto &t : workers) {
+        if (t.joinable())
+            t.join();
     }
 }
 
-void ThreadPool::enqueue(const std::function<void()>& job) {
+void ThreadPool::enqueue(const std::function<void()> &job) {
     {
         std::lock_guard<std::mutex> lock(queueMutex);
         jobs.push(job);
@@ -34,7 +36,8 @@ void ThreadPool::workerLoop() {
 
             cv.wait(lock, [&] { return stop || !jobs.empty(); });
 
-            if (stop && jobs.empty()) return;
+            if (stop && jobs.empty())
+                return;
 
             job = std::move(jobs.front());
             jobs.pop();

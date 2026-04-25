@@ -9,8 +9,7 @@
 
 namespace NetPacket {
 
-bool ParsePlayerInputPacket(const uint8_t* data, uint32_t size, PlayerInput& out)
-{
+bool ParsePlayerInputPacket(const uint8_t *data, uint32_t size, PlayerInput &out) {
     if (!data || size != kPlayerInputPacketBytes) {
         return false;
     }
@@ -22,14 +21,11 @@ bool ParsePlayerInputPacket(const uint8_t* data, uint32_t size, PlayerInput& out
     out.pitch = ReadF32LE(data + 13);
     out.moveX = ReadF32LE(data + 17);
     out.moveZ = ReadF32LE(data + 21);
-    return std::isfinite(out.yaw) &&
-        std::isfinite(out.pitch) &&
-        std::isfinite(out.moveX) &&
-        std::isfinite(out.moveZ);
+    return std::isfinite(out.yaw) && std::isfinite(out.pitch) && std::isfinite(out.moveX) &&
+           std::isfinite(out.moveZ);
 }
 
-bool ParseChunkRequestPacket(const uint8_t* data, uint32_t size, ChunkRequest& out)
-{
+bool ParseChunkRequestPacket(const uint8_t *data, uint32_t size, ChunkRequest &out) {
     if (!data || size != kChunkRequestPacketBytes) {
         return false;
     }
@@ -40,8 +36,7 @@ bool ParseChunkRequestPacket(const uint8_t* data, uint32_t size, ChunkRequest& o
     return true;
 }
 
-bool ParseShootRequestPacket(const uint8_t* data, uint32_t size, ShootRequest& out)
-{
+bool ParseShootRequestPacket(const uint8_t *data, uint32_t size, ShootRequest &out) {
     if (!data || size != kShootRequestPacketBytes) {
         return false;
     }
@@ -56,17 +51,12 @@ bool ParseShootRequestPacket(const uint8_t* data, uint32_t size, ShootRequest& o
     out.dirZ = ReadF32LE(data + 31);
     out.seed = ReadU32LE(data + 35);
     out.inputFlags = data[39];
-    return
-        std::isfinite(out.posX) &&
-        std::isfinite(out.posY) &&
-        std::isfinite(out.posZ) &&
-        std::isfinite(out.dirX) &&
-        std::isfinite(out.dirY) &&
-        std::isfinite(out.dirZ);
+    return std::isfinite(out.posX) && std::isfinite(out.posY) && std::isfinite(out.posZ) &&
+           std::isfinite(out.dirX) && std::isfinite(out.dirY) && std::isfinite(out.dirZ);
 }
 
-bool ParseInventoryActionRequestPacket(const uint8_t* data, uint32_t size, InventoryActionRequest& out)
-{
+bool ParseInventoryActionRequestPacket(const uint8_t *data, uint32_t size,
+                                       InventoryActionRequest &out) {
     if (!data || size != kInventoryActionRequestPacketBytes) {
         return false;
     }
@@ -80,8 +70,7 @@ bool ParseInventoryActionRequestPacket(const uint8_t* data, uint32_t size, Inven
     return true;
 }
 
-bool ParseBlockPlaceRequestPacket(const uint8_t* data, uint32_t size, BlockPlaceRequest& out)
-{
+bool ParseBlockPlaceRequestPacket(const uint8_t *data, uint32_t size, BlockPlaceRequest &out) {
     if (!data || size < (1u + 4u + 2u) || size > kBlockPlaceRequestPacketMaxBytes) {
         return false;
     }
@@ -95,8 +84,7 @@ bool ParseBlockPlaceRequestPacket(const uint8_t* data, uint32_t size, BlockPlace
     return true;
 }
 
-bool ParseBlockBreakRequestPacket(const uint8_t* data, uint32_t size, BlockBreakRequest& out)
-{
+bool ParseBlockBreakRequestPacket(const uint8_t *data, uint32_t size, BlockBreakRequest &out) {
     if (!data || size < (1u + 4u + 2u) || size > kBlockBreakRequestPacketMaxBytes) {
         return false;
     }
@@ -111,4 +99,3 @@ bool ParseBlockBreakRequestPacket(const uint8_t* data, uint32_t size, BlockBreak
 }
 
 } // namespace NetPacket
-

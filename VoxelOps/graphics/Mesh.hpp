@@ -10,33 +10,24 @@
 
 #include "Shader.hpp"
 
-
-
-
-
-struct Vertex { 
-    glm::vec3 position; 
-    glm::vec3 normal; 
-    glm::vec2 texCoords; 
+struct Vertex {
+    glm::vec3 position;
+    glm::vec3 normal;
+    glm::vec2 texCoords;
     glm::vec3 color;
 };
 
-
-
-
 struct VertexPacked {
-    uint16_t px, py, pz;   // quantized position in chunk (0..65535)
-    uint32_t normal;       // packed 10_10_10_2 signed normal
-    uint16_t u, v;         // quantized texcoord (0..65535)   
-    uint32_t color;        // RGBA8 (0xAABBGGRR or 0xRRGGBBAA depending on packing below)
+    uint16_t px, py, pz; // quantized position in chunk (0..65535)
+    uint32_t normal;     // packed 10_10_10_2 signed normal
+    uint16_t u, v;       // quantized texcoord (0..65535)
+    uint32_t color;      // RGBA8 (0xAABBGGRR or 0xRRGGBBAA depending on packing below)
 };
-
 
 struct VoxelVertex {
-    uint32_t low;   // bitpacked payload
-    uint32_t high;  // low 16 bits used; remaining bits reserved
+    uint32_t low;  // bitpacked payload
+    uint32_t high; // low 16 bits used; remaining bits reserved
 };
-
 
 struct Texture {
     unsigned int id;
@@ -44,47 +35,40 @@ struct Texture {
     std::string path;
 };
 
-
 class Mesh {
-public:
-    Mesh(std::vector<Vertex> vertices,
-        std::vector<unsigned int> indices,
-        std::vector<Texture> textures);
+  public:
+    Mesh(std::vector<Vertex> vertices, std::vector<unsigned int> indices,
+         std::vector<Texture> textures);
     ~Mesh();
     void draw() const;
-    Mesh(const Mesh&) = delete;
-    Mesh& operator=(const Mesh&) = delete;
-    Mesh(Mesh&& other) noexcept;
-    Mesh& operator=(Mesh&& other) noexcept;
+    Mesh(const Mesh &) = delete;
+    Mesh &operator=(const Mesh &) = delete;
+    Mesh(Mesh &&other) noexcept;
+    Mesh &operator=(Mesh &&other) noexcept;
 
-
-
-    size_t vertexCount() const { return vertexCount_; }
-    size_t indexCount() const { return static_cast<size_t>(static_cast<long long>(indexCount_)); }
-    size_t cpuSideMemoryBytes() const { return 0; } // nothing stored CPU-side
-private:
+    size_t vertexCount() const {
+        return vertexCount_;
+    }
+    size_t indexCount() const {
+        return static_cast<size_t>(static_cast<long long>(indexCount_));
+    }
+    size_t cpuSideMemoryBytes() const {
+        return 0;
+    } // nothing stored CPU-side
+  private:
     unsigned int VAO = 0, VBO = 0, EBO = 0;
     std::vector<Texture> textures;
-    GLsizei indexCount_ = 0;  
+    GLsizei indexCount_ = 0;
 
     size_t vertexCount_ = 0;
-
 };
 
-
-
-
-
 struct BufferRange {
-	size_t offset = 0; // in elements
+    size_t offset = 0; // in elements
     size_t count = 0;
 };
 
-
-enum class ChunkMeshStatus {
-    Ok,
-    OutOfMemory
-};
+enum class ChunkMeshStatus { Ok, OutOfMemory };
 
 struct ChunkMesh {
     BufferRange vertexRange;
@@ -93,4 +77,3 @@ struct ChunkMesh {
     bool valid = false;
     ChunkMeshStatus status = ChunkMeshStatus::Ok;
 };
-

@@ -1,9 +1,8 @@
 #pragma once
 
-
 #include <glad/glad.h>
 #include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp> 
+#include <glm/gtc/matrix_transform.hpp>
 #include "../voxels/Chunk.hpp"
 #include "../voxels/ChunkColumn.hpp"
 
@@ -13,7 +12,6 @@
 #include "Mesh.hpp"
 #include "TextureAtlas.hpp"
 #include "RegionMeshBuffer.hpp"
-
 
 #include "../ExternLibs/FastNoiseLite.h"
 #include "../ExternLibs/skarupke/flat_hash_map.hpp"
@@ -33,17 +31,15 @@
 #include <cstdint>
 
 //--IN CHUNKS--
-constexpr int WORLD_MIN_X = -20; 
+constexpr int WORLD_MIN_X = -20;
 constexpr int WORLD_MAX_X = 20;
 
 constexpr int WORLD_MIN_Z = -20;
 constexpr int WORLD_MAX_Z = 20;
 
-
 //--IN BLOCKS--
 constexpr int WORLD_MIN_Y = -16; // bedrock layer
-constexpr int WORLD_MAX_Y = 32; 
-
+constexpr int WORLD_MAX_Y = 32;
 
 //--IN CHUNKS--
 constexpr int WORLD_SIZE_X = WORLD_MAX_X - WORLD_MIN_X + 1;
@@ -52,30 +48,21 @@ constexpr int WORLD_SIZE_Z = WORLD_MAX_Z - WORLD_MIN_Z + 1;
 //--IN BLOCKS--
 constexpr int WORLD_SIZE_Y = (WORLD_MAX_Y - WORLD_MIN_Y + 1);
 
-
-
-
-
-
 // Region size in chunks (e.g., 8x8x8 chunks per region)
 constexpr int REGION_SIZE = 8;
 
 // Bytes per region (tune based on your needs)
 constexpr size_t REGION_VERTEX_BYTES = 3 * 1024 * 1024; // 16 MB
-constexpr size_t REGION_INDEX_BYTES = 2 * 1024 * 1024; // 8 MB
-
+constexpr size_t REGION_INDEX_BYTES = 2 * 1024 * 1024;  // 8 MB
 
 struct Vec3Hasher {
-    size_t operator()(const glm::ivec3& v) const {
+    size_t operator()(const glm::ivec3 &v) const {
         return std::hash<int>()(v.x) ^ std::hash<int>()(v.y << 1) ^ std::hash<int>()(v.z << 2);
     }
 };
 
-
-
-
 struct IVec3Hash {
-    std::size_t operator()(glm::ivec3 const& v) const noexcept {
+    std::size_t operator()(glm::ivec3 const &v) const noexcept {
         // mix the three 32-bit ints into a 64-bit value then reduce to size_t
         // using large primes for simple hashing (good enough for chunk coords)
         uint64_t x = static_cast<uint32_t>(v.x);
@@ -86,9 +73,8 @@ struct IVec3Hash {
     }
 };
 
-
 struct IVec2Hash {
-    std::size_t operator()(glm::ivec2 const& v) const noexcept {
+    std::size_t operator()(glm::ivec2 const &v) const noexcept {
         // mix the three 32-bit ints into a 64-bit value then reduce to size_t
         // using large primes for simple hashing (good enough for chunk coords)
         uint64_t x = static_cast<uint32_t>(v.x);
@@ -97,9 +83,6 @@ struct IVec2Hash {
         return static_cast<std::size_t>(h);
     }
 };
-
-
-
 
 struct Region {
     glm::ivec3 regionPos;
@@ -110,37 +93,24 @@ struct Region {
 
     Region() = default;
     Region(glm::ivec3 pos, size_t vertexBytes, size_t indexBytes)
-        : regionPos(pos)
-        , vertexBytes(vertexBytes)
-        , indexBytes(indexBytes)
-        , gpu(std::make_unique<RegionMeshBuffer>(vertexBytes, indexBytes))
-    {
-    }
+        : regionPos(pos), vertexBytes(vertexBytes), indexBytes(indexBytes),
+          gpu(std::make_unique<RegionMeshBuffer>(vertexBytes, indexBytes)) {}
 };
 
-
-
-
-
 struct IVec3Eq {
-    bool operator()(glm::ivec3 const& a, glm::ivec3 const& b) const noexcept {
+    bool operator()(glm::ivec3 const &a, glm::ivec3 const &b) const noexcept {
         return a.x == b.x && a.y == b.y && a.z == b.z;
     }
 };
 
-
-
-
-
-
 struct ChunkRange {
-    uint32_t firstIndex;   // index offset in bigEBO (in indices)
-    uint32_t indexCount;   // number of indices
-    uint32_t baseVertex;   // base vertex index in bigVBO (in vertices)
-    uint32_t vertexCount;  // current vertex count
+    uint32_t firstIndex;     // index offset in bigEBO (in indices)
+    uint32_t indexCount;     // number of indices
+    uint32_t baseVertex;     // base vertex index in bigVBO (in vertices)
+    uint32_t vertexCount;    // current vertex count
     uint32_t vertexCapacity; // optional: reserved capacity for in-place updates
     uint32_t indexCapacity;  // optional: reserved capacity for in-place updates
-    glm::ivec3 chunkPos;   // world chunk coordinates
+    glm::ivec3 chunkPos;     // world chunk coordinates
     bool alive = true;
 };
 
@@ -149,7 +119,6 @@ struct CpuChunkMesh {
     std::vector<uint16_t> indices;
     uint64_t revision = 0;
 };
-
 
 class WorldGen;
 class ChunkRenderSystem;
@@ -162,71 +131,59 @@ enum class NetworkChunkDeltaApplyResult {
     VersionGap = 3
 };
 
-class ChunkManager{
-public:
-    ChunkManager(IRenderDevice& renderer_);
+class ChunkManager {
+  public:
+    ChunkManager(IRenderDevice &renderer_);
 
-    void renderChunks(
-        Shader& shader,
-        Frustum& frustum,
-        const glm::vec3& viewPosition,
-        int maxRenderDistance
-    );
-    void renderChunksDepthPass(
-        GLuint shadowProgram,
-        const glm::mat4& lightViewProj,
-        const glm::vec3& viewPosition,
-        int maxRenderDistance
-    );
+    void renderChunks(Shader &shader, Frustum &frustum, const glm::vec3 &viewPosition,
+                      int maxRenderDistance);
+    void renderChunksDepthPass(GLuint shadowProgram, const glm::mat4 &lightViewProj,
+                               const glm::vec3 &viewPosition, int maxRenderDistance);
 
-    void renderChunkBorders(glm::mat4& view, glm::mat4& projection);
-    void setBlockInWorld(const glm::ivec3& worldPos, BlockID blockID);
+    void renderChunkBorders(glm::mat4 &view, glm::mat4 &projection);
+    void setBlockInWorld(const glm::ivec3 &worldPos, BlockID blockID);
 
     void setBlockGlobal(int worldX, int worldY, int worldZ, BlockID id);
     BlockID getBlockGlobal(int worldX, int worldY, int worldZ);
 
     void updateDirtyChunks(size_t maxChunksPerCall = 0, int64_t maxBudgetUs = 0);
-    void updateChunks(const glm::ivec3& playerWorldPos, int renderDistance);
-    void updateDirtyChunkAt(const glm::ivec3& chunkPos);
-    void markChunkDirty(const glm::ivec3& pos);
+    void updateChunks(const glm::ivec3 &playerWorldPos, int renderDistance);
+    void updateDirtyChunkAt(const glm::ivec3 &chunkPos);
+    void markChunkDirty(const glm::ivec3 &pos);
 
     void playerPlaceBlockAt(glm::ivec3 blockCoords, int faceNormal, BlockID blockType);
-    void playerBreakBlockAt(const glm::ivec3& blockCoords);
-    bool applyNetworkChunkData(const ChunkData& packet);
-    NetworkChunkDeltaApplyResult applyNetworkChunkDelta(const ChunkDelta& packet);
-    void applyNetworkChunkUnload(const ChunkUnload& packet);
+    void playerBreakBlockAt(const glm::ivec3 &blockCoords);
+    bool applyNetworkChunkData(const ChunkData &packet);
+    NetworkChunkDeltaApplyResult applyNetworkChunkDelta(const ChunkDelta &packet);
+    void applyNetworkChunkUnload(const ChunkUnload &packet);
 
-    const std::unordered_map<glm::ivec3, Chunk, IVec3Hash>& getChunks() const {
+    const std::unordered_map<glm::ivec3, Chunk, IVec3Hash> &getChunks() const {
         return chunkMap;
     }
 
-    std::unordered_map<glm::ivec3, Chunk, IVec3Hash>& getChunks() {
+    std::unordered_map<glm::ivec3, Chunk, IVec3Hash> &getChunks() {
         return chunkMap;
     }
 
-    [[nodiscard]] bool hasChunkLoaded(const glm::ivec3& chunkPos) const;
-    [[nodiscard]] const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash>& getCpuChunkMeshes() const noexcept {
+    [[nodiscard]] bool hasChunkLoaded(const glm::ivec3 &chunkPos) const;
+    [[nodiscard]] const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &
+    getCpuChunkMeshes() const noexcept {
         return m_cpuChunkMeshes;
     }
 
-
-
-    glm::ivec3 worldToChunkPos(const glm::ivec3& worldPos) const;
-    glm::ivec3 worldToLocalPos(const glm::ivec3& worldPos) const;
-
+    glm::ivec3 worldToChunkPos(const glm::ivec3 &worldPos) const;
+    glm::ivec3 worldToLocalPos(const glm::ivec3 &worldPos) const;
 
     bool enableAO;
     bool enableShadows;
 
     TextureAtlas atlas;
 
-
-
     void debugMemoryEstimate();
 
-    bool inBounds(const glm::ivec3& pos) const;
+    bool inBounds(const glm::ivec3 &pos) const;
 
-private:
+  private:
     friend class WorldGen;
     friend class ChunkRenderSystem;
 
@@ -235,7 +192,7 @@ private:
         static constexpr int SunGridMax = CHUNK_SIZE + 1;
         static constexpr int SunGridSize = SunGridMax - SunGridMin + 1;
 
-        glm::ivec3 chunkPos{ 0 };
+        glm::ivec3 chunkPos{0};
         uint64_t buildTicket = 0;
         bool enableAO = false;
         bool enableShadows = false;
@@ -248,7 +205,7 @@ private:
     };
 
     struct ChunkMeshBuildResult {
-        glm::ivec3 chunkPos{ 0 };
+        glm::ivec3 chunkPos{0};
         uint64_t buildTicket = 0;
         std::vector<VoxelVertex> vertices;
         std::vector<uint16_t> indices;
@@ -256,12 +213,10 @@ private:
 
     std::unordered_map<glm::ivec3, Region, IVec3Hash> regions;
 
-
     std::unordered_map<glm::ivec3, Chunk, IVec3Hash> chunkMap;
     std::unordered_map<glm::ivec3, uint64_t, IVec3Hash> m_networkChunkVersions;
 
-
-    std::unordered_map<glm::ivec3, ChunkMesh, IVec3Hash> chunkMeshes; //deprecated
+    std::unordered_map<glm::ivec3, ChunkMesh, IVec3Hash> chunkMeshes; // deprecated
     std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> m_cpuChunkMeshes;
     uint64_t m_nextCpuChunkMeshRevision = 1;
 
@@ -270,60 +225,45 @@ private:
     std::deque<ChunkMeshBuildResult> m_readyChunkMeshes;
     std::mutex m_readyChunkMeshesMutex;
     std::unordered_map<glm::ivec3, uint64_t, IVec3Hash> m_chunkBuildTickets;
-    std::atomic<uint64_t> m_nextChunkBuildTicket{ 1 };
-
-
-
+    std::atomic<uint64_t> m_nextChunkBuildTicket{1};
 
     std::unordered_map<glm::ivec2, ChunkColumn, IVec2Hash> chunkColumns;
 
-     
     // Convert chunk position to region position
-    inline glm::ivec3 chunkToRegionPos(const glm::ivec3& chunkPos) const {
-        return glm::ivec3(
-            floorDiv(chunkPos.x, REGION_SIZE),
-            floorDiv(chunkPos.y, REGION_SIZE),
-            floorDiv(chunkPos.z, REGION_SIZE)
-        );
+    inline glm::ivec3 chunkToRegionPos(const glm::ivec3 &chunkPos) const {
+        return glm::ivec3(floorDiv(chunkPos.x, REGION_SIZE), floorDiv(chunkPos.y, REGION_SIZE),
+                          floorDiv(chunkPos.z, REGION_SIZE));
     }
 
     // Get or create region for a chunk
-    Region& getOrCreateRegion(const glm::ivec3& chunkPos);
+    Region &getOrCreateRegion(const glm::ivec3 &chunkPos);
 
-    bool rebuildRegion(const glm::ivec3& regionPos, size_t reserveVertices = 0, size_t reserveIndices = 0);
+    bool rebuildRegion(const glm::ivec3 &regionPos, size_t reserveVertices = 0,
+                       size_t reserveIndices = 0);
 
     // Upload mesh to appropriate region
-    void uploadChunkMesh(const glm::ivec3& chunkPos,
-        const std::vector<VoxelVertex>& vertices,
-        const std::vector<uint16_t>& indices);
+    void uploadChunkMesh(const glm::ivec3 &chunkPos, const std::vector<VoxelVertex> &vertices,
+                         const std::vector<uint16_t> &indices);
 
     // Remove mesh from region
-    void removeChunkMesh(const glm::ivec3& chunkPos);
+    void removeChunkMesh(const glm::ivec3 &chunkPos);
 
-
-    
     void appendChunkMesh();
 
-
-    bool requestChunkRebuild(const glm::ivec3& pos);
+    bool requestChunkRebuild(const glm::ivec3 &pos);
     void buildChunkMeshWorker(ChunkMeshBuildJob job);
 
-
-
-    void setBlockSafe(Chunk& currentChunk, const glm::ivec3& pos, BlockID id);
-    BlockID getBlockSafe(Chunk& currentChunk, const glm::ivec3& pos);
-
-
+    void setBlockSafe(Chunk &currentChunk, const glm::ivec3 &pos, BlockID id);
+    BlockID getBlockSafe(Chunk &currentChunk, const glm::ivec3 &pos);
 
     void rebuildColumnSunCache(int colChunkX, int colChunkZ);
-    void rebuildSunlightAffectedColumnChunks(int colChunkX, int colChunkZ, int oldTopY, int newTopY);
-    void updateColumnSunCacheForBlockChange(int worldX, int worldY, int worldZ, BlockID oldId, BlockID newId);
+    void rebuildSunlightAffectedColumnChunks(int colChunkX, int colChunkZ, int oldTopY,
+                                             int newTopY);
+    void updateColumnSunCacheForBlockChange(int worldX, int worldY, int worldZ, BlockID oldId,
+                                            BlockID newId);
     int getColumnTopOccluderY(int worldX, int worldZ) const;
 
-
-    ChunkColumn& getOrCreateColumn(int colX, int colZ);
-
-
+    ChunkColumn &getOrCreateColumn(int colX, int colZ);
 
     ChunkMeshBuilder builder;
 
@@ -334,37 +274,31 @@ private:
 
     bool suppressSunlightAffectedRebuilds = false;
 
-
-
-
-    ThreadPool meshPool{ std::max(1u, std::thread::hardware_concurrency() - 1) };
-
-
+    ThreadPool meshPool{std::max(1u, std::thread::hardware_concurrency() - 1)};
 
     FastNoiseLite noise;
 
-
-
-    inline std::array<bool, 6> isEdgeBlock(glm::ivec3 localPos){
-        return {
-            (localPos.x == 0), (localPos.x == CHUNK_SIZE - 1),
-            (localPos.y == 0), (localPos.y == CHUNK_SIZE - 1),
-            (localPos.z == 0), (localPos.z == CHUNK_SIZE - 1)
-        };
+    inline std::array<bool, 6> isEdgeBlock(glm::ivec3 localPos) {
+        return {(localPos.x == 0), (localPos.x == CHUNK_SIZE - 1),
+                (localPos.y == 0), (localPos.y == CHUNK_SIZE - 1),
+                (localPos.z == 0), (localPos.z == CHUNK_SIZE - 1)};
     }
 
     inline std::array<bool, 8> isCornerBlock(glm::ivec3 localPos) {
         return {
-            (localPos.x == 0 && localPos.y == 0), (localPos.x == (CHUNK_SIZE - 1) && localPos.y == (CHUNK_SIZE - 1)),
-            (localPos.y == 0 && localPos.z == 0), (localPos.y == (CHUNK_SIZE - 1) && localPos.z == (CHUNK_SIZE - 1)),
+            (localPos.x == 0 && localPos.y == 0),
+            (localPos.x == (CHUNK_SIZE - 1) && localPos.y == (CHUNK_SIZE - 1)),
+            (localPos.y == 0 && localPos.z == 0),
+            (localPos.y == (CHUNK_SIZE - 1) && localPos.z == (CHUNK_SIZE - 1)),
 
-            (localPos.x == 0 && localPos.y == (CHUNK_SIZE - 1)), (localPos.x == (CHUNK_SIZE - 1) && localPos.y == 0),
-            (localPos.y == 0 && localPos.z == (CHUNK_SIZE - 1)), (localPos.y == (CHUNK_SIZE - 1) && localPos.z == 0),
+            (localPos.x == 0 && localPos.y == (CHUNK_SIZE - 1)),
+            (localPos.x == (CHUNK_SIZE - 1) && localPos.y == 0),
+            (localPos.y == 0 && localPos.z == (CHUNK_SIZE - 1)),
+            (localPos.y == (CHUNK_SIZE - 1) && localPos.z == 0),
         };
     }
 
-
-    inline int floorDiv(int a, int b) const{
+    inline int floorDiv(int a, int b) const {
         int q = a / b;
         int r = a % b;
         if ((r != 0) && ((r > 0) != (b > 0))) {
@@ -375,15 +309,11 @@ private:
 
     inline int mod(int a, int b) const {
         int r = a % b;
-        if (r < 0) r += std::abs(b);
+        if (r < 0)
+            r += std::abs(b);
         return r;
     }
 
-    IRenderDevice& renderer;
+    IRenderDevice &renderer;
     bool m_usesOpenGLBuffers = true;
 };
-
-
-
-
-

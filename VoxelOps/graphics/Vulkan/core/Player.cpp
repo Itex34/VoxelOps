@@ -5,11 +5,9 @@
 
 #include <algorithm>
 
-Player::Player(glm::vec3 startPos)
-    : playerCamera(startPos) {
-}
+Player::Player(glm::vec3 startPos) : playerCamera(startPos) {}
 
-void Player::update(SDL_Window* window) {
+void Player::update(SDL_Window *window) {
     if (!window) {
         return;
     }
@@ -17,7 +15,8 @@ void Player::update(SDL_Window* window) {
     const uint64_t nowNs = SDL_GetTicksNS();
     float deltaTimeSeconds = 0.016f;
     if (lastUpdateNs != 0 && nowNs > lastUpdateNs) {
-        deltaTimeSeconds = static_cast<float>(static_cast<double>(nowNs - lastUpdateNs) / 1'000'000'000.0);
+        deltaTimeSeconds =
+            static_cast<float>(static_cast<double>(nowNs - lastUpdateNs) / 1'000'000'000.0);
     }
     lastUpdateNs = nowNs;
     deltaTimeSeconds = std::clamp(deltaTimeSeconds, 0.0f, 0.1f);
@@ -49,9 +48,9 @@ void Player::processMouseInput(float deltaX, float deltaY) noexcept {
     playerCamera.updateRotation(newYaw, newPitch);
 }
 
-void Player::processKeyboardInput(SDL_Window* window, float deltaTimeSeconds) {
+void Player::processKeyboardInput(SDL_Window *window, float deltaTimeSeconds) {
     int keyCount = 0;
-    const bool* keys = SDL_GetKeyboardState(&keyCount);
+    const bool *keys = SDL_GetKeyboardState(&keyCount);
     if (!keys) {
         return;
     }
@@ -66,8 +65,7 @@ void Player::processKeyboardInput(SDL_Window* window, float deltaTimeSeconds) {
     glm::vec3 right = glm::cross(playerCamera.front, worldUp);
     if (glm::length(right) > 0.0001f) {
         right = glm::normalize(right);
-    }
-    else {
+    } else {
         right = glm::vec3(1.0f, 0.0f, 0.0f);
     }
 

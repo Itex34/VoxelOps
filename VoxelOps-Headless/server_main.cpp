@@ -10,13 +10,14 @@
 #include <algorithm>
 #include <cctype>
 #include <string_view>
+#include <print>
 
 #include "network/ServerNetwork.hpp"
 #include "../Shared/runtime/Paths.hpp"
 
 using namespace std::chrono_literals;
 
-static std::atomic<bool> g_running{ true };
+static std::atomic<bool> g_running{true};
 static std::mutex g_consoleQueueMutex;
 static std::deque<std::string> g_consoleQueue;
 
@@ -24,7 +25,7 @@ static void handle_signal(int) {
     g_running = false;
 }
 
-static std::string trim_copy(const std::string& in) {
+static std::string trim_copy(const std::string &in) {
     size_t start = 0;
     while (start < in.size() && std::isspace(static_cast<unsigned char>(in[start])) != 0) {
         ++start;
@@ -37,22 +38,20 @@ static std::string trim_copy(const std::string& in) {
 }
 
 static std::string to_lower_copy(std::string in) {
-    std::transform(in.begin(), in.end(), in.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
+    std::transform(in.begin(), in.end(), in.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return in;
 }
 
 static void print_console_help() {
-    std::cout
-        << "[Console] Commands:\n"
-        << "  help\n"
-        << "  players\n"
-        << "  admins\n"
-        << "  admin grant <username|id:identity>\n"
-        << "  admin revoke <username|id:identity>\n"
-        << "  debug [on|off]\n"
-        << "  stop | quit | exit\n";
+    std::print("[Console] Commands:\n"
+               "  help\n"
+               "  players\n"
+               "  admins\n"
+               "  admin grant <username|id:identity>\n"
+               "  admin revoke <username|id:identity>\n"
+               "  debug [on|off]\n"
+               "  stop | quit | exit\n");
 }
 
 struct ServerLaunchOptions {
@@ -61,13 +60,12 @@ struct ServerLaunchOptions {
 };
 
 static void print_startup_help() {
-    std::cout
-        << "VoxelOps headless server options:\n"
-        << "  --port <port> (default: 27015)\n"
-        << "  --help\n";
+    std::cout << "VoxelOps headless server options:\n"
+              << "  --port <port> (default: 27015)\n"
+              << "  --help\n";
 }
 
-static bool parse_port(std::string_view value, uint16_t& outPort) {
+static bool parse_port(std::string_view value, uint16_t &outPort) {
     if (value.empty()) {
         return false;
     }
@@ -80,8 +78,7 @@ static bool parse_port(std::string_view value, uint16_t& outPort) {
     unsigned long parsed = 0;
     try {
         parsed = std::stoul(std::string(value));
-    }
-    catch (...) {
+    } catch (...) {
         return false;
     }
 
@@ -92,9 +89,10 @@ static bool parse_port(std::string_view value, uint16_t& outPort) {
     return true;
 }
 
-static bool parse_launch_options(int argc, char** argv, ServerLaunchOptions& outOptions) {
+static bool parse_launch_options(int argc, char **argv, ServerLaunchOptions &outOptions) {
     for (int i = 1; i < argc; ++i) {
-        const std::string_view arg = (argv[i] != nullptr) ? std::string_view(argv[i]) : std::string_view();
+        const std::string_view arg =
+            (argv[i] != nullptr) ? std::string_view(argv[i]) : std::string_view();
         if (arg.empty()) {
             continue;
         }
@@ -125,7 +123,7 @@ static bool parse_launch_options(int argc, char** argv, ServerLaunchOptions& out
     return true;
 }
 
-static void process_console_command(const std::string& rawCommand, ServerNetwork& serverNet) {
+static void process_console_command(const std::string &rawCommand, ServerNetwork &serverNet) {
     const std::string command = trim_copy(rawCommand);
     if (command.empty()) {
         return;
@@ -155,7 +153,7 @@ static void process_console_command(const std::string& rawCommand, ServerNetwork
             return;
         }
         std::cout << "[Console] Connected players:\n";
-        for (const auto& [name, isAdmin] : users) {
+        for (const auto &[name, isAdmin] : users) {
             std::cout << "  - " << name << (isAdmin ? " [admin]" : "") << "\n";
         }
         return;
@@ -168,7 +166,7 @@ static void process_console_command(const std::string& rawCommand, ServerNetwork
             return;
         }
         std::cout << "[Console] Admin identities:\n";
-        for (const auto& name : admins) {
+        for (const auto &name : admins) {
             std::cout << "  - " << name << "\n";
         }
         return;
@@ -183,10 +181,9 @@ static void process_console_command(const std::string& rawCommand, ServerNetwork
             const auto admins = serverNet.GetAdminUsernames();
             if (admins.empty()) {
                 std::cout << "[Console] Admin list is empty.\n";
-            }
-            else {
+            } else {
                 std::cout << "[Console] Admin identities:\n";
-                for (const auto& name : admins) {
+                for (const auto &name : admins) {
                     std::cout << "  - " << name << "\n";
                 }
             }
@@ -194,7 +191,8 @@ static void process_console_command(const std::string& rawCommand, ServerNetwork
         }
 
         if (action != "grant" && action != "revoke") {
-            std::cout << "[Console] Usage: admin grant <username|id:identity> | admin revoke <username|id:identity>\n";
+            std::cout << "[Console] Usage: admin grant <username|id:identity> | admin revoke "
+                         "<username|id:identity>\n";
             return;
         }
 
@@ -202,14 +200,16 @@ static void process_console_command(const std::string& rawCommand, ServerNetwork
         iss >> username;
         username = trim_copy(username);
         if (username.empty()) {
-            std::cout << "[Console] Missing target. Usage: admin " << action << " <username|id:identity>\n";
+            std::cout << "[Console] Missing target. Usage: admin " << action
+                      << " <username|id:identity>\n";
             return;
         }
 
         const bool isGrant = (action == "grant");
         const bool changed = serverNet.SetAdminByUsername(username, isGrant);
         if (!changed) {
-            std::cout << "[Console] No matching user/admin state changed for '" << username << "'.\n";
+            std::cout << "[Console] No matching user/admin state changed for '" << username
+                      << "'.\n";
         }
         return;
     }
@@ -220,7 +220,8 @@ static void process_console_command(const std::string& rawCommand, ServerNetwork
         arg = to_lower_copy(arg);
 
         if (arg.empty()) {
-            std::cout << "[Console] debug is " << (serverNet.IsDebugLoggingEnabled() ? "on" : "off") << "\n";
+            std::cout << "[Console] debug is " << (serverNet.IsDebugLoggingEnabled() ? "on" : "off")
+                      << "\n";
             return;
         }
 
@@ -241,10 +242,7 @@ static void process_console_command(const std::string& rawCommand, ServerNetwork
     print_console_help();
 }
 
-
-
-
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     Shared::RuntimePaths::Initialize((argc > 0 && argv != nullptr) ? argv[0] : "");
 
     ServerLaunchOptions launchOptions;
@@ -267,7 +265,6 @@ int main(int argc, char** argv) {
     const uint16_t port = launchOptions.port;
     ServerNetwork serverNet;
 
-    
     if (!serverNet.Start(port)) {
         std::cerr << "Failed to start ServerNetwork on port " << port << "\n";
         return 1;
@@ -276,7 +273,7 @@ int main(int argc, char** argv) {
     // Launch networking thread
     std::thread netThread([&serverNet]() {
         serverNet.Run(); // blocking loop
-        });
+    });
 
     std::thread consoleInputThread([]() {
         std::string line;
@@ -300,7 +297,7 @@ int main(int argc, char** argv) {
             std::lock_guard<std::mutex> lk(g_consoleQueueMutex);
             pendingCommands.swap(g_consoleQueue);
         }
-        for (const std::string& command : pendingCommands) {
+        for (const std::string &command : pendingCommands) {
             process_console_command(command, serverNet);
         }
 
@@ -316,8 +313,9 @@ int main(int argc, char** argv) {
             msg.push_back(static_cast<char>(PacketType::Message));
             msg += "server_heartbeat";
 
-            serverNet.BroadcastRaw(msg.data(), static_cast<uint32_t>(msg.size()), k_HSteamNetConnection_Invalid);
-            if (serverNet.IsDebugLoggingEnabled()){
+            serverNet.BroadcastRaw(msg.data(), static_cast<uint32_t>(msg.size()),
+                                   k_HSteamNetConnection_Invalid);
+            if (serverNet.IsDebugLoggingEnabled()) {
                 std::cout << "[Server] Heartbeat broadcasted.\n";
             }
         }

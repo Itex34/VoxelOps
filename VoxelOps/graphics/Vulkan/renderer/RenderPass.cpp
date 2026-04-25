@@ -2,7 +2,8 @@
 
 #include <array>
 
-void RenderPass::create(const vk::raii::Device& device, vk::Format colorFormat, vk::Format depthFormat) {
+void RenderPass::create(const vk::raii::Device &device, vk::Format colorFormat,
+                        vk::Format depthFormat) {
     vk::AttachmentDescription colorAttachment{};
     colorAttachment.format = colorFormat;
     colorAttachment.samples = vk::SampleCountFlagBits::e1;
@@ -40,12 +41,15 @@ void RenderPass::create(const vk::raii::Device& device, vk::Format colorFormat, 
     vk::SubpassDependency dependency{};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass = 0;
-    dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests;
-    dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests;
+    dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput |
+                              vk::PipelineStageFlagBits::eEarlyFragmentTests;
+    dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput |
+                              vk::PipelineStageFlagBits::eEarlyFragmentTests;
     dependency.srcAccessMask = {};
-    dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+    dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite |
+                               vk::AccessFlagBits::eDepthStencilAttachmentWrite;
 
-    std::array<vk::AttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
+    std::array<vk::AttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
 
     vk::RenderPassCreateInfo renderPassInfo{};
     renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());

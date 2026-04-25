@@ -11,8 +11,10 @@ float NormalizeYawDegrees(float yawDegrees) {
         return 0.0f;
     }
     float y = std::fmod(yawDegrees, 360.0f);
-    if (y >= 180.0f) y -= 360.0f;
-    if (y < -180.0f) y += 360.0f;
+    if (y >= 180.0f)
+        y -= 360.0f;
+    if (y < -180.0f)
+        y += 360.0f;
     return y;
 }
 
@@ -20,10 +22,9 @@ float LerpYawDegrees(float from, float to, float t) {
     const float delta = NormalizeYawDegrees(to - from);
     return from + delta * t;
 }
-}
+} // namespace
 
-void SnapshotInterpolator::PushFrame(const PlayerSnapshotFrame& frame)
-{
+void SnapshotInterpolator::PushFrame(const PlayerSnapshotFrame &frame) {
     const double frameServerTimeSeconds =
         static_cast<double>(frame.serverTick) * kSnapshotTickSeconds;
 
@@ -32,7 +33,7 @@ void SnapshotInterpolator::PushFrame(const PlayerSnapshotFrame& frame)
         m_hasLatestServerTimeSeconds = true;
     }
 
-    for (const PlayerSnapshot& snapshot : frame.players) {
+    for (const PlayerSnapshot &snapshot : frame.players) {
         if (snapshot.id == frame.selfPlayerId) {
             continue;
         }
@@ -52,8 +53,7 @@ void SnapshotInterpolator::PushFrame(const PlayerSnapshotFrame& frame)
     }
 }
 
-bool SnapshotInterpolator::GetRenderTime(double& outRenderTime) const
-{
+bool SnapshotInterpolator::GetRenderTime(double &outRenderTime) const {
     if (!m_hasLatestServerTimeSeconds) {
         return false;
     }
@@ -61,32 +61,31 @@ bool SnapshotInterpolator::GetRenderTime(double& outRenderTime) const
     return true;
 }
 
-bool SnapshotInterpolator::BuildRemotePlayers(double renderTime, std::vector<InterpolatedPlayer>& outPlayers) const
-{
+bool SnapshotInterpolator::BuildRemotePlayers(double renderTime,
+                                              std::vector<InterpolatedPlayer> &outPlayers) const {
     outPlayers.clear();
     if (!m_hasLatestServerTimeSeconds) {
         return false;
     }
 
-    for (const auto& [id, history] : m_history) {
+    for (const auto &[id, history] : m_history) {
         if (history.empty()) {
             continue;
         }
 
-        const RemoteSnapshot* bestOlder = nullptr;
-        const RemoteSnapshot* bestNewer = nullptr;
+        const RemoteSnapshot *bestOlder = nullptr;
+        const RemoteSnapshot *bestNewer = nullptr;
         double olderTimeDiff = 0.0;
         double newerTimeDiff = 0.0;
 
-        for (const RemoteSnapshot& snap : history) {
+        for (const RemoteSnapshot &snap : history) {
             if (snap.serverTimeSeconds <= renderTime) {
                 const double diff = renderTime - snap.serverTimeSeconds;
                 if (!bestOlder || diff < olderTimeDiff) {
                     bestOlder = &snap;
                     olderTimeDiff = diff;
                 }
-            }
-            else {
+            } else {
                 const double diff = snap.serverTimeSeconds - renderTime;
                 if (!bestNewer || diff < newerTimeDiff) {
                     bestNewer = &snap;
@@ -107,16 +106,15 @@ bool SnapshotInterpolator::BuildRemotePlayers(double renderTime, std::vector<Int
             out.position = glm::mix(bestOlder->position, bestNewer->position, alpha);
             out.yawDegrees = LerpYawDegrees(bestOlder->yawDegrees, bestNewer->yawDegrees, alpha);
             out.weaponId = (alpha >= 0.5f) ? bestNewer->weaponId : bestOlder->weaponId;
-        }
-        else if (bestOlder) {
+        } else if (bestOlder) {
             const double timeSinceSnapshot = renderTime - bestOlder->serverTimeSeconds;
-            out.position = bestOlder->position + bestOlder->velocity * static_cast<float>(timeSinceSnapshot);
+            out.position =
+                bestOlder->position + bestOlder->velocity * static_cast<float>(timeSinceSnapshot);
             out.yawDegrees = bestOlder->yawDegrees;
             out.weaponId = bestOlder->weaponId;
-        }
-        else {
+        } else {
             // Only have newer snapshot (rare case)
-            const RemoteSnapshot* pick = bestNewer;
+            const RemoteSnapshot *pick = bestNewer;
             out.position = pick->position;
             out.yawDegrees = pick->yawDegrees;
             out.weaponId = pick->weaponId;
@@ -128,17 +126,15 @@ bool SnapshotInterpolator::BuildRemotePlayers(double renderTime, std::vector<Int
     return !outPlayers.empty();
 }
 
-void SnapshotInterpolator::Clear()
-{
+void SnapshotInterpolator::Clear() {
     m_history.clear();
     m_hasLatestServerTimeSeconds = false;
     m_latestServerTimeSeconds = 0.0;
 }
 
-void SnapshotInterpolator::AddSnapshot(PlayerID id, const RemoteSnapshot& snapshot)
-{
-    auto& history = m_history[id];
-    for (RemoteSnapshot& existing : history) {
+void SnapshotInterpolator::AddSnapshot(PlayerID id, const RemoteSnapshot &snapshot) {
+    auto &history = m_history[id];
+    for (RemoteSnapshot &existing : history) {
         if (existing.serverTick == snapshot.serverTick) {
             existing = snapshot;
             return;

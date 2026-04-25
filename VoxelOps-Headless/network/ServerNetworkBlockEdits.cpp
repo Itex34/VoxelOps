@@ -1,31 +1,28 @@
 #include "ServerNetwork.hpp"
 #include "PacketParsers.hpp"
 
-
-void ServerNetwork::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, const void* data, uint32_t size)
-{
-    auto sendResult = [&](const BlockPlaceResult& res) {
+void ServerNetwork::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, const void *data,
+                                                  uint32_t size) {
+    auto sendResult = [&](const BlockPlaceResult &res) {
         const std::vector<uint8_t> bytes = res.serialize();
         (void)SteamNetworkingSockets()->SendMessageToConnection(
-            incoming,
-            bytes.data(),
-            static_cast<uint32_t>(bytes.size()),
-            k_nSteamNetworkingSend_Reliable,
-            nullptr
-        );
+            incoming, bytes.data(), static_cast<uint32_t>(bytes.size()),
+            k_nSteamNetworkingSend_Reliable, nullptr);
     };
 
-    auto buildCorrectiveChunks = [](const std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq>& chunks) {
-        std::vector<BlockPlaceChunkCoord> corrective;
-        corrective.reserve(chunks.size());
-        for (const glm::ivec3& chunkPos : chunks) {
-            corrective.push_back(BlockPlaceChunkCoord{ chunkPos.x, chunkPos.y, chunkPos.z });
-        }
-        return corrective;
-    };
+    auto buildCorrectiveChunks =
+        [](const std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> &chunks) {
+            std::vector<BlockPlaceChunkCoord> corrective;
+            corrective.reserve(chunks.size());
+            for (const glm::ivec3 &chunkPos : chunks) {
+                corrective.push_back(BlockPlaceChunkCoord{chunkPos.x, chunkPos.y, chunkPos.z});
+            }
+            return corrective;
+        };
 
     BlockPlaceRequest request{};
-    if (!NetPacket::ParseBlockPlaceRequestPacket(reinterpret_cast<const uint8_t*>(data), size, request)) {
+    if (!NetPacket::ParseBlockPlaceRequestPacket(reinterpret_cast<const uint8_t *>(data), size,
+                                                 request)) {
         BlockPlaceResult result{};
         result.accepted = 0;
         result.rejectReason = BlockPlaceRejectReason::InvalidPacket;
@@ -57,7 +54,7 @@ void ServerNetwork::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, 
     normalizedEdits.reserve(request.edits.size());
     std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> touchedChunks;
     touchedChunks.reserve(request.edits.size());
-    for (const BlockPlaceEdit& edit : request.edits) {
+    for (const BlockPlaceEdit &edit : request.edits) {
         if (edit.blockId == static_cast<uint8_t>(BlockID::Air) ||
             edit.blockId >= static_cast<uint8_t>(BlockID::COUNT)) {
             BlockPlaceResult result{};
@@ -97,7 +94,7 @@ void ServerNetwork::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, 
     // Reject if any target cell intersects an alive player's collision capsule AABB.
     const std::vector<ServerPlayer> players = m_playerManager.getAllPlayersCopy();
     constexpr float kOccupancyEpsilon = 0.001f;
-    auto playerOccupiesBlock = [&](const ServerPlayer& player, const glm::ivec3& blockPos) {
+    auto playerOccupiesBlock = [&](const ServerPlayer &player, const glm::ivec3 &blockPos) {
         const float pxMin = player.position.x - player.radius + kOccupancyEpsilon;
         const float pxMax = player.position.x + player.radius - kOccupancyEpsilon;
         const float pyMin = player.position.y + kOccupancyEpsilon;
@@ -112,15 +109,13 @@ void ServerNetwork::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, 
         const float bzMin = static_cast<float>(blockPos.z);
         const float bzMax = bzMin + 1.0f;
 
-        return
-            !(pxMax <= bxMin || pxMin >= bxMax ||
-                pyMax <= byMin || pyMin >= byMax ||
-                pzMax <= bzMin || pzMin >= bzMax);
+        return !(pxMax <= bxMin || pxMin >= bxMax || pyMax <= byMin || pyMin >= byMax ||
+                 pzMax <= bzMin || pzMin >= bzMax);
     };
 
-    for (const auto& entry : normalizedEdits) {
-        const glm::ivec3& worldPos = entry.first;
-        for (const ServerPlayer& player : players) {
+    for (const auto &entry : normalizedEdits) {
+        const glm::ivec3 &worldPos = entry.first;
+        for (const ServerPlayer &player : players) {
             if (!player.isAlive) {
                 continue;
             }
@@ -143,7 +138,7 @@ void ServerNetwork::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, 
     std::unordered_map<glm::ivec3, ChunkDeltaAggregate, IVec3Hash, IVec3Eq> perChunkEdits;
     perChunkEdits.reserve(touchedChunks.size());
 
-    for (const auto& [worldPos, newId] : normalizedEdits) {
+    for (const auto &[worldPos, newId] : normalizedEdits) {
         const BlockID oldId = m_chunkManager.getBlockGlobal(worldPos.x, worldPos.y, worldPos.z);
         if (oldId == newId) {
             continue;
@@ -153,22 +148,19 @@ void ServerNetwork::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, 
 
         const glm::ivec3 chunkPos = m_chunkManager.worldToChunkPos(worldPos);
         const glm::ivec3 localPos = m_chunkManager.worldToLocalPos(worldPos);
-        ChunkDeltaAggregate& aggregate = perChunkEdits[chunkPos];
-        aggregate.edits.push_back(ChunkDeltaOp{
-            static_cast<uint8_t>(localPos.x),
-            static_cast<uint8_t>(localPos.y),
-            static_cast<uint8_t>(localPos.z),
-            static_cast<uint8_t>(newId)
-        });
+        ChunkDeltaAggregate &aggregate = perChunkEdits[chunkPos];
+        aggregate.edits.push_back(
+            ChunkDeltaOp{static_cast<uint8_t>(localPos.x), static_cast<uint8_t>(localPos.y),
+                         static_cast<uint8_t>(localPos.z), static_cast<uint8_t>(newId)});
     }
 
     std::vector<ChunkDelta> outboundDeltas;
     outboundDeltas.reserve(perChunkEdits.size());
-    for (auto& [chunkPos, aggregate] : perChunkEdits) {
+    for (auto &[chunkPos, aggregate] : perChunkEdits) {
         if (aggregate.edits.empty()) {
             continue;
         }
-        ServerChunk* chunk = m_chunkManager.getChunkIfExists(chunkPos);
+        ServerChunk *chunk = m_chunkManager.getChunkIfExists(chunkPos);
         if (chunk == nullptr) {
             BlockPlaceResult result{};
             result.requestId = request.requestId;
@@ -189,13 +181,13 @@ void ServerNetwork::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, 
         outboundDeltas.push_back(std::move(delta));
     }
 
-    for (const ChunkDelta& delta : outboundDeltas) {
-        const ChunkCoord coord{ delta.chunkX, delta.chunkY, delta.chunkZ };
+    for (const ChunkDelta &delta : outboundDeltas) {
+        const ChunkCoord coord{delta.chunkX, delta.chunkY, delta.chunkZ};
         std::vector<HSteamNetConnection> recipients;
         {
             std::lock_guard<std::mutex> lk(m_mutex);
             recipients.reserve(m_clients.size());
-            for (const auto& [conn, session] : m_clients) {
+            for (const auto &[conn, session] : m_clients) {
                 if (session.streamedChunks.find(coord) != session.streamedChunks.end()) {
                     recipients.push_back(conn);
                 }
@@ -209,12 +201,8 @@ void ServerNetwork::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, 
         const std::vector<uint8_t> bytes = delta.serialize();
         for (HSteamNetConnection conn : recipients) {
             (void)SteamNetworkingSockets()->SendMessageToConnection(
-                conn,
-                bytes.data(),
-                static_cast<uint32_t>(bytes.size()),
-                k_nSteamNetworkingSend_Reliable,
-                nullptr
-            );
+                conn, bytes.data(), static_cast<uint32_t>(bytes.size()),
+                k_nSteamNetworkingSend_Reliable, nullptr);
         }
     }
 
@@ -225,30 +213,28 @@ void ServerNetwork::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, 
     sendResult(result);
 }
 
-void ServerNetwork::HandleBlockBreakRequestPacket(HSteamNetConnection incoming, const void* data, uint32_t size)
-{
-    auto sendResult = [&](const BlockBreakResult& res) {
+void ServerNetwork::HandleBlockBreakRequestPacket(HSteamNetConnection incoming, const void *data,
+                                                  uint32_t size) {
+    auto sendResult = [&](const BlockBreakResult &res) {
         const std::vector<uint8_t> bytes = res.serialize();
         (void)SteamNetworkingSockets()->SendMessageToConnection(
-            incoming,
-            bytes.data(),
-            static_cast<uint32_t>(bytes.size()),
-            k_nSteamNetworkingSend_Reliable,
-            nullptr
-        );
+            incoming, bytes.data(), static_cast<uint32_t>(bytes.size()),
+            k_nSteamNetworkingSend_Reliable, nullptr);
     };
 
-    auto buildCorrectiveChunks = [](const std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq>& chunks) {
-        std::vector<BlockBreakChunkCoord> corrective;
-        corrective.reserve(chunks.size());
-        for (const glm::ivec3& chunkPos : chunks) {
-            corrective.push_back(BlockBreakChunkCoord{ chunkPos.x, chunkPos.y, chunkPos.z });
-        }
-        return corrective;
-    };
+    auto buildCorrectiveChunks =
+        [](const std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> &chunks) {
+            std::vector<BlockBreakChunkCoord> corrective;
+            corrective.reserve(chunks.size());
+            for (const glm::ivec3 &chunkPos : chunks) {
+                corrective.push_back(BlockBreakChunkCoord{chunkPos.x, chunkPos.y, chunkPos.z});
+            }
+            return corrective;
+        };
 
     BlockBreakRequest request{};
-    if (!NetPacket::ParseBlockBreakRequestPacket(reinterpret_cast<const uint8_t*>(data), size, request)) {
+    if (!NetPacket::ParseBlockBreakRequestPacket(reinterpret_cast<const uint8_t *>(data), size,
+                                                 request)) {
         BlockBreakResult result{};
         result.accepted = 0;
         result.rejectReason = BlockBreakRejectReason::InvalidPacket;
@@ -279,7 +265,7 @@ void ServerNetwork::HandleBlockBreakRequestPacket(HSteamNetConnection incoming, 
     normalizedEdits.reserve(request.edits.size());
     std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> touchedChunks;
     touchedChunks.reserve(request.edits.size());
-    for (const BlockBreakEdit& edit : request.edits) {
+    for (const BlockBreakEdit &edit : request.edits) {
         const glm::ivec3 worldPos(edit.worldX, edit.worldY, edit.worldZ);
         const glm::ivec3 chunkPos = m_chunkManager.worldToChunkPos(worldPos);
         if (!m_chunkManager.inBounds(chunkPos)) {
@@ -308,7 +294,7 @@ void ServerNetwork::HandleBlockBreakRequestPacket(HSteamNetConnection incoming, 
     // Keep break occupancy rules aligned with placement rules.
     const std::vector<ServerPlayer> players = m_playerManager.getAllPlayersCopy();
     constexpr float kOccupancyEpsilon = 0.001f;
-    auto playerOccupiesBlock = [&](const ServerPlayer& player, const glm::ivec3& blockPos) {
+    auto playerOccupiesBlock = [&](const ServerPlayer &player, const glm::ivec3 &blockPos) {
         const float pxMin = player.position.x - player.radius + kOccupancyEpsilon;
         const float pxMax = player.position.x + player.radius - kOccupancyEpsilon;
         const float pyMin = player.position.y + kOccupancyEpsilon;
@@ -323,14 +309,12 @@ void ServerNetwork::HandleBlockBreakRequestPacket(HSteamNetConnection incoming, 
         const float bzMin = static_cast<float>(blockPos.z);
         const float bzMax = bzMin + 1.0f;
 
-        return
-            !(pxMax <= bxMin || pxMin >= bxMax ||
-                pyMax <= byMin || pyMin >= byMax ||
-                pzMax <= bzMin || pzMin >= bzMax);
+        return !(pxMax <= bxMin || pxMin >= bxMax || pyMax <= byMin || pyMin >= byMax ||
+                 pzMax <= bzMin || pzMin >= bzMax);
     };
 
-    for (const glm::ivec3& worldPos : normalizedEdits) {
-        for (const ServerPlayer& player : players) {
+    for (const glm::ivec3 &worldPos : normalizedEdits) {
+        for (const ServerPlayer &player : players) {
             if (!player.isAlive) {
                 continue;
             }
@@ -353,7 +337,7 @@ void ServerNetwork::HandleBlockBreakRequestPacket(HSteamNetConnection incoming, 
     std::unordered_map<glm::ivec3, ChunkDeltaAggregate, IVec3Hash, IVec3Eq> perChunkEdits;
     perChunkEdits.reserve(touchedChunks.size());
 
-    for (const glm::ivec3& worldPos : normalizedEdits) {
+    for (const glm::ivec3 &worldPos : normalizedEdits) {
         const BlockID oldId = m_chunkManager.getBlockGlobal(worldPos.x, worldPos.y, worldPos.z);
         if (oldId == BlockID::Air) {
             continue;
@@ -363,22 +347,19 @@ void ServerNetwork::HandleBlockBreakRequestPacket(HSteamNetConnection incoming, 
 
         const glm::ivec3 chunkPos = m_chunkManager.worldToChunkPos(worldPos);
         const glm::ivec3 localPos = m_chunkManager.worldToLocalPos(worldPos);
-        ChunkDeltaAggregate& aggregate = perChunkEdits[chunkPos];
-        aggregate.edits.push_back(ChunkDeltaOp{
-            static_cast<uint8_t>(localPos.x),
-            static_cast<uint8_t>(localPos.y),
-            static_cast<uint8_t>(localPos.z),
-            static_cast<uint8_t>(BlockID::Air)
-        });
+        ChunkDeltaAggregate &aggregate = perChunkEdits[chunkPos];
+        aggregate.edits.push_back(
+            ChunkDeltaOp{static_cast<uint8_t>(localPos.x), static_cast<uint8_t>(localPos.y),
+                         static_cast<uint8_t>(localPos.z), static_cast<uint8_t>(BlockID::Air)});
     }
 
     std::vector<ChunkDelta> outboundDeltas;
     outboundDeltas.reserve(perChunkEdits.size());
-    for (auto& [chunkPos, aggregate] : perChunkEdits) {
+    for (auto &[chunkPos, aggregate] : perChunkEdits) {
         if (aggregate.edits.empty()) {
             continue;
         }
-        ServerChunk* chunk = m_chunkManager.getChunkIfExists(chunkPos);
+        ServerChunk *chunk = m_chunkManager.getChunkIfExists(chunkPos);
         if (chunk == nullptr) {
             BlockBreakResult result{};
             result.requestId = request.requestId;
@@ -399,13 +380,13 @@ void ServerNetwork::HandleBlockBreakRequestPacket(HSteamNetConnection incoming, 
         outboundDeltas.push_back(std::move(delta));
     }
 
-    for (const ChunkDelta& delta : outboundDeltas) {
-        const ChunkCoord coord{ delta.chunkX, delta.chunkY, delta.chunkZ };
+    for (const ChunkDelta &delta : outboundDeltas) {
+        const ChunkCoord coord{delta.chunkX, delta.chunkY, delta.chunkZ};
         std::vector<HSteamNetConnection> recipients;
         {
             std::lock_guard<std::mutex> lk(m_mutex);
             recipients.reserve(m_clients.size());
-            for (const auto& [conn, session] : m_clients) {
+            for (const auto &[conn, session] : m_clients) {
                 if (session.streamedChunks.find(coord) != session.streamedChunks.end()) {
                     recipients.push_back(conn);
                 }
@@ -419,12 +400,8 @@ void ServerNetwork::HandleBlockBreakRequestPacket(HSteamNetConnection incoming, 
         const std::vector<uint8_t> bytes = delta.serialize();
         for (HSteamNetConnection conn : recipients) {
             (void)SteamNetworkingSockets()->SendMessageToConnection(
-                conn,
-                bytes.data(),
-                static_cast<uint32_t>(bytes.size()),
-                k_nSteamNetworkingSend_Reliable,
-                nullptr
-            );
+                conn, bytes.data(), static_cast<uint32_t>(bytes.size()),
+                k_nSteamNetworkingSend_Reliable, nullptr);
         }
     }
 

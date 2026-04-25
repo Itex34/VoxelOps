@@ -12,9 +12,9 @@ class VkModel;
 class VkTexture;
 
 struct RenderObject {
-    const VkModel* model = nullptr;
-    const std::vector<const VkTexture*>* meshTextures = nullptr;
-    glm::mat4 transform{ 1.0f };
+    const VkModel *model = nullptr;
+    const std::vector<const VkTexture *> *meshTextures = nullptr;
+    glm::mat4 transform{1.0f};
 };
 
 // matches VkDrawIndexedIndirectCommand and DrawElementsIndirectCommand layouts.
@@ -27,22 +27,19 @@ struct IndexedIndirectCommand {
 };
 
 struct RenderIndirectBatch {
-    const VkMesh* mesh = nullptr;
-    const VkTexture* texture = nullptr;
+    const VkMesh *mesh = nullptr;
+    const VkTexture *texture = nullptr;
     uint32_t firstCommand = 0;
     uint32_t commandCount = 0;
 };
 
 constexpr uint32_t GI_LIGHTING_MAX_CASCADES = 3;
 
-enum class GiTracingBackend : uint32_t {
-    SoftwareDda = 0u,
-    HardwareRt = 1u
-};
+enum class GiTracingBackend : uint32_t { SoftwareDda = 0u, HardwareRt = 1u };
 
 struct GiCascadeLightingData {
-    glm::ivec4 originSpacingBlocks{ 0 }; // xyz=origin blocks, w=spacing blocks
-    glm::uvec4 probeCounts{ 0u };        // xyz=counts, w=unused
+    glm::ivec4 originSpacingBlocks{0}; // xyz=origin blocks, w=spacing blocks
+    glm::uvec4 probeCounts{0u};        // xyz=counts, w=unused
     VkBuffer probeBuffer = VK_NULL_HANDLE;
 };
 
@@ -69,13 +66,13 @@ struct GiLightingData {
     float denoiseMomentBlend = 0.12f;
     // 0=off, 1=diff radiance, 2=hit distance, 3=normal, 4=motion, 5=viewZ
     uint32_t nrdDebugView = 0;
-    glm::vec3 sunDirection{ 0.25f, 0.85f, 0.42f };
+    glm::vec3 sunDirection{0.25f, 0.85f, 0.42f};
     bool sunShadowsEnabled = false;
-    glm::ivec3 shadowOccupancyMinBlocks{ 0 };
-    glm::uvec3 shadowOccupancyDims{ 0u };
+    glm::ivec3 shadowOccupancyMinBlocks{0};
+    glm::uvec3 shadowOccupancyDims{0u};
     uint32_t shadowOccupancyWordCount = 0;
-    glm::ivec4 shadowWorldBoundsXy{ 0 }; // x=minX,y=maxX,z=minY,w=maxY
-    glm::ivec4 shadowWorldBoundsZ{ 0 };  // x=minZ,y=maxZ
+    glm::ivec4 shadowWorldBoundsXy{0}; // x=minX,y=maxX,z=minY,w=maxY
+    glm::ivec4 shadowWorldBoundsZ{0};  // x=minZ,y=maxZ
     VkBuffer shadowOccupancyBuffer = VK_NULL_HANDLE;
     VkBuffer traceMaterialBuffer = VK_NULL_HANDLE;
     VkAccelerationStructureKHR sceneTlas = VK_NULL_HANDLE;
@@ -101,5 +98,3 @@ struct FrameRenderData {
         giLighting = GiLightingData{};
     }
 };
-
-

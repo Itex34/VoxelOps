@@ -17,35 +17,32 @@
 namespace {
 constexpr float kWClipEpsilon = 1.0e-6f;
 
-std::string buildAssimpErrorMessage(const std::string& path, const Assimp::Importer& importer) {
+std::string buildAssimpErrorMessage(const std::string &path, const Assimp::Importer &importer) {
     std::string message = "Failed to load model '" + path + "'";
-    const char* importerError = importer.GetErrorString();
+    const char *importerError = importer.GetErrorString();
     if (importerError && importerError[0] != '\0') {
         message += ": ";
         message += importerError;
     }
     return message;
 }
-}
+} // namespace
 
-
-void VkModel::initGpuResources(
-    const vk::raii::Device& device,
-    const vk::raii::PhysicalDevice& physicalDevice,
-    UploadContext& uploadContext
-) {
-    for (VkMesh& mesh : m_meshes) {
+void VkModel::initGpuResources(const vk::raii::Device &device,
+                               const vk::raii::PhysicalDevice &physicalDevice,
+                               UploadContext &uploadContext) {
+    for (VkMesh &mesh : m_meshes) {
         mesh.init(device, physicalDevice, uploadContext);
     }
 }
 
 void VkModel::cleanupGpuResources() {
-    for (VkMesh& mesh : m_meshes) {
+    for (VkMesh &mesh : m_meshes) {
         mesh.cleanup();
     }
 }
 
-void VkModel::loadModel(const std::string& path) {
+void VkModel::loadModel(const std::string &path) {
     m_meshes.clear();
     m_meshTexturePaths.clear();
     m_localVertices.clear();
@@ -56,13 +53,9 @@ void VkModel::loadModel(const std::string& path) {
     m_directory = std::filesystem::path(path).parent_path().string();
 
     Assimp::Importer importer;
-    const aiScene* scene = importer.ReadFile(
-        path,
-        aiProcess_Triangulate |
-        aiProcess_JoinIdenticalVertices |
-        aiProcess_ImproveCacheLocality |
-        aiProcess_FlipUVs
-    );
+    const aiScene *scene =
+        importer.ReadFile(path, aiProcess_Triangulate | aiProcess_JoinIdenticalVertices |
+                                    aiProcess_ImproveCacheLocality | aiProcess_FlipUVs);
 
     if (!scene || !scene->mRootNode || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) != 0) {
         throw std::runtime_error(buildAssimpErrorMessage(path, importer));
@@ -76,15 +69,11 @@ void VkModel::loadModel(const std::string& path) {
     }
 }
 
-void VkModel::processNode(
-    aiNode* node,
-    const aiScene* scene,
-    const aiMatrix4x4& parentTransform
-) {
+void VkModel::processNode(aiNode *node, const aiScene *scene, const aiMatrix4x4 &parentTransform) {
     const aiMatrix4x4 nodeTransform = parentTransform * node->mTransformation;
 
     for (uint32_t i = 0; i < node->mNumMeshes; ++i) {
-        aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
+        aiMesh *mesh = scene->mMeshes[node->mMeshes[i]];
         if (!mesh || !mesh->HasPositions()) {
             continue;
         }
@@ -101,7 +90,7 @@ void VkModel::processNode(
     }
 }
 
-VkMesh VkModel::processMesh(aiMesh* mesh, const aiMatrix4x4& nodeTransform) {
+VkMesh VkModel::processMesh(aiMesh *mesh, const aiMatrix4x4 &nodeTransform) {
     std::vector<VkMesh::Vertex> vertices;
     vertices.reserve(mesh->mNumVertices);
 
@@ -110,12 +99,8 @@ VkMesh VkModel::processMesh(aiMesh* mesh, const aiMatrix4x4& nodeTransform) {
         vertex.position = transformPoint(nodeTransform, mesh->mVertices[i]);
 
         if (mesh->HasTextureCoords(0)) {
-            vertex.uv = glm::vec2(
-                mesh->mTextureCoords[0][i].x,
-                mesh->mTextureCoords[0][i].y
-            );
-        }
-        else {
+            vertex.uv = glm::vec2(mesh->mTextureCoords[0][i].x, mesh->mTextureCoords[0][i].y);
+        } else {
             vertex.uv = glm::vec2(0.0f);
         }
 
@@ -127,7 +112,7 @@ VkMesh VkModel::processMesh(aiMesh* mesh, const aiMatrix4x4& nodeTransform) {
     indices.reserve(mesh->mNumFaces * 3u);
 
     for (uint32_t i = 0; i < mesh->mNumFaces; ++i) {
-        const aiFace& face = mesh->mFaces[i];
+        const aiFace &face = mesh->mFaces[i];
         if (face.mNumIndices < 3) {
             continue;
         }
@@ -155,12 +140,12 @@ VkMesh VkModel::processMesh(aiMesh* mesh, const aiMatrix4x4& nodeTransform) {
     return VkMesh(std::move(vertices), std::move(indices));
 }
 
-std::string VkModel::resolveMeshTexturePath(const aiMesh* mesh, const aiScene* scene) const {
+std::string VkModel::resolveMeshTexturePath(const aiMesh *mesh, const aiScene *scene) const {
     if (!mesh || !scene || mesh->mMaterialIndex >= scene->mNumMaterials) {
         return {};
     }
 
-    const aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
+    const aiMaterial *material = scene->mMaterials[mesh->mMaterialIndex];
     if (!material) {
         return {};
     }
@@ -199,7 +184,7 @@ void VkModel::finalizeRegionAabbsFromVertices() {
         return;
     }
 
-    for (const glm::vec3& v : m_localVertices) {
+    for (const glm::vec3 &v : m_localVertices) {
         m_localMinBounds.x = std::min(m_localMinBounds.x, v.x);
         m_localMinBounds.y = std::min(m_localMinBounds.y, v.y);
         m_localMinBounds.z = std::min(m_localMinBounds.z, v.z);
@@ -212,16 +197,18 @@ void VkModel::finalizeRegionAabbsFromVertices() {
     m_hasLocalBounds = true;
 }
 
-glm::vec3 VkModel::transformPoint(const aiMatrix4x4& transform, const aiVector3D& point) {
-    const float x = (transform.a1 * point.x) + (transform.a2 * point.y) + (transform.a3 * point.z) + transform.a4;
-    const float y = (transform.b1 * point.x) + (transform.b2 * point.y) + (transform.b3 * point.z) + transform.b4;
-    const float z = (transform.c1 * point.x) + (transform.c2 * point.y) + (transform.c3 * point.z) + transform.c4;
-    const float w = (transform.d1 * point.x) + (transform.d2 * point.y) + (transform.d3 * point.z) + transform.d4;
+glm::vec3 VkModel::transformPoint(const aiMatrix4x4 &transform, const aiVector3D &point) {
+    const float x = (transform.a1 * point.x) + (transform.a2 * point.y) + (transform.a3 * point.z) +
+                    transform.a4;
+    const float y = (transform.b1 * point.x) + (transform.b2 * point.y) + (transform.b3 * point.z) +
+                    transform.b4;
+    const float z = (transform.c1 * point.x) + (transform.c2 * point.y) + (transform.c3 * point.z) +
+                    transform.c4;
+    const float w = (transform.d1 * point.x) + (transform.d2 * point.y) + (transform.d3 * point.z) +
+                    transform.d4;
 
     if (std::abs(w) > kWClipEpsilon) {
         return glm::vec3(x / w, y / w, z / w);
     }
     return glm::vec3(x, y, z);
 }
-
-

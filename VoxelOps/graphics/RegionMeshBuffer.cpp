@@ -5,13 +5,9 @@
 #include <limits>
 #include <utility>
 
-static bool allocFromList(
-    std::vector<BufferRange>& list,
-    size_t count,
-    BufferRange& out)
-{
+static bool allocFromList(std::vector<BufferRange> &list, size_t count, BufferRange &out) {
     for (size_t i = 0; i < list.size(); ++i) {
-        auto& r = list[i];
+        auto &r = list[i];
         if (r.count >= count) {
             out.offset = r.offset;
             out.count = count;
@@ -28,35 +24,26 @@ static bool allocFromList(
     return false;
 }
 
-static void freeAndMerge(
-    std::vector<BufferRange>& list,
-    BufferRange range)
-{
+static void freeAndMerge(std::vector<BufferRange> &list, BufferRange range) {
     list.push_back(range);
 
     std::sort(list.begin(), list.end(),
-        [](const BufferRange& a, const BufferRange& b) {
-            return a.offset < b.offset;
-        });
+              [](const BufferRange &a, const BufferRange &b) { return a.offset < b.offset; });
 
     for (size_t i = 0; i + 1 < list.size();) {
-        auto& a = list[i];
-        auto& b = list[i + 1];
+        auto &a = list[i];
+        auto &b = list[i + 1];
 
         if (a.offset + a.count == b.offset) {
             a.count += b.count;
             list.erase(list.begin() + i + 1);
-        }
-        else {
+        } else {
             ++i;
         }
     }
 }
 
-RegionMeshBuffer::RegionMeshBuffer(
-    size_t maxVertexBytes,
-    size_t maxIndexBytes)
-{
+RegionMeshBuffer::RegionMeshBuffer(size_t maxVertexBytes, size_t maxIndexBytes) {
     vertexCapacity = maxVertexBytes / sizeof(VoxelVertex);
     indexCapacity = maxIndexBytes / sizeof(uint16_t);
 
@@ -72,57 +59,43 @@ RegionMeshBuffer::RegionMeshBuffer(
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, maxIndexBytes, nullptr, GL_DYNAMIC_DRAW);
 
     glEnableVertexAttribArray(0);
-    glVertexAttribIPointer(
-        0, 1, GL_UNSIGNED_INT,
-        sizeof(VoxelVertex),
-        (void*)offsetof(VoxelVertex, low));
+    glVertexAttribIPointer(0, 1, GL_UNSIGNED_INT, sizeof(VoxelVertex),
+                           (void *)offsetof(VoxelVertex, low));
 
     glEnableVertexAttribArray(1);
-    glVertexAttribIPointer(
-        1, 1, GL_UNSIGNED_INT,
-        sizeof(VoxelVertex),
-        (void*)offsetof(VoxelVertex, high));
+    glVertexAttribIPointer(1, 1, GL_UNSIGNED_INT, sizeof(VoxelVertex),
+                           (void *)offsetof(VoxelVertex, high));
 
     glBindVertexArray(0);
 
-    freeVertexRanges.push_back({ 0, vertexCapacity });
-    freeIndexRanges.push_back({ 0, indexCapacity });
+    freeVertexRanges.push_back({0, vertexCapacity});
+    freeIndexRanges.push_back({0, indexCapacity});
 }
 
-RegionMeshBuffer::~RegionMeshBuffer()
-{
+RegionMeshBuffer::~RegionMeshBuffer() {
     glDeleteBuffers(1, &vbo);
     glDeleteBuffers(1, &ebo);
     glDeleteVertexArrays(1, &vao);
 }
 
-bool RegionMeshBuffer::allocVertices(size_t count, BufferRange& out)
-{
+bool RegionMeshBuffer::allocVertices(size_t count, BufferRange &out) {
     return allocFromList(freeVertexRanges, count, out);
 }
 
-bool RegionMeshBuffer::allocIndices(size_t count, BufferRange& out)
-{
+bool RegionMeshBuffer::allocIndices(size_t count, BufferRange &out) {
     return allocFromList(freeIndexRanges, count, out);
 }
 
-void RegionMeshBuffer::freeVertices(BufferRange range)
-{
+void RegionMeshBuffer::freeVertices(BufferRange range) {
     freeAndMerge(freeVertexRanges, range);
 }
 
-void RegionMeshBuffer::freeIndices(BufferRange range)
-{
+void RegionMeshBuffer::freeIndices(BufferRange range) {
     freeAndMerge(freeIndexRanges, range);
 }
 
-
-
-
-ChunkMesh RegionMeshBuffer::createChunkMesh(
-    const std::vector<VoxelVertex>& vertices,
-    const std::vector<uint16_t>& indices)
-{
+ChunkMesh RegionMeshBuffer::createChunkMesh(const std::vector<VoxelVertex> &vertices,
+                                            const std::vector<uint16_t> &indices) {
     ChunkMesh mesh;
 
     if (!allocVertices(vertices.size(), mesh.vertexRange)) {
@@ -144,24 +117,20 @@ ChunkMesh RegionMeshBuffer::createChunkMesh(
     return mesh;
 }
 
-
-
-
-
-void RegionMeshBuffer::destroyChunkMesh(ChunkMesh& mesh)
-{
-    if (!mesh.valid) return;
+void RegionMeshBuffer::destroyChunkMesh(ChunkMesh &mesh) {
+    if (!mesh.valid)
+        return;
 
     freeVertices(mesh.vertexRange);
     freeIndices(mesh.indexRange);
     mesh.valid = false;
 }
 
-void RegionMeshBuffer::drawChunkMesh(const ChunkMesh& mesh) const
-{
-    if (!mesh.valid) return;
+void RegionMeshBuffer::drawChunkMesh(const ChunkMesh &mesh) const {
+    if (!mesh.valid)
+        return;
 
-    const auto drainErrors = [](const char* stage, int maxLogs) {
+    const auto drainErrors = [](const char *stage, int maxLogs) {
         unsigned int firstError = GL_NO_ERROR;
         int count = 0;
         for (;;) {
@@ -177,11 +146,8 @@ void RegionMeshBuffer::drawChunkMesh(const ChunkMesh& mesh) const
         if (count > 0) {
             static int s_drawStateErrorLogCount = 0;
             if (s_drawStateErrorLogCount < maxLogs) {
-                std::cerr
-                    << "[chunk] GL error before draw at " << stage
-                    << ": count=" << count
-                    << " first=0x" << std::hex << firstError << std::dec
-                    << "\n";
+                std::cerr << "[chunk] GL error before draw at " << stage << ": count=" << count
+                          << " first=0x" << std::hex << firstError << std::dec << "\n";
                 ++s_drawStateErrorLogCount;
             }
         }
@@ -197,11 +163,9 @@ void RegionMeshBuffer::drawChunkMesh(const ChunkMesh& mesh) const
     if (mesh.indexRange.offset + mesh.indexCount > indexCapacity) {
         static int s_invalidChunkIndexRangeLogCount = 0;
         if (s_invalidChunkIndexRangeLogCount < 24) {
-            std::cerr
-                << "[chunk] invalid index range (draw skipped): offset=" << mesh.indexRange.offset
-                << " count=" << mesh.indexCount
-                << " capacity=" << indexCapacity
-                << "\n";
+            std::cerr << "[chunk] invalid index range (draw skipped): offset="
+                      << mesh.indexRange.offset << " count=" << mesh.indexCount
+                      << " capacity=" << indexCapacity << "\n";
             ++s_invalidChunkIndexRangeLogCount;
         }
         drainErrors("invalid index range", 24);
@@ -210,11 +174,9 @@ void RegionMeshBuffer::drawChunkMesh(const ChunkMesh& mesh) const
     if (mesh.vertexRange.offset + mesh.vertexRange.count > vertexCapacity) {
         static int s_invalidChunkVertexRangeLogCount = 0;
         if (s_invalidChunkVertexRangeLogCount < 24) {
-            std::cerr
-                << "[chunk] invalid vertex range (draw skipped): offset=" << mesh.vertexRange.offset
-                << " count=" << mesh.vertexRange.count
-                << " capacity=" << vertexCapacity
-                << "\n";
+            std::cerr << "[chunk] invalid vertex range (draw skipped): offset="
+                      << mesh.vertexRange.offset << " count=" << mesh.vertexRange.count
+                      << " capacity=" << vertexCapacity << "\n";
             ++s_invalidChunkVertexRangeLogCount;
         }
         drainErrors("invalid vertex range", 24);
@@ -223,9 +185,8 @@ void RegionMeshBuffer::drawChunkMesh(const ChunkMesh& mesh) const
     if (mesh.vertexRange.offset > static_cast<size_t>(std::numeric_limits<GLint>::max())) {
         static int s_chunkBaseVertexOverflowLogCount = 0;
         if (s_chunkBaseVertexOverflowLogCount < 24) {
-            std::cerr
-                << "[chunk] baseVertex overflow (draw skipped): baseVertex=" << mesh.vertexRange.offset
-                << "\n";
+            std::cerr << "[chunk] baseVertex overflow (draw skipped): baseVertex="
+                      << mesh.vertexRange.offset << "\n";
             ++s_chunkBaseVertexOverflowLogCount;
         }
         drainErrors("baseVertex overflow", 24);
@@ -277,35 +238,23 @@ void RegionMeshBuffer::drawChunkMesh(const ChunkMesh& mesh) const
 
     static bool s_useChunkLegacyNoBaseVertexPath = false;
     const auto issueChunkDraw = [&]() {
-        const void* indexOffsetPtr = reinterpret_cast<const void*>(mesh.indexRange.offset * sizeof(uint16_t));
+        const void *indexOffsetPtr =
+            reinterpret_cast<const void *>(mesh.indexRange.offset * sizeof(uint16_t));
         if (s_useChunkLegacyNoBaseVertexPath) {
             const size_t vertexByteBase = mesh.vertexRange.offset * sizeof(VoxelVertex);
             glBindBuffer(GL_ARRAY_BUFFER, vbo);
             glVertexAttribIPointer(
-                0,
-                1,
-                GL_UNSIGNED_INT,
-                sizeof(VoxelVertex),
-                reinterpret_cast<const void*>(vertexByteBase + offsetof(VoxelVertex, low))
-            );
+                0, 1, GL_UNSIGNED_INT, sizeof(VoxelVertex),
+                reinterpret_cast<const void *>(vertexByteBase + offsetof(VoxelVertex, low)));
             glVertexAttribIPointer(
-                1,
-                1,
-                GL_UNSIGNED_INT,
-                sizeof(VoxelVertex),
-                reinterpret_cast<const void*>(vertexByteBase + offsetof(VoxelVertex, high))
-            );
+                1, 1, GL_UNSIGNED_INT, sizeof(VoxelVertex),
+                reinterpret_cast<const void *>(vertexByteBase + offsetof(VoxelVertex, high)));
             glDrawElements(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_SHORT, indexOffsetPtr);
             return;
         }
 
-        glDrawElementsBaseVertex(
-            GL_TRIANGLES,
-            mesh.indexCount,
-            GL_UNSIGNED_SHORT,
-            indexOffsetPtr,
-            static_cast<GLint>(mesh.vertexRange.offset)
-        );
+        glDrawElementsBaseVertex(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_SHORT, indexOffsetPtr,
+                                 static_cast<GLint>(mesh.vertexRange.offset));
     };
 
     const auto drainDrawErrors = [&]() {
@@ -327,14 +276,13 @@ void RegionMeshBuffer::drawChunkMesh(const ChunkMesh& mesh) const
     issueChunkDraw();
     std::pair<int, unsigned int> drawErrors = drainDrawErrors();
 
-    if (drawErrors.first > 0 &&
-        drawErrors.second == GL_INVALID_OPERATION &&
+    if (drawErrors.first > 0 && drawErrors.second == GL_INVALID_OPERATION &&
         !s_useChunkLegacyNoBaseVertexPath) {
         s_useChunkLegacyNoBaseVertexPath = true;
         static bool s_loggedLegacyFallback = false;
         if (!s_loggedLegacyFallback) {
-            std::cerr
-                << "[chunk] switching to legacy no-base-vertex draw path after GL_INVALID_OPERATION.\n";
+            std::cerr << "[chunk] switching to legacy no-base-vertex draw path after "
+                         "GL_INVALID_OPERATION.\n";
             s_loggedLegacyFallback = true;
         }
 
@@ -345,16 +293,12 @@ void RegionMeshBuffer::drawChunkMesh(const ChunkMesh& mesh) const
     if (drawErrors.first > 0) {
         static int s_chunkDrawErrorLogCount = 0;
         if (s_chunkDrawErrorLogCount < 24) {
-            std::cerr
-                << "[chunk] GL error during draw: count=" << drawErrors.first
-                << " first=0x" << std::hex << drawErrors.second << std::dec
-                << " vao=" << vao
-                << " eboBind=" << elementBufferBinding
-                << " indexCount=" << mesh.indexCount
-                << " indexOffset=" << mesh.indexRange.offset
-                << " baseVertex=" << mesh.vertexRange.offset
-                << " program=" << currentProgram
-                << "\n";
+            std::cerr << "[chunk] GL error during draw: count=" << drawErrors.first << " first=0x"
+                      << std::hex << drawErrors.second << std::dec << " vao=" << vao
+                      << " eboBind=" << elementBufferBinding << " indexCount=" << mesh.indexCount
+                      << " indexOffset=" << mesh.indexRange.offset
+                      << " baseVertex=" << mesh.vertexRange.offset << " program=" << currentProgram
+                      << "\n";
             ++s_chunkDrawErrorLogCount;
         }
     }
@@ -362,29 +306,16 @@ void RegionMeshBuffer::drawChunkMesh(const ChunkMesh& mesh) const
     glBindVertexArray(0);
 }
 
-
-
-
-void RegionMeshBuffer::uploadSubData(
-    const ChunkMesh& mesh,
-    const std::vector<VoxelVertex>& vertices,
-    const std::vector<uint16_t>& indices)
-{
+void RegionMeshBuffer::uploadSubData(const ChunkMesh &mesh,
+                                     const std::vector<VoxelVertex> &vertices,
+                                     const std::vector<uint16_t> &indices) {
     glBindVertexArray(vao);
 
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferSubData(
-        GL_ARRAY_BUFFER,
-        mesh.vertexRange.offset * sizeof(VoxelVertex),
-        vertices.size() * sizeof(VoxelVertex),
-        vertices.data()
-    );
+    glBufferSubData(GL_ARRAY_BUFFER, mesh.vertexRange.offset * sizeof(VoxelVertex),
+                    vertices.size() * sizeof(VoxelVertex), vertices.data());
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    glBufferSubData(
-        GL_ELEMENT_ARRAY_BUFFER,
-        mesh.indexRange.offset * sizeof(uint16_t),
-        indices.size() * sizeof(uint16_t),
-        indices.data()
-    );
+    glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, mesh.indexRange.offset * sizeof(uint16_t),
+                    indices.size() * sizeof(uint16_t), indices.data());
 }
