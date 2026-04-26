@@ -1,4 +1,4 @@
-#include "ServerRuntime.hpp"
+#include "../ServerRuntime.hpp"
 
 ServerRuntime *ServerRuntime::s_instance = nullptr;
 

@@ -1,6 +1,6 @@
 #include "Damage.hpp"
 
-#include "../../network/gameplay/CombatRules.hpp"
+#include "../../network/gameplay/Rules.hpp"
 
 namespace Damage {
 

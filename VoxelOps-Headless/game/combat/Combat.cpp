@@ -1,7 +1,7 @@
 #include "../../network/core/ServerRuntime.hpp"
 
 #include "CombatFeedback.hpp"
-#include "../../network/gameplay/CombatRules.hpp"
+#include "../../network/gameplay/Rules.hpp"
 #include "LagCompensation.hpp"
 #include "Shoot.hpp"
 #include "ShootValidation.hpp"

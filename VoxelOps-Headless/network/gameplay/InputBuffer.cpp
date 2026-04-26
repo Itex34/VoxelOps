@@ -1,4 +1,4 @@
-#include "PlayerInputBuffer.hpp"
+#include "InputBuffer.hpp"
 #include "../../../Shared/utils/Network.hpp"
 #include <iostream>
 

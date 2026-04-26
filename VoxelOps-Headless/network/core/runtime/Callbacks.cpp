@@ -1,4 +1,4 @@
-#include "ServerRuntime.hpp"
+#include "../ServerRuntime.hpp"
 
 void ServerRuntime::BroadcastRaw(const void *data, uint32_t len, HSteamNetConnection except) {
     std::vector<HSteamNetConnection> copy;

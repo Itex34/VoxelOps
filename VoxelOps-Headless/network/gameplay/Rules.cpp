@@ -1,4 +1,4 @@
-#include "CombatRules.hpp"
+#include "Rules.hpp"
 
 #include "../../../Shared/gun/GunType.hpp"
 

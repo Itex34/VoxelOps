@@ -9,7 +9,7 @@
 #include "../../../Shared/network/Packets.hpp"
 #include "../../../Shared/player/Inventory.hpp"
 #include "../../../Shared/gun/GunType.hpp"
-#include "../../network/gameplay/PlayerInputBuffer.hpp"
+#include "../../network/gameplay/InputBuffer.hpp"
 
 using PlayerID = uint64_t;
 using Clock = std::chrono::steady_clock;

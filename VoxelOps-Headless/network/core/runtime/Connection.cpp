@@ -1,5 +1,5 @@
-#include "ServerRuntime.hpp"
-#include "../protocol/Validation.hpp"
+#include "../ServerRuntime.hpp"
+#include "../../protocol/Validation.hpp"
 
 #include <charconv>
 #include <string_view>

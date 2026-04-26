@@ -1,5 +1,5 @@
-#include "ServerRuntime.hpp"
-#include "../protocol/Validation.hpp"
+#include "../ServerRuntime.hpp"
+#include "../../protocol/Validation.hpp"
 
 namespace {
 bool IsLikelyIdentityToken(const std::string &value) {

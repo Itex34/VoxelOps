@@ -1,6 +1,6 @@
 #include "HitDetection.hpp"
 
-#include "../../../network/gameplay/CombatRules.hpp"
+#include "../../../network/gameplay/Rules.hpp"
 #include "../../world/ChunkManager.hpp"
 #include "../../world/WorldRaycast.hpp"
 #include "../../../../Shared/player/HitboxCache.hpp"

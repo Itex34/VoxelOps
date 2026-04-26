@@ -1,4 +1,4 @@
-#include "ServerRuntime.hpp"
+#include "../ServerRuntime.hpp"
 
 void ServerRuntime::TeardownClientSession(HSteamNetConnection conn, const ClientSession &session,
                                           const char *closeReason, bool closeConnection) {
