@@ -1,5 +1,5 @@
-#include "ServerNetwork.hpp"
-#include "PacketValidation.hpp"
+#include "ServerRuntime.hpp"
+#include "../protocol/PacketValidation.hpp"
 #include "ServerDiagnosticsFlags.hpp"
 
 namespace {
@@ -10,7 +10,7 @@ constexpr uint32_t kServerTickRateHz = 60u;
 
 } // namespace
 
-void ServerNetwork::DispatchInboundPacket(HSteamNetConnection incoming, PacketType packetType,
+void ServerRuntime::DispatchInboundPacket(HSteamNetConnection incoming, PacketType packetType,
                                           const void *data, uint32_t size,
                                           uint64_t &playerInputPacketsThisLoop,
                                           uint64_t &chunkRequestPacketsThisLoop) {
@@ -47,7 +47,7 @@ void ServerNetwork::DispatchInboundPacket(HSteamNetConnection incoming, PacketTy
     }
 }
 
-void ServerNetwork::RunInboundMessagePhase(uint64_t &msgPacketsThisLoop,
+void ServerRuntime::RunInboundMessagePhase(uint64_t &msgPacketsThisLoop,
                                            uint64_t &playerInputPacketsThisLoop,
                                            uint64_t &chunkRequestPacketsThisLoop,
                                            double &messageDrainUs) {
@@ -120,7 +120,7 @@ void ServerNetwork::RunInboundMessagePhase(uint64_t &msgPacketsThisLoop,
                                              .count());
 }
 
-void ServerNetwork::RunConnectionCleanupPhase() {
+void ServerRuntime::RunConnectionCleanupPhase() {
     // Optional: extra safeguard - check connection states for any connections left
     // (callback already handles most).
     std::vector<std::pair<HSteamNetConnection, ClientSession>> staleConnections;
@@ -145,7 +145,7 @@ void ServerNetwork::RunConnectionCleanupPhase() {
     }
 }
 
-uint64_t ServerNetwork::RunSimulationPhase(double &simAccumulator, uint32_t &serverTick,
+uint64_t ServerRuntime::RunSimulationPhase(double &simAccumulator, uint32_t &serverTick,
                                            double &simUs, bool &simBacklog) {
     constexpr double kServerTickSeconds = 1.0 / static_cast<double>(kServerTickRateHz);
     constexpr size_t kMaxSimCatchupTicksPerLoop = 4;
@@ -168,7 +168,7 @@ uint64_t ServerNetwork::RunSimulationPhase(double &simAccumulator, uint32_t &ser
     return simTicksThisLoop;
 }
 
-void ServerNetwork::RunRespawnDiagnosticsPhase(uint64_t simTicksThisLoop, uint32_t serverTick) {
+void ServerRuntime::RunRespawnDiagnosticsPhase(uint64_t simTicksThisLoop, uint32_t serverTick) {
     std::vector<PlayerID> respawnedPlayers;
     if (simTicksThisLoop > 0) {
         const std::vector<ServerPlayer> players = m_playerManager.getAllPlayersCopy();
@@ -305,7 +305,7 @@ void ServerNetwork::RunRespawnDiagnosticsPhase(uint64_t simTicksThisLoop, uint32
     }
 }
 
-double ServerNetwork::RunSnapshotPhase(uint32_t serverTick,
+double ServerRuntime::RunSnapshotPhase(uint32_t serverTick,
                                        std::chrono::steady_clock::time_point &lastSnapshotTime,
                                        const std::chrono::duration<double> &snapshotInterval) {
     const auto snapshotNow = std::chrono::steady_clock::now();
@@ -380,7 +380,7 @@ double ServerNetwork::RunSnapshotPhase(uint32_t serverTick,
                        : 0.0;
 }
 
-bool ServerNetwork::RunScoreboardPhase(
+bool ServerRuntime::RunScoreboardPhase(
     std::chrono::steady_clock::time_point &nextScoreboardBroadcastAt) {
     const auto kScoreboardBroadcastInterval = std::chrono::seconds(1);
     const auto scoreboardNow = std::chrono::steady_clock::now();
@@ -528,7 +528,7 @@ bool ServerNetwork::RunScoreboardPhase(
     return true;
 }
 
-size_t ServerNetwork::RunChunkInterestPhase(bool simBacklog, double &chunkInterestUs) {
+size_t ServerRuntime::RunChunkInterestPhase(bool simBacklog, double &chunkInterestUs) {
     constexpr size_t kChunkInterestUpdatesPerLoop = 4;
     const auto kChunkInterestUpdateInterval = std::chrono::milliseconds(100);
 
@@ -577,7 +577,7 @@ size_t ServerNetwork::RunChunkInterestPhase(bool simBacklog, double &chunkIntere
     return chunkInterestTasks.size();
 }
 
-size_t ServerNetwork::RunChunkSendPhase(bool simBacklog,
+size_t ServerRuntime::RunChunkSendPhase(bool simBacklog,
                                         std::chrono::steady_clock::time_point &nextChunkSendFlushAt,
                                         double &chunkSendUs) {
     constexpr size_t kChunkSendGlobalBudgetPerFlush = 8;
@@ -604,7 +604,7 @@ size_t ServerNetwork::RunChunkSendPhase(bool simBacklog,
     return chunksSentThisLoop;
 }
 
-size_t ServerNetwork::RunCollisionPrewarmPhase(
+size_t ServerRuntime::RunCollisionPrewarmPhase(
     bool simBacklog, std::chrono::steady_clock::time_point &nextCollisionPrewarmAt,
     double &collisionPrewarmUs) {
     constexpr int kCollisionPrewarmRadiusXZ = 1;
@@ -702,7 +702,7 @@ size_t ServerNetwork::RunCollisionPrewarmPhase(
     return collisionPrewarmGeneratedThisLoop;
 }
 
-void ServerNetwork::ApplyLoopPacingPhase(bool simBacklog) {
+void ServerRuntime::ApplyLoopPacingPhase(bool simBacklog) {
     if (simBacklog) {
         std::this_thread::yield();
     } else {
@@ -710,7 +710,7 @@ void ServerNetwork::ApplyLoopPacingPhase(bool simBacklog) {
     }
 }
 
-void ServerNetwork::MainLoop() {
+void ServerRuntime::MainLoop() {
     auto lastFrameTime = std::chrono::steady_clock::now();
     auto lastSnapshotTime = lastFrameTime;
     constexpr uint32_t kSnapshotSendRateHz =
@@ -864,13 +864,13 @@ void ServerNetwork::MainLoop() {
 }
 
 // Broadcast raw payload to everyone except `except`
-void ServerNetwork::SetDebugLoggingEnabled(bool enabled) {
+void ServerRuntime::SetDebugLoggingEnabled(bool enabled) {
     ServerDiagFlags::SetAllEnabled(enabled);
     m_playerManager.SetDebugLoggingEnabled(enabled);
     std::cout << "[debug] diagnostics " << (enabled ? "enabled" : "disabled") << "\n";
 }
 
-bool ServerNetwork::IsDebugLoggingEnabled() {
+bool ServerRuntime::IsDebugLoggingEnabled() {
     if (ServerDiagFlags::IsAnyEnabled()) {
         return true;
     }

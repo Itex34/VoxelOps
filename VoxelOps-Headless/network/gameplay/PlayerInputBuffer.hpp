@@ -2,7 +2,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
-#include "../../Shared/network/Packets.hpp"
+#include "../../../Shared/network/Packets.hpp"
 
 class PlayerInputBuffer {
 public:

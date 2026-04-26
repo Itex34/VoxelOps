@@ -1,13 +1,13 @@
-#include "ServerNetwork.hpp"
+#include "../core/ServerRuntime.hpp"
 
 #include "CombatRules.hpp"
-#include "PacketParsers.hpp"
-#include "../gameplay/combat/CombatFeedbackSystem.hpp"
-#include "../gameplay/combat/LagCompensationSystem.hpp"
-#include "../gameplay/combat/ShootSystem.hpp"
-#include "../gameplay/combat/ShootValidationSystem.hpp"
-#include "../physics/HitDetectionSystem.hpp"
-#include "../../Shared/player/PlayerData.hpp"
+#include "../protocol/PacketParsers.hpp"
+#include "../../gameplay/combat/CombatFeedbackSystem.hpp"
+#include "../../gameplay/combat/LagCompensationSystem.hpp"
+#include "../../gameplay/combat/ShootSystem.hpp"
+#include "../../gameplay/combat/ShootValidationSystem.hpp"
+#include "../../physics/HitDetectionSystem.hpp"
+#include "../../../Shared/player/PlayerData.hpp"
 
 #include <cstdint>
 #include <iostream>
@@ -41,7 +41,7 @@ void SendShootResult(HSteamNetConnection incoming, const ShootResult &result) {
 
 
 const std::vector<ServerPlayerCombatSnapshot> &
-ServerNetwork::GetCombatSnapshotsForTick(uint32_t serverTick) {
+ServerRuntime::GetCombatSnapshotsForTick(uint32_t serverTick) {
     if (!m_hasCombatSnapshotsAliveCache || m_combatSnapshotsAliveCacheTick != serverTick) {
         m_combatSnapshotsAliveCache = m_playerManager.getAllCombatSnapshotsCopy(true);
         m_combatSnapshotsAliveCacheTick = serverTick;
@@ -50,18 +50,18 @@ ServerNetwork::GetCombatSnapshotsForTick(uint32_t serverTick) {
     return m_combatSnapshotsAliveCache;
 }
 
-void ServerNetwork::InvalidateCombatSnapshotCache() {
+void ServerRuntime::InvalidateCombatSnapshotCache() {
     m_combatSnapshotsAliveCache.clear();
     m_combatSnapshotsAliveCacheTick = 0;
     m_hasCombatSnapshotsAliveCache = false;
 }
 
-void ServerNetwork::RecordLagCompFrame(uint32_t serverTick) {
+void ServerRuntime::RecordLagCompFrame(uint32_t serverTick) {
     const std::vector<ServerPlayerCombatSnapshot> &players = GetCombatSnapshotsForTick(serverTick);
     LagCompensationSystem::RecordFrame(m_lagCompFrames, serverTick, players);
 }
 
-void ServerNetwork::HandleShootRequestPacket(HSteamNetConnection incoming, const void *data,
+void ServerRuntime::HandleShootRequestPacket(HSteamNetConnection incoming, const void *data,
                                              uint32_t size) {
     ShootRequest req{};
     if (!NetPacket::ParseShootRequestPacket(reinterpret_cast<const uint8_t *>(data), size, req)) {
@@ -89,7 +89,7 @@ void ServerNetwork::HandleShootRequestPacket(HSteamNetConnection incoming, const
         if (it == m_clients.end()) {
             sessionMissing = true;
         } else {
-            ServerNetwork::ClientSession &mutableSession = it->second;
+            ServerRuntime::ClientSession &mutableSession = it->second;
             ctx.session.username = mutableSession.username;
             ctx.session.playerId = mutableSession.playerId;
             ctx.session.registered = !ctx.session.username.empty() && ctx.session.playerId != 0;

@@ -1,6 +1,6 @@
-#include "ServerNetwork.hpp"
+#include "ServerRuntime.hpp"
 
-void ServerNetwork::TeardownClientSession(HSteamNetConnection conn, const ClientSession &session,
+void ServerRuntime::TeardownClientSession(HSteamNetConnection conn, const ClientSession &session,
                                           const char *closeReason, bool closeConnection) {
     ClearChunkPipelineForConnection(conn);
 

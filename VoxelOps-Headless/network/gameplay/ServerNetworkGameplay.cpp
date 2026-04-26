@@ -1,5 +1,5 @@
-#include "ServerNetwork.hpp"
-#include "PacketParsers.hpp"
+#include "../core/ServerRuntime.hpp"
+#include "../protocol/PacketParsers.hpp"
 
 #include <glm/trigonometric.hpp>
 #include <algorithm>
@@ -10,7 +10,7 @@ namespace {
 constexpr uint32_t kServerTickRateHz = 60u;
 }
 
-void ServerNetwork::SpawnDroppedItem(PlayerID dropperId, uint16_t itemId, uint16_t quantity) {
+void ServerRuntime::SpawnDroppedItem(PlayerID dropperId, uint16_t itemId, uint16_t quantity) {
     if (!Inventory::IsValidItemId(itemId) || quantity == 0) {
         return;
     }
@@ -35,7 +35,7 @@ void ServerNetwork::SpawnDroppedItem(PlayerID dropperId, uint16_t itemId, uint16
     m_worldItems[item.id] = item;
 }
 
-void ServerNetwork::SendInventorySnapshotToPlayer(PlayerID playerId) {
+void ServerRuntime::SendInventorySnapshotToPlayer(PlayerID playerId) {
     HSteamNetConnection conn = k_HSteamNetConnection_Invalid;
     {
         std::lock_guard<std::mutex> lk(m_mutex);
@@ -58,7 +58,7 @@ void ServerNetwork::SendInventorySnapshotToPlayer(PlayerID playerId) {
         k_nSteamNetworkingSend_Reliable, nullptr);
 }
 
-void ServerNetwork::UpdateWorldItems(double deltaSeconds) {
+void ServerRuntime::UpdateWorldItems(double deltaSeconds) {
     if (deltaSeconds <= 0.0 || m_worldItems.empty()) {
         return;
     }
@@ -122,7 +122,7 @@ void ServerNetwork::UpdateWorldItems(double deltaSeconds) {
     }
 }
 
-void ServerNetwork::SendWorldItemSnapshots(
+void ServerRuntime::SendWorldItemSnapshots(
     const std::vector<std::pair<HSteamNetConnection, PlayerID>> &recipients, uint32_t serverTick) {
     const std::vector<ServerPlayer> players = m_playerManager.getAllPlayersCopy();
     std::unordered_map<PlayerID, glm::vec3> playerPositions;
@@ -169,7 +169,7 @@ void ServerNetwork::SendWorldItemSnapshots(
     }
 }
 
-void ServerNetwork::HandleInventoryActionRequestPacket(HSteamNetConnection incoming,
+void ServerRuntime::HandleInventoryActionRequestPacket(HSteamNetConnection incoming,
                                                        const void *data, uint32_t size) {
     InventoryActionRequest request{};
     if (!NetPacket::ParseInventoryActionRequestPacket(reinterpret_cast<const uint8_t *>(data), size,

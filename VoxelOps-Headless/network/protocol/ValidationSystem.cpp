@@ -1,6 +1,6 @@
 #include "ValidationSystem.hpp"
 
-#include "../../Shared/network/IdentityValidation.hpp"
+#include "../../../Shared/network/IdentityValidation.hpp"
 
 namespace NetValidation {
 

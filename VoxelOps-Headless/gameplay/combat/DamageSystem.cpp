@@ -1,6 +1,6 @@
 #include "DamageSystem.hpp"
 
-#include "../../network/CombatRules.hpp"
+#include "../../network/gameplay/CombatRules.hpp"
 
 namespace DamageSystem {
 
@@ -29,3 +29,4 @@ DamageResolution ResolveDamage(PlayerManager &playerManager,
 }
 
 } // namespace DamageSystem
+

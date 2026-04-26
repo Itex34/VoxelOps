@@ -1,6 +1,6 @@
 #include "HitDetectionSystem.hpp"
 
-#include "../network/CombatRules.hpp"
+#include "../network/gameplay/CombatRules.hpp"
 #include "../world/ChunkManager.hpp"
 #include "../world/WorldRaycast.hpp"
 #include "../../Shared/player/HitboxCache.hpp"
@@ -446,3 +446,4 @@ HitDetectionResult RaycastPlayersAndWorld(const HitDetectionInput &input) {
 }
 
 } // namespace HitDetectionSystem
+

@@ -1,5 +1,5 @@
-#include "ServerNetwork.hpp"
-#include "ValidationSystem.hpp"
+#include "ServerRuntime.hpp"
+#include "../protocol/ValidationSystem.hpp"
 
 namespace {
 bool IsLikelyIdentityToken(const std::string &value) {
@@ -7,7 +7,7 @@ bool IsLikelyIdentityToken(const std::string &value) {
 }
 } // namespace
 
-void ServerNetwork::SaveHistoryToFile() {
+void ServerRuntime::SaveHistoryToFile() {
     std::ofstream fout(HISTORY_FILE, std::ios::out | std::ios::trunc);
     if (!fout)
         return;
@@ -18,7 +18,7 @@ void ServerNetwork::SaveHistoryToFile() {
     }
 }
 
-void ServerNetwork::LoadHistoryFromFile() {
+void ServerRuntime::LoadHistoryFromFile() {
     std::ifstream fin(HISTORY_FILE);
     if (!fin)
         return;
@@ -34,7 +34,7 @@ void ServerNetwork::LoadHistoryFromFile() {
     }
 }
 
-void ServerNetwork::SaveAdminsToFile() {
+void ServerRuntime::SaveAdminsToFile() {
     std::vector<std::string> identities;
     {
         std::lock_guard<std::mutex> lk(m_mutex);
@@ -57,7 +57,7 @@ void ServerNetwork::SaveAdminsToFile() {
     }
 }
 
-void ServerNetwork::LoadAdminsFromFile() {
+void ServerRuntime::LoadAdminsFromFile() {
     std::ifstream fin(ADMINS_FILE);
     if (!fin)
         return;
@@ -93,7 +93,7 @@ void ServerNetwork::LoadAdminsFromFile() {
     }
 }
 
-bool ServerNetwork::SetAdminByUsername(const std::string &target, bool isAdmin) {
+bool ServerRuntime::SetAdminByUsername(const std::string &target, bool isAdmin) {
     if (target.empty()) {
         return false;
     }
@@ -157,7 +157,7 @@ bool ServerNetwork::SetAdminByUsername(const std::string &target, bool isAdmin) 
     return changed;
 }
 
-bool ServerNetwork::IsAdminUsername(const std::string &usernameOrIdentity) {
+bool ServerRuntime::IsAdminUsername(const std::string &usernameOrIdentity) {
     std::string identity = usernameOrIdentity;
     if (identity.rfind("id:", 0) == 0) {
         identity = identity.substr(3);
@@ -167,7 +167,7 @@ bool ServerNetwork::IsAdminUsername(const std::string &usernameOrIdentity) {
     return m_adminIdentities.find(identity) != m_adminIdentities.end();
 }
 
-std::vector<std::pair<std::string, bool>> ServerNetwork::GetConnectedUsers() {
+std::vector<std::pair<std::string, bool>> ServerRuntime::GetConnectedUsers() {
     std::vector<std::pair<std::string, bool>> users;
     {
         std::lock_guard<std::mutex> lk(m_mutex);
@@ -190,7 +190,7 @@ std::vector<std::pair<std::string, bool>> ServerNetwork::GetConnectedUsers() {
     return users;
 }
 
-std::vector<std::string> ServerNetwork::GetAdminUsernames() {
+std::vector<std::string> ServerRuntime::GetAdminUsernames() {
     std::vector<std::string> identities;
     {
         std::lock_guard<std::mutex> lk(m_mutex);

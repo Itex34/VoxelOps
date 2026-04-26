@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../../Shared/network/PacketType.hpp"
-#include "../../Shared/network/Packets.hpp"
+#include "../../../Shared/network/PacketType.hpp"
+#include "../../../Shared/network/Packets.hpp"
 
 #include <cstdint>
 

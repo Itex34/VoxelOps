@@ -1,5 +1,5 @@
 #include "PlayerInputBuffer.hpp"
-#include "../../Shared/utils/Network.hpp"
+#include "../../../Shared/utils/Network.hpp"
 #include <iostream>
 
 namespace {

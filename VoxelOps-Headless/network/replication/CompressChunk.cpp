@@ -1,6 +1,6 @@
 #include "CompressChunk.hpp"
 
-#include "../../Shared/network/ChunkWireFormat.hpp"
+#include "../../../Shared/network/ChunkWireFormat.hpp"
 
 #include <lz4.h>
 

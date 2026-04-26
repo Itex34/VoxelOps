@@ -1,6 +1,6 @@
-#include "ServerNetwork.hpp"
+#include "ServerRuntime.hpp"
 
-void ServerNetwork::BroadcastRaw(const void *data, uint32_t len, HSteamNetConnection except) {
+void ServerRuntime::BroadcastRaw(const void *data, uint32_t len, HSteamNetConnection except) {
     std::vector<HSteamNetConnection> copy;
     {
         std::lock_guard<std::mutex> lk(m_mutex);
@@ -17,7 +17,7 @@ void ServerNetwork::BroadcastRaw(const void *data, uint32_t len, HSteamNetConnec
 }
 
 // helper: read string payload from a message where first byte is packet type
-std::string ServerNetwork::ReadStringFromPacket(const void *data, uint32_t size, size_t offset) {
+std::string ServerRuntime::ReadStringFromPacket(const void *data, uint32_t size, size_t offset) {
     if (size <= offset)
         return {};
     const char *bytes = reinterpret_cast<const char *>(data);
@@ -26,13 +26,13 @@ std::string ServerNetwork::ReadStringFromPacket(const void *data, uint32_t size,
 
 // Static bridge called by Steam networking when connection state changes.
 // Delegates to the instance method if available.
-void ServerNetwork::SteamNetConnectionStatusChangedCallback(
+void ServerRuntime::SteamNetConnectionStatusChangedCallback(
     SteamNetConnectionStatusChangedCallback_t *pInfo) {
     if (s_instance)
         s_instance->OnConnectionStatusChanged(pInfo);
 }
 
-void ServerNetwork::OnConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_t *pInfo) {
+void ServerRuntime::OnConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_t *pInfo) {
     if (!pInfo)
         return;
 

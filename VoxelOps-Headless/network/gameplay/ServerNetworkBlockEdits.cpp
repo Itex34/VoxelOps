@@ -1,5 +1,5 @@
-#include "ServerNetwork.hpp"
-#include "PacketParsers.hpp"
+#include "../core/ServerRuntime.hpp"
+#include "../protocol/PacketParsers.hpp"
 
 #include <algorithm>
 
@@ -33,7 +33,7 @@ ResultT MakeRejectedEditResult(
 }
 } // namespace
 
-bool ServerNetwork::TryGetRegisteredPlayerId(HSteamNetConnection incoming, PlayerID &outPlayerId) {
+bool ServerRuntime::TryGetRegisteredPlayerId(HSteamNetConnection incoming, PlayerID &outPlayerId) {
     outPlayerId = 0;
     std::lock_guard<std::mutex> lk(m_mutex);
     const auto it = m_clients.find(incoming);
@@ -44,7 +44,7 @@ bool ServerNetwork::TryGetRegisteredPlayerId(HSteamNetConnection incoming, Playe
     return true;
 }
 
-bool ServerNetwork::IsAnyAlivePlayerOccupyingBlock(const std::vector<ServerPlayer> &players,
+bool ServerRuntime::IsAnyAlivePlayerOccupyingBlock(const std::vector<ServerPlayer> &players,
                                                    const glm::ivec3 &worldPos) const {
     for (const ServerPlayer &player : players) {
         if (!player.isAlive) {
@@ -73,7 +73,7 @@ bool ServerNetwork::IsAnyAlivePlayerOccupyingBlock(const std::vector<ServerPlaye
     return false;
 }
 
-bool ServerNetwork::ApplyBlockEditsAndBuildDeltas(
+bool ServerRuntime::ApplyBlockEditsAndBuildDeltas(
     const std::unordered_map<glm::ivec3, BlockID, IVec3Hash, IVec3Eq> &normalizedEdits,
     std::vector<ChunkDelta> &outboundDeltas) {
     struct ChunkDeltaAggregate {
@@ -122,7 +122,7 @@ bool ServerNetwork::ApplyBlockEditsAndBuildDeltas(
     return true;
 }
 
-void ServerNetwork::BroadcastChunkDeltas(const std::vector<ChunkDelta> &outboundDeltas) {
+void ServerRuntime::BroadcastChunkDeltas(const std::vector<ChunkDelta> &outboundDeltas) {
     for (const ChunkDelta &delta : outboundDeltas) {
         const ChunkCoord coord{delta.chunkX, delta.chunkY, delta.chunkZ};
         std::vector<HSteamNetConnection> recipients;
@@ -149,7 +149,7 @@ void ServerNetwork::BroadcastChunkDeltas(const std::vector<ChunkDelta> &outbound
     }
 }
 
-void ServerNetwork::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, const void *data,
+void ServerRuntime::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, const void *data,
                                                   uint32_t size) {
     auto sendResult = [&](const BlockPlaceResult &res) {
         const std::vector<uint8_t> bytes = res.serialize();
@@ -240,7 +240,7 @@ void ServerNetwork::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, 
     sendResult(result);
 }
 
-void ServerNetwork::HandleBlockBreakRequestPacket(HSteamNetConnection incoming, const void *data,
+void ServerRuntime::HandleBlockBreakRequestPacket(HSteamNetConnection incoming, const void *data,
                                                   uint32_t size) {
     auto sendResult = [&](const BlockBreakResult &res) {
         const std::vector<uint8_t> bytes = res.serialize();

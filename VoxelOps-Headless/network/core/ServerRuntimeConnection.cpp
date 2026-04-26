@@ -1,5 +1,5 @@
-#include "ServerNetwork.hpp"
-#include "ValidationSystem.hpp"
+#include "ServerRuntime.hpp"
+#include "../protocol/ValidationSystem.hpp"
 
 #include <charconv>
 #include <string_view>
@@ -15,7 +15,7 @@ constexpr uint32_t kMaxChunkRequestsPerWindow = 120u;
 
 } // namespace
 
-bool ServerNetwork::IsInboundRateLimitExceeded(HSteamNetConnection incoming, PacketType packetType,
+bool ServerRuntime::IsInboundRateLimitExceeded(HSteamNetConnection incoming, PacketType packetType,
                                                uint32_t bytes) {
     bool exceededRateLimit = false;
     {
@@ -57,7 +57,7 @@ bool ServerNetwork::IsInboundRateLimitExceeded(HSteamNetConnection incoming, Pac
     return false;
 }
 
-void ServerNetwork::HandleConnectRequest(HSteamNetConnection incoming, const void *data,
+void ServerRuntime::HandleConnectRequest(HSteamNetConnection incoming, const void *data,
                                          uint32_t size) {
     auto sendResponse = [&](const ConnectResponse &response) {
         const std::vector<uint8_t> payload = response.serialize();
@@ -257,7 +257,7 @@ void ServerNetwork::HandleConnectRequest(HSteamNetConnection incoming, const voi
               << " identity=" << identity << " requested=" << requestedUsername << "\n";
 }
 
-void ServerNetwork::HandleMessagePacket(HSteamNetConnection incoming, const void *data,
+void ServerRuntime::HandleMessagePacket(HSteamNetConnection incoming, const void *data,
                                         uint32_t size) {
     std::string msg = ReadStringFromPacket(data, size, 1);
     std::string username;

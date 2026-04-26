@@ -9,7 +9,7 @@
 #include "../../Shared/network/Packets.hpp"
 #include "../../Shared/player/Inventory.hpp"
 #include "../../Shared/gun/GunType.hpp"
-#include "../network/PlayerInputBuffer.hpp"
+#include "../network/gameplay/PlayerInputBuffer.hpp"
 
 using PlayerID = uint64_t;
 using Clock = std::chrono::steady_clock;
@@ -65,3 +65,4 @@ struct ServerPlayerCombatSnapshot {
     float radius = 0.3f;
     bool isAlive = false;
 };
+

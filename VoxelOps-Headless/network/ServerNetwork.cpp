@@ -1,156 +1,63 @@
 #include "ServerNetwork.hpp"
 
-ServerNetwork *ServerNetwork::s_instance = nullptr;
+#include "core/ServerRuntime.hpp"
 
-ServerNetwork::ServerNetwork()
-    : m_quit(false), m_pollGroup(k_HSteamNetPollGroup_Invalid),
-      m_listenSock(k_HSteamListenSocket_Invalid) {
-    // allow only one instance to own the static callback bridge
-    s_instance = this;
-}
+ServerNetwork::ServerNetwork() : m_runtime(std::make_unique<ServerRuntime>()) {}
 
-ServerNetwork::~ServerNetwork() {
-    Stop();
-    ShutdownNetworking();
-    // cleanup pointer
-    if (s_instance == this)
-        s_instance = nullptr;
-}
+ServerNetwork::~ServerNetwork() = default;
 
 bool ServerNetwork::Start(uint16_t port) {
-    if (m_started.load(std::memory_order_acquire)) {
-        std::cerr << "ServerNetwork already started\n";
-        return false;
-    }
-
-    m_quit.store(false, std::memory_order_release);
-    m_serverTick.store(0, std::memory_order_release);
-    m_lagCompFrames.clear();
-    m_combatSnapshotsAliveCache.clear();
-    m_combatSnapshotsAliveCacheTick = 0;
-    m_hasCombatSnapshotsAliveCache = false;
-    m_matchStartTime = std::chrono::steady_clock::now();
-    m_matchStarted = false;
-    m_matchEnded = false;
-    m_matchWinner.clear();
-    m_worldItems.clear();
-    m_nextWorldItemId = 1;
-    {
-        std::lock_guard<std::mutex> lk(m_mutex);
-        m_matchScores.clear();
-        m_connectionByPlayerId.clear();
-    }
-    {
-        std::lock_guard<std::mutex> shutdownLock(m_shutdownMutex);
-        m_shutdownComplete = false;
-    }
-
-    SteamNetworkingErrMsg err;
-    if (!GameNetworkingSockets_Init(nullptr, err)) {
-        std::cerr << "GameNetworkingSockets_Init failed: " << err << "\n";
-        return false;
-    }
-
-    LoadHistoryFromFile();
-    LoadAdminsFromFile();
-
-    // Create poll group (used to efficiently receive messages from many connections)
-    m_pollGroup = SteamNetworkingSockets()->CreatePollGroup();
-    if (m_pollGroup == k_HSteamNetPollGroup_Invalid) {
-        std::cerr << "CreatePollGroup failed\n";
-        GameNetworkingSockets_Kill();
-        return false;
-    }
-
-    // Prepare listen socket option to install our connection-status callback
-    SteamNetworkingConfigValue_t opt;
-    opt.SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged,
-               reinterpret_cast<void *>(ServerNetwork::SteamNetConnectionStatusChangedCallback));
-
-    // Create listen socket bound to the chosen port
-    SteamNetworkingIPAddr addr;
-    addr.Clear();
-    addr.m_port = port;
-    m_listenSock = SteamNetworkingSockets()->CreateListenSocketIP(addr, 1, &opt);
-    if (m_listenSock == k_HSteamListenSocket_Invalid) {
-        std::cerr << "CreateListenSocketIP failed\n";
-        SteamNetworkingSockets()->DestroyPollGroup(m_pollGroup);
-        m_pollGroup = k_HSteamNetPollGroup_Invalid;
-        GameNetworkingSockets_Kill();
-        return false;
-    }
-
-    // Print bound address for debugging
-    SteamNetworkingIPAddr boundAddr;
-    if (SteamNetworkingSockets()->GetListenSocketAddress(m_listenSock, &boundAddr)) {
-        char s[SteamNetworkingIPAddr::k_cchMaxString];
-        boundAddr.ToString(s, sizeof(s), true);
-        std::cout << "Server listening on " << s << " (Ctrl+C to quit)\n";
-    } else {
-        std::cout << "Server listening on UDP port " << port << " (Ctrl+C to quit)\n";
-    }
-
-    StartChunkPipeline();
-    m_started.store(true, std::memory_order_release);
-    return true;
+    return m_runtime->Start(port);
 }
 
 void ServerNetwork::Run() {
-    if (!m_started.load(std::memory_order_acquire)) {
-        std::cerr << "ServerNetwork::Run called before Start\n";
-        return;
-    }
-    MainLoop();
-    ShutdownNetworking();
+    m_runtime->Run();
 }
 
 void ServerNetwork::Stop() {
-    m_quit.store(true, std::memory_order_release);
+    m_runtime->Stop();
 }
 
-void ServerNetwork::ShutdownNetworking() {
-    std::lock_guard<std::mutex> shutdownLock(m_shutdownMutex);
-    if (m_shutdownComplete) {
-        return;
-    }
-    m_shutdownComplete = true;
+void ServerNetwork::SaveHistoryToFile() {
+    m_runtime->SaveHistoryToFile();
+}
 
-    StopChunkPipeline();
-    SaveHistoryToFile();
-    SaveAdminsToFile();
+void ServerNetwork::LoadHistoryFromFile() {
+    m_runtime->LoadHistoryFromFile();
+}
 
-    std::vector<std::pair<HSteamNetConnection, ClientSession>> sessions;
-    {
-        std::lock_guard<std::mutex> lk(m_mutex);
-        sessions.reserve(m_clients.size());
-        for (const auto &kv : m_clients) {
-            sessions.push_back(kv);
-        }
-        m_clients.clear();
-        m_connectionByPlayerId.clear();
-        m_matchScores.clear();
-        m_worldItems.clear();
-        m_nextWorldItemId = 1;
-        m_combatSnapshotsAliveCache.clear();
-        m_combatSnapshotsAliveCacheTick = 0;
-        m_hasCombatSnapshotsAliveCache = false;
-    }
+void ServerNetwork::SaveAdminsToFile() {
+    m_runtime->SaveAdminsToFile();
+}
 
-    for (const auto &[conn, session] : sessions) {
-        TeardownClientSession(conn, session, "server shutting down", true);
-    }
+void ServerNetwork::LoadAdminsFromFile() {
+    m_runtime->LoadAdminsFromFile();
+}
 
-    if (m_listenSock != k_HSteamListenSocket_Invalid) {
-        SteamNetworkingSockets()->CloseListenSocket(m_listenSock);
-        m_listenSock = k_HSteamListenSocket_Invalid;
-    }
+bool ServerNetwork::SetAdminByUsername(const std::string &username, bool isAdmin) {
+    return m_runtime->SetAdminByUsername(username, isAdmin);
+}
 
-    if (m_pollGroup != k_HSteamNetPollGroup_Invalid) {
-        SteamNetworkingSockets()->DestroyPollGroup(m_pollGroup);
-        m_pollGroup = k_HSteamNetPollGroup_Invalid;
-    }
+bool ServerNetwork::IsAdminUsername(const std::string &username) {
+    return m_runtime->IsAdminUsername(username);
+}
 
-    if (m_started.exchange(false, std::memory_order_acq_rel)) {
-        GameNetworkingSockets_Kill();
-    }
+std::vector<std::pair<std::string, bool>> ServerNetwork::GetConnectedUsers() {
+    return m_runtime->GetConnectedUsers();
+}
+
+std::vector<std::string> ServerNetwork::GetAdminUsernames() {
+    return m_runtime->GetAdminUsernames();
+}
+
+void ServerNetwork::SetDebugLoggingEnabled(bool enabled) {
+    m_runtime->SetDebugLoggingEnabled(enabled);
+}
+
+bool ServerNetwork::IsDebugLoggingEnabled() {
+    return m_runtime->IsDebugLoggingEnabled();
+}
+
+void ServerNetwork::BroadcastRaw(const void *data, uint32_t len, HSteamNetConnection except) {
+    m_runtime->BroadcastRaw(data, len, except);
 }

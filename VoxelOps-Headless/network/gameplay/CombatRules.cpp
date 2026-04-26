@@ -1,6 +1,6 @@
 #include "CombatRules.hpp"
 
-#include "../../Shared/gun/GunType.hpp"
+#include "../../../Shared/gun/GunType.hpp"
 
 #include <cmath>
 

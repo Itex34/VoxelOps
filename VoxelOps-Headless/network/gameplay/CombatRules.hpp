@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../player/Hitbox.hpp"
+#include "../../player/Hitbox.hpp"
 
 #include <cstdint>
 

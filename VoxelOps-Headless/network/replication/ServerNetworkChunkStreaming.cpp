@@ -1,6 +1,6 @@
-#include "ServerNetwork.hpp"
-#include "PacketParsers.hpp"
-#include "ServerDiagnosticsFlags.hpp"
+#include "../core/ServerRuntime.hpp"
+#include "../protocol/PacketParsers.hpp"
+#include "../core/ServerDiagnosticsFlags.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -14,7 +14,7 @@ static int FloorDiv(int a, int b) {
     return q;
 }
 
-void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn,
+void ServerRuntime::UpdateChunkStreamingForClient(HSteamNetConnection conn,
                                                   const glm::ivec3 &centerChunk,
                                                   uint16_t viewDistance) {
     constexpr size_t kMaxChunkPrepQueuePerUpdate = 128;
@@ -243,7 +243,7 @@ void ServerNetwork::UpdateChunkStreamingForClient(HSteamNetConnection conn,
     }
 }
 
-void ServerNetwork::HandlePlayerInputPacket(HSteamNetConnection incoming, const void *data,
+void ServerRuntime::HandlePlayerInputPacket(HSteamNetConnection incoming, const void *data,
                                             uint32_t size, uint64_t &playerInputPacketsThisLoop) {
     ++playerInputPacketsThisLoop;
     PlayerInput input{};
@@ -271,7 +271,7 @@ void ServerNetwork::HandlePlayerInputPacket(HSteamNetConnection incoming, const 
     }
 }
 
-void ServerNetwork::HandleChunkRequestPacket(HSteamNetConnection incoming, const void *data,
+void ServerRuntime::HandleChunkRequestPacket(HSteamNetConnection incoming, const void *data,
                                              uint32_t size, uint64_t &chunkRequestPacketsThisLoop) {
     ++chunkRequestPacketsThisLoop;
     ChunkRequest req{};
