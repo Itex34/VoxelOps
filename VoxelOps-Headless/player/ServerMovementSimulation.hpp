@@ -1,6 +1,6 @@
 #pragma once
 
-class ServerPlayer;
+struct ServerPlayer;
 class ChunkManager;
 
 namespace ServerMovementSimulation {

@@ -1,6 +1,6 @@
-#include "LagCompensationSystem.hpp"
+#include "LagCompensation.hpp"
 
-namespace LagCompensationSystem {
+namespace LagCompensation {
 
 bool IsNewerU32(uint32_t a, uint32_t b) {
     return static_cast<int32_t>(a - b) > 0;
@@ -56,4 +56,4 @@ const LagCompFrame *GetFrameForTick(const std::deque<LagCompFrame> &frames,
     return nullptr;
 }
 
-} // namespace LagCompensationSystem
+} // namespace LagCompensation

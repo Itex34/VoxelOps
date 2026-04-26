@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace LagCompensationSystem {
+namespace LagCompensation {
 
 constexpr uint32_t kServerTickRateHz = 60u;
 constexpr float kShootLagCompensationWindowSeconds = 0.300f;
@@ -39,4 +39,4 @@ const LagCompFrame *GetFrameForTick(const std::deque<LagCompFrame> &frames,
                                     uint32_t currentServerTick,
                                     uint32_t clientTick);
 
-} // namespace LagCompensationSystem
+} // namespace LagCompensation

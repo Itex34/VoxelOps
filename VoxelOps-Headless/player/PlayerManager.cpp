@@ -1,11 +1,11 @@
 #include "PlayerManager.hpp"
 
 #include "PlayerLifecycle.hpp"
-#include "PlayerUpdateSystem.hpp"
-#include "inventory/PlayerInventorySystem.hpp"
+#include "PlayerUpdate.hpp"
+#include "inventory/PlayerInventory.hpp"
 
-#include "../gameplay/combat/PlayerCombatSystem.hpp"
-#include "../network/snapshots/PlayerSnapshotSystem.hpp"
+#include "../gameplay/combat/PlayerCombat.hpp"
+#include "../network/snapshots/PlayerSnapshot.hpp"
 #include "../player/ServerMovementSimulation.hpp"
 #include "../world/ChunkManager.hpp"
 
@@ -94,7 +94,7 @@ bool PlayerManager::setFlyModeAllowed(PlayerID id, bool allowed) {
 
 bool PlayerManager::setEquippedWeapon(PlayerID id, uint16_t weaponId) {
     std::lock_guard<std::mutex> lock(mtx);
-    return PlayerInventorySystem::setEquippedWeapon(playersById, id, weaponId);
+    return PlayerInventory::setEquippedWeapon(playersById, id, weaponId);
 }
 
 void PlayerManager::update(double deltaSeconds, ChunkManager &chunkManager) {
@@ -103,7 +103,7 @@ void PlayerManager::update(double deltaSeconds, ChunkManager &chunkManager) {
     {
         std::lock_guard<std::mutex> lock(mtx);
         playerCountForLog = playersById.size();
-        PlayerUpdateSystem::updatePlayers(playersById, playersOrder, deltaSeconds, chunkManager,
+        PlayerUpdate::updatePlayers(playersById, playersOrder, deltaSeconds, chunkManager,
                                           heartbeatTimeout);
     }
 
@@ -123,14 +123,14 @@ void PlayerManager::update(double deltaSeconds, ChunkManager &chunkManager) {
 
 std::vector<uint8_t> PlayerManager::buildSnapshotFor(PlayerID recipientId, uint32_t serverTick) {
     std::lock_guard<std::mutex> lock(mtx);
-    return PlayerSnapshotSystem::buildSnapshotFor(recipientId, serverTick, playersById);
+    return PlayerSnapshots::buildSnapshotFor(recipientId, serverTick, playersById);
 }
 
 std::vector<std::vector<uint8_t>>
 PlayerManager::buildSnapshotsForRecipients(const std::vector<PlayerID> &recipientIds,
                                            uint32_t serverTick) {
     std::lock_guard<std::mutex> lock(mtx);
-    return PlayerSnapshotSystem::buildSnapshotsForRecipients(recipientIds, serverTick, playersById);
+    return PlayerSnapshots::buildSnapshotsForRecipients(recipientIds, serverTick, playersById);
 }
 
 void PlayerManager::sendBytes(const std::shared_ptr<ConnectionHandle> &conn,
@@ -181,12 +181,12 @@ std::vector<ServerPlayer> PlayerManager::getAllPlayersCopy() {
 
 std::vector<ServerPlayerCombatSnapshot> PlayerManager::getAllCombatSnapshotsCopy(bool aliveOnly) {
     std::lock_guard<std::mutex> lock(mtx);
-    return PlayerCombatSystem::getAllCombatSnapshotsCopy(playersById, aliveOnly);
+    return PlayerCombat::getAllCombatSnapshotsCopy(playersById, aliveOnly);
 }
 
 bool PlayerManager::applyDamage(PlayerID id, float damage, float &outHealthAfter, bool &outKilled) {
     std::lock_guard<std::mutex> lock(mtx);
-    return PlayerCombatSystem::applyDamage(playersById, id, damage, outHealthAfter, outKilled,
+    return PlayerCombat::applyDamage(playersById, id, damage, outHealthAfter, outKilled,
                                            respawnDelay, Clock::now());
 }
 
@@ -194,24 +194,24 @@ bool PlayerManager::applyInventoryAction(PlayerID id, const InventoryActionReque
                                          InventoryActionResult &outResult,
                                          InventorySnapshot &outSnapshot) {
     std::lock_guard<std::mutex> lock(mtx);
-    return PlayerInventorySystem::applyInventoryAction(playersById, id, request, outResult,
+    return PlayerInventory::applyInventoryAction(playersById, id, request, outResult,
                                                        outSnapshot);
 }
 
 bool PlayerManager::getInventorySnapshot(PlayerID id, InventorySnapshot &outSnapshot) {
     std::lock_guard<std::mutex> lock(mtx);
-    return PlayerInventorySystem::getInventorySnapshot(playersById, id, outSnapshot);
+    return PlayerInventory::getInventorySnapshot(playersById, id, outSnapshot);
 }
 
 bool PlayerManager::getInventorySlot(PlayerID id, uint16_t slotIndex, Slot &outSlot) {
     std::lock_guard<std::mutex> lock(mtx);
-    return PlayerInventorySystem::getInventorySlot(playersById, id, slotIndex, outSlot);
+    return PlayerInventory::getInventorySlot(playersById, id, slotIndex, outSlot);
 }
 
 bool PlayerManager::appendItemsToInventory(PlayerID id, uint16_t itemId, uint16_t quantity,
                                            uint16_t &outAcceptedQuantity,
                                            InventorySnapshot *outSnapshot) {
     std::lock_guard<std::mutex> lock(mtx);
-    return PlayerInventorySystem::appendItemsToInventory(playersById, id, itemId, quantity,
+    return PlayerInventory::appendItemsToInventory(playersById, id, itemId, quantity,
                                                          outAcceptedQuantity, outSnapshot);
 }

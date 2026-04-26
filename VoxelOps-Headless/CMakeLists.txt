@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.28 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.28 FATAL_ERROR)
 
 project(VoxelOps-Headless CXX)
 
@@ -18,12 +18,18 @@ add_executable(VoxelOps-Headless
     "world/ChunkManager.cpp"
     "world/WorldGen.cpp"
      
-    "physics/HitDetectionSystem.cpp"
+    "physics/HitDetection.cpp"
     
     "network/ServerNetwork.cpp"
     "network/core/ServerRuntime.cpp"
     "network/core/ServerRuntimeConnection.cpp"
     "network/core/ServerRuntimeLoop.cpp"
+    "network/core/loop/Network.cpp"
+    "network/core/loop/Simulation.cpp"
+    "network/core/loop/Diagnostics.cpp"
+    "network/core/loop/Replication.cpp"
+    "network/core/loop/Gameplay.cpp"
+    "network/core/loop/World.cpp"
     "network/core/ServerRuntimeSessionLifecycle.cpp"
     "network/core/ServerRuntimeCallbacks.cpp"
     "network/core/ServerRuntimePersistence.cpp"
@@ -31,11 +37,11 @@ add_executable(VoxelOps-Headless
     "network/protocol/PacketReader.cpp"
     "network/protocol/PacketValidation.cpp"
     "network/protocol/PacketParsers.cpp"
-    "network/protocol/ValidationSystem.cpp"
-    "network/gameplay/ServerNetworkBlockEdits.cpp"
+    "network/protocol/Validation.cpp"
+    "network/gameplay/BlockEditsNetwork.cpp"
     "network/gameplay/ServerNetworkGameplay.cpp"
-    "network/gameplay/ServerNetworkCombat.cpp"
-    "network/gameplay/WorldItemPhysics.cpp"
+    "network/gameplay/CombatNetwork.cpp"
+    "physics/WorldItemPhysics.cpp"
     "network/gameplay/CombatRules.cpp"
     "network/gameplay/PlayerInputBuffer.cpp"
     "network/replication/ServerNetworkChunkPipeline.cpp"
@@ -45,18 +51,20 @@ add_executable(VoxelOps-Headless
     "player/Hitbox.cpp" 
     "player/PlayerManager.cpp"
     "player/PlayerLifecycle.cpp"
-    "player/PlayerUpdateSystem.cpp"
-    "player/inventory/PlayerInventorySystem.cpp"
-    "gameplay/combat/PlayerCombatSystem.cpp"
-    "gameplay/combat/LagCompensationSystem.cpp"
-    "gameplay/combat/ShootValidationSystem.cpp"
-    "gameplay/combat/DamageSystem.cpp"
-    "gameplay/combat/CombatFeedbackSystem.cpp"
-    "gameplay/combat/ShootSystem.cpp"
+    "player/PlayerUpdate.cpp"
+    "player/inventory/PlayerInventory.cpp"
+    "gameplay/combat/PlayerCombat.cpp"
+    "gameplay/combat/LagCompensation.cpp"
+    "gameplay/combat/ShootValidation.cpp"
+    "gameplay/combat/Damage.cpp"
+    "gameplay/combat/CombatFeedback.cpp"
+    "gameplay/combat/Shoot.cpp"
+    "gameplay/combat/Combat.cpp"
     
     "network/snapshots/PlayerSnapshotSerializer.cpp" 
-    "network/snapshots/PlayerSnapshotSystem.cpp"
+    "network/snapshots/PlayerSnapshot.cpp"
     "player/ServerMovementSimulation.cpp"
+    "gameplay/world/BlockEdits.cpp"
     "world/WorldRaycast.cpp"
     "gameplay/spawn/Respawning.cpp")
 

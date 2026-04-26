@@ -1,6 +1,6 @@
 #include "WorldItemPhysics.hpp"
 
-#include "../../world/ChunkManager.hpp"
+#include "../world/ChunkManager.hpp"
 
 #include <algorithm>
 #include <cmath>

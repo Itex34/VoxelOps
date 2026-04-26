@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <unordered_map>
 
-namespace PlayerInventorySystem {
+namespace PlayerInventory {
 bool setEquippedWeapon(std::unordered_map<PlayerID, ServerPlayer> &playersById,
                        PlayerID id,
                        uint16_t weaponId);
@@ -31,4 +31,4 @@ bool appendItemsToInventory(std::unordered_map<PlayerID, ServerPlayer> &playersB
                             uint16_t quantity,
                             uint16_t &outAcceptedQuantity,
                             InventorySnapshot *outSnapshot = nullptr);
-} // namespace PlayerInventorySystem
+} // namespace PlayerInventory

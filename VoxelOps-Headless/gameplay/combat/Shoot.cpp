@@ -1,12 +1,12 @@
-#include "ShootSystem.hpp"
+#include "Shoot.hpp"
 
 #include "../../world/ChunkManager.hpp"
-#include "ShootValidationSystem.hpp"
+#include "ShootValidation.hpp"
 
 #include <cstdint>
 #include <limits>
 
-namespace ShootSystem {
+namespace Shoot {
 
 ShootContext BuildContext(HSteamNetConnection connection,
                           const ShootRequest &request,
@@ -27,7 +27,7 @@ ShootContext BuildContext(HSteamNetConnection connection,
 }
 
 ShootOutcome ResolveHit(const ShootContext &ctx,
-                        const HitDetectionSystem::HitDetectionResult &hit,
+                        const HitDetection::HitDetectionResult &hit,
                         float blockOcclusionEpsilon,
                         PlayerManager &playerManager) {
     ShootOutcome outcome{};
@@ -44,8 +44,8 @@ ShootOutcome ResolveHit(const ShootContext &ctx,
     outcome.hitRegion = hit.hitRegion;
     outcome.hitPoint = hit.hitPoint;
 
-    const DamageSystem::DamageResolution damage =
-        DamageSystem::ResolveDamage(playerManager, hit.hitPlayerId, ctx.request.weaponId, hit.hitRegion);
+    const Damage::DamageResolution damage =
+        Damage::ResolveDamage(playerManager, hit.hitPlayerId, ctx.request.weaponId, hit.hitRegion);
     if (!damage.applied) {
         outcome.hit = false;
         outcome.hitPoint = hit.hitPoint;
@@ -61,7 +61,7 @@ ShootOutcome ResolveHit(const ShootContext &ctx,
 
 bool FinalizeContext(ShootContext &ctx,
                      const ServerPlayer &shooter,
-                     const LagCompensationSystem::LagCompFrame *lagFrame,
+                     const LagCompensation::LagCompFrame *lagFrame,
                      const ChunkManager &chunkManager,
                      float eyeHeight,
                      float originTolerance,
@@ -69,7 +69,7 @@ bool FinalizeContext(ShootContext &ctx,
     ctx.shooter = shooter;
     ctx.lagFrame = lagFrame;
 
-    if (!ShootValidationSystem::IsDirectionValid(ctx.request, ctx.rayDir)) {
+    if (!ShootValidation::IsDirectionValid(ctx.request, ctx.rayDir)) {
         return false;
     }
 
@@ -83,8 +83,8 @@ bool FinalizeContext(ShootContext &ctx,
 
     const glm::vec3 shooterEyePos = shooterBasePos + glm::vec3(0.0f, eyeHeight, 0.0f);
     const glm::vec3 requestPos(ctx.request.posX, ctx.request.posY, ctx.request.posZ);
-    const ShootValidationSystem::ValidatedOrigin validatedOrigin =
-        ShootValidationSystem::ComputeValidatedOrigin(chunkManager, shooterEyePos, requestPos,
+    const ShootValidation::ValidatedOrigin validatedOrigin =
+        ShootValidation::ComputeValidatedOrigin(chunkManager, shooterEyePos, requestPos,
                                                       originTolerance, originOcclusionEpsilon);
     ctx.rayOrigin = validatedOrigin.origin;
     ctx.requestedOriginAccepted = validatedOrigin.requestedOriginAccepted;
@@ -108,4 +108,4 @@ void ApplyOutcomeToResult(ShootContext &ctx, const ShootOutcome &outcome) {
     ctx.result.damageApplied = outcome.damageApplied;
 }
 
-} // namespace ShootSystem
+} // namespace Shoot

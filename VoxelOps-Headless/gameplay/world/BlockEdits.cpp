@@ -1,5 +1,4 @@
-#include "../core/ServerRuntime.hpp"
-#include "../protocol/PacketParsers.hpp"
+#include "../../network/core/ServerRuntime.hpp"
 
 #include <algorithm>
 
@@ -32,17 +31,6 @@ ResultT MakeRejectedEditResult(
     return result;
 }
 } // namespace
-
-bool ServerRuntime::TryGetRegisteredPlayerId(HSteamNetConnection incoming, PlayerID &outPlayerId) {
-    outPlayerId = 0;
-    std::lock_guard<std::mutex> lk(m_mutex);
-    const auto it = m_clients.find(incoming);
-    if (it == m_clients.end() || it->second.username.empty() || it->second.playerId == 0) {
-        return false;
-    }
-    outPlayerId = it->second.playerId;
-    return true;
-}
 
 bool ServerRuntime::IsAnyAlivePlayerOccupyingBlock(const std::vector<ServerPlayer> &players,
                                                    const glm::ivec3 &worldPos) const {
@@ -149,36 +137,10 @@ void ServerRuntime::BroadcastChunkDeltas(const std::vector<ChunkDelta> &outbound
     }
 }
 
-void ServerRuntime::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, const void *data,
-                                                  uint32_t size) {
-    auto sendResult = [&](const BlockPlaceResult &res) {
-        const std::vector<uint8_t> bytes = res.serialize();
-        (void)SteamNetworkingSockets()->SendMessageToConnection(
-            incoming, bytes.data(), static_cast<uint32_t>(bytes.size()),
-            k_nSteamNetworkingSend_Reliable, nullptr);
-    };
+BlockPlaceResult ServerRuntime::ExecuteBlockPlaceRequest(PlayerID requesterId,
+                                                         const BlockPlaceRequest &request) {
+    (void)requesterId;
 
-    BlockPlaceRequest request{};
-    if (!NetPacket::ParseBlockPlaceRequestPacket(reinterpret_cast<const uint8_t *>(data), size,
-                                                 request)) {
-        BlockPlaceResult result{};
-        result.accepted = 0;
-        result.rejectReason = BlockPlaceRejectReason::InvalidPacket;
-        sendResult(result);
-        std::cerr << "[block/place] malformed request size=" << size << "\n";
-        return;
-    }
-
-    PlayerID requesterId = 0;
-    if (!TryGetRegisteredPlayerId(incoming, requesterId)) {
-        sendResult(MakeRejectedEditResult<BlockPlaceResult, BlockPlaceRejectReason,
-                                          BlockPlaceChunkCoord>(
-            request.requestId, BlockPlaceRejectReason::Unregistered, {}, false));
-        return;
-    }
-    m_playerManager.touchHeartbeat(requesterId);
-
-    // Deduplicate edits by world position (last write wins) and validate payload.
     std::unordered_map<glm::ivec3, BlockID, IVec3Hash, IVec3Eq> normalizedEdits;
     normalizedEdits.reserve(request.edits.size());
     std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> touchedChunks;
@@ -186,19 +148,17 @@ void ServerRuntime::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, 
     for (const BlockPlaceEdit &edit : request.edits) {
         if (edit.blockId == static_cast<uint8_t>(BlockID::Air) ||
             edit.blockId >= static_cast<uint8_t>(BlockID::COUNT)) {
-            sendResult(MakeRejectedEditResult<BlockPlaceResult, BlockPlaceRejectReason,
-                                              BlockPlaceChunkCoord>(
-                request.requestId, BlockPlaceRejectReason::InvalidPacket, touchedChunks, true));
-            return;
+            return MakeRejectedEditResult<BlockPlaceResult, BlockPlaceRejectReason,
+                                          BlockPlaceChunkCoord>(
+                request.requestId, BlockPlaceRejectReason::InvalidPacket, touchedChunks, true);
         }
 
         const glm::ivec3 worldPos(edit.worldX, edit.worldY, edit.worldZ);
         const glm::ivec3 chunkPos = m_chunkManager.worldToChunkPos(worldPos);
         if (!m_chunkManager.inBounds(chunkPos)) {
-            sendResult(MakeRejectedEditResult<BlockPlaceResult, BlockPlaceRejectReason,
-                                              BlockPlaceChunkCoord>(
-                request.requestId, BlockPlaceRejectReason::OutOfBounds, touchedChunks, true));
-            return;
+            return MakeRejectedEditResult<BlockPlaceResult, BlockPlaceRejectReason,
+                                          BlockPlaceChunkCoord>(
+                request.requestId, BlockPlaceRejectReason::OutOfBounds, touchedChunks, true);
         }
 
         normalizedEdits[worldPos] = static_cast<BlockID>(edit.blockId);
@@ -206,29 +166,26 @@ void ServerRuntime::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, 
     }
 
     if (normalizedEdits.empty()) {
-        sendResult(MakeRejectedEditResult<BlockPlaceResult, BlockPlaceRejectReason,
-                                          BlockPlaceChunkCoord>(
-            request.requestId, BlockPlaceRejectReason::InvalidPacket, touchedChunks, false));
-        return;
+        return MakeRejectedEditResult<BlockPlaceResult, BlockPlaceRejectReason,
+                                      BlockPlaceChunkCoord>(
+            request.requestId, BlockPlaceRejectReason::InvalidPacket, touchedChunks, false);
     }
 
     const std::vector<ServerPlayer> players = m_playerManager.getAllPlayersCopy();
     for (const auto &[worldPos, newId] : normalizedEdits) {
         (void)newId;
         if (IsAnyAlivePlayerOccupyingBlock(players, worldPos)) {
-            sendResult(MakeRejectedEditResult<BlockPlaceResult, BlockPlaceRejectReason,
-                                              BlockPlaceChunkCoord>(
-                request.requestId, BlockPlaceRejectReason::PlayerOccupied, touchedChunks, true));
-            return;
+            return MakeRejectedEditResult<BlockPlaceResult, BlockPlaceRejectReason,
+                                          BlockPlaceChunkCoord>(
+                request.requestId, BlockPlaceRejectReason::PlayerOccupied, touchedChunks, true);
         }
     }
 
     std::vector<ChunkDelta> outboundDeltas;
     if (!ApplyBlockEditsAndBuildDeltas(normalizedEdits, outboundDeltas)) {
-        sendResult(MakeRejectedEditResult<BlockPlaceResult, BlockPlaceRejectReason,
-                                          BlockPlaceChunkCoord>(
-            request.requestId, BlockPlaceRejectReason::ServerError, touchedChunks, true));
-        return;
+        return MakeRejectedEditResult<BlockPlaceResult, BlockPlaceRejectReason,
+                                      BlockPlaceChunkCoord>(
+            request.requestId, BlockPlaceRejectReason::ServerError, touchedChunks, true);
     }
 
     BroadcastChunkDeltas(outboundDeltas);
@@ -237,37 +194,12 @@ void ServerRuntime::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, 
     result.requestId = request.requestId;
     result.accepted = 1;
     result.rejectReason = BlockPlaceRejectReason::None;
-    sendResult(result);
+    return result;
 }
 
-void ServerRuntime::HandleBlockBreakRequestPacket(HSteamNetConnection incoming, const void *data,
-                                                  uint32_t size) {
-    auto sendResult = [&](const BlockBreakResult &res) {
-        const std::vector<uint8_t> bytes = res.serialize();
-        (void)SteamNetworkingSockets()->SendMessageToConnection(
-            incoming, bytes.data(), static_cast<uint32_t>(bytes.size()),
-            k_nSteamNetworkingSend_Reliable, nullptr);
-    };
-
-    BlockBreakRequest request{};
-    if (!NetPacket::ParseBlockBreakRequestPacket(reinterpret_cast<const uint8_t *>(data), size,
-                                                 request)) {
-        BlockBreakResult result{};
-        result.accepted = 0;
-        result.rejectReason = BlockBreakRejectReason::InvalidPacket;
-        sendResult(result);
-        std::cerr << "[block/break] malformed request size=" << size << "\n";
-        return;
-    }
-
-    PlayerID requesterId = 0;
-    if (!TryGetRegisteredPlayerId(incoming, requesterId)) {
-        sendResult(MakeRejectedEditResult<BlockBreakResult, BlockBreakRejectReason,
-                                          BlockBreakChunkCoord>(
-            request.requestId, BlockBreakRejectReason::Unregistered, {}, false));
-        return;
-    }
-    m_playerManager.touchHeartbeat(requesterId);
+BlockBreakResult ServerRuntime::ExecuteBlockBreakRequest(PlayerID requesterId,
+                                                         const BlockBreakRequest &request) {
+    (void)requesterId;
 
     std::unordered_map<glm::ivec3, BlockID, IVec3Hash, IVec3Eq> normalizedEdits;
     normalizedEdits.reserve(request.edits.size());
@@ -277,10 +209,9 @@ void ServerRuntime::HandleBlockBreakRequestPacket(HSteamNetConnection incoming, 
         const glm::ivec3 worldPos(edit.worldX, edit.worldY, edit.worldZ);
         const glm::ivec3 chunkPos = m_chunkManager.worldToChunkPos(worldPos);
         if (!m_chunkManager.inBounds(chunkPos)) {
-            sendResult(MakeRejectedEditResult<BlockBreakResult, BlockBreakRejectReason,
-                                              BlockBreakChunkCoord>(
-                request.requestId, BlockBreakRejectReason::OutOfBounds, touchedChunks, true));
-            return;
+            return MakeRejectedEditResult<BlockBreakResult, BlockBreakRejectReason,
+                                          BlockBreakChunkCoord>(
+                request.requestId, BlockBreakRejectReason::OutOfBounds, touchedChunks, true);
         }
 
         normalizedEdits[worldPos] = BlockID::Air;
@@ -288,29 +219,26 @@ void ServerRuntime::HandleBlockBreakRequestPacket(HSteamNetConnection incoming, 
     }
 
     if (normalizedEdits.empty()) {
-        sendResult(MakeRejectedEditResult<BlockBreakResult, BlockBreakRejectReason,
-                                          BlockBreakChunkCoord>(
-            request.requestId, BlockBreakRejectReason::InvalidPacket, touchedChunks, false));
-        return;
+        return MakeRejectedEditResult<BlockBreakResult, BlockBreakRejectReason,
+                                      BlockBreakChunkCoord>(
+            request.requestId, BlockBreakRejectReason::InvalidPacket, touchedChunks, false);
     }
 
     const std::vector<ServerPlayer> players = m_playerManager.getAllPlayersCopy();
     for (const auto &[worldPos, newId] : normalizedEdits) {
         (void)newId;
         if (IsAnyAlivePlayerOccupyingBlock(players, worldPos)) {
-            sendResult(MakeRejectedEditResult<BlockBreakResult, BlockBreakRejectReason,
-                                              BlockBreakChunkCoord>(
-                request.requestId, BlockBreakRejectReason::PlayerOccupied, touchedChunks, true));
-            return;
+            return MakeRejectedEditResult<BlockBreakResult, BlockBreakRejectReason,
+                                          BlockBreakChunkCoord>(
+                request.requestId, BlockBreakRejectReason::PlayerOccupied, touchedChunks, true);
         }
     }
 
     std::vector<ChunkDelta> outboundDeltas;
     if (!ApplyBlockEditsAndBuildDeltas(normalizedEdits, outboundDeltas)) {
-        sendResult(MakeRejectedEditResult<BlockBreakResult, BlockBreakRejectReason,
-                                          BlockBreakChunkCoord>(
-            request.requestId, BlockBreakRejectReason::ServerError, touchedChunks, true));
-        return;
+        return MakeRejectedEditResult<BlockBreakResult, BlockBreakRejectReason,
+                                      BlockBreakChunkCoord>(
+            request.requestId, BlockBreakRejectReason::ServerError, touchedChunks, true);
     }
 
     BroadcastChunkDeltas(outboundDeltas);
@@ -319,5 +247,5 @@ void ServerRuntime::HandleBlockBreakRequestPacket(HSteamNetConnection incoming, 
     result.requestId = request.requestId;
     result.accepted = 1;
     result.rejectReason = BlockBreakRejectReason::None;
-    sendResult(result);
+    return result;
 }

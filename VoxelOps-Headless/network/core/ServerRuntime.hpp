@@ -25,10 +25,10 @@
 
 #include "../../../Shared/network/PacketType.hpp"
 #include "../../../Shared/network/Packets.hpp"
-#include "../../gameplay/combat/LagCompensationSystem.hpp"
+#include "../../gameplay/combat/LagCompensation.hpp"
 #include "../../player/PlayerManager.hpp"
 #include "../../world/ChunkManager.hpp"
-#include "../gameplay/WorldItemPhysics.hpp"
+#include "../../physics/WorldItemPhysics.hpp"
 
 class ServerRuntime {
   public:
@@ -87,6 +87,7 @@ class ServerRuntime {
     void HandleBlockBreakRequestPacket(HSteamNetConnection incoming, const void *data,
                                        uint32_t size);
     void HandleShootRequestPacket(HSteamNetConnection incoming, const void *data, uint32_t size);
+    ShootResult ExecuteShootRequest(HSteamNetConnection incoming, const ShootRequest &req);
     void HandleInventoryActionRequestPacket(HSteamNetConnection incoming, const void *data,
                                             uint32_t size);
     void SpawnDroppedItem(PlayerID dropperId, uint16_t itemId, uint16_t quantity);
@@ -121,6 +122,10 @@ class ServerRuntime {
                                     double &collisionPrewarmUs);
     void ApplyLoopPacingPhase(bool simBacklog);
     bool TryGetRegisteredPlayerId(HSteamNetConnection incoming, PlayerID &outPlayerId);
+    BlockPlaceResult ExecuteBlockPlaceRequest(PlayerID requesterId,
+                                              const BlockPlaceRequest &request);
+    BlockBreakResult ExecuteBlockBreakRequest(PlayerID requesterId,
+                                              const BlockBreakRequest &request);
     bool IsAnyAlivePlayerOccupyingBlock(const std::vector<ServerPlayer> &players,
                                         const glm::ivec3 &worldPos) const;
     bool ApplyBlockEditsAndBuildDeltas(
@@ -236,7 +241,7 @@ class ServerRuntime {
     std::atomic<bool> m_quit;
     std::atomic<bool> m_started{false};
     std::atomic<uint32_t> m_serverTick{0};
-    std::deque<LagCompensationSystem::LagCompFrame> m_lagCompFrames;
+    std::deque<LagCompensation::LagCompFrame> m_lagCompFrames;
     std::vector<ServerPlayerCombatSnapshot> m_combatSnapshotsAliveCache;
     uint32_t m_combatSnapshotsAliveCacheTick = 0;
     bool m_hasCombatSnapshotsAliveCache = false;

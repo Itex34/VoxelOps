@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../gameplay/combat/LagCompensationSystem.hpp"
+#include "../gameplay/combat/LagCompensation.hpp"
 #include "../player/Hitbox.hpp"
 #include "../player/ServerPlayer.hpp"
 
@@ -10,7 +10,7 @@
 
 class ChunkManager;
 
-namespace HitDetectionSystem {
+namespace HitDetection {
 
 struct HitDetectionInput {
     PlayerID shooterId = 0;
@@ -20,7 +20,7 @@ struct HitDetectionInput {
     float hitboxPadXZ = 0.08f;
     float hitboxPadY = 0.04f;
     const ChunkManager *chunkManager = nullptr;
-    const LagCompensationSystem::LagCompFrame *lagCompFrame = nullptr;
+    const LagCompensation::LagCompFrame *lagCompFrame = nullptr;
     const std::vector<ServerPlayerCombatSnapshot> *players = nullptr;
     bool enableValidationLogs = false;
 };
@@ -39,4 +39,4 @@ struct HitDetectionResult {
 
 HitDetectionResult RaycastPlayersAndWorld(const HitDetectionInput &input);
 
-} // namespace HitDetectionSystem
+} // namespace HitDetection

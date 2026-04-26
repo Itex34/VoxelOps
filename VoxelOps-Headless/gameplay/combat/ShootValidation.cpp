@@ -1,12 +1,12 @@
-#include "ShootValidationSystem.hpp"
+#include "ShootValidation.hpp"
 
 #include "../../world/ChunkManager.hpp"
 #include "../../world/WorldRaycast.hpp"
-#include "LagCompensationSystem.hpp"
+#include "LagCompensation.hpp"
 
 #include <cmath>
 
-namespace ShootValidationSystem {
+namespace ShootValidation {
 
 bool IsDirectionValid(const ShootRequest &request, glm::vec3 &outNormalizedDir) {
     const glm::vec3 requestDir(request.dirX, request.dirY, request.dirZ);
@@ -23,7 +23,7 @@ ShootGateResult RunShootGate(ShootGateState &state,
                              float minShotIntervalSeconds) {
     ShootGateResult gate{};
     if (state.hasLastShootClientShotId &&
-        !LagCompensationSystem::IsNewerU32(request.clientShotId, state.lastShootClientShotId)) {
+        !LagCompensation::IsNewerU32(request.clientShotId, state.lastShootClientShotId)) {
         gate.rejectedReplay = true;
         return gate;
     }
@@ -77,4 +77,4 @@ ValidatedOrigin ComputeValidatedOrigin(const ChunkManager &chunkManager,
     return out;
 }
 
-} // namespace ShootValidationSystem
+} // namespace ShootValidation

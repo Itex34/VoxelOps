@@ -1,4 +1,4 @@
-#include "HitDetectionSystem.hpp"
+#include "HitDetection.hpp"
 
 #include "../network/gameplay/CombatRules.hpp"
 #include "../world/ChunkManager.hpp"
@@ -317,7 +317,7 @@ CachedTransform BuildPlayerTransform(const glm::vec3 &position, float yaw) {
 
 } // namespace
 
-namespace HitDetectionSystem {
+namespace HitDetection {
 
 HitDetectionResult RaycastPlayersAndWorld(const HitDetectionInput &input) {
     HitDetectionResult detection{};
@@ -353,7 +353,7 @@ HitDetectionResult RaycastPlayersAndWorld(const HitDetectionInput &input) {
         if (input.lagCompFrame != nullptr) {
             const auto targetLagIt = input.lagCompFrame->players.find(target.id);
             if (targetLagIt != input.lagCompFrame->players.end()) {
-                const LagCompensationSystem::LagCompPlayerPose &pose = targetLagIt->second;
+                const LagCompensation::LagCompPlayerPose &pose = targetLagIt->second;
                 targetPosition = pose.position;
                 targetYaw = pose.yaw;
                 targetHeight = pose.height;
@@ -445,5 +445,5 @@ HitDetectionResult RaycastPlayersAndWorld(const HitDetectionInput &input) {
     return detection;
 }
 
-} // namespace HitDetectionSystem
+} // namespace HitDetection
 

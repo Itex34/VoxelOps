@@ -1,4 +1,4 @@
-#include "PlayerUpdateSystem.hpp"
+#include "PlayerUpdate.hpp"
 
 #include "../../Shared/utils/Math.hpp"
 
@@ -23,7 +23,7 @@ void clearDeadPlayerMotionState(ServerPlayer &player) {
 }
 } // namespace
 
-namespace PlayerUpdateSystem {
+namespace PlayerUpdate {
 
 void handleRespawn(ServerPlayer &player,
                    std::unordered_map<PlayerID, ServerPlayer> &playersById,
@@ -82,4 +82,4 @@ void updatePlayers(std::unordered_map<PlayerID, ServerPlayer> &playersById,
     handleTimeouts(playersById, playersOrder, timedOutPlayerIds);
 }
 
-} // namespace PlayerUpdateSystem
+} // namespace PlayerUpdate

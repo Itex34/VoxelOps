@@ -1,8 +1,8 @@
-#include "CombatFeedbackSystem.hpp"
+#include "CombatFeedback.hpp"
 
 #include "../../../Shared/network/PacketType.hpp"
 
-namespace CombatFeedbackSystem {
+namespace CombatFeedback {
 
 std::string FallbackVictimUsername(PlayerID victimId) {
     return std::string("Player") + std::to_string(victimId);
@@ -25,4 +25,4 @@ std::string BuildKillfeedPacket(const std::string &killerUsername,
     return out;
 }
 
-} // namespace CombatFeedbackSystem
+} // namespace CombatFeedback

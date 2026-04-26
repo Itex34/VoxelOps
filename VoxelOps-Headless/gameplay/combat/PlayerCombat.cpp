@@ -1,11 +1,11 @@
-#include "PlayerCombatSystem.hpp"
+#include "PlayerCombat.hpp"
 
 #include "../spawn/Respawning.hpp"
 
 #include <algorithm>
 #include <cmath>
 
-namespace PlayerCombatSystem {
+namespace PlayerCombat {
 
 std::vector<ServerPlayerCombatSnapshot>
 getAllCombatSnapshotsCopy(const std::unordered_map<PlayerID, ServerPlayer> &playersById,
@@ -65,4 +65,4 @@ bool applyDamage(std::unordered_map<PlayerID, ServerPlayer> &playersById,
     return true;
 }
 
-} // namespace PlayerCombatSystem
+} // namespace PlayerCombat

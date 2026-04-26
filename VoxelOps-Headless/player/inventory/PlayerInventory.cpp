@@ -1,4 +1,4 @@
-#include "PlayerInventorySystem.hpp"
+#include "PlayerInventory.hpp"
 
 #include "../../../Shared/items/Items.hpp"
 
@@ -34,7 +34,7 @@ void fillSnapshotFromInventory(const Inventory &inventory, InventorySnapshot &ou
 }
 } // namespace
 
-namespace PlayerInventorySystem {
+namespace PlayerInventory {
 
 bool setEquippedWeapon(std::unordered_map<PlayerID, ServerPlayer> &playersById,
                        PlayerID id,
@@ -149,4 +149,4 @@ bool appendItemsToInventory(std::unordered_map<PlayerID, ServerPlayer> &playersB
     return changed;
 }
 
-} // namespace PlayerInventorySystem
+} // namespace PlayerInventory

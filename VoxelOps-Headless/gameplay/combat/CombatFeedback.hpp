@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <string>
 
-namespace CombatFeedbackSystem {
+namespace CombatFeedback {
 
 template <typename ScoreMap>
 void ApplyKillScore(ScoreMap &scores, bool matchEnded, PlayerID killerId, PlayerID victimId) {
@@ -28,4 +28,4 @@ std::string BuildKillfeedPacket(const std::string &killerUsername,
                                 const std::string &victimUsername,
                                 uint16_t weaponId);
 
-} // namespace CombatFeedbackSystem
+} // namespace CombatFeedback

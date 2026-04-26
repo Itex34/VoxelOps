@@ -1,12 +1,11 @@
-#include "../core/ServerRuntime.hpp"
+#include "../../network/core/ServerRuntime.hpp"
 
+#include "CombatFeedback.hpp"
 #include "CombatRules.hpp"
-#include "../protocol/PacketParsers.hpp"
-#include "../../gameplay/combat/CombatFeedbackSystem.hpp"
-#include "../../gameplay/combat/LagCompensationSystem.hpp"
-#include "../../gameplay/combat/ShootSystem.hpp"
-#include "../../gameplay/combat/ShootValidationSystem.hpp"
-#include "../../physics/HitDetectionSystem.hpp"
+#include "LagCompensation.hpp"
+#include "Shoot.hpp"
+#include "ShootValidation.hpp"
+#include "../../physics/HitDetection.hpp"
 #include "../../../Shared/player/PlayerData.hpp"
 
 #include <cstdint>
@@ -28,17 +27,7 @@ constexpr bool kEnableShootValidationLogs = false;
 inline const Shared::PlayerData::MovementSettings &movementSettings() {
     return Shared::PlayerData::GetMovementSettings();
 }
-
-void SendShootResult(HSteamNetConnection incoming, const ShootResult &result) {
-    const std::vector<uint8_t> outBuf = result.serialize();
-    (void)SteamNetworkingSockets()->SendMessageToConnection(
-        incoming, outBuf.data(), static_cast<uint32_t>(outBuf.size()),
-        k_nSteamNetworkingSend_Reliable, nullptr);
-}
 } // namespace
-
-
-
 
 const std::vector<ServerPlayerCombatSnapshot> &
 ServerRuntime::GetCombatSnapshotsForTick(uint32_t serverTick) {
@@ -58,16 +47,11 @@ void ServerRuntime::InvalidateCombatSnapshotCache() {
 
 void ServerRuntime::RecordLagCompFrame(uint32_t serverTick) {
     const std::vector<ServerPlayerCombatSnapshot> &players = GetCombatSnapshotsForTick(serverTick);
-    LagCompensationSystem::RecordFrame(m_lagCompFrames, serverTick, players);
+    LagCompensation::RecordFrame(m_lagCompFrames, serverTick, players);
 }
 
-void ServerRuntime::HandleShootRequestPacket(HSteamNetConnection incoming, const void *data,
-                                             uint32_t size) {
-    ShootRequest req{};
-    if (!NetPacket::ParseShootRequestPacket(reinterpret_cast<const uint8_t *>(data), size, req)) {
-        std::cerr << "[recv] malformed ShootRequest\n";
-        return;
-    }
+ShootResult ServerRuntime::ExecuteShootRequest(HSteamNetConnection incoming,
+                                               const ShootRequest &req) {
     if (kEnableShootValidationLogs) {
         std::cout << "[shoot/validate] recv conn=" << incoming << " shotId=" << req.clientShotId
                   << " tick=" << req.clientTick << " weapon=" << req.weaponId << " pos=("
@@ -77,10 +61,9 @@ void ServerRuntime::HandleShootRequestPacket(HSteamNetConnection incoming, const
     }
 
     const uint32_t currentServerTick = m_serverTick.load(std::memory_order_acquire);
-    ShootSystem::ShootContext ctx = ShootSystem::BuildContext(incoming, req, currentServerTick);
+    Shoot::ShootContext ctx = Shoot::BuildContext(incoming, req, currentServerTick);
 
-    // Stage 1 + 3: validate session and run anti-replay / cooldown gate.
-    ShootValidationSystem::ShootGateResult gate{};
+    ShootValidation::ShootGateResult gate{};
     bool sessionMissing = false;
     bool unregisteredSession = false;
     {
@@ -96,14 +79,14 @@ void ServerRuntime::HandleShootRequestPacket(HSteamNetConnection incoming, const
             if (!ctx.session.registered) {
                 unregisteredSession = true;
             } else {
-                ShootValidationSystem::ShootGateState gateState{};
+                ShootValidation::ShootGateState gateState{};
                 gateState.lastAcceptedShootTime = mutableSession.lastAcceptedShootTime;
                 gateState.lastShootClientShotId = mutableSession.lastShootClientShotId;
                 gateState.hasLastShootClientShotId = mutableSession.hasLastShootClientShotId;
 
                 const float minShotIntervalSeconds =
                     CombatRules::MinSecondsPerShotForWeapon(req.weaponId, kShootMinIntervalSeconds);
-                gate = ShootValidationSystem::RunShootGate(gateState, req, minShotIntervalSeconds);
+                gate = ShootValidation::RunShootGate(gateState, req, minShotIntervalSeconds);
 
                 mutableSession.lastAcceptedShootTime = gateState.lastAcceptedShootTime;
                 mutableSession.lastShootClientShotId = gateState.lastShootClientShotId;
@@ -112,16 +95,13 @@ void ServerRuntime::HandleShootRequestPacket(HSteamNetConnection incoming, const
         }
     }
     if (sessionMissing) {
-        SendShootResult(incoming, ctx.result);
-        return;
+        return ctx.result;
     }
     if (unregisteredSession) {
         std::cout << "[recv] ShootRequest from unregistered conn = " << incoming << "\n";
-        SendShootResult(incoming, ctx.result);
-        return;
+        return ctx.result;
     }
 
-    // Stage 2: weapon sync + heartbeat.
     m_playerManager.touchHeartbeat(ctx.session.playerId);
     if (!m_playerManager.setEquippedWeapon(ctx.session.playerId, req.weaponId)) {
         if (kEnableShootValidationLogs) {
@@ -129,8 +109,7 @@ void ServerRuntime::HandleShootRequestPacket(HSteamNetConnection incoming, const
                       << " reason=weapon_not_in_inventory"
                       << " weapon=" << req.weaponId << "\n";
         }
-        SendShootResult(incoming, ctx.result);
-        return;
+        return ctx.result;
     }
 
     if (gate.rejectedReplay || gate.rejectedCooldown) {
@@ -140,25 +119,20 @@ void ServerRuntime::HandleShootRequestPacket(HSteamNetConnection incoming, const
                       << (gate.rejectedReplay ? "replay_or_out_of_order" : "rate_limited")
                       << " shotId=" << req.clientShotId << "\n";
         }
-        SendShootResult(incoming, ctx.result);
-        return;
+        return ctx.result;
     }
 
-    // Stage 4: lag compensation frame.
-    ctx.lagFrame =
-        LagCompensationSystem::GetFrameForTick(m_lagCompFrames, currentServerTick, req.clientTick);
+    ctx.lagFrame = LagCompensation::GetFrameForTick(m_lagCompFrames, currentServerTick,
+                                                    req.clientTick);
 
-    // Stage 5: build ray context.
     const std::optional<ServerPlayer> shooterOpt = m_playerManager.getPlayerCopy(ctx.session.playerId);
     if (!shooterOpt.has_value() || !shooterOpt->isAlive) {
-        SendShootResult(incoming, ctx.result);
-        return;
+        return ctx.result;
     }
-    if (!ShootSystem::FinalizeContext(ctx, *shooterOpt, ctx.lagFrame, m_chunkManager,
-                                      movementSettings().eyeHeight, kShootOriginTolerance,
-                                      kShootOriginOcclusionEpsilon)) {
-        SendShootResult(incoming, ctx.result);
-        return;
+    if (!Shoot::FinalizeContext(ctx, *shooterOpt, ctx.lagFrame, m_chunkManager,
+                                movementSettings().eyeHeight, kShootOriginTolerance,
+                                kShootOriginOcclusionEpsilon)) {
+        return ctx.result;
     }
 
     if (kEnableShootValidationLogs) {
@@ -171,11 +145,10 @@ void ServerRuntime::HandleShootRequestPacket(HSteamNetConnection incoming, const
                   << " maxDistance=" << kShootMaxDistance << "\n";
     }
 
-    // Stage 6: hit detection.
     const std::vector<ServerPlayerCombatSnapshot> &players =
         GetCombatSnapshotsForTick(currentServerTick);
 
-    HitDetectionSystem::HitDetectionInput detectionInput{};
+    HitDetection::HitDetectionInput detectionInput{};
     detectionInput.shooterId = ctx.session.playerId;
     detectionInput.rayOrigin = ctx.rayOrigin;
     detectionInput.rayDir = ctx.rayDir;
@@ -187,8 +160,8 @@ void ServerRuntime::HandleShootRequestPacket(HSteamNetConnection incoming, const
     detectionInput.players = &players;
     detectionInput.enableValidationLogs = kEnableShootValidationLogs;
 
-    const HitDetectionSystem::HitDetectionResult hit =
-        HitDetectionSystem::RaycastPlayersAndWorld(detectionInput);
+    const HitDetection::HitDetectionResult hit =
+        HitDetection::RaycastPlayersAndWorld(detectionInput);
 
     if (kEnableShootValidationLogs) {
         std::cout << "[shoot/validate] nearest playerHit=" << (hit.playerHit ? "yes" : "no")
@@ -197,10 +170,9 @@ void ServerRuntime::HandleShootRequestPacket(HSteamNetConnection incoming, const
                   << " blockDist=" << (hit.blockHit ? hit.blockDistance : -1.0f) << "\n";
     }
 
-    // Stage 7: resolve hit and apply damage.
-    const ShootSystem::ShootOutcome outcome =
-        ShootSystem::ResolveHit(ctx, hit, kShootBlockOcclusionEpsilon, m_playerManager);
-    ShootSystem::ApplyOutcomeToResult(ctx, outcome);
+    const Shoot::ShootOutcome outcome =
+        Shoot::ResolveHit(ctx, hit, kShootBlockOcclusionEpsilon, m_playerManager);
+    Shoot::ApplyOutcomeToResult(ctx, outcome);
 
     if (kEnableShootValidationLogs) {
         if (!outcome.hit) {
@@ -225,13 +197,12 @@ void ServerRuntime::HandleShootRequestPacket(HSteamNetConnection incoming, const
         }
     }
 
-    // Stage 8: side-effects (score + killfeed).
     if (outcome.hit && outcome.killed) {
         std::string victimUsername;
         {
             std::lock_guard<std::mutex> lk(m_mutex);
-            CombatFeedbackSystem::ApplyKillScore(m_matchScores, m_matchEnded, ctx.session.playerId,
-                                                 outcome.hitPlayerId);
+            CombatFeedback::ApplyKillScore(m_matchScores, m_matchEnded, ctx.session.playerId,
+                                           outcome.hitPlayerId);
             for (const auto &[_, clientSession] : m_clients) {
                 if (clientSession.playerId == outcome.hitPlayerId) {
                     victimUsername = clientSession.username;
@@ -241,16 +212,14 @@ void ServerRuntime::HandleShootRequestPacket(HSteamNetConnection incoming, const
         }
 
         if (victimUsername.empty()) {
-            victimUsername = CombatFeedbackSystem::FallbackVictimUsername(outcome.hitPlayerId);
+            victimUsername = CombatFeedback::FallbackVictimUsername(outcome.hitPlayerId);
         }
 
         const std::string killfeedPacket =
-            CombatFeedbackSystem::BuildKillfeedPacket(ctx.session.username, victimUsername,
-                                                      req.weaponId);
+            CombatFeedback::BuildKillfeedPacket(ctx.session.username, victimUsername, req.weaponId);
         BroadcastRaw(killfeedPacket.data(), static_cast<uint32_t>(killfeedPacket.size()),
                      k_HSteamNetConnection_Invalid);
     }
 
-    // Stage 9: send result.
-    SendShootResult(incoming, ctx.result);
+    return ctx.result;
 }

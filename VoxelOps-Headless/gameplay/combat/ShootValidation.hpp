@@ -8,7 +8,7 @@
 
 class ChunkManager;
 
-namespace ShootValidationSystem {
+namespace ShootValidation {
 
 struct ShootGateState {
     std::chrono::steady_clock::time_point lastAcceptedShootTime =
@@ -39,4 +39,4 @@ ValidatedOrigin ComputeValidatedOrigin(const ChunkManager &chunkManager,
                                        float originTolerance,
                                        float originOcclusionEpsilon);
 
-} // namespace ShootValidationSystem
+} // namespace ShootValidation

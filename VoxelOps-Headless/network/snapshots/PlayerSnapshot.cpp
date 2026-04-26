@@ -1,4 +1,4 @@
-#include "PlayerSnapshotSystem.hpp"
+#include "PlayerSnapshot.hpp"
 
 #include "../../../Shared/network/Packets.hpp"
 #include "PlayerSnapshotSerializer.hpp"
@@ -47,7 +47,7 @@ std::vector<uint8_t> buildPlayersPayload(const std::unordered_map<PlayerID, Serv
 }
 } // namespace
 
-namespace PlayerSnapshotSystem {
+namespace PlayerSnapshots {
 
 std::vector<uint8_t>
 buildSnapshotFor(PlayerID recipientId,
@@ -88,4 +88,4 @@ buildSnapshotsForRecipients(const std::vector<PlayerID> &recipientIds,
     return frames;
 }
 
-} // namespace PlayerSnapshotSystem
+} // namespace PlayerSnapshots

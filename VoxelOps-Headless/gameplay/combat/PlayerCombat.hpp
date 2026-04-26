@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace PlayerCombatSystem {
+namespace PlayerCombat {
 std::vector<ServerPlayerCombatSnapshot>
 getAllCombatSnapshotsCopy(const std::unordered_map<PlayerID, ServerPlayer> &playersById,
                           bool aliveOnly);
@@ -18,4 +18,4 @@ bool applyDamage(std::unordered_map<PlayerID, ServerPlayer> &playersById,
                  bool &outKilled,
                  std::chrono::milliseconds respawnDelay,
                  Clock::time_point now);
-} // namespace PlayerCombatSystem
+} // namespace PlayerCombat

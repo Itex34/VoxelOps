@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-namespace DamageSystem {
+namespace Damage {
 
 struct DamageResolution {
     bool applied = false;
@@ -21,4 +21,4 @@ DamageResolution ResolveDamage(PlayerManager &playerManager,
                                uint16_t weaponId,
                                HitRegion region);
 
-} // namespace DamageSystem
+} // namespace Damage

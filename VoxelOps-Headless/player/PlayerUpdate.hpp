@@ -9,7 +9,7 @@
 
 class ChunkManager;
 
-namespace PlayerUpdateSystem {
+namespace PlayerUpdate {
 void handleRespawn(ServerPlayer &player,
                    std::unordered_map<PlayerID, ServerPlayer> &playersById,
                    ChunkManager &chunkManager,
@@ -24,4 +24,4 @@ void updatePlayers(std::unordered_map<PlayerID, ServerPlayer> &playersById,
                    double deltaSeconds,
                    ChunkManager &chunkManager,
                    std::chrono::seconds heartbeatTimeout);
-} // namespace PlayerUpdateSystem
+} // namespace PlayerUpdate

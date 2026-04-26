@@ -1,8 +1,8 @@
 #pragma once
 
-#include "DamageSystem.hpp"
-#include "LagCompensationSystem.hpp"
-#include "../../physics/HitDetectionSystem.hpp"
+#include "Damage.hpp"
+#include "LagCompensation.hpp"
+#include "../../physics/HitDetection.hpp"
 #include "../../player/ServerPlayer.hpp"
 
 #include "../../../Shared/network/Packets.hpp"
@@ -13,7 +13,7 @@
 
 class ChunkManager;
 
-namespace ShootSystem {
+namespace Shoot {
 
 struct ShootSessionSnapshot {
     std::string username;
@@ -26,7 +26,7 @@ struct ShootContext {
     HSteamNetConnection connection = k_HSteamNetConnection_Invalid;
     ShootSessionSnapshot session{};
     uint32_t serverTick = 0;
-    const LagCompensationSystem::LagCompFrame *lagFrame = nullptr;
+    const LagCompensation::LagCompFrame *lagFrame = nullptr;
     ServerPlayer shooter{};
     glm::vec3 rayOrigin{0.0f};
     glm::vec3 rayDir{0.0f};
@@ -50,13 +50,13 @@ ShootContext BuildContext(HSteamNetConnection connection,
                           uint32_t currentServerTick);
 
 ShootOutcome ResolveHit(const ShootContext &ctx,
-                        const HitDetectionSystem::HitDetectionResult &hit,
+                        const HitDetection::HitDetectionResult &hit,
                         float blockOcclusionEpsilon,
                         PlayerManager &playerManager);
 
 bool FinalizeContext(ShootContext &ctx,
                      const ServerPlayer &shooter,
-                     const LagCompensationSystem::LagCompFrame *lagFrame,
+                     const LagCompensation::LagCompFrame *lagFrame,
                      const ChunkManager &chunkManager,
                      float eyeHeight,
                      float originTolerance,
@@ -64,4 +64,4 @@ bool FinalizeContext(ShootContext &ctx,
 
 void ApplyOutcomeToResult(ShootContext &ctx, const ShootOutcome &outcome);
 
-} // namespace ShootSystem
+} // namespace Shoot

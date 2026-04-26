@@ -1,8 +1,8 @@
-#include "DamageSystem.hpp"
+#include "Damage.hpp"
 
 #include "../../network/gameplay/CombatRules.hpp"
 
-namespace DamageSystem {
+namespace Damage {
 
 float ComputeDamage(uint16_t weaponId, HitRegion region) {
     switch (region) {
@@ -28,5 +28,5 @@ DamageResolution ResolveDamage(PlayerManager &playerManager,
     return out;
 }
 
-} // namespace DamageSystem
+} // namespace Damage
 
