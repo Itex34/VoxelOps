@@ -7,14 +7,14 @@ namespace Damage {
 float ComputeDamage(uint16_t weaponId, HitRegion region) {
     switch (region) {
     case HitRegion::Head:
-        return CombatRules::HeadshotDamageForWeapon(weaponId);
+        return Rules::HeadshotDamageForWeapon(weaponId);
     case HitRegion::Body:
-        return CombatRules::TorsoshotDamageForWeapon(weaponId);
+        return Rules::TorsoshotDamageForWeapon(weaponId);
     case HitRegion::Legs:
-        return CombatRules::LegshotDamageForWeapon(weaponId);
+        return Rules::LegshotDamageForWeapon(weaponId);
     case HitRegion::Unknown:
     default:
-        return CombatRules::TorsoshotDamageForWeapon(weaponId);
+        return Rules::TorsoshotDamageForWeapon(weaponId);
     }
 }
 

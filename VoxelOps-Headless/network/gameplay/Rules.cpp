@@ -23,7 +23,7 @@ float NormalizeYawDegrees(float yawDegrees) {
 
 } // namespace
 
-namespace CombatRules {
+namespace Rules {
 
 float ToModelYawDegrees(float lookYawDegrees) {
     const float signedYaw = kPlayerModelYawInvert ? -lookYawDegrees : lookYawDegrees;
@@ -98,4 +98,4 @@ HitRegion RegionFromCacheCode(uint8_t code) {
     }
 }
 
-} // namespace CombatRules
+} // namespace Rules

@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-namespace CombatRules {
+namespace Rules {
 
 float ToModelYawDegrees(float lookYawDegrees);
 float HeadshotDamageForWeapon(uint16_t weaponId);
@@ -14,4 +14,4 @@ float MinSecondsPerShotForWeapon(uint16_t weaponId, float defaultSeconds);
 const char *HitRegionName(HitRegion region);
 HitRegion RegionFromCacheCode(uint8_t code);
 
-} // namespace CombatRules
+} // namespace Rules

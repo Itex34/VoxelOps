@@ -30,14 +30,14 @@
 #include "../../engine/world/ChunkManager.hpp"
 #include "../../engine/physics/simulation/WorldItemPhysics.hpp"
 
-class ServerRuntime {
+class Runtime {
   public:
-    ServerRuntime();
-    ~ServerRuntime();
+    Runtime();
+    ~Runtime();
 
     // non-copyable
-    ServerRuntime(const ServerRuntime &) = delete;
-    ServerRuntime &operator=(const ServerRuntime &) = delete;
+    Runtime(const Runtime &) = delete;
+    Runtime &operator=(const Runtime &) = delete;
 
     // Initialize the networking system and start listening on the given port.
     // Returns true on success.
@@ -62,7 +62,7 @@ class ServerRuntime {
     bool IsDebugLoggingEnabled();
 
     // static pointer to the currently running instance for the callback bridge
-    static ServerRuntime *s_instance;
+    static Runtime *s_instance;
 
     void BroadcastRaw(const void *data, uint32_t len,
                       HSteamNetConnection except = k_HSteamNetConnection_Invalid);

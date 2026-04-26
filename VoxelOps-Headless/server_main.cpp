@@ -12,7 +12,7 @@
 #include <string_view>
 #include <print>
 
-#include "net/ServerNetwork.hpp"
+#include "network/Network.hpp"
 #include "../Shared/runtime/Paths.hpp"
 
 using namespace std::chrono_literals;
@@ -123,7 +123,7 @@ static bool parse_launch_options(int argc, char **argv, ServerLaunchOptions &out
     return true;
 }
 
-static void process_console_command(const std::string &rawCommand, ServerNetwork &serverNet) {
+static void process_console_command(const std::string &rawCommand, Network &serverNet) {
     const std::string command = trim_copy(rawCommand);
     if (command.empty()) {
         return;
@@ -263,10 +263,10 @@ int main(int argc, char **argv) {
     std::signal(SIGTERM, handle_signal);
 
     const uint16_t port = launchOptions.port;
-    ServerNetwork serverNet;
+    Network serverNet;
 
     if (!serverNet.Start(port)) {
-        std::cerr << "Failed to start ServerNetwork on port " << port << "\n";
+        std::cerr << "Failed to start Network on port " << port << "\n";
         return 1;
     }
 

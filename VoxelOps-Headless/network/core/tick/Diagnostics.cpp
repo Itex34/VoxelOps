@@ -1,7 +1,7 @@
-#include "../ServerRuntime.hpp"
-#include "../ServerDiagnosticsFlags.hpp"
+#include "../Runtime.hpp"
+#include "../DiagnosticsFlags.hpp"
 
-void ServerRuntime::RunRespawnDiagnosticsPhase(uint64_t simTicksThisLoop, uint32_t serverTick) {
+void Runtime::RunRespawnDiagnosticsPhase(uint64_t simTicksThisLoop, uint32_t serverTick) {
     std::vector<PlayerID> respawnedPlayers;
     if (simTicksThisLoop > 0) {
         const std::vector<ServerPlayer> players = m_playerManager.getAllPlayersCopy();
@@ -52,13 +52,13 @@ void ServerRuntime::RunRespawnDiagnosticsPhase(uint64_t simTicksThisLoop, uint32
             m_respawnDiagUntilByPlayer[playerId] = rbDiagNow + std::chrono::seconds(10);
             m_respawnDiagNextLogAtByPlayer[playerId] = rbDiagNow;
         }
-        if (ServerDiagFlags::g_enableRespawnRubberbandDiagnostics.load(std::memory_order_acquire)) {
+        if (DiagnosticsFlags::g_enableRespawnRubberbandDiagnostics.load(std::memory_order_acquire)) {
             std::cerr << "[rbdiag/server] respawn reset players=" << respawnedPlayers.size()
                       << " conns=" << pipelineResets.size() << "\n";
         }
     }
 
-    if (ServerDiagFlags::g_enableRespawnRubberbandDiagnostics.load(std::memory_order_acquire) &&
+    if (DiagnosticsFlags::g_enableRespawnRubberbandDiagnostics.load(std::memory_order_acquire) &&
         !m_respawnDiagUntilByPlayer.empty()) {
         for (auto it = m_respawnDiagUntilByPlayer.begin();
              it != m_respawnDiagUntilByPlayer.end();) {

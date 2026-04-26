@@ -1,4 +1,4 @@
-#include "../../network/core/ServerRuntime.hpp"
+#include "../../network/core/Runtime.hpp"
 
 #include "CombatFeedback.hpp"
 #include "../../network/gameplay/Rules.hpp"
@@ -30,7 +30,7 @@ inline const Shared::PlayerData::MovementSettings &movementSettings() {
 } // namespace
 
 const std::vector<ServerPlayerCombatSnapshot> &
-ServerRuntime::GetCombatSnapshotsForTick(uint32_t serverTick) {
+Runtime::GetCombatSnapshotsForTick(uint32_t serverTick) {
     if (!m_hasCombatSnapshotsAliveCache || m_combatSnapshotsAliveCacheTick != serverTick) {
         m_combatSnapshotsAliveCache = m_playerManager.getAllCombatSnapshotsCopy(true);
         m_combatSnapshotsAliveCacheTick = serverTick;
@@ -39,18 +39,18 @@ ServerRuntime::GetCombatSnapshotsForTick(uint32_t serverTick) {
     return m_combatSnapshotsAliveCache;
 }
 
-void ServerRuntime::InvalidateCombatSnapshotCache() {
+void Runtime::InvalidateCombatSnapshotCache() {
     m_combatSnapshotsAliveCache.clear();
     m_combatSnapshotsAliveCacheTick = 0;
     m_hasCombatSnapshotsAliveCache = false;
 }
 
-void ServerRuntime::RecordLagCompFrame(uint32_t serverTick) {
+void Runtime::RecordLagCompFrame(uint32_t serverTick) {
     const std::vector<ServerPlayerCombatSnapshot> &players = GetCombatSnapshotsForTick(serverTick);
     LagCompensation::RecordFrame(m_lagCompFrames, serverTick, players);
 }
 
-ShootResult ServerRuntime::ExecuteShootRequest(HSteamNetConnection incoming,
+ShootResult Runtime::ExecuteShootRequest(HSteamNetConnection incoming,
                                                const ShootRequest &req) {
     if (kEnableShootValidationLogs) {
         std::cout << "[shoot/validate] recv conn=" << incoming << " shotId=" << req.clientShotId
@@ -72,7 +72,7 @@ ShootResult ServerRuntime::ExecuteShootRequest(HSteamNetConnection incoming,
         if (it == m_clients.end()) {
             sessionMissing = true;
         } else {
-            ServerRuntime::ClientSession &mutableSession = it->second;
+            Runtime::ClientSession &mutableSession = it->second;
             ctx.session.username = mutableSession.username;
             ctx.session.playerId = mutableSession.playerId;
             ctx.session.registered = !ctx.session.username.empty() && ctx.session.playerId != 0;
@@ -85,7 +85,7 @@ ShootResult ServerRuntime::ExecuteShootRequest(HSteamNetConnection incoming,
                 gateState.hasLastShootClientShotId = mutableSession.hasLastShootClientShotId;
 
                 const float minShotIntervalSeconds =
-                    CombatRules::MinSecondsPerShotForWeapon(req.weaponId, kShootMinIntervalSeconds);
+                    Rules::MinSecondsPerShotForWeapon(req.weaponId, kShootMinIntervalSeconds);
                 gate = ShootValidation::RunShootGate(gateState, req, minShotIntervalSeconds);
 
                 mutableSession.lastAcceptedShootTime = gateState.lastAcceptedShootTime;
@@ -187,7 +187,7 @@ ShootResult ServerRuntime::ExecuteShootRequest(HSteamNetConnection incoming,
         } else {
             std::cout << "[shoot/validate] result=hit"
                       << " target=" << outcome.hitPlayerId
-                      << " region=" << CombatRules::HitRegionName(outcome.hitRegion)
+                      << " region=" << Rules::HitRegionName(outcome.hitRegion)
                       << " damage=" << outcome.damageApplied
                       << " healthAfter=" << outcome.healthAfter
                       << " killed=" << (outcome.killed ? "yes" : "no")

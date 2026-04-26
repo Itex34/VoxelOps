@@ -1,6 +1,6 @@
-#include "../ServerRuntime.hpp"
+#include "../Runtime.hpp"
 
-size_t ServerRuntime::RunChunkInterestPhase(bool simBacklog, double &chunkInterestUs) {
+size_t Runtime::RunChunkInterestPhase(bool simBacklog, double &chunkInterestUs) {
     constexpr size_t kChunkInterestUpdatesPerLoop = 4;
     const auto kChunkInterestUpdateInterval = std::chrono::milliseconds(100);
 
@@ -49,7 +49,7 @@ size_t ServerRuntime::RunChunkInterestPhase(bool simBacklog, double &chunkIntere
     return chunkInterestTasks.size();
 }
 
-size_t ServerRuntime::RunChunkSendPhase(bool simBacklog,
+size_t Runtime::RunChunkSendPhase(bool simBacklog,
                                         std::chrono::steady_clock::time_point &nextChunkSendFlushAt,
                                         double &chunkSendUs) {
     constexpr size_t kChunkSendGlobalBudgetPerFlush = 8;
@@ -76,7 +76,7 @@ size_t ServerRuntime::RunChunkSendPhase(bool simBacklog,
     return chunksSentThisLoop;
 }
 
-size_t ServerRuntime::RunCollisionPrewarmPhase(
+size_t Runtime::RunCollisionPrewarmPhase(
     bool simBacklog, std::chrono::steady_clock::time_point &nextCollisionPrewarmAt,
     double &collisionPrewarmUs) {
     constexpr int kCollisionPrewarmRadiusXZ = 1;

@@ -1,15 +1,15 @@
-#include "../ServerRuntime.hpp"
+#include "../Runtime.hpp"
 
-ServerRuntime *ServerRuntime::s_instance = nullptr;
+Runtime *Runtime::s_instance = nullptr;
 
-ServerRuntime::ServerRuntime()
+Runtime::Runtime()
     : m_quit(false), m_pollGroup(k_HSteamNetPollGroup_Invalid),
       m_listenSock(k_HSteamListenSocket_Invalid) {
     // allow only one instance to own the static callback bridge
     s_instance = this;
 }
 
-ServerRuntime::~ServerRuntime() {
+Runtime::~Runtime() {
     Stop();
     ShutdownNetworking();
     // cleanup pointer
@@ -17,9 +17,9 @@ ServerRuntime::~ServerRuntime() {
         s_instance = nullptr;
 }
 
-bool ServerRuntime::Start(uint16_t port) {
+bool Runtime::Start(uint16_t port) {
     if (m_started.load(std::memory_order_acquire)) {
-        std::cerr << "ServerNetwork already started\n";
+        std::cerr << "Network already started\n";
         return false;
     }
 
@@ -65,7 +65,7 @@ bool ServerRuntime::Start(uint16_t port) {
     // Prepare listen socket option to install our connection-status callback
     SteamNetworkingConfigValue_t opt;
     opt.SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged,
-               reinterpret_cast<void *>(ServerRuntime::SteamNetConnectionStatusChangedCallback));
+               reinterpret_cast<void *>(Runtime::SteamNetConnectionStatusChangedCallback));
 
     // Create listen socket bound to the chosen port
     SteamNetworkingIPAddr addr;
@@ -95,20 +95,20 @@ bool ServerRuntime::Start(uint16_t port) {
     return true;
 }
 
-void ServerRuntime::Run() {
+void Runtime::Run() {
     if (!m_started.load(std::memory_order_acquire)) {
-        std::cerr << "ServerRuntime::Run called before Start\n";
+        std::cerr << "Runtime::Run called before Start\n";
         return;
     }
     MainLoop();
     ShutdownNetworking();
 }
 
-void ServerRuntime::Stop() {
+void Runtime::Stop() {
     m_quit.store(true, std::memory_order_release);
 }
 
-void ServerRuntime::ShutdownNetworking() {
+void Runtime::ShutdownNetworking() {
     std::lock_guard<std::mutex> shutdownLock(m_shutdownMutex);
     if (m_shutdownComplete) {
         return;

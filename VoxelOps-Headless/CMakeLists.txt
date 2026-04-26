@@ -47,7 +47,7 @@ add_executable(VoxelOps-Headless
     "network/replication/CompressChunk.cpp"
     "network/replication/ChunkStore.cpp"
     "network/snapshots/PlayerSnapshotSerializer.cpp" 
-    "network/snapshots/PlayerSnapshot.cpp"
+    "network/snapshots/PlayerSnapshots.cpp"
 
     "game/player/Hitbox.cpp" 
     "game/player/PlayerManager.cpp"
@@ -64,7 +64,7 @@ add_executable(VoxelOps-Headless
     "game/player/ServerPlayer.cpp"
     "game/player/ServerMovementSimulation.cpp"
     "game/world/BlockEdits.cpp"
-    "game/spawn/Respawning.cpp")
+    "game/spawn/Respawning.cpp" "engine/world/WorldCollision.cpp")
 
 find_package(glm CONFIG REQUIRED)
 find_package(GameNetworkingSockets CONFIG REQUIRED)

@@ -1,4 +1,4 @@
-#include "../../network/core/ServerRuntime.hpp"
+#include "../../network/core/Runtime.hpp"
 
 #include <algorithm>
 
@@ -32,7 +32,7 @@ ResultT MakeRejectedEditResult(
 }
 } // namespace
 
-bool ServerRuntime::IsAnyAlivePlayerOccupyingBlock(const std::vector<ServerPlayer> &players,
+bool Runtime::IsAnyAlivePlayerOccupyingBlock(const std::vector<ServerPlayer> &players,
                                                    const glm::ivec3 &worldPos) const {
     for (const ServerPlayer &player : players) {
         if (!player.isAlive) {
@@ -61,7 +61,7 @@ bool ServerRuntime::IsAnyAlivePlayerOccupyingBlock(const std::vector<ServerPlaye
     return false;
 }
 
-bool ServerRuntime::ApplyBlockEditsAndBuildDeltas(
+bool Runtime::ApplyBlockEditsAndBuildDeltas(
     const std::unordered_map<glm::ivec3, BlockID, IVec3Hash, IVec3Eq> &normalizedEdits,
     std::vector<ChunkDelta> &outboundDeltas) {
     struct ChunkDeltaAggregate {
@@ -110,7 +110,7 @@ bool ServerRuntime::ApplyBlockEditsAndBuildDeltas(
     return true;
 }
 
-void ServerRuntime::BroadcastChunkDeltas(const std::vector<ChunkDelta> &outboundDeltas) {
+void Runtime::BroadcastChunkDeltas(const std::vector<ChunkDelta> &outboundDeltas) {
     for (const ChunkDelta &delta : outboundDeltas) {
         const ChunkCoord coord{delta.chunkX, delta.chunkY, delta.chunkZ};
         std::vector<HSteamNetConnection> recipients;
@@ -137,7 +137,7 @@ void ServerRuntime::BroadcastChunkDeltas(const std::vector<ChunkDelta> &outbound
     }
 }
 
-BlockPlaceResult ServerRuntime::ExecuteBlockPlaceRequest(PlayerID requesterId,
+BlockPlaceResult Runtime::ExecuteBlockPlaceRequest(PlayerID requesterId,
                                                          const BlockPlaceRequest &request) {
     (void)requesterId;
 
@@ -197,7 +197,7 @@ BlockPlaceResult ServerRuntime::ExecuteBlockPlaceRequest(PlayerID requesterId,
     return result;
 }
 
-BlockBreakResult ServerRuntime::ExecuteBlockBreakRequest(PlayerID requesterId,
+BlockBreakResult Runtime::ExecuteBlockBreakRequest(PlayerID requesterId,
                                                          const BlockBreakRequest &request) {
     (void)requesterId;
 

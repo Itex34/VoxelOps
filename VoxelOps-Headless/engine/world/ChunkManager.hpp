@@ -13,6 +13,7 @@
 #include <memory>
 
 #include "../voxels/ServerChunk.hpp"
+#include "WorldCollision.hpp"
 #include "../../third_party/FastNoiseLite.h"
 
 // world extents in chunk coordinates (keep in sync with your constants elsewhere)
@@ -42,11 +43,7 @@ class WorldGen;
 
 class ChunkManager {
 public:
-    struct AabbCollisionQueryResult {
-        bool collided = false;
-        bool missingChunk = false;
-        glm::ivec3 firstMissingChunk{ 0 };
-    };
+    using AabbCollisionQueryResult = WorldCollision::QueryResult;
 
     ChunkManager(uint64_t seed = 1337u);
     ~ChunkManager() = default;
@@ -90,7 +87,6 @@ public:
     bool inBounds(const glm::ivec3& pos) const;
 
     void markChunkDirty(const glm::ivec3& pos);
-    std::array<bool, 6> getVisibleChunkFaces(const glm::ivec3& pos) const;
 
     // Thread-safe access to the chunk map
     // snapshotChunkMap: returns a copy of map entries -> raw pointers (safe for iteration; chunks still protected internally)
@@ -113,6 +109,13 @@ public:
 
 private:
     friend class WorldGen;
+    friend WorldCollision::QueryResult WorldCollision::QueryAabbCollision(
+        const ChunkManager& manager,
+        const glm::vec3& pos,
+        float radius,
+        float height,
+        bool treatMissingChunkAsSolid
+    );
 
     FastNoiseLite noise;
     uint64_t worldSeed = 1337u;

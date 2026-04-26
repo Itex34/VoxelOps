@@ -5,7 +5,7 @@
 #include "inventory/PlayerInventory.hpp"
 
 #include "../combat/PlayerCombat.hpp"
-#include "../../network/snapshots/PlayerSnapshot.hpp"
+#include "../../network/snapshots/PlayerSnapshots.hpp"
 #include "../player/ServerMovementSimulation.hpp"
 #include "../../engine/world/ChunkManager.hpp"
 

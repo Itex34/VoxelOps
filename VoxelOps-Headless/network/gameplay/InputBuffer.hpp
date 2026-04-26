@@ -4,7 +4,7 @@
 #include <map>
 #include "../../../Shared/network/Packets.hpp"
 
-class PlayerInputBuffer {
+class InputBuffer {
 public:
     bool enqueue(const PlayerInput& input);
     bool consumeNext(PlayerInput& outInput);

@@ -1,4 +1,4 @@
-#include "../core/ServerRuntime.hpp"
+#include "../core/Runtime.hpp"
 #include "../protocol/PacketParsers.hpp"
 
 #include <iostream>
@@ -22,7 +22,7 @@ void SendBlockBreakResult(HSteamNetConnection incoming, const BlockBreakResult &
 
 } // namespace
 
-bool ServerRuntime::TryGetRegisteredPlayerId(HSteamNetConnection incoming, PlayerID &outPlayerId) {
+bool Runtime::TryGetRegisteredPlayerId(HSteamNetConnection incoming, PlayerID &outPlayerId) {
     outPlayerId = 0;
     std::lock_guard<std::mutex> lk(m_mutex);
     const auto it = m_clients.find(incoming);
@@ -33,7 +33,7 @@ bool ServerRuntime::TryGetRegisteredPlayerId(HSteamNetConnection incoming, Playe
     return true;
 }
 
-void ServerRuntime::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, const void *data,
+void Runtime::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, const void *data,
                                                   uint32_t size) {
     BlockPlaceRequest request{};
     if (!NetPacket::ParseBlockPlaceRequestPacket(reinterpret_cast<const uint8_t *>(data), size,
@@ -61,7 +61,7 @@ void ServerRuntime::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, 
     SendBlockPlaceResult(incoming, result);
 }
 
-void ServerRuntime::HandleBlockBreakRequestPacket(HSteamNetConnection incoming, const void *data,
+void Runtime::HandleBlockBreakRequestPacket(HSteamNetConnection incoming, const void *data,
                                                   uint32_t size) {
     BlockBreakRequest request{};
     if (!NetPacket::ParseBlockBreakRequestPacket(reinterpret_cast<const uint8_t *>(data), size,

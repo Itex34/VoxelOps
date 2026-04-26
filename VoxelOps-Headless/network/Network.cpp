@@ -1,63 +1,63 @@
-#include "ServerNetwork.hpp"
+#include "Network.hpp"
 
-#include "core/ServerRuntime.hpp"
+#include "core/Runtime.hpp"
 
-ServerNetwork::ServerNetwork() : m_runtime(std::make_unique<ServerRuntime>()) {}
+Network::Network() : m_runtime(std::make_unique<Runtime>()) {}
 
-ServerNetwork::~ServerNetwork() = default;
+Network::~Network() = default;
 
-bool ServerNetwork::Start(uint16_t port) {
+bool Network::Start(uint16_t port) {
     return m_runtime->Start(port);
 }
 
-void ServerNetwork::Run() {
+void Network::Run() {
     m_runtime->Run();
 }
 
-void ServerNetwork::Stop() {
+void Network::Stop() {
     m_runtime->Stop();
 }
 
-void ServerNetwork::SaveHistoryToFile() {
+void Network::SaveHistoryToFile() {
     m_runtime->SaveHistoryToFile();
 }
 
-void ServerNetwork::LoadHistoryFromFile() {
+void Network::LoadHistoryFromFile() {
     m_runtime->LoadHistoryFromFile();
 }
 
-void ServerNetwork::SaveAdminsToFile() {
+void Network::SaveAdminsToFile() {
     m_runtime->SaveAdminsToFile();
 }
 
-void ServerNetwork::LoadAdminsFromFile() {
+void Network::LoadAdminsFromFile() {
     m_runtime->LoadAdminsFromFile();
 }
 
-bool ServerNetwork::SetAdminByUsername(const std::string &username, bool isAdmin) {
+bool Network::SetAdminByUsername(const std::string &username, bool isAdmin) {
     return m_runtime->SetAdminByUsername(username, isAdmin);
 }
 
-bool ServerNetwork::IsAdminUsername(const std::string &username) {
+bool Network::IsAdminUsername(const std::string &username) {
     return m_runtime->IsAdminUsername(username);
 }
 
-std::vector<std::pair<std::string, bool>> ServerNetwork::GetConnectedUsers() {
+std::vector<std::pair<std::string, bool>> Network::GetConnectedUsers() {
     return m_runtime->GetConnectedUsers();
 }
 
-std::vector<std::string> ServerNetwork::GetAdminUsernames() {
+std::vector<std::string> Network::GetAdminUsernames() {
     return m_runtime->GetAdminUsernames();
 }
 
-void ServerNetwork::SetDebugLoggingEnabled(bool enabled) {
+void Network::SetDebugLoggingEnabled(bool enabled) {
     m_runtime->SetDebugLoggingEnabled(enabled);
 }
 
-bool ServerNetwork::IsDebugLoggingEnabled() {
+bool Network::IsDebugLoggingEnabled() {
     return m_runtime->IsDebugLoggingEnabled();
 }
 
-void ServerNetwork::BroadcastRaw(const void *data, uint32_t len, HSteamNetConnection except) {
+void Network::BroadcastRaw(const void *data, uint32_t len, HSteamNetConnection except) {
     m_runtime->BroadcastRaw(data, len, except);
 }

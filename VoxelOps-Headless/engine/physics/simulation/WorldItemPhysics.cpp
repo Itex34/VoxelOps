@@ -12,7 +12,7 @@ constexpr float kMaxNudgeUp = 0.40f;
 constexpr float kMinHorizontalSleepSpeed = 0.01f;
 } // namespace
 
-void WorldItemPhysicsSystem::Step(WorldItemEntity &item, float deltaSeconds, float tickRateHz,
+void WorldItemPhysics::Step(WorldItemEntity &item, float deltaSeconds, float tickRateHz,
                                   const ChunkManager &chunkManager) {
     if (!std::isfinite(deltaSeconds) || deltaSeconds <= 0.0f) {
         return;

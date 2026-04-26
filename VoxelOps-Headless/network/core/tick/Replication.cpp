@@ -1,6 +1,6 @@
-#include "../ServerRuntime.hpp"
+#include "../Runtime.hpp"
 
-double ServerRuntime::RunSnapshotPhase(uint32_t serverTick,
+double Runtime::RunSnapshotPhase(uint32_t serverTick,
                                        std::chrono::steady_clock::time_point &lastSnapshotTime,
                                        const std::chrono::duration<double> &snapshotInterval) {
     const auto snapshotNow = std::chrono::steady_clock::now();

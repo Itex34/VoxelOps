@@ -8,7 +8,7 @@ namespace {
     constexpr int32_t kMaxInputGapTicks = 8;
 }
 
-bool PlayerInputBuffer::enqueue(const PlayerInput& input) {
+bool InputBuffer::enqueue(const PlayerInput& input) {
     if (!hasReceivedInput_) {
         lastProcessedInputTick_ = (input.inputTick > 0) ? (input.inputTick - 1) : 0;
         hasReceivedInput_ = true;
@@ -51,7 +51,7 @@ bool PlayerInputBuffer::enqueue(const PlayerInput& input) {
     return true;
 }
 
-bool PlayerInputBuffer::consumeNext(PlayerInput& outInput) {
+bool InputBuffer::consumeNext(PlayerInput& outInput) {
     if (!hasReceivedInput_ && !pendingInputs_.empty()) {
         const uint32_t firstTick = pendingInputs_.begin()->first;
         lastProcessedInputTick_ = (firstTick > 0) ? (firstTick - 1) : 0;
@@ -95,7 +95,7 @@ bool PlayerInputBuffer::consumeNext(PlayerInput& outInput) {
     return consumed;
 }
 
-void PlayerInputBuffer::reset() {
+void InputBuffer::reset() {
     pendingInputs_.clear();
     lastProcessedInputTick_ = 0;
     hasReceivedInput_ = false;

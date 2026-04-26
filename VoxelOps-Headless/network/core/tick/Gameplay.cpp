@@ -1,6 +1,6 @@
-#include "../ServerRuntime.hpp"
+#include "../Runtime.hpp"
 
-bool ServerRuntime::RunScoreboardPhase(
+bool Runtime::RunScoreboardPhase(
     std::chrono::steady_clock::time_point &nextScoreboardBroadcastAt) {
     const auto kScoreboardBroadcastInterval = std::chrono::seconds(1);
     const auto scoreboardNow = std::chrono::steady_clock::now();

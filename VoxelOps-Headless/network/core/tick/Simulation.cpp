@@ -1,10 +1,10 @@
-#include "../ServerRuntime.hpp"
+#include "../Runtime.hpp"
 
 namespace {
 constexpr uint32_t kServerTickRateHz = 60u;
 } // namespace
 
-uint64_t ServerRuntime::RunSimulationPhase(double &simAccumulator, uint32_t &serverTick,
+uint64_t Runtime::RunSimulationPhase(double &simAccumulator, uint32_t &serverTick,
                                            double &simUs, bool &simBacklog) {
     constexpr double kServerTickSeconds = 1.0 / static_cast<double>(kServerTickRateHz);
     constexpr size_t kMaxSimCatchupTicksPerLoop = 4;

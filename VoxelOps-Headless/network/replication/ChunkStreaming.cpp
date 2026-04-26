@@ -1,6 +1,6 @@
-#include "../core/ServerRuntime.hpp"
+#include "../core/Runtime.hpp"
 #include "../protocol/PacketParsers.hpp"
-#include "../core/ServerDiagnosticsFlags.hpp"
+#include "../core/DiagnosticsFlags.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -14,7 +14,7 @@ static int FloorDiv(int a, int b) {
     return q;
 }
 
-void ServerRuntime::UpdateChunkStreamingForClient(HSteamNetConnection conn,
+void Runtime::UpdateChunkStreamingForClient(HSteamNetConnection conn,
                                                   const glm::ivec3 &centerChunk,
                                                   uint16_t viewDistance) {
     constexpr size_t kMaxChunkPrepQueuePerUpdate = 128;
@@ -190,7 +190,7 @@ void ServerRuntime::UpdateChunkStreamingForClient(HSteamNetConnection conn,
     static std::unordered_map<HSteamNetConnection, std::chrono::steady_clock::time_point>
         s_lastProgressLog;
     auto &lastLog = s_lastProgressLog[conn];
-    if (ServerDiagFlags::g_enableChunkDiagnostics.load(std::memory_order_acquire) &&
+    if (DiagnosticsFlags::g_enableChunkDiagnostics.load(std::memory_order_acquire) &&
         (now - lastLog) >= std::chrono::seconds(1)) {
         lastLog = now;
         std::cerr << "[chunk/stream] progress conn=" << conn << " desired=" << desired.size()
@@ -204,7 +204,7 @@ void ServerRuntime::UpdateChunkStreamingForClient(HSteamNetConnection conn,
                   << " viewDist=" << clampedViewDistance << "\n";
     }
 
-    if (ServerDiagFlags::g_enableChunkDiagnostics.load(std::memory_order_acquire) &&
+    if (DiagnosticsFlags::g_enableChunkDiagnostics.load(std::memory_order_acquire) &&
         !toLoad.empty() && queuedPrepThisUpdate == 0 && sentThisUpdate == 0) {
         std::cerr << "[chunk/stream] stalled load window conn=" << conn
                   << " desired=" << desired.size() << " toLoad=" << toLoad.size()
@@ -234,7 +234,7 @@ void ServerRuntime::UpdateChunkStreamingForClient(HSteamNetConnection conn,
         }
     }
 
-    if (ServerDiagFlags::g_enableChunkDiagnostics.load(std::memory_order_acquire) &&
+    if (DiagnosticsFlags::g_enableChunkDiagnostics.load(std::memory_order_acquire) &&
         toUnload.size() > unloadsSentThisUpdate && unloadsSentThisUpdate > 0) {
         std::cerr << "[chunk/stream] unload throttle conn=" << conn
                   << " requested=" << toUnload.size() << " sentNow=" << unloadsSentThisUpdate
@@ -243,7 +243,7 @@ void ServerRuntime::UpdateChunkStreamingForClient(HSteamNetConnection conn,
     }
 }
 
-void ServerRuntime::HandlePlayerInputPacket(HSteamNetConnection incoming, const void *data,
+void Runtime::HandlePlayerInputPacket(HSteamNetConnection incoming, const void *data,
                                             uint32_t size, uint64_t &playerInputPacketsThisLoop) {
     ++playerInputPacketsThisLoop;
     PlayerInput input{};
@@ -271,7 +271,7 @@ void ServerRuntime::HandlePlayerInputPacket(HSteamNetConnection incoming, const 
     }
 }
 
-void ServerRuntime::HandleChunkRequestPacket(HSteamNetConnection incoming, const void *data,
+void Runtime::HandleChunkRequestPacket(HSteamNetConnection incoming, const void *data,
                                              uint32_t size, uint64_t &chunkRequestPacketsThisLoop) {
     ++chunkRequestPacketsThisLoop;
     ChunkRequest req{};

@@ -15,7 +15,7 @@ struct WorldItemEntity {
     float ttlSeconds = 0.0f;
 };
 
-class WorldItemPhysicsSystem {
+class WorldItemPhysics {
   public:
     static constexpr float kGravity = 24.0f;
     static constexpr float kAirDampingPerTick = 0.995f;

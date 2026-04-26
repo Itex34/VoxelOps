@@ -42,7 +42,7 @@ struct ServerPlayer {
 
     Clock::time_point lastHeartbeat = Clock::now();
     Clock::time_point lastInputReceived = Clock::now();
-    PlayerInputBuffer inputBuffer;
+    InputBuffer inputBuffer;
     uint8_t activeInputFlags = 0;
     bool flyMode = false;
     bool allowFlyMode = false;

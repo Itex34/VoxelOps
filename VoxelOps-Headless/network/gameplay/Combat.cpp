@@ -1,4 +1,4 @@
-#include "../core/ServerRuntime.hpp"
+#include "../core/Runtime.hpp"
 #include "../protocol/PacketParsers.hpp"
 
 #include <iostream>
@@ -15,7 +15,7 @@ void SendShootResult(HSteamNetConnection incoming, const ShootResult &result) {
 
 } // namespace
 
-void ServerRuntime::HandleShootRequestPacket(HSteamNetConnection incoming, const void *data,
+void Runtime::HandleShootRequestPacket(HSteamNetConnection incoming, const void *data,
                                              uint32_t size) {
     ShootRequest req{};
     if (!NetPacket::ParseShootRequestPacket(reinterpret_cast<const uint8_t *>(data), size, req)) {

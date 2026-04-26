@@ -1,6 +1,6 @@
-#include "ServerDiagnosticsFlags.hpp"
+#include "DiagnosticsFlags.hpp"
 
-namespace ServerDiagFlags {
+namespace DiagnosticsFlags {
 
 std::atomic<bool> g_enableChunkDiagnostics{false};
 std::atomic<bool> g_enableServerPerfDiagnostics{false};
@@ -18,4 +18,4 @@ bool IsAnyEnabled() {
            g_enableRespawnRubberbandDiagnostics.load(std::memory_order_acquire);
 }
 
-} // namespace ServerDiagFlags
+} // namespace DiagnosticsFlags

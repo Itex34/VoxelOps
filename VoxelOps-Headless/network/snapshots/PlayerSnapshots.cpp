@@ -1,4 +1,4 @@
-#include "PlayerSnapshot.hpp"
+#include "PlayerSnapshots.hpp"
 
 #include "../../../Shared/network/Packets.hpp"
 #include "PlayerSnapshotSerializer.hpp"

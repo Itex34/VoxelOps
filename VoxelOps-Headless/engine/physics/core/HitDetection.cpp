@@ -97,7 +97,7 @@ const std::vector<Hitbox> &GetSharedPlayerHitboxes(float &outReferenceHeight,
                 Hitbox hb;
                 hb.min = glm::vec3(rec.minX, rec.minY, rec.minZ);
                 hb.max = glm::vec3(rec.maxX, rec.maxY, rec.maxZ);
-                hb.region = CombatRules::RegionFromCacheCode(rec.region);
+                hb.region = Rules::RegionFromCacheCode(rec.region);
                 cachedHitboxes.push_back(hb);
             }
             referenceHeight =
@@ -149,7 +149,7 @@ GetSharedPlayerMeshHitTriangles(float &outReferenceHeight,
                 tri.a = glm::vec3(rec.ax, rec.ay, rec.az);
                 tri.b = glm::vec3(rec.bx, rec.by, rec.bz);
                 tri.c = glm::vec3(rec.cx, rec.cy, rec.cz);
-                tri.region = CombatRules::RegionFromCacheCode(rec.region);
+                tri.region = Rules::RegionFromCacheCode(rec.region);
                 cachedTriangles.push_back(tri);
             }
             if (loadedHeight > 1e-4f) {
@@ -309,7 +309,7 @@ CachedTransform BuildPlayerTransform(const glm::vec3 &position, float yaw) {
     CachedTransform transform;
     transform.model = glm::translate(glm::mat4(1.0f), position);
     transform.model =
-        glm::rotate(transform.model, glm::radians(CombatRules::ToModelYawDegrees(yaw)),
+        glm::rotate(transform.model, glm::radians(Rules::ToModelYawDegrees(yaw)),
                     glm::vec3(0.0f, 1.0f, 0.0f));
     transform.invModel = glm::affineInverse(transform.model);
     return transform;
@@ -420,7 +420,7 @@ HitDetectionResult RaycastPlayersAndWorld(const HitDetectionInput &input) {
                     : HitRegion::Unknown;
         if (input.enableValidationLogs && hit.hit) {
             std::cout << "[shoot/validate] candidate player=" << target.id << " dist=" << hit.distance
-                      << " region=" << CombatRules::HitRegionName(resolvedRegion) << " hit=("
+                      << " region=" << Rules::HitRegionName(resolvedRegion) << " hit=("
                       << hit.hitPointWorld.x << "," << hit.hitPointWorld.y << ","
                       << hit.hitPointWorld.z << ")\n";
         }

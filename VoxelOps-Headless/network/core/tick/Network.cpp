@@ -1,7 +1,7 @@
-#include "../ServerRuntime.hpp"
+#include "../Runtime.hpp"
 #include "../../protocol/PacketValidation.hpp"
 
-void ServerRuntime::DispatchInboundPacket(HSteamNetConnection incoming, PacketType packetType,
+void Runtime::DispatchInboundPacket(HSteamNetConnection incoming, PacketType packetType,
                                           const void *data, uint32_t size,
                                           uint64_t &playerInputPacketsThisLoop,
                                           uint64_t &chunkRequestPacketsThisLoop) {
@@ -38,7 +38,7 @@ void ServerRuntime::DispatchInboundPacket(HSteamNetConnection incoming, PacketTy
     }
 }
 
-void ServerRuntime::RunInboundMessagePhase(uint64_t &msgPacketsThisLoop,
+void Runtime::RunInboundMessagePhase(uint64_t &msgPacketsThisLoop,
                                            uint64_t &playerInputPacketsThisLoop,
                                            uint64_t &chunkRequestPacketsThisLoop,
                                            double &messageDrainUs) {
@@ -111,7 +111,7 @@ void ServerRuntime::RunInboundMessagePhase(uint64_t &msgPacketsThisLoop,
                                              .count());
 }
 
-void ServerRuntime::RunConnectionCleanupPhase() {
+void Runtime::RunConnectionCleanupPhase() {
     // Optional: extra safeguard - check connection states for any connections left
     // (callback already handles most).
     std::vector<std::pair<HSteamNetConnection, ClientSession>> staleConnections;

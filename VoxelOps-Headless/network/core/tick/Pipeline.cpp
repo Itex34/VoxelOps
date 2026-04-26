@@ -1,5 +1,5 @@
-#include "../ServerRuntime.hpp"
-#include "../ServerDiagnosticsFlags.hpp"
+#include "../Runtime.hpp"
+#include "../DiagnosticsFlags.hpp"
 
 namespace {
 constexpr auto kServerPerfLogInterval = std::chrono::seconds(1);
@@ -17,7 +17,7 @@ struct FrameTimings {
 
 } // namespace
 
-void ServerRuntime::ApplyLoopPacingPhase(bool simBacklog) {
+void Runtime::ApplyLoopPacingPhase(bool simBacklog) {
     if (simBacklog) {
         std::this_thread::yield();
     } else {
@@ -25,7 +25,7 @@ void ServerRuntime::ApplyLoopPacingPhase(bool simBacklog) {
     }
 }
 
-void ServerRuntime::MainLoop() {
+void Runtime::MainLoop() {
     auto lastFrameTime = std::chrono::steady_clock::now();
     auto lastSnapshotTime = lastFrameTime;
     constexpr uint32_t kSnapshotSendRateHz =
@@ -117,7 +117,7 @@ void ServerRuntime::MainLoop() {
         perfChunkInterestUsTotal += frameTimings.chunkInterestUs;
         perfChunkSendUsTotal += frameTimings.chunkSendUs;
 
-        if (ServerDiagFlags::g_enableServerPerfDiagnostics.load(std::memory_order_acquire) &&
+        if (DiagnosticsFlags::g_enableServerPerfDiagnostics.load(std::memory_order_acquire) &&
             (loopUs >= kSlowServerLoopWarnUs || frameTimings.simUs >= kSlowServerSimWarnUs)) {
             std::cerr << "[perf/server] slow loopUs=" << loopUs
                       << " simUs=" << frameTimings.simUs
@@ -135,7 +135,7 @@ void ServerRuntime::MainLoop() {
         }
 
         const auto perfNow = std::chrono::steady_clock::now();
-        if (ServerDiagFlags::g_enableServerPerfDiagnostics.load(std::memory_order_acquire) &&
+        if (DiagnosticsFlags::g_enableServerPerfDiagnostics.load(std::memory_order_acquire) &&
             (perfNow - perfWindowStart) >= kServerPerfLogInterval) {
             const double loops = (perfLoops > 0) ? static_cast<double>(perfLoops) : 1.0;
             std::cerr << "[perf/server] 1s loops=" << perfLoops
@@ -179,14 +179,14 @@ void ServerRuntime::MainLoop() {
 }
 
 // Broadcast raw payload to everyone except `except`
-void ServerRuntime::SetDebugLoggingEnabled(bool enabled) {
-    ServerDiagFlags::SetAllEnabled(enabled);
+void Runtime::SetDebugLoggingEnabled(bool enabled) {
+    DiagnosticsFlags::SetAllEnabled(enabled);
     m_playerManager.SetDebugLoggingEnabled(enabled);
     std::cout << "[debug] diagnostics " << (enabled ? "enabled" : "disabled") << "\n";
 }
 
-bool ServerRuntime::IsDebugLoggingEnabled() {
-    if (ServerDiagFlags::IsAnyEnabled()) {
+bool Runtime::IsDebugLoggingEnabled() {
+    if (DiagnosticsFlags::IsAnyEnabled()) {
         return true;
     }
     return m_playerManager.IsDebugLoggingEnabled();

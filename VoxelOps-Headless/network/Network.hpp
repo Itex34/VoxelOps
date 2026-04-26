@@ -9,15 +9,15 @@
 #include <GameNetworkingSockets/steam/steamnetworkingtypes.h>
 #include "../../Shared/network/PacketType.hpp"
 
-class ServerRuntime;
+class Runtime;
 
-class ServerNetwork {
+class Network {
   public:
-    ServerNetwork();
-    ~ServerNetwork();
+    Network();
+    ~Network();
 
-    ServerNetwork(const ServerNetwork &) = delete;
-    ServerNetwork &operator=(const ServerNetwork &) = delete;
+    Network(const Network &) = delete;
+    Network &operator=(const Network &) = delete;
 
     bool Start(uint16_t port = 27015);
     void Run();
@@ -39,5 +39,5 @@ class ServerNetwork {
                       HSteamNetConnection except = k_HSteamNetConnection_Invalid);
 
   private:
-    std::unique_ptr<ServerRuntime> m_runtime;
+    std::unique_ptr<Runtime> m_runtime;
 };

@@ -1,4 +1,4 @@
-#include "../core/ServerRuntime.hpp"
+#include "../core/Runtime.hpp"
 #include "../protocol/PacketParsers.hpp"
 
 #include <glm/trigonometric.hpp>
@@ -10,7 +10,7 @@ namespace {
 constexpr uint32_t kServerTickRateHz = 60u;
 }
 
-void ServerRuntime::SpawnDroppedItem(PlayerID dropperId, uint16_t itemId, uint16_t quantity) {
+void Runtime::SpawnDroppedItem(PlayerID dropperId, uint16_t itemId, uint16_t quantity) {
     if (!Inventory::IsValidItemId(itemId) || quantity == 0) {
         return;
     }
@@ -30,12 +30,12 @@ void ServerRuntime::SpawnDroppedItem(PlayerID dropperId, uint16_t itemId, uint16
     item.quantity = quantity;
     item.position = player.position + glm::vec3(0.0f, 1.25f, 0.0f) + (forward * 0.65f);
     item.velocity = forward * 3.0f + glm::vec3(0.0f, 3.2f, 0.0f);
-    item.pickupCooldownSeconds = WorldItemPhysicsSystem::kPickupCooldownSeconds;
-    item.ttlSeconds = WorldItemPhysicsSystem::kTtlSeconds;
+    item.pickupCooldownSeconds = WorldItemPhysics::kPickupCooldownSeconds;
+    item.ttlSeconds = WorldItemPhysics::kTtlSeconds;
     m_worldItems[item.id] = item;
 }
 
-void ServerRuntime::SendInventorySnapshotToPlayer(PlayerID playerId) {
+void Runtime::SendInventorySnapshotToPlayer(PlayerID playerId) {
     HSteamNetConnection conn = k_HSteamNetConnection_Invalid;
     {
         std::lock_guard<std::mutex> lk(m_mutex);
@@ -58,14 +58,14 @@ void ServerRuntime::SendInventorySnapshotToPlayer(PlayerID playerId) {
         k_nSteamNetworkingSend_Reliable, nullptr);
 }
 
-void ServerRuntime::UpdateWorldItems(double deltaSeconds) {
+void Runtime::UpdateWorldItems(double deltaSeconds) {
     if (deltaSeconds <= 0.0 || m_worldItems.empty()) {
         return;
     }
 
     const float dt = static_cast<float>(deltaSeconds);
     const float pickupRadiusSq =
-        WorldItemPhysicsSystem::kPickupRadius * WorldItemPhysicsSystem::kPickupRadius;
+        WorldItemPhysics::kPickupRadius * WorldItemPhysics::kPickupRadius;
     std::unordered_set<PlayerID> inventoryChangedPlayers;
 
     const std::vector<ServerPlayer> players = m_playerManager.getAllPlayersCopy();
@@ -86,7 +86,7 @@ void ServerRuntime::UpdateWorldItems(double deltaSeconds) {
             continue;
         }
 
-        WorldItemPhysicsSystem::Step(item, dt, static_cast<float>(kServerTickRateHz),
+        WorldItemPhysics::Step(item, dt, static_cast<float>(kServerTickRateHz),
                                      m_chunkManager);
 
         if (item.pickupCooldownSeconds <= 0.0f) {
@@ -122,7 +122,7 @@ void ServerRuntime::UpdateWorldItems(double deltaSeconds) {
     }
 }
 
-void ServerRuntime::SendWorldItemSnapshots(
+void Runtime::SendWorldItemSnapshots(
     const std::vector<std::pair<HSteamNetConnection, PlayerID>> &recipients, uint32_t serverTick) {
     const std::vector<ServerPlayer> players = m_playerManager.getAllPlayersCopy();
     std::unordered_map<PlayerID, glm::vec3> playerPositions;
@@ -169,7 +169,7 @@ void ServerRuntime::SendWorldItemSnapshots(
     }
 }
 
-void ServerRuntime::HandleInventoryActionRequestPacket(HSteamNetConnection incoming,
+void Runtime::HandleInventoryActionRequestPacket(HSteamNetConnection incoming,
                                                        const void *data, uint32_t size) {
     InventoryActionRequest request{};
     if (!NetPacket::ParseInventoryActionRequestPacket(reinterpret_cast<const uint8_t *>(data), size,

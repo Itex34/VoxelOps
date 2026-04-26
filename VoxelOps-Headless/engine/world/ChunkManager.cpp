@@ -11,7 +11,6 @@
 namespace {
 constexpr bool kEnableChunkMapMutexDiagnostics = false;
 constexpr int64_t kSlowChunkMapLockWaitUs = 250;
-constexpr float kCollisionSkin = 0.001f;
 std::atomic<uint64_t> g_chunkMapSlowWaitLogCount{ 0 };
 
 void MaybeLogSlowChunkMapLock(const char* fn, int64_t waitUs) {
@@ -233,79 +232,7 @@ ChunkManager::AabbCollisionQueryResult ChunkManager::queryAabbCollision(
     float height,
     bool treatMissingChunkAsSolid
 ) const {
-    AabbCollisionQueryResult result{};
-
-    // Keep parity with client collision sampling: touching faces should not count as penetration.
-    const float minX = pos.x - radius + kCollisionSkin;
-    const float maxX = pos.x + radius - kCollisionSkin;
-    const float minY = pos.y + kCollisionSkin;
-    const float maxY = pos.y + height - kCollisionSkin;
-    const float minZ = pos.z - radius + kCollisionSkin;
-    const float maxZ = pos.z + radius - kCollisionSkin;
-
-    const int ix0 = static_cast<int>(std::floor(minX));
-    const int iy0 = static_cast<int>(std::floor(minY));
-    const int iz0 = static_cast<int>(std::floor(minZ));
-    const int ix1 = static_cast<int>(std::floor(maxX));
-    const int iy1 = static_cast<int>(std::floor(maxY));
-    const int iz1 = static_cast<int>(std::floor(maxZ));
-
-    const auto lockStart = std::chrono::steady_clock::now();
-    std::shared_lock<std::shared_mutex> lk(mapMutex);
-    const auto waitUs = std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::steady_clock::now() - lockStart
-    ).count();
-    MaybeLogSlowChunkMapLock("queryAabbCollision.scan", waitUs);
-
-    glm::ivec3 cachedChunkPos(0);
-    ServerChunk* cachedChunk = nullptr;
-    bool hasCachedChunk = false;
-
-    for (int x = ix0; x <= ix1; ++x) {
-        for (int y = iy0; y <= iy1; ++y) {
-            for (int z = iz0; z <= iz1; ++z) {
-                const glm::ivec3 worldPos(x, y, z);
-                const glm::ivec3 chunkPos = worldToChunkPos(worldPos);
-                if (!inBounds(chunkPos)) {
-                    continue;
-                }
-
-                ServerChunk* chunkPtr = nullptr;
-                if (hasCachedChunk && chunkPos == cachedChunkPos) {
-                    chunkPtr = cachedChunk;
-                }
-                else {
-                    auto it = chunkMap.find(chunkPos);
-                    if (it != chunkMap.end()) {
-                        chunkPtr = it->second.get();
-                    }
-                    cachedChunkPos = chunkPos;
-                    cachedChunk = chunkPtr;
-                    hasCachedChunk = true;
-                }
-
-                if (!chunkPtr) {
-                    if (!result.missingChunk) {
-                        result.missingChunk = true;
-                        result.firstMissingChunk = chunkPos;
-                    }
-                    if (treatMissingChunkAsSolid) {
-                        result.collided = true;
-                        return result;
-                    }
-                    continue;
-                }
-
-                const glm::ivec3 localPos = worldPos - chunkPos * CHUNK_SIZE;
-                if (chunkPtr->getBlock(localPos.x, localPos.y, localPos.z) != BlockID::Air) {
-                    result.collided = true;
-                    return result;
-                }
-            }
-        }
-    }
-
-    return result;
+    return WorldCollision::QueryAabbCollision(*this, pos, radius, height, treatMissingChunkAsSolid);
 }
 
 void ChunkManager::setBlockSafe(ServerChunk& currentChunk, const glm::ivec3& pos, BlockID id) {
@@ -350,20 +277,6 @@ bool ChunkManager::inBounds(const glm::ivec3& pos) const {
         pos.z >= WORLD_MIN_Z && pos.z <= WORLD_MAX_Z;
 }
 
-std::array<bool, 6> ChunkManager::getVisibleChunkFaces(const glm::ivec3& pos) const {
-    const std::array<glm::ivec3, 6> dirs{ glm::ivec3(1,0,0), glm::ivec3(-1,0,0), glm::ivec3(0,1,0),
-                                         glm::ivec3(0,-1,0), glm::ivec3(0,0,1), glm::ivec3(0,0,-1) };
-    std::array<bool, 6> visible{};
-    auto snap = snapshotChunkMap();
-    for (int i = 0; i < 6; ++i) {
-        glm::ivec3 np = pos + dirs[i];
-        if (!inBounds(np)) { visible[i] = true; continue; }
-        auto it = snap.find(np);
-        if (it == snap.end() || it->second->isCompletelyAir()) visible[i] = true;
-        else visible[i] = false;
-    }
-    return visible;
-}
 
 void ChunkManager::markChunkDirty(const glm::ivec3& pos) {
     if (!inBounds(pos)) return;
@@ -420,7 +333,7 @@ ServerChunk* ChunkManager::loadOrGenerateChunk(const glm::ivec3& chunkPos) {
     }
 
     // Upgrade terrain-only placeholders to decorated chunks when explicitly streamed.
-    if (needsDecoration) {
+    if (needsDecoration) { 
         WorldGen::decorateChunkAt(*this, chunkPos);
         const auto lockStart = std::chrono::steady_clock::now();
         std::shared_lock<std::shared_mutex> lk(mapMutex);
