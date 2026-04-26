@@ -12,7 +12,7 @@
 #include <string_view>
 #include <print>
 
-#include "network/ServerNetwork.hpp"
+#include "net/ServerNetwork.hpp"
 #include "../Shared/runtime/Paths.hpp"
 
 using namespace std::chrono_literals;

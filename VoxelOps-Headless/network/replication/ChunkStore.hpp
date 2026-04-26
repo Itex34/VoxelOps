@@ -1,5 +1,5 @@
 #pragma once
-#include "../../voxels/ServerChunk.hpp"
+#include "../../engine/voxels/ServerChunk.hpp"
 #include <functional>
 #include <shared_mutex>
 class ChunkStore {

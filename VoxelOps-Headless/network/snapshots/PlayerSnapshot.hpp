@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../player/ServerPlayer.hpp"
+#include "../../game/player/ServerPlayer.hpp"
 
 #include <cstdint>
 #include <unordered_map>

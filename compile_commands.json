@@ -397,39 +397,45 @@
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\voxels\\Voxel.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\voxels\\Voxel.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/voxels/Voxel.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/voxels/Voxel.cpp.obj"
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\engine\\voxels\\Voxel.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\engine\\voxels\\Voxel.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/engine/voxels/Voxel.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/engine/voxels/Voxel.cpp.obj"
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\voxels\\ServerChunk.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\voxels\\ServerChunk.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/voxels/ServerChunk.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/voxels/ServerChunk.cpp.obj"
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\engine\\voxels\\ServerChunk.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\engine\\voxels\\ServerChunk.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/engine/voxels/ServerChunk.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/engine/voxels/ServerChunk.cpp.obj"
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\player\\ServerPlayer.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\player\\ServerPlayer.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/player/ServerPlayer.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/player/ServerPlayer.cpp.obj"
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\engine\\world\\ChunkManager.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\engine\\world\\ChunkManager.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/engine/world/ChunkManager.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/engine/world/ChunkManager.cpp.obj"
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\world\\ChunkManager.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\world\\ChunkManager.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/world/ChunkManager.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/world/ChunkManager.cpp.obj"
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\engine\\world\\WorldGen.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\engine\\world\\WorldGen.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/engine/world/WorldGen.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/engine/world/WorldGen.cpp.obj"
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\world\\WorldGen.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\world\\WorldGen.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/world/WorldGen.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/world/WorldGen.cpp.obj"
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\engine\\physics\\core\\HitDetection.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\engine\\physics\\core\\HitDetection.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/engine/physics/core/HitDetection.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/engine/physics/core/HitDetection.cpp.obj"
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\physics\\HitDetection.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\physics\\HitDetection.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/physics/HitDetection.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/physics/HitDetection.cpp.obj"
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\engine\\physics\\simulation\\WorldItemPhysics.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\engine\\physics\\simulation\\WorldItemPhysics.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/engine/physics/simulation/WorldItemPhysics.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/engine/physics/simulation/WorldItemPhysics.cpp.obj"
+},
+{
+  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\engine\\world\\WorldRaycast.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\engine\\world\\WorldRaycast.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/engine/world/WorldRaycast.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/engine/world/WorldRaycast.cpp.obj"
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
@@ -451,45 +457,45 @@
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\network\\core\\ServerRuntimeLoop.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\network\\core\\ServerRuntimeLoop.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/network/core/ServerRuntimeLoop.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/network/core/ServerRuntimeLoop.cpp.obj"
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\network\\core\\tick\\TickPipeline.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\network\\core\\tick\\TickPipeline.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/network/core/tick/TickPipeline.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/network/core/tick/TickPipeline.cpp.obj"
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\network\\core\\loop\\Network.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\network\\core\\loop\\Network.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/network/core/loop/Network.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/network/core/loop/Network.cpp.obj"
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\network\\core\\tick\\TickNetwork.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\network\\core\\tick\\TickNetwork.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/network/core/tick/TickNetwork.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/network/core/tick/TickNetwork.cpp.obj"
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\network\\core\\loop\\Simulation.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\network\\core\\loop\\Simulation.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/network/core/loop/Simulation.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/network/core/loop/Simulation.cpp.obj"
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\network\\core\\tick\\TickSimulation.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\network\\core\\tick\\TickSimulation.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/network/core/tick/TickSimulation.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/network/core/tick/TickSimulation.cpp.obj"
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\network\\core\\loop\\Diagnostics.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\network\\core\\loop\\Diagnostics.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/network/core/loop/Diagnostics.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/network/core/loop/Diagnostics.cpp.obj"
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\network\\core\\tick\\TickDiagnostics.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\network\\core\\tick\\TickDiagnostics.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/network/core/tick/TickDiagnostics.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/network/core/tick/TickDiagnostics.cpp.obj"
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\network\\core\\loop\\Replication.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\network\\core\\loop\\Replication.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/network/core/loop/Replication.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/network/core/loop/Replication.cpp.obj"
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\network\\core\\tick\\TickReplication.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\network\\core\\tick\\TickReplication.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/network/core/tick/TickReplication.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/network/core/tick/TickReplication.cpp.obj"
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\network\\core\\loop\\Gameplay.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\network\\core\\loop\\Gameplay.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/network/core/loop/Gameplay.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/network/core/loop/Gameplay.cpp.obj"
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\network\\core\\tick\\TickGameplay.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\network\\core\\tick\\TickGameplay.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/network/core/tick/TickGameplay.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/network/core/tick/TickGameplay.cpp.obj"
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\network\\core\\loop\\World.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\network\\core\\loop\\World.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/network/core/loop/World.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/network/core/loop/World.cpp.obj"
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\network\\core\\tick\\TickWorld.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\network\\core\\tick\\TickWorld.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/network/core/tick/TickWorld.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/network/core/tick/TickWorld.cpp.obj"
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
@@ -559,12 +565,6 @@
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\physics\\WorldItemPhysics.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\physics\\WorldItemPhysics.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/physics/WorldItemPhysics.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/physics/WorldItemPhysics.cpp.obj"
-},
-{
-  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
   "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\network\\gameplay\\CombatRules.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\network\\gameplay\\CombatRules.cpp",
   "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/network/gameplay/CombatRules.cpp",
   "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/network/gameplay/CombatRules.cpp.obj"
@@ -601,78 +601,6 @@
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\player\\Hitbox.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\player\\Hitbox.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/player/Hitbox.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/player/Hitbox.cpp.obj"
-},
-{
-  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\player\\PlayerManager.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\player\\PlayerManager.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/player/PlayerManager.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/player/PlayerManager.cpp.obj"
-},
-{
-  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\player\\PlayerLifecycle.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\player\\PlayerLifecycle.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/player/PlayerLifecycle.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/player/PlayerLifecycle.cpp.obj"
-},
-{
-  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\player\\PlayerUpdate.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\player\\PlayerUpdate.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/player/PlayerUpdate.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/player/PlayerUpdate.cpp.obj"
-},
-{
-  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\player\\inventory\\PlayerInventory.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\player\\inventory\\PlayerInventory.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/player/inventory/PlayerInventory.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/player/inventory/PlayerInventory.cpp.obj"
-},
-{
-  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\gameplay\\combat\\PlayerCombat.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\gameplay\\combat\\PlayerCombat.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/gameplay/combat/PlayerCombat.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/gameplay/combat/PlayerCombat.cpp.obj"
-},
-{
-  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\gameplay\\combat\\LagCompensation.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\gameplay\\combat\\LagCompensation.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/gameplay/combat/LagCompensation.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/gameplay/combat/LagCompensation.cpp.obj"
-},
-{
-  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\gameplay\\combat\\ShootValidation.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\gameplay\\combat\\ShootValidation.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/gameplay/combat/ShootValidation.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/gameplay/combat/ShootValidation.cpp.obj"
-},
-{
-  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\gameplay\\combat\\Damage.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\gameplay\\combat\\Damage.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/gameplay/combat/Damage.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/gameplay/combat/Damage.cpp.obj"
-},
-{
-  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\gameplay\\combat\\CombatFeedback.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\gameplay\\combat\\CombatFeedback.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/gameplay/combat/CombatFeedback.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/gameplay/combat/CombatFeedback.cpp.obj"
-},
-{
-  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\gameplay\\combat\\Shoot.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\gameplay\\combat\\Shoot.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/gameplay/combat/Shoot.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/gameplay/combat/Shoot.cpp.obj"
-},
-{
-  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\gameplay\\combat\\Combat.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\gameplay\\combat\\Combat.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/gameplay/combat/Combat.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/gameplay/combat/Combat.cpp.obj"
-},
-{
-  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
   "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\network\\snapshots\\PlayerSnapshotSerializer.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\network\\snapshots\\PlayerSnapshotSerializer.cpp",
   "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/network/snapshots/PlayerSnapshotSerializer.cpp",
   "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/network/snapshots/PlayerSnapshotSerializer.cpp.obj"
@@ -685,27 +613,99 @@
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\player\\ServerMovementSimulation.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\player\\ServerMovementSimulation.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/player/ServerMovementSimulation.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/player/ServerMovementSimulation.cpp.obj"
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\game\\player\\Hitbox.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\game\\player\\Hitbox.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/game/player/Hitbox.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/game/player/Hitbox.cpp.obj"
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\gameplay\\world\\BlockEdits.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\gameplay\\world\\BlockEdits.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/gameplay/world/BlockEdits.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/gameplay/world/BlockEdits.cpp.obj"
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\game\\player\\PlayerManager.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\game\\player\\PlayerManager.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/game/player/PlayerManager.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/game/player/PlayerManager.cpp.obj"
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\world\\WorldRaycast.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\world\\WorldRaycast.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/world/WorldRaycast.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/world/WorldRaycast.cpp.obj"
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\game\\player\\PlayerLifecycle.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\game\\player\\PlayerLifecycle.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/game/player/PlayerLifecycle.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/game/player/PlayerLifecycle.cpp.obj"
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",
-  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\gameplay\\spawn\\Respawning.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\gameplay\\spawn\\Respawning.cpp",
-  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/gameplay/spawn/Respawning.cpp",
-  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/gameplay/spawn/Respawning.cpp.obj"
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\game\\player\\PlayerUpdate.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\game\\player\\PlayerUpdate.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/game/player/PlayerUpdate.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/game/player/PlayerUpdate.cpp.obj"
+},
+{
+  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\game\\player\\inventory\\PlayerInventory.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\game\\player\\inventory\\PlayerInventory.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/game/player/inventory/PlayerInventory.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/game/player/inventory/PlayerInventory.cpp.obj"
+},
+{
+  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\game\\combat\\PlayerCombat.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\game\\combat\\PlayerCombat.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/game/combat/PlayerCombat.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/game/combat/PlayerCombat.cpp.obj"
+},
+{
+  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\game\\combat\\LagCompensation.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\game\\combat\\LagCompensation.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/game/combat/LagCompensation.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/game/combat/LagCompensation.cpp.obj"
+},
+{
+  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\game\\combat\\ShootValidation.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\game\\combat\\ShootValidation.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/game/combat/ShootValidation.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/game/combat/ShootValidation.cpp.obj"
+},
+{
+  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\game\\combat\\Damage.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\game\\combat\\Damage.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/game/combat/Damage.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/game/combat/Damage.cpp.obj"
+},
+{
+  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\game\\combat\\CombatFeedback.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\game\\combat\\CombatFeedback.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/game/combat/CombatFeedback.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/game/combat/CombatFeedback.cpp.obj"
+},
+{
+  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\game\\combat\\Shoot.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\game\\combat\\Shoot.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/game/combat/Shoot.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/game/combat/Shoot.cpp.obj"
+},
+{
+  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\game\\combat\\Combat.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\game\\combat\\Combat.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/game/combat/Combat.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/game/combat/Combat.cpp.obj"
+},
+{
+  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\game\\player\\ServerPlayer.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\game\\player\\ServerPlayer.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/game/player/ServerPlayer.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/game/player/ServerPlayer.cpp.obj"
+},
+{
+  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\game\\player\\ServerMovementSimulation.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\game\\player\\ServerMovementSimulation.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/game/player/ServerMovementSimulation.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/game/player/ServerMovementSimulation.cpp.obj"
+},
+{
+  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\game\\world\\BlockEdits.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\game\\world\\BlockEdits.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/game/world/BlockEdits.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/game/world/BlockEdits.cpp.obj"
+},
+{
+  "directory": "C:/Users/Sophie/source/repos/VoxelOps",
+  "command": "C:\\PROGRA~1\\MICROS~2\\18\\COMMUN~1\\VC\\Tools\\MSVC\\1450~1.357\\bin\\Hostx64\\x64\\cl.exe  /nologo /TP -DABSL_CONSUME_DLL -DPROTOBUF_USE_DLLS -DSTEAMNETWORKINGSOCKETS_STATIC_LINK -D_WINDOWS -IC:\\Users\\Sophie\\source\\repos\\VoxelOps\\Shared -external:IC:\\vcpkg\\installed\\x64-windows\\include -external:IC:\\vcpkg\\installed\\x64-windows\\include\\GameNetworkingSockets -external:W0 /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MD /O2 /Ob2 /DNDEBUG -std:c++latest /GR- /EHsc /FoVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\game\\spawn\\Respawning.cpp.obj /FdVoxelOps-Headless\\CMakeFiles\\VoxelOps-Headless.dir\\ /FS -c C:\\Users\\Sophie\\source\\repos\\VoxelOps\\VoxelOps-Headless\\game\\spawn\\Respawning.cpp",
+  "file": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/game/spawn/Respawning.cpp",
+  "output": "C:/Users/Sophie/source/repos/VoxelOps/VoxelOps-Headless/CMakeFiles/VoxelOps-Headless.dir/game/spawn/Respawning.cpp.obj"
 },
 {
   "directory": "C:/Users/Sophie/source/repos/VoxelOps",

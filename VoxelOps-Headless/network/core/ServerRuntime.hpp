@@ -25,10 +25,10 @@
 
 #include "../../../Shared/network/PacketType.hpp"
 #include "../../../Shared/network/Packets.hpp"
-#include "../../gameplay/combat/LagCompensation.hpp"
-#include "../../player/PlayerManager.hpp"
-#include "../../world/ChunkManager.hpp"
-#include "../../physics/WorldItemPhysics.hpp"
+#include "../../game/combat/LagCompensation.hpp"
+#include "../../game/player/PlayerManager.hpp"
+#include "../../engine/world/ChunkManager.hpp"
+#include "../../engine/physics/simulation/WorldItemPhysics.hpp"
 
 class ServerRuntime {
   public:
