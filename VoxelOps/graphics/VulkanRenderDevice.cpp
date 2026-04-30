@@ -247,7 +247,8 @@ void VulkanRenderDevice::renderFrame(RenderFrameParams &params) {
     const bool hardwareRtSupported =
         (m_context != nullptr) && m_context->isHardwareRayTracingSupported();
     const VulkanGiSettings::FrameDecision giDecision = m_giSettings.beginFrame(
-        cullingCamera.position, sunDirection, hardwareRtSupported, sceneTlas);
+        cullingCamera.position, sunDirection, hardwareRtSupported, sceneTlas,
+        std::clamp(GameData::giTracingBackendPreference, 0, 2));
 
     m_frameData.clear();
     m_frameData.giLighting.sceneTlas = sceneTlas;
@@ -257,6 +258,19 @@ void VulkanRenderDevice::renderFrame(RenderFrameParams &params) {
     m_lastTimingSnapshot.giHardwareRtSupported = giDecision.hardwareRtSupported;
     m_lastTimingSnapshot.giRtSceneReady = giDecision.rtSceneReady;
     m_lastTimingSnapshot.giTracingBackend = giDecision.backend;
+
+    const auto giIntegrateStart = std::chrono::steady_clock::now();
+    const bool giTraceReady =
+        m_giSceneBuffers.rebuild(chunkManager, m_sceneUploader.chunkRenderCache(), *m_context);
+    const auto giIntegrateEnd = std::chrono::steady_clock::now();
+    m_lastTimingSnapshot.cpuGiIntegrateMs = measureMs(giIntegrateStart, giIntegrateEnd);
+    if (giTraceReady) {
+        m_giSceneBuffers.applyToLighting(m_frameData.giLighting);
+        m_lastTimingSnapshot.giTraceGridsUpdated =
+            static_cast<uint32_t>(m_giSceneBuffers.chunkCount());
+    } else {
+        m_lastTimingSnapshot.giTraceGridsUpdated = 0;
+    }
 
     (void)m_sceneUploader.ensureRemotePlayerAssetsLoaded(*m_context, m_uploadContext);
     const VulkanFrameBuildResult frameBuild = VulkanFrameBuilder::buildFrameData(
@@ -307,6 +321,7 @@ void VulkanRenderDevice::shutdown() {
     m_sceneUploader.shutdown();
     m_rtScene.reset();
     m_giSettings.reset();
+    m_giSceneBuffers.cleanup();
 
     m_uploadContext.cleanup();
 

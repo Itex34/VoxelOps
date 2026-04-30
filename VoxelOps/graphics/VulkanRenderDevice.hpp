@@ -4,6 +4,7 @@
 
 #include "../world/ChunkManager.hpp"
 #include "Vulkan/VulkanGiSettings.hpp"
+#include "Vulkan/VulkanGiSceneBuffers.hpp"
 #include "Vulkan/VulkanSceneUploader.hpp"
 #include "Vulkan/VulkanRayTracingScene.hpp"
 #include "Vulkan/renderer/RenderFrameData.hpp"
@@ -11,7 +12,6 @@
 
 #include <SDL3/SDL.h>
 #include <vulkan/vulkan.h>
-
 #include <memory>
 
 class VulkanContext;
@@ -90,5 +90,6 @@ class VulkanRenderDevice final : public IRenderDevice {
     FrameRenderData m_frameData;
     VulkanRayTracingScene m_rtScene;
     VulkanGiSettings m_giSettings;
+    VulkanGiSceneBuffers m_giSceneBuffers;
     TimingSnapshot m_lastTimingSnapshot{};
 };

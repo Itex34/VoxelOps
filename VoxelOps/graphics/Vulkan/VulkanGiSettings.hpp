@@ -16,7 +16,8 @@ class VulkanGiSettings {
     };
 
     FrameDecision beginFrame(const glm::vec3 &cameraPosition, const glm::vec3 &sunDirection,
-                             bool hardwareRtSupported, VkAccelerationStructureKHR sceneTlas);
+                             bool hardwareRtSupported, VkAccelerationStructureKHR sceneTlas,
+                             int tracingBackendPreference);
 
     void fillLightingData(GiLightingData &lighting, const FrameDecision &decision,
                           uint32_t nrdDebugView) const;

@@ -13,7 +13,7 @@ constexpr float kPathTraceSkyIntensity = 1.0f;
 
 VulkanGiSettings::FrameDecision VulkanGiSettings::beginFrame(
     const glm::vec3 &cameraPosition, const glm::vec3 &sunDirection, bool hardwareRtSupported,
-    VkAccelerationStructureKHR sceneTlas) {
+    VkAccelerationStructureKHR sceneTlas, int tracingBackendPreference) {
     FrameDecision out{};
     out.hardwareRtSupported = hardwareRtSupported;
     out.rtSceneReady = hardwareRtSupported && (sceneTlas != VK_NULL_HANDLE);
@@ -34,7 +34,16 @@ VulkanGiSettings::FrameDecision VulkanGiSettings::beginFrame(
     m_prevSunDir = out.sunDirection;
     m_historyAnchorValid = true;
 
-    out.backend = out.rtSceneReady ? GiTracingBackend::HardwareRt : GiTracingBackend::SoftwareDda;
+    const int clampedPreference = std::clamp(tracingBackendPreference, 0, 2);
+    if (clampedPreference == 1) {
+        out.backend = GiTracingBackend::SoftwareDda;
+    } else if (clampedPreference == 2) {
+        out.backend =
+            out.rtSceneReady ? GiTracingBackend::HardwareRt : GiTracingBackend::SoftwareDda;
+    } else {
+        out.backend =
+            out.rtSceneReady ? GiTracingBackend::HardwareRt : GiTracingBackend::SoftwareDda;
+    }
 
     if (!out.rtSceneReady && !m_warnedHardwareRtUnavailable) {
         std::cerr << "[Vulkan][GI] Hardware RT scene unavailable (support="
@@ -43,11 +52,17 @@ VulkanGiSettings::FrameDecision VulkanGiSettings::beginFrame(
                   << "). GI path tracing disabled for this frame.\n";
         m_warnedHardwareRtUnavailable = true;
     }
+    const bool backendChanged = m_loggedTracingBackend && (out.backend != m_lastTracingBackend);
+    if (backendChanged) {
+        out.resetHistory = true;
+    }
+
     if (!m_loggedTracingBackend || out.backend != m_lastTracingBackend) {
         std::cout << "[Vulkan][GI] tracing backend="
                   << ((out.backend == GiTracingBackend::HardwareRt) ? "HardwareRt" : "SoftwareDda")
                   << " hwRtSupported=" << (hardwareRtSupported ? "true" : "false")
                   << " sceneTlas=" << ((sceneTlas != VK_NULL_HANDLE) ? "ready" : "none")
+                  << " preference=" << clampedPreference
                   << "\n";
         m_loggedTracingBackend = true;
         m_lastTracingBackend = out.backend;
@@ -63,8 +78,7 @@ void VulkanGiSettings::fillLightingData(GiLightingData &lighting, const FrameDec
                                         uint32_t nrdDebugView) const {
     lighting.hardwareRayTracingSupported = decision.hardwareRtSupported;
     lighting.tracingBackend = decision.backend;
-    lighting.pathTracingEnabled =
-        kEnablePathTracedGi && (decision.backend == GiTracingBackend::HardwareRt);
+    lighting.pathTracingEnabled = kEnablePathTracedGi;
     lighting.pathTraceRaysPerPixel = kPathTraceRaysPerPixel;
     lighting.pathTraceMaxBounces = kPathTraceMaxBounces;
     lighting.pathTraceSkyIntensity = kPathTraceSkyIntensity;
@@ -90,7 +104,7 @@ void VulkanGiSettings::fillLightingData(GiLightingData &lighting, const FrameDec
     lighting.shadowOccupancyWordCount = 0;
     lighting.shadowWorldBoundsXy = glm::ivec4(0);
     lighting.shadowWorldBoundsZ = glm::ivec4(0);
-    lighting.enabled = (decision.backend == GiTracingBackend::HardwareRt);
+    lighting.enabled = kEnablePathTracedGi;
 }
 
 void VulkanGiSettings::reset() {
