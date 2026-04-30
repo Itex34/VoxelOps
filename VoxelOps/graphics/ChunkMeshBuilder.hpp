@@ -2,7 +2,7 @@
 #include "../voxels/Chunk.hpp"
 #include "../voxels/Voxel.hpp"
 #include "Mesh.hpp"
-#include "../graphics/TextureAtlas.hpp"
+#include "AtlasLayout.hpp"
 #include <array>
 #include <cstdint>
 
@@ -36,7 +36,6 @@ struct GreedyCell {
     int16_t sy = 0;
     int16_t sz = 0;
     uint8_t ao[4] = {0, 0, 0, 0};
-    uint8_t sun[4] = {0, 0, 0, 0};
     uint32_t lightKey = 0;
     uint64_t mergeKey = 0;
 };
@@ -64,9 +63,8 @@ class ChunkMeshBuilder {
     using SunTopGetter = std::function<int(int, int)>;
 
     BuiltChunkMesh buildChunkMesh(const Chunk &center, const Chunk *neighbors[6],
-                                  const glm::ivec3 &chunkPos, const TextureAtlas &atlas,
-                                  bool enableAO, bool enableShadows,
-                                  const SunTopGetter &getSunTopY = SunTopGetter{});
+                                  const glm::ivec3 &chunkPos, const AtlasLayout &atlasLayout,
+                                  bool enableAO);
 
     static MeshBuildProfileSnapshot getProfileSnapshot();
     static void resetProfileSnapshot();

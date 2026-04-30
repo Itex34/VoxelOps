@@ -17,6 +17,7 @@ void MaybeLogSlowChunkMapLock(const char* fn, int64_t waitUs) {
     if (!kEnableChunkMapMutexDiagnostics || waitUs < kSlowChunkMapLockWaitUs) {
         return;
     }
+
     const uint64_t count = g_chunkMapSlowWaitLogCount.fetch_add(1, std::memory_order_relaxed) + 1;
     if (count <= 40 || (count % 200) == 0) {
         std::cerr

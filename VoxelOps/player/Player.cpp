@@ -1,7 +1,7 @@
 #include "Player.hpp"
 
-#include "../graphics/ChunkManager.hpp"
-#include "../graphics/Shader.hpp"
+#include "../world/ChunkManager.hpp"
+#include "../graphics/ModelGeometry.hpp"
 #include "../data/GameData.hpp"
 #include "../../Shared/network/Packets.hpp"
 #include "../../Shared/player/HitboxCache.hpp"
@@ -139,7 +139,7 @@ uint8_t CacheCodeFromModelRegion(ModelRegion region) {
     }
 }
 
-std::vector<Hitbox> BuildHitboxesFromModel(const Model &model, float playerHeight,
+std::vector<Hitbox> BuildHitboxesFromModel(const ModelGeometry &model, float playerHeight,
                                            float playerRadius) {
     std::vector<Hitbox> out;
     const float targetHeight = std::max(playerHeight, 0.01f);
@@ -222,8 +222,8 @@ std::vector<Hitbox> BuildHitboxesFromModel(const Model &model, float playerHeigh
     return out;
 }
 
-std::vector<Shared::MeshHitCache::TriangleRecord> BuildMeshTrianglesFromModel(const Model &model,
-                                                                              float playerHeight) {
+std::vector<Shared::MeshHitCache::TriangleRecord>
+BuildMeshTrianglesFromModel(const ModelGeometry &model, float playerHeight) {
     std::vector<Shared::MeshHitCache::TriangleRecord> out;
     const float targetHeight = std::max(playerHeight, 0.01f);
     const float modelMinY = model.getLocalMinY();
@@ -333,23 +333,20 @@ Player::Player(const glm::vec3 &startPos, ChunkManager &inChunkManager,
     jumpVelocity = movement.jumpVelocity;
     playerHeight = movement.collisionHeight;
     playerRadius = movement.collisionRadius;
-    const bool hasOpenGlContext = (SDL_GL_GetCurrentContext() != nullptr);
-
-    if (hasOpenGlContext) {
-        // load model
-        try {
-            playerModel = std::make_shared<Model>(playerModelPath);
-        } catch (const std::exception &e) {
-            std::cerr << "Model load exception: " << e.what() << "\n";
-            playerModel.reset();
+    std::unique_ptr<ModelGeometry> loadedPlayerModel;
+    {
+        auto modelGeometry = std::make_unique<ModelGeometry>();
+        std::string error;
+        if (modelGeometry->loadFromFile(playerModelPath, &error)) {
+            loadedPlayerModel = std::move(modelGeometry);
+        } else {
+            std::cerr << "Model load exception: " << error << "\n";
         }
-    } else {
-        playerModel.reset();
     }
 
     if (!LoadHitboxCache(m_hitboxes, playerHeight, playerRadius)) {
-        if (playerModel) {
-            m_hitboxes = BuildHitboxesFromModel(*playerModel, playerHeight, playerRadius);
+        if (loadedPlayerModel) {
+            m_hitboxes = BuildHitboxesFromModel(*loadedPlayerModel, playerHeight, playerRadius);
             if (!m_hitboxes.empty()) {
                 if (!SaveHitboxCache(m_hitboxes, playerHeight, playerRadius)) {
                     std::cerr << "Warning: failed to write hitbox cache: "
@@ -367,8 +364,8 @@ Player::Player(const glm::vec3 &startPos, ChunkManager &inChunkManager,
         LogHitboxes("fallback_blocky", m_hitboxes, playerHeight, playerRadius);
     }
 
-    if (playerModel) {
-        const auto triangles = BuildMeshTrianglesFromModel(*playerModel, playerHeight);
+    if (loadedPlayerModel) {
+        const auto triangles = BuildMeshTrianglesFromModel(*loadedPlayerModel, playerHeight);
         if (!triangles.empty()) {
             if (!SaveMeshHitCache(triangles, playerHeight)) {
                 std::cerr << "Warning: failed to write mesh hit cache: " << SharedMeshHitCachePath()
@@ -379,26 +376,9 @@ Player::Player(const glm::vec3 &startPos, ChunkManager &inChunkManager,
 
     syncCameraToBody();
 
-    if (hasOpenGlContext) {
-        try {
-            const std::string playerVertPath =
-                Shared::RuntimePaths::ResolveVoxelOpsPath("shaders/player.vert").generic_string();
-            const std::string playerFragPath =
-                Shared::RuntimePaths::ResolveVoxelOpsPath("shaders/player.frag").generic_string();
-            playerShader = std::make_shared<Shader>(playerVertPath.c_str(), playerFragPath.c_str());
-        } catch (const std::exception &e) {
-            std::cerr << "Shader load exception: " << e.what() << "\n";
-            playerShader.reset();
-        }
-    } else {
-        playerShader.reset();
-    }
-
     // sanity checks
-    if (!playerModel)
+    if (!loadedPlayerModel)
         std::cerr << "Warning: playerModel not loaded\n";
-    if (!playerShader)
-        std::cerr << "Warning: playerShader not created\n";
 }
 
 const std::vector<Hitbox> &Player::getHitboxes() const noexcept {
@@ -840,50 +820,6 @@ bool Player::isGrounded() const noexcept {
 
 glm::mat4 Player::getViewMatrix() const noexcept {
     return camera.getViewMatrix();
-}
-
-void Player::renderRemotePlayers(const glm::mat4 &viewMat, const glm::mat4 &projMat,
-                                 const glm::vec3 &lightDir, const glm::vec3 &lightColor,
-                                 const glm::vec3 &ambientColor) const {
-    if (!playerShader || !playerModel || connectedPlayers.empty()) {
-        return;
-    }
-    constexpr float kLocalGhostRejectDistance = 2.0f;
-    const float localGhostRejectDistanceSq = kLocalGhostRejectDistance * kLocalGhostRejectDistance;
-
-    glDisable(GL_CULL_FACE);
-
-    playerShader->use();
-
-    playerShader->setInt("diffuseTexture", 0);
-
-    playerShader->setVec3("lightDir", lightDir); // normalized
-    playerShader->setVec3("lightColor", lightColor);
-    playerShader->setVec3("ambientColor", ambientColor);
-
-    // also set the view/projection matrices
-    playerShader->setMat4("view", viewMat);
-    playerShader->setMat4("projection", projMat);
-
-    const glm::vec3 modelSize = playerModel->getLocalSize();
-    const float modelMinY = playerModel->getLocalMinY();
-    const float uniformFitToCollision =
-        std::max(playerHeight, 0.01f) / std::max(modelSize.y, 1e-4f);
-
-    for (const auto &[id, state] : connectedPlayers) {
-        (void)id;
-        const glm::vec3 toLocal = state.position - position;
-        const float localDistSq = glm::dot(toLocal, toLocal);
-        if (!std::isfinite(localDistSq) || localDistSq < localGhostRejectDistanceSq) {
-            // Ignore accidental self-echo snapshots in remote render pass.
-            continue;
-        }
-        const glm::vec3 scaled = state.scale * uniformFitToCollision;
-        const glm::vec3 anchoredPos = state.position + glm::vec3(0.0f, -modelMinY * scaled.y, 0.0f);
-        playerModel->draw(anchoredPos, state.rotation, scaled, *playerShader);
-    }
-
-    glEnable(GL_CULL_FACE);
 }
 
 // client side for now

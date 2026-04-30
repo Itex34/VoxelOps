@@ -15,7 +15,6 @@
 
 static constexpr int PAD = 1;
 
-using BlockGetter = std::function<BlockID(const glm::ivec3 &)>;
 using TopOccluderGetter = std::function<int(int, int)>;
 
 class Lighting {
@@ -33,11 +32,6 @@ class Lighting {
     void prepareChunkAO(const Chunk &chunk, const glm::ivec3 &chunkPos, const Chunk *neighbors[6],
                         uint8_t *aoBuffer, const uint8_t *solidPadded = nullptr);
 
-    void prepareChunkSunlight(const Chunk &chunk, const glm::ivec3 &chunkPos,
-                              const Chunk *neighbors[6], uint8_t *sunlightBuffer,
-                              float sunFalloff, // how quickly light dims below occluders
-                              const TopOccluderGetter &getTopOccluderY = TopOccluderGetter{},
-                              const uint8_t *solidPadded = nullptr);
 
     void faceCornerIndicesForCell(int sx, int sy, int sz, // sampling cell base (see notes below)
                                   int face,               // 0..5 (same enum as your mesher)
@@ -59,13 +53,6 @@ class Lighting {
     static constexpr float AO_TABLE[4] = {1.00f, 0.85f, 0.65f, 0.53f};
     static const glm::ivec3 CANONICAL_CORNER_OFF[3];
 
-    static constexpr float SUN_FALLOFF_TABLE[5] = {
-        1.0f,       // 0 blockers
-        0.85f,      // 1 blocker
-        0.7225f,    // 2 blockers
-        0.614125f,  // 3 blockers
-        0.52200625f // 4 blockers
-    };
 
     inline BlockID getBlockWithNeighbors(const glm::ivec3 &pos, const Chunk &chunk,
                                          const Chunk *neighbors[6]) const noexcept {

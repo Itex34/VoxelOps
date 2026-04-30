@@ -2,22 +2,55 @@
 
 #include <string_view>
 
-#include "Backend.hpp"
+#include "GraphicsBackend.hpp"
+#include "RenderApi.hpp"
 
-struct RenderFrameParams;
+#include "RenderFrameParams.hpp"
+
+struct SDL_Window;
+class DebugUi;
+struct UiFrameData;
+
+struct RenderDeviceCapabilities {
+    RenderApi api = RenderApi::OpenGL;
+    std::string_view apiName = "OpenGL";
+    GraphicsBackend backendTier = GraphicsBackend::Performance;
+    std::string_view backendName = "Unknown";
+    bool mdiUsable = false;
+    bool supportsGL43Shaders = false;
+    bool supportsBakedChunkLighting = false;
+    bool supportsGiRuntimeControls = false;
+    bool supportsFirstPersonViewmodel = false;
+    bool compositesUiInRenderFrame = false;
+    bool requiresOpenGlStateSetup = false;
+};
 
 class IRenderDevice {
   public:
     virtual ~IRenderDevice() = default;
 
-    virtual int getOpenGLVersionMajor() const noexcept = 0;
-    virtual int getOpenGLVersionMinor() const noexcept = 0;
-    virtual GraphicsBackend getActiveBackend() const noexcept = 0;
-    virtual std::string_view getActiveBackendName() const noexcept = 0;
-    virtual bool isMDIUsable() const noexcept = 0;
+    virtual RenderDeviceCapabilities getCapabilities() const noexcept = 0;
 
+    virtual bool initialize(SDL_Window *window) {
+        (void)window;
+        return true;
+    }
     virtual void renderFrame(RenderFrameParams &params) = 0;
+    virtual void onWindowResized(int width, int height) {
+        (void)width;
+        (void)height;
+    }
+    virtual bool initializeDebugUi(DebugUi &debugUi, SDL_Window *window, void *nativeContext) {
+        (void)debugUi;
+        (void)window;
+        (void)nativeContext;
+        return false;
+    }
+    virtual void appendBackendDebugUiFrameData(UiFrameData &frameData) const {
+        (void)frameData;
+    }
+    virtual void present(SDL_Window *window) {
+        (void)window;
+    }
     virtual void shutdown() = 0;
-
-    virtual std::string_view getApiName() const noexcept = 0;
 };

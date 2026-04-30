@@ -289,10 +289,9 @@ void DebugUi::drawMainWindow(const UiFrameData &data, UiMutableState &state) {
                         data.vkCpuUiPassMs);
             ImGui::Text("mesh-sync %.3f | frame-build %.3f", data.vkCpuMeshSyncMs,
                         data.vkCpuFrameBuildMs);
-            ImGui::Text("gi integrate %.3f | probes %u | rays %llu | gi luma %.3f",
-                        data.vkCpuGiIntegrateMs, data.vkGiProbesUpdated,
-                        static_cast<unsigned long long>(data.vkGiRaysCast),
-                        data.vkGiAverageIrradianceLuma);
+            ImGui::Text("gi occupancy update %.3f | trace rays %llu",
+                        data.vkCpuGiIntegrateMs,
+                        static_cast<unsigned long long>(data.vkGiRaysCast));
         }
         if (data.vkGpuTimingValid) {
             ImGui::Separator();
@@ -476,14 +475,21 @@ void DebugUi::drawMainWindow(const UiFrameData &data, UiMutableState &state) {
     }
 }
 
-void DebugUi::render() {
+ImDrawData *DebugUi::endFrame() {
     if (!m_initialized) {
-        return;
+        return nullptr;
     }
     ImGui::Render();
+    return ImGui::GetDrawData();
+}
+
+void DebugUi::renderDrawData(ImDrawData *drawData) {
+    if (!m_initialized || drawData == nullptr) {
+        return;
+    }
 #if VOXELOPS_IMGUI_OPENGL_BACKEND_AVAILABLE
     if (m_backendType == BackendType::OpenGL) {
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        ImGui_ImplOpenGL3_RenderDrawData(drawData);
     }
 #endif
 }

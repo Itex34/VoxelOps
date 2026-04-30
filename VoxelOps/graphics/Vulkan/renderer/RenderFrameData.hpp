@@ -3,13 +3,13 @@
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.h>
 
-#include <array>
 #include <cstdint>
 #include <vector>
 
 class VkMesh;
 class VkModel;
 class VkTexture;
+struct ImDrawData;
 
 struct RenderObject {
     const VkModel *model = nullptr;
@@ -33,15 +33,7 @@ struct RenderIndirectBatch {
     uint32_t commandCount = 0;
 };
 
-constexpr uint32_t GI_LIGHTING_MAX_CASCADES = 3;
-
 enum class GiTracingBackend : uint32_t { SoftwareDda = 0u, HardwareRt = 1u };
-
-struct GiCascadeLightingData {
-    glm::ivec4 originSpacingBlocks{0}; // xyz=origin blocks, w=spacing blocks
-    glm::uvec4 probeCounts{0u};        // xyz=counts, w=unused
-    VkBuffer probeBuffer = VK_NULL_HANDLE;
-};
 
 struct GiLightingData {
     bool enabled = false;
@@ -49,7 +41,6 @@ struct GiLightingData {
     bool resetHistory = false;
     bool hardwareRayTracingSupported = false;
     GiTracingBackend tracingBackend = GiTracingBackend::SoftwareDda;
-    uint32_t cascadeCount = 0;
     uint32_t pathTraceRaysPerPixel = 1;
     uint32_t pathTraceMaxBounces = 2;
     float baseDiffuse = 1.0f;
@@ -76,7 +67,6 @@ struct GiLightingData {
     VkBuffer shadowOccupancyBuffer = VK_NULL_HANDLE;
     VkBuffer traceMaterialBuffer = VK_NULL_HANDLE;
     VkAccelerationStructureKHR sceneTlas = VK_NULL_HANDLE;
-    std::array<GiCascadeLightingData, GI_LIGHTING_MAX_CASCADES> cascades{};
 };
 
 struct FrameRenderData {
@@ -88,6 +78,7 @@ struct FrameRenderData {
     // Region-level indirect commands.
     std::vector<IndexedIndirectCommand> indirectCommands;
     std::vector<RenderIndirectBatch> indirectBatches;
+    ImDrawData *uiDrawData = nullptr;
     GiLightingData giLighting{};
 
     void clear() {
@@ -95,6 +86,7 @@ struct FrameRenderData {
         modelMatrices.clear();
         indirectCommands.clear();
         indirectBatches.clear();
+        uiDrawData = nullptr;
         giLighting = GiLightingData{};
     }
 };

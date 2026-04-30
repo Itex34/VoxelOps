@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <string_view>
 
+struct ImDrawData;
+
 struct UiFrameData {
     float fps = 0.0f;
     float frameMs = 0.0f;
@@ -43,7 +45,7 @@ struct UiFrameData {
     float vkCpuMeshSyncMs = 0.0f;
     float vkCpuFrameBuildMs = 0.0f;
     float vkCpuGiIntegrateMs = 0.0f;
-    uint32_t vkGiProbesUpdated = 0;
+    uint32_t vkGiTraceGridsUpdated = 0;
     uint64_t vkGiRaysCast = 0;
     float vkGiAverageIrradianceLuma = 0.0f;
     bool vkGpuTimingValid = false;
@@ -105,7 +107,8 @@ class DebugUi {
     void beginFrame();
     void drawCrosshair(bool enabled);
     void drawMainWindow(const UiFrameData &data, UiMutableState &state);
-    void render();
+    ImDrawData *endFrame();
+    void renderDrawData(ImDrawData *drawData);
 
     void setVisible(bool visible) noexcept;
     void toggleVisible() noexcept;

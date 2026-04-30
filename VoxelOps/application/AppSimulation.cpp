@@ -1,10 +1,8 @@
-#include <glad/glad.h>
 #include <SDL3/SDL.h>
 
 #include "App.hpp"
 #include "AppHelpers.hpp"
-#include "../graphics/Renderer.hpp"
-#include "../graphics/VulkanRenderDevice.hpp"
+#include "FrameOrchestrator.hpp"
 
 #include "../../Shared/items/Items.hpp"
 #include "../../Shared/player/Inventory.hpp"
@@ -19,8 +17,6 @@
 #include <utility>
 #include <vector>
 
-#include <glm/gtc/quaternion.hpp>
-
 #include <imgui.h>
 
 using namespace AppHelpers;
@@ -34,17 +30,6 @@ bool IsScancodeDown(SDL_Scancode scancode) {
 
 bool IsMouseButtonDown(uint8_t button) {
     return (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_MASK(button)) != 0;
-}
-
-std::optional<GunType> GunTypeFromInventoryItemId(uint16_t itemId) {
-    switch (itemId) {
-    case static_cast<uint16_t>(ITEM_PISTOL):
-        return GunType::Pistol;
-    case static_cast<uint16_t>(ITEM_SNIPER):
-        return GunType::Sniper;
-    default:
-        return std::nullopt;
-    }
 }
 
 std::optional<BlockID> BlockTypeFromInventoryItemId(uint16_t itemId) {
@@ -132,15 +117,7 @@ void App::pollEvents(Runtime &runtime) {
             if (event.window.windowID == windowId && runtime.inputCallbacks) {
                 runtime.inputCallbacks->framebuffer_size_callback(m_Window, event.window.data1,
                                                                   event.window.data2);
-                if (m_RenderApi == RenderApi::Vulkan) {
-                    if (auto *vulkanDevice =
-                            dynamic_cast<VulkanRenderDevice *>(runtime.renderer.get())) {
-                        vulkanDevice->onWindowResized(event.window.data1, event.window.data2);
-                    }
-                }
-                if (runtime.sky) {
-                    runtime.sky->resize(event.window.data1, event.window.data2);
-                }
+                runtime.renderer->onWindowResized(event.window.data1, event.window.data2);
             }
             break;
         case SDL_EVENT_MOUSE_MOTION:
@@ -168,15 +145,15 @@ void App::updateDebugCamera(Runtime &runtime) {
         float mouseDx = 0.0f;
         float mouseDy = 0.0f;
         SDL_GetRelativeMouseState(&mouseDx, &mouseDy);
-        runtime.yaw += (mouseDx * 0.1f);
-        runtime.pitch -= (mouseDy * 0.1f);
-        runtime.pitch = glm::clamp(runtime.pitch, -89.0f, 89.0f);
+        runtime.inputLook.yaw += (mouseDx * 0.1f);
+        runtime.inputLook.pitch -= (mouseDy * 0.1f);
+        runtime.inputLook.pitch = glm::clamp(runtime.inputLook.pitch, -89.0f, 89.0f);
     } else {
         float mouseX = 0.0f;
         float mouseY = 0.0f;
         SDL_GetMouseState(&mouseX, &mouseY);
-        runtime.xpos = mouseX;
-        runtime.ypos = mouseY;
+        runtime.inputLook.xpos = mouseX;
+        runtime.inputLook.ypos = mouseY;
     }
 
     const bool keyboardBlockedByUi = IsImGuiTextInputActive();
@@ -204,17 +181,17 @@ void App::updateDebugCamera(Runtime &runtime) {
     runtime.debugCamera.position += moveDir * 10.0f * static_cast<float>(GameData::deltaTime);
 
     if (m_UseDebugCamera && (!m_Window || !SDL_GetWindowRelativeMouseMode(m_Window))) {
-        const double xoffset = runtime.xpos - runtime.lastX;
-        const double yoffset = runtime.ypos - runtime.lastY;
-        runtime.lastX = runtime.xpos;
-        runtime.lastY = runtime.ypos;
+        const double xoffset = runtime.inputLook.xpos - runtime.inputLook.lastX;
+        const double yoffset = runtime.inputLook.ypos - runtime.inputLook.lastY;
+        runtime.inputLook.lastX = runtime.inputLook.xpos;
+        runtime.inputLook.lastY = runtime.inputLook.ypos;
 
-        runtime.yaw += static_cast<float>(xoffset * 0.1);
-        runtime.pitch -= static_cast<float>(yoffset * 0.1);
-        runtime.pitch = glm::clamp(runtime.pitch, -89.0f, 89.0f);
+        runtime.inputLook.yaw += static_cast<float>(xoffset * 0.1);
+        runtime.inputLook.pitch -= static_cast<float>(yoffset * 0.1);
+        runtime.inputLook.pitch = glm::clamp(runtime.inputLook.pitch, -89.0f, 89.0f);
     }
 
-    runtime.debugCamera.updateRotation(runtime.yaw, runtime.pitch);
+    runtime.debugCamera.updateRotation(runtime.inputLook.yaw, runtime.inputLook.pitch);
 }
 
 void App::updateToggleStates(Runtime &runtime) {
@@ -287,54 +264,13 @@ void App::updateToggleStates(Runtime &runtime) {
     }
 }
 
-void App::processHotbarSelection(Runtime &runtime) {
-    const bool keyboardBlockedByUi = IsImGuiTextInputActive();
-    for (uint16_t i = 0; i < static_cast<uint16_t>(kHotbarSlots); ++i) {
-        const SDL_Scancode scancode =
-            static_cast<SDL_Scancode>(SDL_SCANCODE_1 + static_cast<int>(i));
-        const bool pressed = IsScancodeDown(scancode);
-        if (!keyboardBlockedByUi && pressed && !m_WasHotbarSelectPressed[i]) {
-            runtime.activeHotbarSlot = i;
-        }
-        m_WasHotbarSelectPressed[i] = pressed;
-    }
-}
-
-void App::syncEquippedGunFromInventory(Runtime &runtime) {
-    if (m_RenderApi == RenderApi::Vulkan) {
-        runtime.equippedGun = nullptr;
-        return;
-    }
-
-    if (!runtime.inventoryUi || !runtime.inventoryUi->hasSnapshot()) {
-        return;
-    }
-
-    if (runtime.activeHotbarSlot >= static_cast<uint16_t>(kHotbarSlots)) {
-        runtime.activeHotbarSlot = 0;
-    }
-
-    const Slot &activeSlot = runtime.inventoryUi->slots()[runtime.activeHotbarSlot];
-    if (Inventory::IsEmpty(activeSlot) || !Inventory::IsValidItemId(activeSlot.itemId)) {
-        runtime.equippedGun = nullptr;
-        return;
-    }
-
-    const std::optional<GunType> selectedGunType = GunTypeFromInventoryItemId(activeSlot.itemId);
-    if (!selectedGunType.has_value()) {
-        runtime.equippedGun = nullptr;
-        return;
-    }
-
-    (void)equipGun(runtime, *selectedGunType);
-}
 
 void App::processWorldInteraction(Runtime &runtime) {
     const bool rightPressed = IsMouseButtonDown(SDL_BUTTON_RIGHT);
     const bool rightClicked = rightPressed && !m_WasWorldInteractPressed;
     m_WasWorldInteractPressed = rightPressed;
 
-    if (!runtime.localPlayerAlive || GameData::cursorEnabled || IsImGuiTextInputActive()) {
+    if (!runtime.combat.localPlayerAlive || GameData::cursorEnabled || IsImGuiTextInputActive()) {
         return;
     }
 
@@ -347,8 +283,8 @@ void App::processWorldInteraction(Runtime &runtime) {
     ItemType activeItemType = ItemType::Other;
     std::optional<BlockID> activeBlockType = std::nullopt;
     if (runtime.inventoryUi && runtime.inventoryUi->hasSnapshot() &&
-        runtime.activeHotbarSlot < static_cast<uint16_t>(kHotbarSlots)) {
-        activeSlot = runtime.inventoryUi->slots()[runtime.activeHotbarSlot];
+        runtime.combat.activeHotbarSlot < static_cast<uint16_t>(kHotbarSlots)) {
+        activeSlot = runtime.inventoryUi->slots()[runtime.combat.activeHotbarSlot];
         hasActiveItem =
             !Inventory::IsEmpty(activeSlot) && Inventory::IsValidItemId(activeSlot.itemId);
         if (hasActiveItem) {
@@ -433,7 +369,7 @@ void App::processWorldInteraction(Runtime &runtime) {
 }
 
 void App::processShooting(Runtime &runtime) {
-    if (!runtime.localPlayerAlive) {
+    if (!runtime.combat.localPlayerAlive) {
         return;
     }
 
@@ -443,7 +379,7 @@ void App::processShooting(Runtime &runtime) {
     if (!runtime.clientNet.IsConnected()) {
         return;
     }
-    if (!runtime.equippedGun) {
+    if (!runtime.combat.equippedGun) {
         return;
     }
 
@@ -453,7 +389,7 @@ void App::processShooting(Runtime &runtime) {
     }
 
     const double now = GetTimeSeconds();
-    if ((now - runtime.lastShootSendTime) < runtime.shootSendInterval) {
+    if ((now - runtime.combat.lastShootSendTime) < runtime.combat.shootSendInterval) {
         return;
     }
 
@@ -465,444 +401,13 @@ void App::processShooting(Runtime &runtime) {
 
     const glm::vec3 shootDir = glm::normalize(cam.front);
     const glm::vec3 shootPos = cam.position;
-    const uint32_t shotId = runtime.nextClientShotId++;
+    const uint32_t shotId = runtime.combat.nextClientShotId++;
     const uint32_t clientTick = runtime.hasAppliedServerTick ? runtime.lastAppliedServerTick : 0u;
     const uint32_t seed = shotId ^ (clientTick * 2654435761u);
 
-    if (runtime.clientNet.SendShootRequest(shotId, clientTick, runtime.equippedGun->getWeaponId(),
+    if (runtime.clientNet.SendShootRequest(shotId, clientTick, runtime.combat.equippedGun->getWeaponId(),
                                            shootPos, shootDir, seed, 0)) {
-        runtime.lastShootSendTime = now;
-    }
-}
-
-void App::processMovementNetworking(Runtime &runtime) {
-    runtime.clientNet.Poll();
-    if (runtime.inventoryUi) {
-        runtime.inventoryUi->consumeNetwork(runtime.clientNet);
-    }
-    processHotbarSelection(runtime);
-    syncEquippedGunFromInventory(runtime);
-
-    const std::string &statusNow = runtime.clientNet.GetConnectionStatusText();
-    if (statusNow != runtime.lastConnectionStatus) {
-        std::cout << "[net] status: " << statusNow << "\n";
-        runtime.lastConnectionStatus = statusNow;
-        if (runtime.clientNet.IsConnected()) {
-            runtime.usernamePromptError.clear();
-        } else if (statusNow.find("username already taken") != std::string::npos) {
-            runtime.usernamePromptError =
-                "Username already taken. Enter a different username and retry.";
-        }
-    }
-
-    const double now = GetTimeSeconds();
-    runtime.justRespawned = false;
-    runtime.player->setTreatMissingCollisionAsSolid(now >= runtime.respawnMissingChunkGraceUntil);
-    if (runtime.rbDiagActive && now >= runtime.rbDiagUntil) {
-        runtime.rbDiagActive = false;
-        std::cout << "[rbdiag/client] end window\n";
-    }
-    const ClientNetwork::ConnectionState connState = runtime.clientNet.GetConnectionState();
-    if (connState == ClientNetwork::ConnectionState::Disconnected) {
-        if (runtime.clientNet.ShouldAutoReconnect() && now >= runtime.nextReconnectAttemptTime) {
-            const bool started = beginConnectionAttempt(runtime);
-            const double backoff = runtime.reconnectBackoffSeconds;
-            runtime.nextReconnectAttemptTime = now + (started ? backoff : 2.0);
-            runtime.reconnectBackoffSeconds = std::min(runtime.reconnectBackoffSeconds * 1.5, 8.0);
-        }
-    } else {
-        runtime.reconnectBackoffSeconds = 1.0;
-    }
-
-    ShootResult shootResult{};
-    while (runtime.clientNet.PopShootResult(shootResult)) {
-        if (!shootResult.accepted) {
-            std::cout << "[shoot] rejected shot id=" << shootResult.clientShotId << "\n";
-            continue;
-        }
-        if (shootResult.didHit) {
-            std::cout << "[shoot] hit id=" << shootResult.hitEntityId
-                      << " dmg=" << shootResult.damageApplied << " at=(" << shootResult.hitX << ","
-                      << shootResult.hitY << "," << shootResult.hitZ << ")\n";
-        } else {
-            std::cout << "[shoot] miss"
-                      << " at=(" << shootResult.hitX << "," << shootResult.hitY << ","
-                      << shootResult.hitZ << ")\n";
-        }
-    }
-
-    ClientNetwork::KillFeedEvent killEvent{};
-    while (runtime.clientNet.PopKillFeedEvent(killEvent)) {
-        const std::string localName = runtime.clientNet.GetAssignedUsername();
-        if (!localName.empty() && killEvent.victim == localName) {
-            runtime.localDeathKiller = killEvent.killer;
-        }
-
-        Runtime::KillFeedEntry entry;
-        entry.killer = std::move(killEvent.killer);
-        entry.victim = std::move(killEvent.victim);
-        entry.weaponId = killEvent.weaponId;
-        entry.expiresAt = now + Runtime::KillFeedDurationSec;
-        runtime.killFeedEntries.push_front(std::move(entry));
-        while (runtime.killFeedEntries.size() > Runtime::MaxKillFeedEntries) {
-            runtime.killFeedEntries.pop_back();
-        }
-    }
-
-    ClientNetwork::ScoreboardSnapshot scoreboardSnapshot{};
-    while (runtime.clientNet.PopScoreboardSnapshot(scoreboardSnapshot)) {
-        runtime.matchRemainingSeconds = std::max(0, scoreboardSnapshot.remainingSeconds);
-        runtime.matchStarted = scoreboardSnapshot.matchStarted;
-        runtime.matchEnded = scoreboardSnapshot.matchEnded;
-        runtime.matchWinner = std::move(scoreboardSnapshot.winner);
-        runtime.scoreboardEntries = std::move(scoreboardSnapshot.entries);
-    }
-
-    WorldItemSnapshot worldItemSnapshot{};
-    while (runtime.clientNet.PopWorldItemSnapshot(worldItemSnapshot)) {
-        if (runtime.lastWorldItemSnapshotTick != 0 &&
-            !IsNewerU32(worldItemSnapshot.serverTick, runtime.lastWorldItemSnapshotTick)) {
-            continue;
-        }
-        runtime.lastWorldItemSnapshotTick = worldItemSnapshot.serverTick;
-
-        std::unordered_set<uint64_t> seenIds;
-        seenIds.reserve(worldItemSnapshot.items.size());
-        for (const WorldItemState &itemState : worldItemSnapshot.items) {
-            seenIds.insert(itemState.id);
-            Runtime::WorldItemVisual &item = runtime.worldItems[itemState.id];
-            const glm::vec3 snapshotPos(itemState.px, itemState.py, itemState.pz);
-            if (item.id == 0) {
-                item.position = snapshotPos;
-                item.targetPosition = snapshotPos;
-            }
-            item.id = itemState.id;
-            item.itemId = itemState.itemId;
-            item.quantity = itemState.quantity;
-            item.targetPosition = snapshotPos;
-            item.velocity = glm::vec3(itemState.vx, itemState.vy, itemState.vz);
-        }
-
-        for (auto it = runtime.worldItems.begin(); it != runtime.worldItems.end();) {
-            if (seenIds.find(it->first) == seenIds.end()) {
-                it = runtime.worldItems.erase(it);
-            } else {
-                ++it;
-            }
-        }
-    }
-
-    bool hasNewestSelfSnapshot = false;
-    uint64_t newestSelfPlayerId = 0;
-    uint32_t newestServerTick = 0;
-    uint32_t newestAckedInputTick = 0;
-    glm::vec3 newestServerPos(0.0f);
-    glm::vec3 newestServerVel(0.0f);
-    bool newestServerOnGround = false;
-    bool newestServerFlyMode = false;
-    bool newestServerAllowFlyMode = false;
-    bool newestServerAlive = true;
-    float newestServerHealth = 100.0f;
-    float newestRespawnSeconds = 0.0f;
-    bool newestServerJumpPressedLastTick = false;
-    float newestServerTimeSinceGrounded = 0.0f;
-    float newestServerJumpBufferTimer = 0.0f;
-
-    std::vector<PlayerSnapshotFrame> queuedSnapshotFrames;
-    queuedSnapshotFrames.reserve(8);
-    PlayerSnapshotFrame snapshotFrame;
-    while (runtime.clientNet.PopPlayerSnapshot(snapshotFrame)) {
-        queuedSnapshotFrames.push_back(snapshotFrame);
-    }
-
-    for (const PlayerSnapshotFrame &frame : queuedSnapshotFrames) {
-        if (runtime.hasReceivedSelfSnapshotTick &&
-            !IsNewerU32(frame.serverTick, runtime.lastReceivedSelfSnapshotTick)) {
-            continue;
-        }
-
-        runtime.snapshotInterpolator.PushFrame(frame);
-
-        const PlayerSnapshot *localSnapshot = nullptr;
-        for (const PlayerSnapshot &snapshot : frame.players) {
-            if (snapshot.id == frame.selfPlayerId) {
-                localSnapshot = &snapshot;
-                break;
-            }
-        }
-        if (localSnapshot == nullptr) {
-            continue;
-        }
-
-        runtime.hasReceivedSelfSnapshotTick = true;
-        runtime.lastReceivedSelfSnapshotTick = frame.serverTick;
-        runtime.localPlayerId = frame.selfPlayerId;
-        runtime.hasLocalPlayerId = true;
-
-        hasNewestSelfSnapshot = true;
-        newestSelfPlayerId = frame.selfPlayerId;
-        newestServerTick = frame.serverTick;
-        newestAckedInputTick = frame.lastProcessedInputTick;
-        newestServerPos = glm::vec3(localSnapshot->px, localSnapshot->py, localSnapshot->pz);
-        newestServerVel = glm::vec3(localSnapshot->vx, localSnapshot->vy, localSnapshot->vz);
-        newestServerOnGround = (localSnapshot->onGround != 0);
-        newestServerFlyMode = (localSnapshot->flyMode != 0);
-        newestServerAllowFlyMode = (localSnapshot->allowFlyMode != 0);
-        newestServerAlive = (localSnapshot->isAlive != 0);
-        newestServerHealth = std::max(0.0f, localSnapshot->health);
-        newestRespawnSeconds = std::max(0.0f, localSnapshot->respawnSeconds);
-        newestServerJumpPressedLastTick = (localSnapshot->jumpPressedLastTick != 0);
-        newestServerTimeSinceGrounded = localSnapshot->timeSinceGrounded;
-        newestServerJumpBufferTimer = localSnapshot->jumpBufferTimer;
-    }
-
-    double renderTime = 0.0;
-    if (runtime.snapshotInterpolator.GetRenderTime(renderTime)) {
-        std::vector<SnapshotInterpolator::InterpolatedPlayer> interpolated;
-        runtime.snapshotInterpolator.BuildRemotePlayers(renderTime, interpolated);
-
-        std::unordered_map<PlayerID, PlayerState> newestRemotePlayers;
-        newestRemotePlayers.reserve(interpolated.size());
-        for (const SnapshotInterpolator::InterpolatedPlayer &snapshot : interpolated) {
-            if (runtime.hasLocalPlayerId && snapshot.id == runtime.localPlayerId) {
-                continue;
-            }
-            if (hasNewestSelfSnapshot && snapshot.id == newestSelfPlayerId) {
-                continue;
-            }
-            PlayerState remoteState;
-            remoteState.position = snapshot.position;
-            remoteState.rotation =
-                glm::angleAxis(glm::radians(ToModelYawDegrees(
-                                   NormalizeYawDegrees(snapshot.yawDegrees),
-                                   kDefaultPlayerModelYawInvert, kDefaultPlayerModelYawOffsetDeg)),
-                               glm::vec3(0.0f, 1.0f, 0.0f));
-            remoteState.scale = glm::vec3(1.0f);
-            remoteState.weaponId = snapshot.weaponId;
-            newestRemotePlayers[snapshot.id] = remoteState;
-        }
-        runtime.player->setConnectedPlayers(newestRemotePlayers);
-    }
-
-    if (hasNewestSelfSnapshot) {
-        ClientReconciler::ServerSnapshot snapshot{};
-        snapshot.serverTick = newestServerTick;
-        snapshot.ackedInputTick = newestAckedInputTick;
-        snapshot.position = newestServerPos;
-        snapshot.velocity = newestServerVel;
-        snapshot.onGround = newestServerOnGround;
-        snapshot.flyMode = newestServerFlyMode;
-        snapshot.allowFlyMode = newestServerAllowFlyMode;
-        snapshot.alive = newestServerAlive;
-        snapshot.respawnSeconds = newestRespawnSeconds;
-        snapshot.jumpPressedLastTick = newestServerJumpPressedLastTick;
-        snapshot.timeSinceGrounded = newestServerTimeSinceGrounded;
-        snapshot.jumpBufferTimer = newestServerJumpBufferTimer;
-        runtime.reconciler.Apply(runtime, snapshot);
-        runtime.localHealth = newestServerHealth;
-        if (runtime.justRespawned) {
-            runtime.respawnMissingChunkGraceUntil = now + Runtime::RespawnMissingChunkGraceSeconds;
-            runtime.player->setTreatMissingCollisionAsSolid(false);
-            // Respawn teleports can shift chunk center instantly.
-            runtime.hasLastChunkRequestCenter = false;
-            runtime.lastChunkRequestSendTime = 0.0;
-            runtime.rbDiagActive = true;
-            runtime.rbDiagUntil = now + Runtime::RespawnDiagDurationSeconds;
-            runtime.rbDiagNextHeartbeatAt = now;
-            std::cout << "[rbdiag/client] respawn start"
-                      << " serverTick=" << runtime.lastAppliedServerTick
-                      << " ackedInputTick=" << runtime.lastAckedInputTick << " pos=("
-                      << newestServerPos.x << "," << newestServerPos.y << "," << newestServerPos.z
-                      << ")"
-                      << " vel=(" << newestServerVel.x << "," << newestServerVel.y << ","
-                      << newestServerVel.z << ")"
-                      << "\n";
-        }
-        if (runtime.renderStateNeedsResync) {
-            const Player::SimulationState state = runtime.player->captureSimulationState();
-            runtime.renderPrevSimState = state;
-            runtime.renderCurrSimState = state;
-            runtime.localSimAccumulator = 0.0;
-            runtime.renderStateNeedsResync = false;
-        }
-    }
-
-    if (!runtime.clientNet.IsConnected()) {
-        runtime.pendingInputs.clear();
-        runtime.pendingBlockPlaceRequests.clear();
-        runtime.nextBlockPlaceRequestId = 1;
-        runtime.pendingBlockBreakRequests.clear();
-        runtime.nextBlockBreakRequestId = 1;
-        runtime.killFeedEntries.clear();
-        runtime.matchRemainingSeconds = 600;
-        runtime.matchStarted = false;
-        runtime.matchEnded = false;
-        runtime.matchWinner.clear();
-        runtime.scoreboardEntries.clear();
-        runtime.localPlayerAlive = true;
-        runtime.localHealth = 100.0f;
-        runtime.localRespawnSeconds = 0.0f;
-        runtime.localDeathKiller.clear();
-        runtime.wasRespawnClickDown = false;
-        runtime.player->setFlyModeAllowed(false);
-        runtime.player->clearConnectedPlayers();
-        runtime.worldItems.clear();
-        runtime.lastWorldItemSnapshotTick = 0;
-        runtime.activeHotbarSlot = 0;
-        runtime.snapshotInterpolator.Clear();
-        runtime.hasLocalPlayerId = false;
-        runtime.localPlayerId = 0;
-        runtime.hasAppliedServerTick = false;
-        runtime.hasReceivedSelfSnapshotTick = false;
-        runtime.inputTickCounter = 1;
-        runtime.lastAckedInputTick = 0;
-        runtime.lastInputSendTime = GetTimeSeconds();
-        runtime.lastChunkRequestSendTime = 0.0;
-        runtime.hasLastChunkRequestCenter = false;
-        runtime.renderStateNeedsResync = false;
-        runtime.justRespawned = false;
-        runtime.respawnMissingChunkGraceUntil = 0.0;
-        runtime.player->setTreatMissingCollisionAsSolid(true);
-        runtime.rbDiagActive = false;
-        runtime.rbDiagUntil = 0.0;
-        runtime.rbDiagNextHeartbeatAt = 0.0;
-        runtime.hasRenderSimState = false;
-        runtime.hasSmoothedPlayerCameraPos = false;
-        m_ForceCursorEnabled = false;
-        if (runtime.inventoryUi) {
-            runtime.inventoryUi->reset();
-        }
-        return;
-    }
-
-    if (runtime.rbDiagActive && now >= runtime.rbDiagNextHeartbeatAt) {
-        runtime.rbDiagNextHeartbeatAt = now + 1.0;
-        const Player::SimulationState simState = runtime.player->captureSimulationState();
-        const ClientNetwork::ChunkQueueDepths queueDepths = runtime.clientNet.GetChunkQueueDepths();
-        const int32_t unackedTicks =
-            static_cast<int32_t>(runtime.inputTickCounter - runtime.lastAckedInputTick);
-        std::cout << "[rbdiag/client] heartbeat"
-                  << " serverTick=" << runtime.lastAppliedServerTick
-                  << " ackedInputTick=" << runtime.lastAckedInputTick
-                  << " inputTickCounter=" << runtime.inputTickCounter
-                  << " unackedTicks=" << unackedTicks
-                  << " pendingInputs=" << runtime.pendingInputs.size()
-                  << " alive=" << (runtime.localPlayerAlive ? 1 : 0)
-                  << " respawnSeconds=" << runtime.localRespawnSeconds
-                  << " health=" << runtime.localHealth << " pos=(" << simState.position.x << ","
-                  << simState.position.y << "," << simState.position.z << ")"
-                  << " vel=(" << simState.velocity.x << "," << simState.velocity.y << ","
-                  << simState.velocity.z << ")"
-                  << " onGround=" << (simState.onGround ? 1 : 0) << " missingChunkSolid="
-                  << (runtime.player->isTreatMissingCollisionAsSolid() ? 1 : 0)
-                  << " queue(data/delta/unload)=(" << queueDepths.chunkData << "/"
-                  << queueDepths.chunkDelta << "/" << queueDepths.chunkUnload << ")"
-                  << "\n";
-    }
-
-    const bool respawnClickDown = IsMouseButtonDown(SDL_BUTTON_LEFT);
-    if (!runtime.localPlayerAlive && runtime.localRespawnSeconds <= 0.0f) {
-        if (respawnClickDown && !runtime.wasRespawnClickDown) {
-            (void)runtime.clientNet.SendRespawnRequest();
-        }
-    }
-    if (!runtime.localPlayerAlive && !runtime.pendingInputs.empty()) {
-        runtime.pendingInputs.clear();
-    }
-    runtime.wasRespawnClickDown = respawnClickDown;
-
-    // Send inputs at 60Hz with FRESH input data for each tick (not sampled once per frame)
-    // This prevents "stair-step" movement when frame rate < 60Hz
-    constexpr size_t kMaxInputSendsPerFrame = 4;
-    size_t inputSendsThisFrame = 0;
-
-    while (now - runtime.lastInputSendTime >= Runtime::InputSendInterval &&
-           inputSendsThisFrame < kMaxInputSendsPerFrame) {
-        runtime.lastInputSendTime += Runtime::InputSendInterval;
-
-        // Capture fresh input directly from keyboard (avoids 1-frame delay from m_networkInput)
-        NetworkInputState input = runtime.player->captureCurrentInput(m_Window);
-        if (!runtime.localPlayerAlive) {
-            input.moveX = 0.0f;
-            input.moveZ = 0.0f;
-            input.flags = 0;
-            input.flyMode = false;
-        }
-
-        PlayerInput packet;
-        packet.inputTick = runtime.inputTickCounter++;
-        packet.inputFlags = input.flags;
-        packet.flyMode = input.flyMode ? 1 : 0;
-        packet.weaponId =
-            runtime.equippedGun ? runtime.equippedGun->getWeaponId() : kInventoryEmptyItemId;
-        packet.yaw = input.yaw;
-        packet.pitch = input.pitch;
-        packet.moveX = input.moveX;
-        packet.moveZ = input.moveZ;
-        if (!runtime.clientNet.SendPlayerInput(packet)) {
-            break;
-        }
-
-        if (runtime.localPlayerAlive) {
-            Runtime::PendingInputEntry entry;
-            entry.packet = packet;
-            entry.deltaSeconds = Runtime::InputSendInterval;
-            runtime.pendingInputs.push_back(entry);
-            while (runtime.pendingInputs.size() > Runtime::MaxPendingInputs) {
-                runtime.pendingInputs.pop_front();
-            }
-
-            size_t resentCopies = 0;
-            for (auto pendingIt = runtime.pendingInputs.rbegin();
-                 pendingIt != runtime.pendingInputs.rend() &&
-                 resentCopies < Runtime::InputRedundancyCopies;
-                 ++pendingIt) {
-                const PlayerInput &resendPacket = pendingIt->packet;
-                if (resendPacket.inputTick == packet.inputTick) {
-                    continue;
-                }
-                if (IsAckedU32(resendPacket.inputTick, runtime.lastAckedInputTick)) {
-                    continue;
-                }
-                if (!runtime.clientNet.SendPlayerInput(resendPacket)) {
-                    break;
-                }
-                ++resentCopies;
-            }
-        }
-
-        ++inputSendsThisFrame;
-    }
-    if (now - runtime.lastInputSendTime >= Runtime::InputSendInterval) {
-        // Avoid unbounded backlog after long hitches.
-        runtime.lastInputSendTime = now;
-    }
-
-    const glm::vec3 requestPos = runtime.player->getPosition();
-    const glm::ivec3 worldPos(static_cast<int>(std::floor(requestPos.x)),
-                              static_cast<int>(std::floor(requestPos.y)),
-                              static_cast<int>(std::floor(requestPos.z)));
-    const glm::ivec3 centerChunk = runtime.chunkManager->worldToChunkPos(worldPos);
-    const uint16_t viewDistance =
-        static_cast<uint16_t>(std::max<int>(2, runtime.player->renderDistance));
-    const bool centerChanged = !runtime.hasLastChunkRequestCenter ||
-                               centerChunk.x != runtime.lastChunkRequestCenter.x ||
-                               centerChunk.y != runtime.lastChunkRequestCenter.y ||
-                               centerChunk.z != runtime.lastChunkRequestCenter.z;
-    const bool allowBurstRequest =
-        !runtime.hasLastChunkRequestCenter ||
-        (now - runtime.lastChunkRequestSendTime >= Runtime::ChunkRequestCenterChangeMinInterval);
-
-    if (centerChanged && allowBurstRequest) {
-        runtime.lastChunkRequestSendTime = now;
-        runtime.lastChunkRequestCenter = centerChunk;
-        runtime.hasLastChunkRequestCenter = true;
-        (void)runtime.clientNet.SendChunkRequest(centerChunk, viewDistance);
-    } else if (now - runtime.lastChunkRequestSendTime >= Runtime::ChunkRequestSendInterval) {
-        runtime.lastChunkRequestSendTime = now;
-        runtime.lastChunkRequestCenter = centerChunk;
-        runtime.hasLastChunkRequestCenter = true;
-        (void)runtime.clientNet.SendChunkRequest(centerChunk, viewDistance);
+        runtime.combat.lastShootSendTime = now;
     }
 }
 
@@ -1141,373 +646,7 @@ void App::processChunkStreaming(Runtime &runtime, bool prioritizeMovement) {
 }
 
 void App::processFrame(Runtime &runtime) {
-    const auto perfFrameStart = std::chrono::steady_clock::now();
-    const auto toMs = [](const auto &start, const auto &end) -> float {
-        return static_cast<float>(
-                   std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()) *
-               0.001f;
-    };
-
-    const double frameNow = GetTimeSeconds();
-    double frameDeltaSeconds = frameNow - GameData::lastFrame;
-    if (!std::isfinite(frameDeltaSeconds) || frameDeltaSeconds < 0.0) {
-        frameDeltaSeconds = 0.0;
-    }
-    // Clamp hitches so interpolation and prediction do not overreact to one bad frame.
-    if (frameDeltaSeconds > 0.1) {
-        frameDeltaSeconds = 0.1;
-    }
-
-    {
-        static double s_lastFrameTimeLog = 0.0;
-        constexpr double kFrameTimeLogThresholdMs = 12.5;
-        constexpr double kFrameTimeLogCooldownSec = 0.5;
-        const double frameMs = frameDeltaSeconds * 1000.0;
-        if (frameMs >= kFrameTimeLogThresholdMs &&
-            (frameNow - s_lastFrameTimeLog) >= kFrameTimeLogCooldownSec) {
-            const ClientNetwork::ChunkQueueDepths queueDepths =
-                runtime.clientNet.GetChunkQueueDepths();
-            const double fps = frameMs > 0.0 ? (1000.0 / frameMs) : 0.0;
-            std::cerr << "[frame] slow frameMs=" << frameMs << " fps=" << fps
-                      << " queue(data/delta/unload)=(" << queueDepths.chunkData << "/"
-                      << queueDepths.chunkDelta << "/" << queueDepths.chunkUnload << ")\n";
-            s_lastFrameTimeLog = frameNow;
-        }
-    }
-    GameData::deltaTime = frameDeltaSeconds;
-    GameData::lastFrame = frameNow;
-
-    const auto perfInputStart = std::chrono::steady_clock::now();
-    if (runtime.debugUi) {
-        runtime.debugUi->beginFrame();
-    }
-    updateDebugCamera(runtime);
-    updateToggleStates(runtime);
-
-    if (!runtime.clientNet.IsConnected()) {
-        GameData::cursorEnabled = true;
-    }
-    GameData::gameplayInputEnabled =
-        runtime.clientNet.IsConnected() && !m_ShowDebugUi && !m_ForceCursorEnabled;
-
-    runtime.inputCallbacks->processInput(m_Window);
-    applyMouseInputModes();
-    runtime.localSimAccumulator += GameData::deltaTime;
-    const auto perfInputEnd = std::chrono::steady_clock::now();
-    runtime.perfInputMs = toMs(perfInputStart, perfInputEnd);
-
-    const double maxAccumulatedTime = Runtime::LocalPredictionStep *
-                                      static_cast<double>(Runtime::MaxLocalPredictionStepsPerFrame);
-    if (runtime.localSimAccumulator > maxAccumulatedTime) {
-        runtime.localSimAccumulator = maxAccumulatedTime;
-    }
-
-    const auto perfNetworkStart = std::chrono::steady_clock::now();
-    processMovementNetworking(runtime);
-    const auto perfNetworkEnd = std::chrono::steady_clock::now();
-    runtime.perfNetworkMs = toMs(perfNetworkStart, perfNetworkEnd);
-
-    const auto perfPredictionStart = std::chrono::steady_clock::now();
-    if (!runtime.hasRenderSimState) {
-        const Player::SimulationState initialSimState = runtime.player->captureSimulationState();
-        runtime.renderPrevSimState = initialSimState;
-        runtime.renderCurrSimState = initialSimState;
-        runtime.hasRenderSimState = true;
-    }
-
-    size_t localPredictionSteps = 0;
-    if (runtime.localPlayerAlive) {
-        while (runtime.localSimAccumulator >= Runtime::LocalPredictionStep &&
-               localPredictionSteps < Runtime::MaxLocalPredictionStepsPerFrame) {
-            runtime.player->update(m_Window, Runtime::LocalPredictionStep);
-            runtime.localSimAccumulator -= Runtime::LocalPredictionStep;
-            runtime.renderPrevSimState = runtime.renderCurrSimState;
-            runtime.renderCurrSimState = runtime.player->captureSimulationState();
-            ++localPredictionSteps;
-        }
-        if (localPredictionSteps == 0) {
-            // Keep input sampling responsive even on very high FPS frames.
-            runtime.player->update(m_Window, 0.0);
-        }
-        if (localPredictionSteps == Runtime::MaxLocalPredictionStepsPerFrame &&
-            runtime.localSimAccumulator >= Runtime::LocalPredictionStep) {
-            runtime.localSimAccumulator =
-                std::fmod(runtime.localSimAccumulator, Runtime::LocalPredictionStep);
-        }
-    } else {
-        runtime.localSimAccumulator = 0.0;
-        runtime.renderStateNeedsResync = false;
-        const Player::SimulationState frozenState = runtime.player->captureSimulationState();
-        runtime.renderPrevSimState = frozenState;
-        runtime.renderCurrSimState = frozenState;
-    }
-    const auto perfPredictionEnd = std::chrono::steady_clock::now();
-    runtime.perfPredictionMs = toMs(perfPredictionStart, perfPredictionEnd);
-
-    const auto perfGameplayStart = std::chrono::steady_clock::now();
-    processWorldInteraction(runtime);
-    runtime.player->updateRemotePlayers(static_cast<float>(GameData::deltaTime));
-    processShooting(runtime);
-    const auto perfGameplayEnd = std::chrono::steady_clock::now();
-    runtime.perfGameplayMs = toMs(perfGameplayStart, perfGameplayEnd);
-
-    const auto perfRenderStart = std::chrono::steady_clock::now();
-    const Player::SimulationState simStateAfterPrediction =
-        runtime.player->captureSimulationState();
-    const glm::vec3 renderStateError =
-        simStateAfterPrediction.position - runtime.renderCurrSimState.position;
-    const float renderStateErrorSq = glm::dot(renderStateError, renderStateError);
-    const float renderLatencyBlend = LatencyCorrectionBlend(runtime.clientNet);
-    const float renderSnapDist =
-        Runtime::BasicAuthReconcileTeleportDistance + 5.5f + (4.0f * renderLatencyBlend);
-    const float renderStateSnapDistSq = renderSnapDist * renderSnapDist;
-    if (renderStateErrorSq > renderStateSnapDistSq) {
-        runtime.renderPrevSimState = simStateAfterPrediction;
-        runtime.renderCurrSimState = simStateAfterPrediction;
-        runtime.hasSmoothedPlayerCameraPos = false;
-    }
-
-    const Camera &latestCamera = runtime.player->getCamera();
-    runtime.interpolatedPlayerCamera = latestCamera;
-
-    const float simAlpha = std::clamp(
-        static_cast<float>(runtime.localSimAccumulator / Runtime::LocalPredictionStep), 0.0f, 1.0f);
-    const glm::vec3 interpolatedBodyPos = glm::mix(runtime.renderPrevSimState.position,
-                                                   runtime.renderCurrSimState.position, simAlpha);
-    const glm::vec3 extrapolatedBodyPos =
-        runtime.renderCurrSimState.position +
-        runtime.renderCurrSimState.velocity * static_cast<float>(runtime.localSimAccumulator);
-    // Keep the local camera on the same timeline as local prediction.
-    // Extra render extrapolation tends to overshoot during rapid strafe-turns
-    // and shows up as visible camera jitter.
-    float renderExtrapolationBlend = 0.0f;
-    glm::vec3 targetBodyPos =
-        glm::mix(interpolatedBodyPos, extrapolatedBodyPos, renderExtrapolationBlend);
-    const glm::vec3 renderLead = targetBodyPos - runtime.renderCurrSimState.position;
-    const float renderLeadLenSq = glm::dot(renderLead, renderLead);
-    const float renderLeadMaxSq = Runtime::RenderLeadMaxDistance * Runtime::RenderLeadMaxDistance;
-    if (renderLeadLenSq > renderLeadMaxSq && renderLeadLenSq > 1e-8f) {
-        const float renderLeadLen = std::sqrt(renderLeadLenSq);
-        targetBodyPos = runtime.renderCurrSimState.position +
-                        renderLead * (Runtime::RenderLeadMaxDistance / renderLeadLen);
-    }
-    const float interpolatedStepOffset =
-        glm::mix(runtime.renderPrevSimState.stepUpVisualOffset,
-                 runtime.renderCurrSimState.stepUpVisualOffset, simAlpha);
-    const float eyeHeight = Shared::PlayerData::GetMovementSettings().eyeHeight;
-    const glm::vec3 targetCameraPos =
-        targetBodyPos + glm::vec3(0.0f, eyeHeight - interpolatedStepOffset, 0.0f);
-    runtime.smoothedPlayerCameraPos = targetCameraPos;
-    runtime.hasSmoothedPlayerCameraPos = true;
-    runtime.interpolatedPlayerCamera.position = targetCameraPos;
-
-    const float worldItemBlend =
-        std::clamp(1.0f - std::exp(-14.0f * static_cast<float>(GameData::deltaTime)), 0.0f, 1.0f);
-    for (auto &[_, item] : runtime.worldItems) {
-        item.position = glm::mix(item.position, item.targetPosition, worldItemBlend);
-    }
-
-    const Camera &activeCamera =
-        m_UseDebugCamera ? runtime.debugCamera : runtime.interpolatedPlayerCamera;
-    const Camera &cullingCamera = runtime.interpolatedPlayerCamera;
-    VulkanRenderDevice *vulkanDevice = nullptr;
-    if (m_RenderApi == RenderApi::Vulkan) {
-        vulkanDevice = dynamic_cast<VulkanRenderDevice *>(runtime.renderer.get());
-    } else {
-        const float sunDirLenSq = glm::dot(m_SunDirection, m_SunDirection);
-        if (!std::isfinite(sunDirLenSq) || sunDirLenSq <= 1e-8f) {
-            m_SunDirection = glm::vec3(0.0f, 1.0f, 0.0f);
-        }
-        runtime.sky->setSunDir(m_SunDirection);
-        m_SunDirection = runtime.sky->getSunDir();
-        runtime.sky->setExposure(m_SkyExposure);
-
-        RenderFrameParams frameParams{
-            .chunkShader = *runtime.chunkShader,
-            .debugShader = *runtime.dbgShader,
-            .chunkManager = *runtime.chunkManager,
-            .frustum = runtime.frustum,
-            .player = *runtime.player,
-            .activeCamera = activeCamera,
-            .cullingCamera = &cullingCamera,
-            .sky = *runtime.sky,
-            .toggleWireframe = m_ToggleWireframe,
-            .toggleChunkBorders = m_ToggleChunkBorders,
-            .toggleDebugFrustum = m_ToggleDebugFrustum,
-            .sunShadowDirectionalBias = m_SunShadowDirectionalBias,
-            .sunShadowLowSunBiasBoost = m_SunShadowLowSunBiasBoost,
-            .sunShadowFrontFaceCullAtLowSun = m_SunShadowFrontFaceCullAtLowSun,
-            .sunShadowFrontFaceCullGrazingThreshold = m_SunShadowFrontFaceCullGrazingThreshold,
-            .chunkUniformsInitialized = &runtime.chunkUniformsInitialized,
-            .renderOpaqueOverlayPasses = [&]() {
-                renderWorldItems(runtime, activeCamera);
-                // Keep remote gun overlays out of first-person scene capture to avoid
-                // self-echo/near-camera artifacts that can mask terrain.
-                if (m_UseDebugCamera) {
-                    renderRemotePlayerGuns(runtime, activeCamera);
-                }
-            }};
-        runtime.renderer->renderFrame(frameParams);
-        if (!m_UseDebugCamera && runtime.localPlayerAlive) {
-            renderHeldGun(runtime, runtime.interpolatedPlayerCamera);
-        }
-    }
-
-    if (runtime.debugUi) {
-        runtime.debugUi->drawCrosshair(!GameData::cursorEnabled && runtime.localPlayerAlive);
-        if (runtime.debugUi->isVisible()) {
-            const ClientNetwork::ChunkQueueDepths queueDepths =
-                runtime.clientNet.GetChunkQueueDepths();
-            UiFrameData frameData;
-            frameData.fps =
-                (GameData::deltaTime > 1e-6) ? static_cast<float>(1.0 / GameData::deltaTime) : 0.0f;
-            frameData.frameMs = static_cast<float>(GameData::deltaTime * 1000.0);
-            frameData.playerPosition = runtime.player->getPosition();
-            frameData.playerVelocity = runtime.player->getVelocity();
-            frameData.flyMode = runtime.player->flyMode;
-            frameData.onGround = runtime.player->isGrounded();
-            frameData.renderDistance = runtime.player->renderDistance;
-            frameData.remotePlayerCount = runtime.player->connectedPlayers.size();
-            frameData.netConnected = runtime.clientNet.IsConnected();
-            frameData.netStatus = runtime.clientNet.GetConnectionStatusText();
-            frameData.serverTick = runtime.lastAppliedServerTick;
-            frameData.ackedInputTick = runtime.lastAckedInputTick;
-            frameData.pendingInputCount = runtime.pendingInputs.size();
-            frameData.chunkDataQueueDepth = queueDepths.chunkData;
-            frameData.chunkDeltaQueueDepth = queueDepths.chunkDelta;
-            frameData.chunkUnloadQueueDepth = queueDepths.chunkUnload;
-            frameData.backendName = runtime.renderer->getActiveBackendName();
-            frameData.mdiUsable = runtime.renderer->isMDIUsable();
-            frameData.perfFrameCpuMs = runtime.perfFrameCpuMs;
-            frameData.perfInputMs = runtime.perfInputMs;
-            frameData.perfNetworkMs = runtime.perfNetworkMs;
-            frameData.perfPredictionMs = runtime.perfPredictionMs;
-            frameData.perfGameplayMs = runtime.perfGameplayMs;
-            frameData.perfRenderCpuMs = runtime.perfRenderCpuMs;
-            frameData.perfPresentMs = runtime.perfPresentMs;
-            frameData.perfChunkStreamingMs = runtime.perfChunkStreamingMs;
-            if (vulkanDevice != nullptr) {
-                const VulkanRenderDevice::TimingSnapshot &vkTimings =
-                    vulkanDevice->getLastTimingSnapshot();
-                frameData.vulkanTimingValid = true;
-                frameData.vkCpuCommandRecordMs = vkTimings.cpuCommandRecordMs;
-                frameData.vkCpuChunkPassMs = vkTimings.cpuChunkPassMs;
-                frameData.vkCpuModelPassMs = vkTimings.cpuModelPassMs;
-                frameData.vkCpuUiPassMs = vkTimings.cpuUiPassMs;
-                frameData.vkCpuMeshSyncMs = vkTimings.cpuMeshSyncMs;
-                frameData.vkCpuFrameBuildMs = vkTimings.cpuFrameBuildMs;
-                frameData.vkCpuGiIntegrateMs = vkTimings.cpuGiIntegrateMs;
-                frameData.vkGiProbesUpdated = vkTimings.giProbesUpdated;
-                frameData.vkGiRaysCast = vkTimings.giRaysCast;
-                frameData.vkGiAverageIrradianceLuma = vkTimings.giAverageIrradianceLuma;
-                frameData.vkGpuTimingValid = vkTimings.gpuValid;
-                frameData.vkGpuFrameMs = vkTimings.gpuFrameMs;
-                frameData.vkGpuChunkPassMs = vkTimings.gpuChunkPassMs;
-                frameData.vkGpuModelPassMs = vkTimings.gpuModelPassMs;
-                frameData.vkGpuUiPassMs = vkTimings.gpuUiPassMs;
-                frameData.vkGpuGiIntegrateMs = vkTimings.gpuGiIntegrateMs;
-                frameData.vkGiHardwareRtSupported = vkTimings.giHardwareRtSupported;
-                frameData.vkGiRtSceneReady = vkTimings.giRtSceneReady;
-                frameData.vkGiTracingBackend =
-                    (vkTimings.giTracingBackend == GiTracingBackend::HardwareRt) ? 1 : 0;
-                frameData.vkNrdBootstrapActive = vkTimings.nrdBootstrapActive;
-                frameData.vkNrdBootstrapDispatchCount = vkTimings.nrdBootstrapDispatchCount;
-            }
-
-            UiMutableState mutableState;
-            mutableState.useDebugCamera = &m_UseDebugCamera;
-            mutableState.toggleWireframe = &m_ToggleWireframe;
-            mutableState.toggleChunkBorders = &m_ToggleChunkBorders;
-            mutableState.toggleDebugFrustum = &m_ToggleDebugFrustum;
-            mutableState.renderDistance = &runtime.player->renderDistance;
-            mutableState.cursorEnabled = &GameData::cursorEnabled;
-            mutableState.rawMouseInputEnabled = &m_EnableRawMouseInput;
-            mutableState.rawMouseInputSupported = true;
-            mutableState.gunViewOffset = &runtime.equippedGunViewOffset;
-            mutableState.gunViewScale = &runtime.equippedGunViewScale;
-            mutableState.gunViewEulerDeg = &runtime.equippedGunViewEulerDeg;
-            mutableState.sunDirection = &m_SunDirection;
-            mutableState.sunShadowDirectionalBias = &m_SunShadowDirectionalBias;
-            mutableState.sunShadowLowSunBiasBoost = &m_SunShadowLowSunBiasBoost;
-            mutableState.sunShadowFrontFaceCullAtLowSun = &m_SunShadowFrontFaceCullAtLowSun;
-            mutableState.sunShadowFrontFaceCullGrazingThreshold =
-                &m_SunShadowFrontFaceCullGrazingThreshold;
-            mutableState.skyExposure = &m_SkyExposure;
-            mutableState.giTracingBackendPreference =
-                (vulkanDevice != nullptr) ? &GameData::giTracingBackendPreference : nullptr;
-            mutableState.giNrdDebugView =
-                (vulkanDevice != nullptr) ? &GameData::giNrdDebugView : nullptr;
-
-            runtime.debugUi->drawMainWindow(frameData, mutableState);
-        }
-
-        if (!runtime.debugUi->isVisible() && m_ShowDebugUi) {
-            m_ShowDebugUi = false;
-        }
-        if (runtime.inventoryUi) {
-            runtime.inventoryUi->draw(runtime.clientNet, runtime.clientNet.IsConnected());
-            if (!runtime.inventoryUi->isVisible() && m_ShowInventoryUi) {
-                m_ShowInventoryUi = false;
-            }
-        }
-
-        GameData::cursorEnabled = m_ForceCursorEnabled || m_ShowDebugUi || m_ShowInventoryUi ||
-                                  !runtime.clientNet.IsConnected();
-        applyMouseInputModes();
-
-        drawConnectionPrompt(runtime);
-        drawScoreboard(runtime);
-        drawPingCounter(runtime);
-        drawKillFeed(runtime);
-        drawPlayerHud(runtime);
-        drawDeathOverlay(runtime);
-        runtime.debugUi->render();
-    }
-
-    if (vulkanDevice != nullptr) {
-        glm::vec3 safeSunDir = m_SunDirection;
-        const float safeSunLen2 = glm::dot(safeSunDir, safeSunDir);
-        if (!(std::isfinite(safeSunLen2)) || safeSunLen2 <= 1.0e-8f) {
-            safeSunDir = glm::vec3(0.25f, 0.85f, 0.42f);
-        }
-        safeSunDir = glm::normalize(safeSunDir);
-        vulkanDevice->renderFrameVulkan(*runtime.chunkManager, activeCamera, cullingCamera,
-                                        *runtime.player, safeSunDir);
-    }
-
-    static bool f11PressedLastFrame = false;
-
-    bool f11PressedNow = IsScancodeDown(SDL_SCANCODE_F11);
-
-    if (f11PressedNow && !f11PressedLastFrame) {
-        toggleFullscreen(m_Window);
-    }
-
-    f11PressedLastFrame = f11PressedNow;
-    updateFPSCounter();
-    const auto perfRenderEnd = std::chrono::steady_clock::now();
-    runtime.perfRenderCpuMs = toMs(perfRenderStart, perfRenderEnd);
-
-    const auto perfPresentStart = std::chrono::steady_clock::now();
-    if (m_RenderApi == RenderApi::OpenGL) {
-        SDL_GL_SwapWindow(m_Window);
-    }
-    pollEvents(runtime);
-    const auto perfPresentEnd = std::chrono::steady_clock::now();
-    runtime.perfPresentMs = toMs(perfPresentStart, perfPresentEnd);
-
-    const ClientNetwork::ChunkQueueDepths queueDepths = runtime.clientNet.GetChunkQueueDepths();
-    const bool frameUnderPressure = GameData::deltaTime > (Runtime::LocalPredictionStep * 1.2);
-    const bool chunkBacklog = queueDepths.chunkData > (Runtime::MaxChunkDataApplyPerFrame * 3) ||
-                              queueDepths.chunkDelta > (Runtime::MaxChunkDeltaApplyPerFrame * 3) ||
-                              queueDepths.chunkUnload > (Runtime::MaxChunkUnloadApplyPerFrame * 3);
-    const bool prioritizeMovement =
-        (localPredictionSteps > 1) || frameUnderPressure || chunkBacklog;
-    const auto perfChunkStart = std::chrono::steady_clock::now();
-    processChunkStreaming(runtime, prioritizeMovement);
-    const auto perfChunkEnd = std::chrono::steady_clock::now();
-    runtime.perfChunkStreamingMs = toMs(perfChunkStart, perfChunkEnd);
-
-    const auto perfFrameEnd = std::chrono::steady_clock::now();
-    runtime.perfFrameCpuMs = toMs(perfFrameStart, perfFrameEnd);
+    FrameOrchestrator orchestrator(*this, runtime);
+    orchestrator.runFrame();
 }
+

@@ -14,7 +14,6 @@ std::atomic<uint64_t> g_profileChunks{0};
 std::atomic<uint64_t> g_profileTotalUs{0};
 std::atomic<uint64_t> g_profileBlockGridUs{0};
 std::atomic<uint64_t> g_profileSolidCacheUs{0};
-std::atomic<uint64_t> g_profileSunlightPrepUs{0};
 std::atomic<uint64_t> g_profileAoPrepUs{0};
 std::atomic<uint64_t> g_profileMaskTransitionUs{0};
 std::atomic<uint64_t> g_profileMaskLightingUs{0};
@@ -23,7 +22,7 @@ std::atomic<uint64_t> g_profileGreedyEmitUs{0};
 
 using MatIdLut = std::array<std::array<uint8_t, 6>, size_t(BlockID::COUNT)>;
 
-MatIdLut buildMatIdLut(const TextureAtlas &atlas) {
+MatIdLut buildMatIdLut(const AtlasLayout &atlasLayout) {
     MatIdLut lut{};
     for (size_t bi = 0; bi < size_t(BlockID::COUNT); ++bi) {
         const BlockID bid = static_cast<BlockID>(bi);
@@ -59,8 +58,8 @@ MatIdLut buildMatIdLut(const TextureAtlas &atlas) {
                 continue;
             }
 
-            auto tit = atlas.tileMap.find(*tileName);
-            if (tit == atlas.tileMap.end()) {
+            auto tit = atlasLayout.tileMap.find(*tileName);
+            if (tit == atlasLayout.tileMap.end()) {
                 lut[bi][face] = 0;
                 continue;
             }
@@ -72,10 +71,10 @@ MatIdLut buildMatIdLut(const TextureAtlas &atlas) {
     return lut;
 }
 
-const MatIdLut &getCachedMatIdLut(const TextureAtlas &atlas) {
+const MatIdLut &getCachedMatIdLut(const AtlasLayout &atlasLayout) {
     static std::once_flag once;
     static MatIdLut lut{};
-    std::call_once(once, [&]() { lut = buildMatIdLut(atlas); });
+    std::call_once(once, [&]() { lut = buildMatIdLut(atlasLayout); });
     return lut;
 }
 } // namespace
@@ -90,13 +89,13 @@ inline uint32_t clampToCorner(float v) {
 
 inline VoxelVertex packVoxelVertex(const glm::vec3 &posLocal, uint8_t face, uint8_t corner,
                                    uint8_t matId,
-                                   uint8_t ao, // 0..15
-                                   uint8_t sun // 0..15
+                                   uint8_t ao // 0..15
+
 ) {
     uint32_t qx = uint32_t(posLocal.x) & 0x1Fu;
     uint32_t qy = uint32_t(posLocal.y) & 0x1Fu;
     uint32_t qz = uint32_t(posLocal.z) & 0x1Fu;
-
+    uint32_t sun = 0;
     uint32_t low = qx | (qy << 5) | (qz << 10) | ((face & 0x7u) << 15) | ((corner & 0x3u) << 18) |
                    ((ao & 0xFu) << 26);
 
@@ -105,15 +104,13 @@ inline VoxelVertex packVoxelVertex(const glm::vec3 &posLocal, uint8_t face, uint
     return {low, high};
 }
 
+
 BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(const Chunk &center, const Chunk *neighbors[6],
                                                 const glm::ivec3 &chunkPos,
-                                                const TextureAtlas &atlas, bool enableAO,
-                                                bool enableShadows,
-                                                const SunTopGetter &getSunTopY) {
+                                                const AtlasLayout &atlasLayout, bool enableAO) {
     const auto tTotal0 = Clock::now();
     uint64_t blockGridUs = 0;
     uint64_t solidCacheUs = 0;
-    uint64_t sunlightPrepUs = 0;
     uint64_t aoPrepUs = 0;
     Clock::duration maskTransitionDur{};
     Clock::duration maskLightingDur{};
@@ -139,7 +136,7 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(const Chunk &center, const Chunk
     thread_local std::array<uint8_t, Lighting::kPaddedVolume> cornerAO{};
     thread_local std::array<uint8_t, Lighting::kSolidVolume> solidPadded{};
 
-    if (enableAO || enableShadows) {
+    if (enableAO) {
         const auto tSolid0 = Clock::now();
         lighting.buildSolidPadded(center, neighbors, solidPadded.data());
         solidCacheUs = uint64_t(
@@ -162,13 +159,7 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(const Chunk &center, const Chunk
     blockGridUs = uint64_t(
         std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - tGrid0).count());
 
-    if (enableShadows) {
-        const auto t0 = Clock::now();
-        lighting.prepareChunkSunlight(center, chunkPos, neighbors, cornerSun.data(), 1.0f,
-                                      getSunTopY, solidPadded.data());
-        sunlightPrepUs = uint64_t(
-            std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count());
-    }
+
     if (enableAO) {
         const auto t0 = Clock::now();
         lighting.prepareChunkAO(center, chunkPos, neighbors, cornerAO.data(), solidPadded.data());
@@ -176,7 +167,7 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(const Chunk &center, const Chunk
             std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count());
     }
 
-    const MatIdLut &matIdLut = getCachedMatIdLut(atlas);
+    const MatIdLut &matIdLut = getCachedMatIdLut(atlasLayout);
 
     std::array<GreedyCell, CHUNK_SIZE * CHUNK_SIZE> mask{};
     uint16_t currentMaskGen = 1;
@@ -281,7 +272,7 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(const Chunk &center, const Chunk
                     c.lightKey = 0u;
                     c.mergeKey = uint64_t(uint8_t(c.block)) |
                                  (uint64_t(c.sign > 0 ? 1u : 0u) << 8) | (uint64_t(c.matId) << 16);
-                    if (enableAO || enableShadows) {
+                    if (enableAO) {
                         c.sx = int16_t((c.sign > 0) ? (pax + dx) : pbx);
                         c.sy = int16_t((c.sign > 0) ? (pay + dy) : pby);
                         c.sz = int16_t((c.sign > 0) ? (paz + dz) : pbz);
@@ -290,7 +281,7 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(const Chunk &center, const Chunk
             }
             maskTransitionDur += (Clock::now() - tMaskTransition0);
 
-            if (enableAO || enableShadows) {
+            if (enableAO) {
                 const auto tMaskLighting0 = Clock::now();
                 for (int j = 0; j < CHUNK_SIZE; ++j) {
                     for (int i = 0; i < CHUNK_SIZE; ++i) {
@@ -330,12 +321,7 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(const Chunk &center, const Chunk
                             c.ao[2] = cornerAO[ci2];
                             c.ao[3] = cornerAO[ci3];
                         }
-                        if (enableShadows) {
-                            c.sun[0] = cornerSun[ci0];
-                            c.sun[1] = cornerSun[ci1];
-                            c.sun[2] = cornerSun[ci2];
-                            c.sun[3] = cornerSun[ci3];
-                        }
+
 
                         uint32_t key = 0u;
                         if (enableAO) {
@@ -344,12 +330,7 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(const Chunk &center, const Chunk
                             key |= (uint32_t(c.ao[2] & 0xFu) << 8);
                             key |= (uint32_t(c.ao[3] & 0xFu) << 12);
                         }
-                        if (enableShadows) {
-                            key |= (uint32_t(c.sun[0] & 0xFu) << 16);
-                            key |= (uint32_t(c.sun[1] & 0xFu) << 20);
-                            key |= (uint32_t(c.sun[2] & 0xFu) << 24);
-                            key |= (uint32_t(c.sun[3] & 0xFu) << 28);
-                        }
+
                         c.lightKey = key;
                         c.mergeKey = uint64_t(uint8_t(c.block)) |
                                      (uint64_t(c.sign > 0 ? 1u : 0u) << 8) |
@@ -412,8 +393,7 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(const Chunk &center, const Chunk
                         uint8_t uvCorner = uvRemap[face][k];
 
                         vertices.push_back(packVoxelVertex(vtx[k], face, uvCorner, c.matId,
-                                                           enableAO ? c.ao[k] : 0,
-                                                           enableShadows ? c.sun[k] : 0));
+                                                           enableAO ? c.ao[k] : 0));
                     }
 
                     if (c.sign > 0) {
@@ -461,7 +441,6 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(const Chunk &center, const Chunk
     g_profileTotalUs.fetch_add(totalUs, std::memory_order_relaxed);
     g_profileBlockGridUs.fetch_add(blockGridUs, std::memory_order_relaxed);
     g_profileSolidCacheUs.fetch_add(solidCacheUs, std::memory_order_relaxed);
-    g_profileSunlightPrepUs.fetch_add(sunlightPrepUs, std::memory_order_relaxed);
     g_profileAoPrepUs.fetch_add(aoPrepUs, std::memory_order_relaxed);
     g_profileMaskTransitionUs.fetch_add(maskTransitionUs, std::memory_order_relaxed);
     g_profileMaskLightingUs.fetch_add(maskLightingUs, std::memory_order_relaxed);
@@ -477,7 +456,6 @@ MeshBuildProfileSnapshot ChunkMeshBuilder::getProfileSnapshot() {
     snap.totalUs = g_profileTotalUs.load(std::memory_order_relaxed);
     snap.blockGridUs = g_profileBlockGridUs.load(std::memory_order_relaxed);
     snap.solidCacheUs = g_profileSolidCacheUs.load(std::memory_order_relaxed);
-    snap.sunlightPrepUs = g_profileSunlightPrepUs.load(std::memory_order_relaxed);
     snap.aoPrepUs = g_profileAoPrepUs.load(std::memory_order_relaxed);
     snap.maskTransitionUs = g_profileMaskTransitionUs.load(std::memory_order_relaxed);
     snap.maskLightingUs = g_profileMaskLightingUs.load(std::memory_order_relaxed);
@@ -491,7 +469,6 @@ void ChunkMeshBuilder::resetProfileSnapshot() {
     g_profileTotalUs.store(0, std::memory_order_relaxed);
     g_profileBlockGridUs.store(0, std::memory_order_relaxed);
     g_profileSolidCacheUs.store(0, std::memory_order_relaxed);
-    g_profileSunlightPrepUs.store(0, std::memory_order_relaxed);
     g_profileAoPrepUs.store(0, std::memory_order_relaxed);
     g_profileMaskTransitionUs.store(0, std::memory_order_relaxed);
     g_profileMaskLightingUs.store(0, std::memory_order_relaxed);

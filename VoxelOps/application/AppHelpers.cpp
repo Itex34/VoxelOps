@@ -96,15 +96,8 @@ std::string ResolveGunModelPath(const GunDefinition &definition) {
 }
 
 std::unique_ptr<Gun> BuildGunFromDefinition(const GunDefinition &definition) {
-    auto gun = std::make_unique<Gun>(definition.type, definition.fireIntervalSeconds,
-                                     definition.reloadTimeSeconds, definition.maxAmmo);
-
-    const std::string modelPath = ResolveGunModelPath(definition);
-    if (!gun->loadModel(modelPath)) {
-        std::cerr << "[gun] failed to load model for " << definition.displayName << " from "
-                  << modelPath << "\n";
-    }
-    return gun;
+    return std::make_unique<Gun>(definition.type, definition.fireIntervalSeconds,
+                                 definition.reloadTimeSeconds, definition.maxAmmo);
 }
 
 float NormalizeYawDegrees(float yawDegrees) {

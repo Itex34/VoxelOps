@@ -1,10 +1,8 @@
-#include <glad/glad.h>
 #include <SDL3/SDL.h>
 
 #include "App.hpp"
 #include "AppHelpers.hpp"
 #include "../graphics/RenderDeviceFactory.hpp"
-#include "../graphics/VulkanRenderDevice.hpp"
 
 #include <cstdlib>
 #include <iostream>
@@ -42,11 +40,8 @@ void App::shutdown(Runtime &runtime) {
         runtime.debugUi.reset();
     }
     runtime.inventoryUi.reset();
-
-    if (runtime.sky) {
-        runtime.sky->shutdown();
-        runtime.sky.reset();
-    }
+    runtime.gunSceneRenderer.reset();
+    runtime.gunRenderer.reset();
     if (runtime.renderer) {
         runtime.renderer->shutdown();
         runtime.renderer.reset();
@@ -86,8 +81,7 @@ int App::Run(int argc, char **argv) {
     std::cout << "\n";
 
     m_RenderApi = ParseRenderApiFromEnv();
-    std::cout << "[App] Requested render API: "
-              << ((m_RenderApi == RenderApi::Vulkan) ? "Vulkan" : "OpenGL") << "\n";
+    std::cout << "[App] Requested render API: " << GetRenderApiName(m_RenderApi) << "\n";
 
     if (!initWindowAndContext()) {
         return -1;
@@ -100,20 +94,12 @@ int App::Run(int argc, char **argv) {
         std::cerr << "[App] Failed to create render device.\n";
         return -1;
     }
-    if (m_RenderApi == RenderApi::Vulkan) {
-        VulkanRenderDevice *vulkanDevice =
-            dynamic_cast<VulkanRenderDevice *>(runtime.renderer.get());
-        if (vulkanDevice == nullptr) {
-            std::cerr << "[App] Render API selection mismatch: Vulkan requested but Vulkan device "
-                         "cast failed.\n";
-            return -1;
-        }
-        if (!vulkanDevice->initialize(m_Window)) {
-            std::cerr << "[App] Failed to initialize Vulkan render device.\n";
-            return -1;
-        }
+    if (!runtime.renderer->initialize(m_Window)) {
+        std::cerr << "[App] Failed to initialize render device.\n";
+        return -1;
     }
-    std::cout << "[App] Render API selected: " << runtime.renderer->getApiName() << "\n";
+    const RenderDeviceCapabilities caps = runtime.renderer->getCapabilities();
+    std::cout << "[App] Render API selected: " << caps.apiName << "\n";
     initGameplay(runtime);
     initCallbacks(runtime);
     initRenderResources(runtime);

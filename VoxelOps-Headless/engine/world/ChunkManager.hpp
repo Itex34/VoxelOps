@@ -14,15 +14,9 @@
 
 #include "../voxels/ServerChunk.hpp"
 #include "WorldCollision.hpp"
-#include "../../third_party/FastNoiseLite.h"
+#include "../../../third_party/FastNoiseLite.h"
+#include "../../../Shared/world/Constants.hpp"
 
-// world extents in chunk coordinates (keep in sync with your constants elsewhere)
-constexpr int WORLD_MIN_X = -20;
-constexpr int WORLD_MAX_X = 20;
-constexpr int WORLD_MIN_Z = -20;
-constexpr int WORLD_MAX_Z = 20;
-constexpr int WORLD_MIN_Y = -16;
-constexpr int WORLD_MAX_Y = 32;
 
 struct IVec3Hash {
     std::size_t operator()(glm::ivec3 const& v) const noexcept {

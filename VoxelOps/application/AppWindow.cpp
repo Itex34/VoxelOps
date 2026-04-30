@@ -102,7 +102,7 @@ bool App::initWindowAndContext() {
         return false;
     }
 
-    if (m_RenderApi == RenderApi::Vulkan) {
+    if (RenderApiUsesVulkanWindow(m_RenderApi)) {
         m_Window = SDL_CreateWindow("Voxel Ops", GameData::screenWidth, GameData::screenHeight,
                                     SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
         if (!m_Window) {
@@ -112,6 +112,10 @@ bool App::initWindowAndContext() {
         }
 
         m_GlContext = nullptr;
+        return true;
+    }
+
+    if (!RenderApiRequiresOpenGlContext(m_RenderApi)) {
         return true;
     }
 

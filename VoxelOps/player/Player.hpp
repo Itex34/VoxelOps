@@ -1,6 +1,7 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <vector>
 #include <memory>
 #include <unordered_map>
@@ -8,14 +9,12 @@
 #include <utility>
 
 #include "../graphics/Camera.hpp"
-#include "../graphics/Model.hpp"
 #include "../physics/RayManager.hpp"
 
 #include "Hitbox.hpp"
 
 using PlayerID = uint64_t;
 
-class Shader;
 class ChunkManager;
 struct SDL_Window; // forward-declare to avoid including SDL in header
 
@@ -71,10 +70,6 @@ class Player {
 
     // Update movement, physics, and camera (window pointer is opaque here)
     void update(SDL_Window *window, double deltaTime);
-
-    void renderRemotePlayers(const glm::mat4 &viewMat, const glm::mat4 &projMat,
-                             const glm::vec3 &lightDir, const glm::vec3 &lightColor,
-                             const glm::vec3 &ambientColor) const;
 
     // Mouse look (dbgCam toggles debug camera mode)
     void processMouse(bool dbgCam, double xpos, double ypos) noexcept;
@@ -158,9 +153,6 @@ class Player {
     RayManager rayManager;
     // Reference to the world
     ChunkManager &chunkManager;
-
-    std::shared_ptr<Shader> playerShader;
-    std::shared_ptr<Model> playerModel;
 
     // Core state
     glm::vec3 position{0.0f};

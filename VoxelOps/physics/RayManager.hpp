@@ -1,6 +1,6 @@
 #pragma once
 #include "Raycast.hpp"
-#include "../graphics/ChunkManager.hpp"
+#include "../world/ChunkManager.hpp"
 #include "../player/Hitbox.hpp"
 
 #include <glm/glm.hpp>

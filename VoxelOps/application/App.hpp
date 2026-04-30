@@ -1,15 +1,15 @@
 #pragma once
 
-#include <array>
 #include <cstdint>
 #include <string>
 #include <SDL3/SDL.h>
 #include <glm/vec3.hpp>
 #include "../runtime/Runtime.hpp"
 #include "../graphics/RenderDeviceFactory.hpp"
-#include "WorldItemRenderer.hpp"
+#include "../graphics/OpenGL/WorldItemRenderer.hpp"
 class Camera;
 enum class GunType : uint16_t;
+class FrameOrchestrator;
 
 class App {
   public:
@@ -19,6 +19,7 @@ class App {
     void Exit();
 
   private:
+    friend class FrameOrchestrator;
     bool initWindowAndContext();
     void initCallbacks(Runtime &runtime);
     void initRenderResources(Runtime &runtime);
@@ -28,7 +29,6 @@ class App {
     void configureBackendPolicy(Runtime &runtime);
     void initNetworking(Runtime &runtime);
     bool beginConnectionAttempt(Runtime &runtime);
-    void drawConnectionPrompt(Runtime &runtime);
     void processFrame(Runtime &runtime);
     void shutdown(Runtime &runtime);
 
@@ -36,19 +36,9 @@ class App {
     void updateToggleStates(Runtime &runtime);
     void processWorldInteraction(Runtime &runtime);
     void processShooting(Runtime &runtime);
-    void processMovementNetworking(Runtime &runtime);
-    void processHotbarSelection(Runtime &runtime);
-    void syncEquippedGunFromInventory(Runtime &runtime);
     void processChunkStreaming(Runtime &runtime, bool prioritizeMovement);
-    void drawKillFeed(Runtime &runtime);
-    void drawScoreboard(Runtime &runtime);
-    void drawPingCounter(Runtime &runtime);
-    void drawPlayerHud(Runtime &runtime);
-    void drawDeathOverlay(Runtime &runtime);
     void renderWorldItems(Runtime &runtime, const Camera &activeCamera);
     bool equipGun(Runtime &runtime, GunType gunType);
-    void renderRemotePlayerGuns(Runtime &runtime, const Camera &activeCamera);
-    void renderHeldGun(Runtime &runtime, const Camera &activeCamera);
     void applyMouseInputModes();
     void pollEvents(Runtime &runtime);
 
@@ -90,5 +80,4 @@ class App {
     bool m_WasEscapePressed = false;
     bool m_WasF10Pressed = false;
     bool m_WasWorldInteractPressed = false;
-    std::array<bool, kHotbarSlots> m_WasHotbarSelectPressed{};
 };

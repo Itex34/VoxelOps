@@ -1,15 +1,14 @@
 #include "Gun.hpp"
 
-#include <SDL3/SDL.h>
-
 #include <iostream>
-#include <stdexcept>
 
 // Constructor
 Gun::Gun(GunType inType, float inFireInterval, float inReloadTime, unsigned int inMaxAmmo) noexcept
     : gunType(inType), reloadTime(inReloadTime), fireInterval(inFireInterval),
       timeSinceLastShot(0.0f), wantsToFire(false), isReloading(false), reloadTimer(0.0f),
       maxAmmo(inMaxAmmo), currentAmmo(inMaxAmmo) {}
+
+Gun::~Gun() = default;
 
 // Public API
 void Gun::requestFire() noexcept {
@@ -80,13 +79,6 @@ void Gun::fire(const glm::vec3 &rayOrigin, const glm::vec3 &rayDirection) {
               << ")\n";
 }
 
-void Gun::render(const glm::vec3 &position, const glm::quat &rotation, const glm::vec3 &scale,
-                 Shader &shader) const {
-    if (gunModel) {
-        gunModel->draw(position, rotation, scale, shader);
-    }
-}
-
 void Gun::reload() noexcept {
     if (isReloading || currentAmmo >= maxAmmo) {
         return;
@@ -94,23 +86,6 @@ void Gun::reload() noexcept {
     isReloading = true;
     reloadTimer = 0.0f;
     std::cout << "Reloading...\n";
-}
-
-bool Gun::loadModel(const std::string &path) {
-    if (SDL_GL_GetCurrentContext() == nullptr) {
-        gunModel.reset();
-        return false;
-    }
-
-    try {
-        auto m = std::make_unique<Model>(path);
-        gunModel = std::move(m);
-        return true;
-    } catch (const std::exception &e) {
-        std::cerr << "Failed to load model '" << path << "': " << e.what() << "\n";
-        gunModel.reset();
-        return false;
-    }
 }
 
 void Gun::tryFireIfReady(const glm::vec3 &rayOrigin, const glm::vec3 &rayDirection) {

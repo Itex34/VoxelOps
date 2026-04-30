@@ -2,27 +2,34 @@
 
 #include "../data/GameData.hpp"
 #include "../graphics/Camera.hpp"
-#include "../graphics/ChunkManager.hpp"
+#include "../world/ChunkManager.hpp"
 #include "../graphics/Frustum.hpp"
+#include "../graphics/IGunRenderer.hpp"
+#include "../graphics/IGunSceneRenderer.hpp"
 #include "../graphics/IRenderDevice.hpp"
 #include "../graphics/ISkyBackend.hpp"
-#include "../graphics/Shader.hpp"
-#include "../gun/Gun.hpp"
+#include "../graphics/OpenGL/Shader.hpp"
 #include "../input/InputCallbacks.hpp"
 #include "../network/ClientNetwork.hpp"
 #include "../physics/RayManager.hpp"
 #include "../physics/Raycast.hpp"
 #include "../player/Player.hpp"
 #include "../runtime/ClientReconciler.hpp"
+#include "../runtime/RuntimeCombatState.hpp"
+#include "../runtime/RuntimeConnectionState.hpp"
+#include "../runtime/RuntimeInputState.hpp"
+#include "../runtime/RuntimePerfState.hpp"
 #include "../runtime/SnapshotInterpolator.hpp"
 #include "../ui/debug/DebugUi.hpp"
 #include "../ui/player/InventoryUI.hpp"
-#include "../../Shared/gun/GunType.hpp"
 #include "../../Shared/player/PlayerData.hpp"
-#include "../../Shared/runtime/Paths.hpp"
 
 #include <cstdint>
+#include <deque>
 #include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 struct CallbackContext {
     InputCallbacks *inputCallbacks = nullptr;
@@ -43,8 +50,9 @@ struct Runtime {
 
     std::unique_ptr<Shader> chunkShader;
     std::unique_ptr<Shader> dbgShader;
-    std::unique_ptr<Shader> gunShader;
     std::unique_ptr<ISkyBackend> sky;
+    std::shared_ptr<IGunRenderer> gunRenderer;
+    std::unique_ptr<IGunSceneRenderer> gunSceneRenderer;
     std::unique_ptr<DebugUi> debugUi;
     std::unique_ptr<InventoryUI> inventoryUi;
 
@@ -94,22 +102,8 @@ struct Runtime {
     bool matchEnded = false;
     std::string matchWinner;
     std::vector<ClientNetwork::ScoreboardEntry> scoreboardEntries;
-    bool localPlayerAlive = true;
-    float localHealth = 100.0f;
-    float localRespawnSeconds = 0.0f;
-    std::string localDeathKiller;
-    bool wasRespawnClickDown = false;
     double lastInputSendTime = 0.0;
     double lastChunkRequestSendTime = 0.0;
-    double lastShootSendTime = 0.0;
-    double nextReconnectAttemptTime = 0.0;
-    double reconnectBackoffSeconds = 1.0;
-    std::string lastConnectionStatus = "disconnected";
-    std::array<char, 128> pendingServerEndpointInput{};
-    std::array<char, kMaxConnectUsernameChars + 1> pendingUsernameInput{};
-    bool wasEndpointPasteShortcutPressed = false;
-    std::string usernamePromptError;
-    uint32_t nextClientShotId = 1;
     struct PendingBlockPlaceEdit {
         glm::ivec3 worldPos{0};
         uint8_t oldBlockId = 0;
@@ -133,14 +127,6 @@ struct Runtime {
     uint32_t nextBlockPlaceRequestId = 1;
     std::unordered_map<uint32_t, PendingBlockBreakRequest> pendingBlockBreakRequests;
     uint32_t nextBlockBreakRequestId = 1;
-    double shootSendInterval = 1.0 / 8.0;
-    uint16_t activeHotbarSlot = 0;
-    GunType equippedGunType = kDefaultGunType;
-    std::unordered_map<uint16_t, std::unique_ptr<Gun>> preloadedGuns;
-    Gun *equippedGun = nullptr;
-    glm::vec3 equippedGunViewOffset = glm::vec3(0.20f, -0.20f, -0.45f);
-    glm::vec3 equippedGunViewScale = glm::vec3(0.10f);
-    glm::vec3 equippedGunViewEulerDeg = glm::vec3(0.0f, 180.0f, 0.0f);
     static constexpr double InputSendInterval = 1.0 / 60.0; // 60 Hz
     static constexpr double LocalPredictionStep =
         1.0 / 60.0; // match authoritative server tick for replay parity
@@ -188,21 +174,10 @@ struct Runtime {
     bool hasRenderSimState = false;
     glm::vec3 smoothedPlayerCameraPos{0.0f};
     bool hasSmoothedPlayerCameraPos = false;
-    float perfFrameCpuMs = 0.0f;
-    float perfInputMs = 0.0f;
-    float perfNetworkMs = 0.0f;
-    float perfPredictionMs = 0.0f;
-    float perfGameplayMs = 0.0f;
-    float perfRenderCpuMs = 0.0f;
-    float perfPresentMs = 0.0f;
-    float perfChunkStreamingMs = 0.0f;
-
-    double lastX = 0.0;
-    double lastY = 0.0;
-    double xpos = 0.0;
-    double ypos = 0.0;
-    float yaw = 0.0f;
-    float pitch = 0.0f;
+    RuntimePerfState perf;
+    RuntimeInputState inputLook;
+    RuntimeConnectionState connection;
+    RuntimeCombatState combat;
 
     CallbackContext callbackContext;
 };

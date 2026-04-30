@@ -7,17 +7,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
 
-set(PBRSKY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../PbrSkyLibOpenGL")
-if(NOT EXISTS "${PBRSKY_ROOT}/CMakeLists.txt")
-    message(FATAL_ERROR "PbrSkyLibOpenGL not found at ${PBRSKY_ROOT}")
-endif()
-
-
-
-set(SKYATMOS_BUILD_SAMPLE OFF CACHE BOOL "" FORCE)
-set(SKYATMOS_FETCH_DEPS OFF CACHE BOOL "" FORCE)
-add_subdirectory("${PBRSKY_ROOT}" "${CMAKE_BINARY_DIR}/pbrsky")
-
 option(VOXELOPS_ENABLE_NRD_BOOTSTRAP "Enable early NRD API bootstrap integration" ON)
 set(VOXELOPS_NRD_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../NRD" CACHE PATH "Path to NVIDIA NRD repository")
 set(VOXELOPS_NRD_DLL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../NRD-Sample/_Bin/NRD.dll" CACHE FILEPATH "Path to NRD.dll used by runtime bootstrap")
@@ -25,16 +14,25 @@ set(VOXELOPS_NRD_DLL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../NRD-Sample/_Bin/NRD
 add_executable(VoxelOps
     "main.cpp"  
     "graphics/Camera.cpp" 
-    "graphics/Shader.cpp" 
-    "graphics/Model.cpp"
-    "graphics/Mesh.cpp" 
+    "graphics/OpenGL/Shader.cpp" 
     "graphics/ChunkMeshBuilder.cpp"
     "voxels/Voxel.cpp"
     "voxels/Chunk.cpp" 
-    "graphics/Renderer.cpp"
-    "graphics/OpenGLRenderDevice.cpp"
+    "graphics/OpenGL/Renderer.cpp"
+    "graphics/OpenGL/OpenGLChunkScene.cpp"
+    "graphics/OpenGL/OpenGLChunkRenderCache.cpp"
+    "graphics/OpenGL/OpenGLGunRenderer.cpp"
+    "graphics/OpenGL/OpenGLGunSceneRenderer.cpp"
+    "graphics/OpenGL/OpenGLMesh.cpp"
+    "graphics/OpenGL/OpenGLModel.cpp"
+    "graphics/OpenGL/OpenGLRemotePlayerRenderer.cpp"
+    "graphics/OpenGL/OpenGLRenderDevice.cpp"
+    "graphics/OpenGL/OpenGLTextureAtlas.cpp"
+    "graphics/OpenGL/passes/OpenGLSkyPass.cpp"
+    "graphics/OpenGL/passes/OpenGLWorldPass.cpp"
     "graphics/VulkanRenderDevice.cpp"
     "graphics/RenderDeviceFactory.cpp"
+    "graphics/ModelGeometry.cpp"
     "graphics/Vulkan/renderer/FrameSync.cpp"
     "graphics/Vulkan/renderer/NrdBootstrap.cpp"
     "graphics/Vulkan/renderer/Pipeline.cpp"
@@ -44,6 +42,11 @@ add_executable(VoxelOps
     "graphics/Vulkan/graphics/Model.cpp"
     "graphics/Vulkan/graphics/StbImageImpl.cpp"
     "graphics/Vulkan/graphics/VkTexture.cpp"
+    "graphics/Vulkan/VulkanSceneUploader.cpp"
+    "graphics/Vulkan/VulkanFrameBuilder.cpp"
+    "graphics/Vulkan/VulkanGiSettings.cpp"
+    "graphics/Vulkan/VulkanRayTracingScene.cpp"
+    "graphics/Vulkan/VulkanChunkRenderCache.cpp"
     "graphics/Vulkan/vulkan/UploadContext.cpp"
     "graphics/Vulkan/vulkan/VulkanContext.cpp"
     "graphics/Vulkan/vulkan/VulkanUtils.cpp"
@@ -53,18 +56,21 @@ add_executable(VoxelOps
     "data/GameData.hpp"
     "data/GameData.cpp" 
     "graphics/Frustum.hpp"
-    "graphics/ChunkManager.cpp"
-    "graphics/ChunkRenderSystem.cpp"
-    "graphics/TextureAtlas.cpp" 
+    "world/ChunkManager.cpp"
+    "graphics/ChunkMesher.cpp"
+    "graphics/AtlasLayout.cpp"
     "physics/Raycast.cpp" 
     "physics/RayManager.cpp"
     "application/AppWindow.cpp"
     "application/AppSetup.cpp"
     "application/AppUi.cpp"
-    "application/WorldItemRenderer.cpp"
+    "application/ClientHudSystem.cpp"
+    "graphics/OpenGL/WorldItemRenderer.cpp"
     "application/AppSimulation.cpp"
     "application/AppLifecycle.cpp"
     "application/AppHelpers.cpp"
+    "application/ClientNetworkSystem.cpp"
+    "application/FrameOrchestrator.cpp"
     "graphics/Lighting.cpp"
     "network/ClientNetwork.cpp"
     "network/DecompressChunk.cpp"
@@ -73,17 +79,14 @@ add_executable(VoxelOps
     "player/Hitbox.cpp"    
     "gun/Gun.cpp"
     "misc/ThreadPool.cpp" 
-    "graphics/RegionMeshBuffer.cpp"
+    "graphics/OpenGL/RegionMeshBuffer.cpp"
     "voxels/ChunkColumn.cpp"
-    "graphics/WorldGen.cpp"
-    "graphics/Backend.cpp"
-    "graphics/Sky.cpp" 
+    "graphics/OpenGL/Backend.cpp"
+    "graphics/OpenGL/Sky.cpp"
     "graphics/ISkyBackend.hpp"
-    "graphics/RealisticSkyBackend.hpp"
-    "graphics/RealisticSkyBackend.cpp"
-    "graphics/ShaderSkyBackend.hpp"
-    "graphics/ShaderSkyBackend.cpp"
-    "graphics/PostProcessor.cpp"
+    "graphics/OpenGL/ShaderSkyBackend.hpp"
+    "graphics/OpenGL/ShaderSkyBackend.cpp"
+    
     "ui/debug/DebugUi.cpp"
     "ui/player/InventoryUI.cpp"
     "ui/player/Crosshair.cpp"
@@ -110,7 +113,6 @@ target_link_libraries(VoxelOps PRIVATE GameNetworkingSockets::shared GameNetwork
 target_link_libraries(VoxelOps PRIVATE Shared)
 target_link_libraries(VoxelOps PRIVATE lz4::lz4)
 target_link_libraries(VoxelOps PRIVATE imgui::imgui)
-target_link_libraries(VoxelOps PRIVATE VoxelOps::SkyAtmosphereRenderer)
 target_link_libraries(VoxelOps PRIVATE Vulkan::Vulkan)
 target_link_libraries(VoxelOps PRIVATE nlohmann_json::nlohmann_json)
 target_compile_definitions(VoxelOps PRIVATE GLM_ENABLE_EXPERIMENTAL)
@@ -146,7 +148,6 @@ set(VKSHADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/triangle.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/model.vert
     ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/model.frag
-    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/gi_probe_integrate.comp
     ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/restir_gi_spatial.comp
 )
 

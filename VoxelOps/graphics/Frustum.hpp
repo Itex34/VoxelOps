@@ -5,7 +5,6 @@
 #include <vector>
 #include <glad/glad.h>
 #include "../voxels/Chunk.hpp" // For AABB
-#include "Shader.hpp"
 
 struct Plane {
     glm::vec3 normal;
@@ -48,75 +47,6 @@ class Frustum {
         return true;
     }
 
-    void drawFrustumFaces(Shader &shader, const glm::mat4 &frustumViewProj, const glm::mat4 &view,
-                          const glm::mat4 &projection, bool toggleWireframe) const {
-        std::vector<glm::vec3> corners = getFrustumCorners(frustumViewProj);
-
-        // Corner index mapping:
-        // 0: Near Bottom Left
-        // 1: Near Bottom Right
-        // 2: Near Top Left
-        // 3: Near Top Right
-        // 4: Far Bottom Left
-        // 5: Far Bottom Right
-        // 6: Far Top Left
-        // 7: Far Top Right
-
-        const GLuint indices[] = {// Near
-                                  0, 1, 2, 1, 3, 2,
-                                  // Far
-                                  4, 6, 5, 5, 6, 7,
-                                  // Left
-                                  0, 2, 4, 4, 2, 6,
-                                  // Right
-                                  1, 5, 3, 3, 5, 7,
-                                  // Top
-                                  2, 3, 6, 6, 3, 7,
-                                  // Bottom
-                                  0, 4, 1, 1, 4, 5};
-
-        static GLuint VAO = 0, VBO = 0, EBO = 0;
-        if (VAO == 0) {
-            glGenVertexArrays(1, &VAO);
-            glGenBuffers(1, &VBO);
-            glGenBuffers(1, &EBO);
-
-            glBindVertexArray(VAO);
-
-            glBindBuffer(GL_ARRAY_BUFFER, VBO);
-            glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * 8, nullptr, GL_DYNAMIC_DRAW);
-
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-
-            glEnableVertexAttribArray(0);
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void *)0);
-
-            glBindVertexArray(0);
-        }
-
-        glBindBuffer(GL_ARRAY_BUFFER, VBO);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * 8, corners.data());
-
-        shader.use();
-        shader.setMat4("model", glm::mat4(1.0f));
-        shader.setMat4("view", view);
-        shader.setMat4("projection", projection);
-        shader.setVec3("color", glm::vec3(1.0f, 0.0f, 0.0f));
-
-        glDisable(GL_CULL_FACE);
-        if (toggleWireframe)
-            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-
-        glBindVertexArray(VAO);
-        glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
-        glBindVertexArray(0);
-
-        if (toggleWireframe)
-
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-        glEnable(GL_CULL_FACE);
-    }
 
   private:
     Plane normalizePlane(const glm::vec4 &p) const {

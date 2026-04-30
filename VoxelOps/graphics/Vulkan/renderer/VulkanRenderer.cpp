@@ -48,13 +48,14 @@ constexpr bool kRestirGiUseSpatialHistory = false;
 // Use a single history slot to avoid swapchain-image history divergence/flicker.
 constexpr uint32_t kRestirHistorySlot = 0u;
 
-struct alignas(16) GiCascadeParamsGpu {
+struct alignas(16) GiReservedStorageParamsGpu {
     glm::ivec4 originSpacingBlocks{0};
-    glm::uvec4 probeCounts{0u};
+    glm::uvec4 reservedCounts{0u};
 };
 
 struct alignas(16) GiLightingParamsGpu {
-    glm::uvec4 header{0u}; // x=cascadeCount, y=sunShadowEnabled, z=pathTraceEnabled, w=nrdDebugView
+    glm::uvec4 header{
+        0u}; // x=reservedStorageCount, y=sunShadowEnabled, z=pathTraceEnabled, w=nrdDebugView
     glm::uvec4 pathConfig{
         1u, 0u, 0u, 0u}; // x=raysPerPixel, y=restirHistoryValid, z=frameIndexLow, w=historyReset
     glm::uvec4 tracingConfig{
@@ -75,12 +76,7 @@ struct alignas(16) GiLightingParamsGpu {
     glm::mat4 currViewProjection{1.0f};
     glm::mat4 prevViewProjection{1.0f};
     glm::mat4 nrdPrevViewProjection{1.0f};
-    std::array<GiCascadeParamsGpu, GI_LIGHTING_MAX_CASCADES> cascades{};
-};
-
-struct alignas(16) GiProbeSampleGpu {
-    glm::vec4 irradianceDepthMean{0.20f, 0.24f, 0.30f, 1.0f};
-    glm::vec4 depthMomentFrames{0.0f, 0.0f, 0.5f, 1.0f};
+    std::array<GiReservedStorageParamsGpu, 3> reservedStorage{};
 };
 
 struct alignas(16) RestirGiSpatialPushConstants {
@@ -875,7 +871,7 @@ void VulkanRenderer::createGiDescriptorResources() {
         layoutBinding.stageFlags = vk::ShaderStageFlagBits::eFragment;
         bindings.push_back(layoutBinding);
     };
-    for (uint32_t i = 0; i < GI_CASCADE_BINDINGS; ++i) {
+    for (uint32_t i = 0; i < GI_RESERVED_STORAGE_BINDINGS; ++i) {
         addBinding(i, vk::DescriptorType::eStorageBuffer);
     }
     addBinding(GI_PARAM_BINDING, vk::DescriptorType::eUniformBuffer);
@@ -910,7 +906,7 @@ void VulkanRenderer::createGiDescriptorResources() {
     vk::DescriptorPoolSize storagePool{};
     storagePool.type = vk::DescriptorType::eStorageBuffer;
     storagePool.descriptorCount =
-        static_cast<uint32_t>(m_framebuffers.size()) * (GI_CASCADE_BINDINGS + 2);
+        static_cast<uint32_t>(m_framebuffers.size()) * (GI_RESERVED_STORAGE_BINDINGS + 2);
     poolSizes.push_back(storagePool);
     vk::DescriptorPoolSize uniformPool{};
     uniformPool.type = vk::DescriptorType::eUniformBuffer;
@@ -945,23 +941,24 @@ void VulkanRenderer::createGiDescriptorResources() {
     allocateInfo.pSetLayouts = layouts.data();
     m_giDescriptorSets = device.allocateDescriptorSets(allocateInfo);
 
-    m_giFallbackProbeBuffers.clear();
-    m_giFallbackProbeBufferMemory.clear();
-    m_giFallbackProbeBuffers.reserve(GI_CASCADE_BINDINGS);
-    m_giFallbackProbeBufferMemory.reserve(GI_CASCADE_BINDINGS);
-    for (uint32_t i = 0; i < GI_CASCADE_BINDINGS; ++i) {
-        m_giFallbackProbeBuffers.emplace_back(nullptr);
-        m_giFallbackProbeBufferMemory.emplace_back(nullptr);
+    m_giFallbackReservedStorageBuffers.clear();
+    m_giFallbackReservedStorageBufferMemory.clear();
+    m_giFallbackReservedStorageBuffers.reserve(GI_RESERVED_STORAGE_BINDINGS);
+    m_giFallbackReservedStorageBufferMemory.reserve(GI_RESERVED_STORAGE_BINDINGS);
+    for (uint32_t i = 0; i < GI_RESERVED_STORAGE_BINDINGS; ++i) {
+        m_giFallbackReservedStorageBuffers.emplace_back(nullptr);
+        m_giFallbackReservedStorageBufferMemory.emplace_back(nullptr);
         VulkanUtils::createBuffer(
-            device, physicalDevice, sizeof(GiProbeSampleGpu),
+            device, physicalDevice, sizeof(uint32_t),
             vk::BufferUsageFlagBits::eStorageBuffer,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            m_giFallbackProbeBuffers.back(), m_giFallbackProbeBufferMemory.back());
+            m_giFallbackReservedStorageBuffers.back(),
+            m_giFallbackReservedStorageBufferMemory.back());
 
-        GiProbeSampleGpu fallback{};
-        void *mapped = m_giFallbackProbeBufferMemory.back().mapMemory(0, VK_WHOLE_SIZE);
-        std::memcpy(mapped, &fallback, sizeof(fallback));
-        m_giFallbackProbeBufferMemory.back().unmapMemory();
+        const uint32_t zeroWord = 0u;
+        void *mapped = m_giFallbackReservedStorageBufferMemory.back().mapMemory(0, VK_WHOLE_SIZE);
+        std::memcpy(mapped, &zeroWord, sizeof(zeroWord));
+        m_giFallbackReservedStorageBufferMemory.back().unmapMemory();
     }
 
     VulkanUtils::createBuffer(
@@ -2539,9 +2536,7 @@ void VulkanRenderer::updateGiDescriptorSet(uint32_t imageIndex, const FrameRende
 
     const uint32_t historyIndex = kRestirHistorySlot;
     GiLightingParamsGpu params{};
-    params.header.x = frameData.giLighting.enabled
-                          ? std::min(frameData.giLighting.cascadeCount, GI_CASCADE_BINDINGS)
-                          : 0u;
+    params.header.x = 0u;
     params.header.y = frameData.giLighting.sunShadowsEnabled ? 1u : 0u;
     params.header.z = frameData.giLighting.pathTracingEnabled ? 1u : 0u;
     params.header.w = frameData.giLighting.nrdDebugView;
@@ -2602,22 +2597,14 @@ void VulkanRenderer::updateGiDescriptorSet(uint32_t imageIndex, const FrameRende
     params.nrdPrevViewProjection =
         hasNrdPrevViewProjection ? m_nrdPrevViewProjection : viewProjection;
 
-    for (uint32_t i = 0; i < params.header.x; ++i) {
-        params.cascades[i].originSpacingBlocks =
-            frameData.giLighting.cascades[i].originSpacingBlocks;
-        params.cascades[i].probeCounts = frameData.giLighting.cascades[i].probeCounts;
-    }
     std::memcpy(resources.giParamsMapped, &params, sizeof(params));
 
-    std::array<vk::DescriptorBufferInfo, GI_CASCADE_BINDINGS + 3> bufferInfos{};
-    for (uint32_t i = 0; i < GI_CASCADE_BINDINGS; ++i) {
+    std::array<vk::DescriptorBufferInfo, GI_RESERVED_STORAGE_BINDINGS + 3> bufferInfos{};
+    for (uint32_t i = 0; i < GI_RESERVED_STORAGE_BINDINGS; ++i) {
         VkBuffer source = VK_NULL_HANDLE;
-        if (frameData.giLighting.enabled && i < frameData.giLighting.cascadeCount) {
-            source = frameData.giLighting.cascades[i].probeBuffer;
-        }
-        if (source == VK_NULL_HANDLE && i < m_giFallbackProbeBuffers.size() &&
-            m_giFallbackProbeBuffers[i] != nullptr) {
-            source = *m_giFallbackProbeBuffers[i];
+        if (i < m_giFallbackReservedStorageBuffers.size() &&
+            m_giFallbackReservedStorageBuffers[i] != nullptr) {
+            source = *m_giFallbackReservedStorageBuffers[i];
         }
         bufferInfos[i].buffer = source;
         bufferInfos[i].offset = 0;
@@ -2777,7 +2764,7 @@ void VulkanRenderer::updateGiDescriptorSet(uint32_t imageIndex, const FrameRende
         writes.push_back(write);
     };
 
-    for (uint32_t i = 0; i < GI_CASCADE_BINDINGS; ++i) {
+    for (uint32_t i = 0; i < GI_RESERVED_STORAGE_BINDINGS; ++i) {
         pushBufferWrite(i, vk::DescriptorType::eStorageBuffer, &bufferInfos[i]);
     }
     pushBufferWrite(GI_PARAM_BINDING, vk::DescriptorType::eUniformBuffer,
@@ -2869,8 +2856,8 @@ void VulkanRenderer::cleanupGiDescriptorResources() {
     m_giDescriptorPool.clear();
     m_giDescriptorSetLayout.clear();
     m_giRtDescriptorEnabled = false;
-    m_giFallbackProbeBuffers.clear();
-    m_giFallbackProbeBufferMemory.clear();
+    m_giFallbackReservedStorageBuffers.clear();
+    m_giFallbackReservedStorageBufferMemory.clear();
     m_giFallbackShadowOccupancyBuffer.clear();
     m_giFallbackShadowOccupancyBufferMemory.clear();
     m_giFallbackMaterialBuffer.clear();
@@ -3393,11 +3380,10 @@ void VulkanRenderer::recordCommandBuffer(uint32_t imageIndex, const glm::mat4 &v
 
     const auto uiCpuStart = std::chrono::steady_clock::now();
 #if VOXELOPS_IMGUI_VULKAN_BACKEND_AVAILABLE
-    if (ImGui::GetCurrentContext() != nullptr) {
+    ImDrawData *drawData = frameData.uiDrawData;
+    if (drawData != nullptr && drawData->CmdListsCount > 0 && ImGui::GetCurrentContext() != nullptr) {
         ImGuiIO &io = ImGui::GetIO();
-        ImDrawData *drawData = ImGui::GetDrawData();
-        if (io.BackendRendererUserData != nullptr && drawData != nullptr &&
-            drawData->CmdListsCount > 0) {
+        if (io.BackendRendererUserData != nullptr) {
             ImGui_ImplVulkan_RenderDrawData(drawData, *m_commandBuffers[imageIndex]);
         }
     }

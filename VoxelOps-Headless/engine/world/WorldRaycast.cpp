@@ -41,22 +41,27 @@ bool FindFirstSolidBlockHit(const ChunkManager &chunkManager,
 
     constexpr int kMaxDdaSteps = 2048;
     float traveled = 0.0f;
+    const ServerChunk *cachedChunk = nullptr;
+    glm::ivec3 cachedChunkCoords(std::numeric_limits<int>::max());
     for (int i = 0; i < kMaxDdaSteps; ++i) {
-        if (traveled > maxDistance) {
-            break;
+        const glm::ivec3 chunkCoords = chunkManager.worldToChunkPos(currentBlock);
+        if (chunkCoords != cachedChunkCoords) {
+            cachedChunkCoords = chunkCoords;
+            cachedChunk = chunkManager.getChunkIfExists(chunkCoords);
+        }
+        if (cachedChunk) {
+            const glm::ivec3 blockInChunk = currentBlock - cachedChunk->getWorldPosition();
+            if (cachedChunk->getBlockUnchecked(blockInChunk.x, blockInChunk.y, blockInChunk.z) !=
+                BlockID::Air) {
+                outDistance = traveled;
+                outHitPoint = origin + rayDir * traveled;
+                return true;
+            }
         }
 
-        const glm::ivec3 chunkCoords = chunkManager.worldToChunkPos(currentBlock);
-        if (const ServerChunk *chunk = chunkManager.getChunkIfExists(chunkCoords)) {
-            const glm::ivec3 blockInChunk = currentBlock - chunk->getWorldPosition();
-            if (ServerChunk::inBounds(blockInChunk.x, blockInChunk.y, blockInChunk.z)) {
-                if (chunk->getBlockUnchecked(blockInChunk.x, blockInChunk.y, blockInChunk.z) !=
-                    BlockID::Air) {
-                    outDistance = traveled;
-                    outHitPoint = origin + rayDir * traveled;
-                    return true;
-                }
-            }
+        const float nextT = std::min({tMax.x, tMax.y, tMax.z});
+        if (nextT > maxDistance) {
+            break;
         }
 
         if (tMax.x < tMax.y) {

@@ -248,6 +248,10 @@ void createDescriptorResources(
 }
 }
 
+
+
+
+
 void VkTexture::initFromFile(
     const vk::raii::Device& device,
     const vk::raii::PhysicalDevice& physicalDevice,
@@ -327,6 +331,9 @@ void VkTexture::initFromFile(
         m_descriptorSets
     );
 }
+
+
+
 
 void VkTexture::initFromAtlasFileAsArray(
     const vk::raii::Device& device,
