@@ -30,4 +30,6 @@ void copyBufferToImage(const vk::raii::Device &device, const vk::raii::CommandPo
                        const vk::raii::Queue &queue, vk::Buffer buffer, vk::Image image,
                        uint32_t width, uint32_t height);
 
+
+vk::raii::ShaderModule loadShaderModule(const vk::raii::Device &device, const std::string &path);
 } // namespace VulkanUtils

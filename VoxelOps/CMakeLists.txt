@@ -54,7 +54,10 @@ add_executable(VoxelOps
     "graphics/Vulkan/vulkan/UploadContext.cpp"
     "graphics/Vulkan/vulkan/VulkanContext.cpp"
     "graphics/Vulkan/vulkan/VulkanUtils.cpp"
-     
+    "graphics/Vulkan/renderer/VulkanRendererTiming.cpp"
+    "graphics/Vulkan/renderer/VulkanDrawResources.cpp"
+    "graphics/Vulkan/renderer/VulkanNrdResources.cpp"
+
     "player/Player.cpp"
     "input/InputCallbacks.cpp"
     "data/GameData.hpp"
@@ -97,7 +100,7 @@ add_executable(VoxelOps
     "commands/CommandParser.cpp"
     "ui/player/SettingsUI.cpp"
     "ui/player/MainMenu.cpp"
-)
+ "graphics/Vulkan/renderer/VulkanRestirSpatial.cpp" "graphics/Vulkan/renderer/RestirConfig.hpp")
 
 find_package(SDL3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)

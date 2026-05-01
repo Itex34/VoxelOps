@@ -1,9 +1,14 @@
 #include "graphics/Vulkan/vulkan/VulkanUtils.hpp"
 
+
+#include <algorithm>
 #include <array>
+#include <chrono>
+#include <cstdint>
+#include <fstream>
 #include <limits>
 #include <stdexcept>
-#include <utility>
+#include <string>
 
 namespace VulkanUtils {
 
@@ -151,5 +156,32 @@ void copyBufferToImage(const vk::raii::Device &device, const vk::raii::CommandPo
 
     endSingleTimeCommands(device, queue, std::move(commandBuffer));
 }
+
+
+vk::raii::ShaderModule loadShaderModule(const vk::raii::Device &device, const std::string &path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) {
+        throw std::runtime_error("Failed to open shader: " + path);
+    }
+
+    const size_t size = static_cast<size_t>(file.tellg());
+    if (size == 0 || (size % 4) != 0) {
+        throw std::runtime_error("Invalid shader size: " + path);
+    }
+
+    std::vector<uint32_t> code(size / 4);
+    file.seekg(0);
+    file.read(reinterpret_cast<char *>(code.data()), static_cast<std::streamsize>(size));
+    if (!file) {
+        throw std::runtime_error("Failed to read shader: " + path);
+    }
+
+    vk::ShaderModuleCreateInfo shaderModuleInfo{};
+    shaderModuleInfo.codeSize = size;
+    shaderModuleInfo.pCode = code.data();
+    return vk::raii::ShaderModule(device, shaderModuleInfo);
+}
+
+
 
 } // namespace VulkanUtils
