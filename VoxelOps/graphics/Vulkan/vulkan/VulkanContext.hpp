@@ -17,7 +17,7 @@ struct QueueFamilyIndices {
 };
 
 class VulkanContext {
-  public:
+public:
     VulkanContext() = default;
     ~VulkanContext();
 
@@ -94,7 +94,7 @@ class VulkanContext {
         return m_computeShaderDerivativesEnabled;
     }
 
-  private:
+private:
     vk::raii::Context context{};
     vk::raii::Instance instance{nullptr};
     vk::raii::DebugUtilsMessengerEXT debugMessenger{nullptr};
@@ -141,14 +141,24 @@ class VulkanContext {
     void cleanupSwapchainResources();
     bool recreateSwapchain(uint32_t windowWidth, uint32_t windowHeight);
 
-    vk::raii::ImageView createImageView(vk::Image image, vk::Format format,
-                                        vk::ImageAspectFlags aspectFlags);
-    void createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling,
-                     vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties,
-                     vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory);
+    vk::raii::ImageView
+    createImageView(vk::Image image, vk::Format format, vk::ImageAspectFlags aspectFlags);
+    void createImage(
+        uint32_t width,
+        uint32_t height,
+        vk::Format format,
+        vk::ImageTiling tiling,
+        vk::ImageUsageFlags usage,
+        vk::MemoryPropertyFlags properties,
+        vk::raii::Image &image,
+        vk::raii::DeviceMemory &imageMemory
+    );
     uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const;
-    vk::Format findSupportedFormat(const std::vector<vk::Format> &candidates,
-                                   vk::ImageTiling tiling, vk::FormatFeatureFlags features) const;
+    vk::Format findSupportedFormat(
+        const std::vector<vk::Format> &candidates,
+        vk::ImageTiling tiling,
+        vk::FormatFeatureFlags features
+    ) const;
     vk::Format findDepthFormat() const;
     static bool hasStencilComponent(vk::Format format);
 
@@ -156,9 +166,10 @@ class VulkanContext {
 
     bool checkDeviceExtensionSupport(const vk::raii::PhysicalDevice &device);
     bool checkValidationLayerSupport();
-    bool hasAdequateSwapchainSupport(const vk::raii::PhysicalDevice &device,
-                                     const vk::raii::SurfaceKHR &surface);
+    bool hasAdequateSwapchainSupport(
+        const vk::raii::PhysicalDevice &device, const vk::raii::SurfaceKHR &surface
+    );
 
-    QueueFamilyIndices findQueueFamilies(const vk::raii::PhysicalDevice &device,
-                                         const vk::raii::SurfaceKHR &surface);
+    QueueFamilyIndices
+    findQueueFamilies(const vk::raii::PhysicalDevice &device, const vk::raii::SurfaceKHR &surface);
 };

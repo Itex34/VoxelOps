@@ -3,7 +3,7 @@
 #include <vulkan/vulkan_raii.hpp>
 
 class RenderPass {
-  public:
+public:
     void create(const vk::raii::Device &device, vk::Format colorFormat, vk::Format depthFormat);
     void cleanup();
 
@@ -11,6 +11,6 @@ class RenderPass {
         return m_renderPass;
     }
 
-  private:
+private:
     vk::raii::RenderPass m_renderPass{nullptr};
 };

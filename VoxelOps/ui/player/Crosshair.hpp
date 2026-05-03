@@ -10,11 +10,10 @@
 #include "../../settings/Settings.hpp"
 
 class Crosshair {
-
-  public:
+public:
     bool initialize(const Settings::Crosshair &crosshairSettings);
     void draw(const Settings::Crosshair &crosshairSettings);
 
-  private:
+private:
     bool loadCrosshairImageFromFile(const std::filesystem::path &path);
 };

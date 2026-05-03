@@ -34,8 +34,9 @@ void VulkanRenderer::createFramebuffers() {
     m_framebuffers.reserve(swapchainImageViews.size());
 
     for (const auto &swapchainImageView : swapchainImageViews) {
-        std::array<vk::ImageView, 2> attachments = {*swapchainImageView,
-                                                    *m_context.getDepthImageView()};
+        std::array<vk::ImageView, 2> attachments = {
+            *swapchainImageView, *m_context.getDepthImageView()
+        };
 
         vk::FramebufferCreateInfo framebufferInfo{};
         framebufferInfo.renderPass = *m_renderPass.get();
@@ -100,13 +101,26 @@ void VulkanRenderer::recreateSwapchainDependentResources() {
     const char *chunkFragShader =
         useRtShaderVariants ? "triangle_rt.frag.spv" : "triangle.frag.spv";
     const char *modelFragShader = useRtShaderVariants ? "model_rt.frag.spv" : "model.frag.spv";
-    m_chunkPipeline.create(device, m_renderPass.get(),
-                           m_fallbackArrayTexture.getDescriptorSetLayout(),
-                           m_modelDescriptorSetLayout, m_giDescriptorSetLayout,
-                           PipelineVertexLayout::PackedVoxel, "triangle.vert.spv", chunkFragShader);
-    m_modelPipeline.create(device, m_renderPass.get(), m_fallback2DTexture.getDescriptorSetLayout(),
-                           m_modelDescriptorSetLayout, m_giDescriptorSetLayout,
-                           PipelineVertexLayout::ModelPosUv, "model.vert.spv", modelFragShader);
+    m_chunkPipeline.create(
+        device,
+        m_renderPass.get(),
+        m_fallbackArrayTexture.getDescriptorSetLayout(),
+        m_modelDescriptorSetLayout,
+        m_giDescriptorSetLayout,
+        PipelineVertexLayout::PackedVoxel,
+        "triangle.vert.spv",
+        chunkFragShader
+    );
+    m_modelPipeline.create(
+        device,
+        m_renderPass.get(),
+        m_fallback2DTexture.getDescriptorSetLayout(),
+        m_modelDescriptorSetLayout,
+        m_giDescriptorSetLayout,
+        PipelineVertexLayout::ModelPosUv,
+        "model.vert.spv",
+        modelFragShader
+    );
     createCommandBuffers();
     createTimestampResources();
     m_frameSync.recreateSwapchainSync(device, m_framebuffers.size());

@@ -4,9 +4,15 @@
 
 // Constructor
 Gun::Gun(GunType inType, float inFireInterval, float inReloadTime, unsigned int inMaxAmmo) noexcept
-    : gunType(inType), reloadTime(inReloadTime), fireInterval(inFireInterval),
-      timeSinceLastShot(0.0f), wantsToFire(false), isReloading(false), reloadTimer(0.0f),
-      maxAmmo(inMaxAmmo), currentAmmo(inMaxAmmo) {}
+    : gunType(inType)
+    , reloadTime(inReloadTime)
+    , fireInterval(inFireInterval)
+    , timeSinceLastShot(0.0f)
+    , wantsToFire(false)
+    , isReloading(false)
+    , reloadTimer(0.0f)
+    , maxAmmo(inMaxAmmo)
+    , currentAmmo(inMaxAmmo) {}
 
 Gun::~Gun() = default;
 

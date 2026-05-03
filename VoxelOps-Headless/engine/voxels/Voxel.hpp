@@ -33,11 +33,11 @@ enum class BlockID : uint8_t {
 };
 
 namespace std {
-template <> struct hash<BlockID> {
-    size_t operator()(const BlockID &id) const noexcept {
-        return static_cast<size_t>(id);
-    }
-};
+    template <> struct hash<BlockID> {
+        size_t operator()(const BlockID &id) const noexcept {
+            return static_cast<size_t>(id);
+        }
+    };
 } // namespace std
 
 /// Keep same structure names so existing server code using them keeps compiling.
@@ -76,7 +76,9 @@ inline std::unordered_map<BlockID, BlockType> blockTypes = {
      {{"sapphire_gem", "sapphire_gem", "sapphire_gem", "sapphire_gem"}, true}},
     {BlockID::RubyGem, {{"ruby_gem", "ruby_gem", "ruby_gem", "ruby_gem"}, true}},
     {BlockID::CraftingTable,
-     {{"crafting_table_top", "crafting_table_bottom", "crafting_table_rl_side",
+     {{"crafting_table_top",
+       "crafting_table_bottom",
+       "crafting_table_rl_side",
        "crafting_table_fb_side"},
       true}},
     {BlockID::Bomb, {{"bomb_top", "bomb_bottom", "bomb_side", "bomb_side"}, true}},
@@ -84,7 +86,8 @@ inline std::unordered_map<BlockID, BlockType> blockTypes = {
     {BlockID::RubyBlock, {{"ruby_block", "ruby_block", "ruby_block", "ruby_block"}, true}},
     {BlockID::SapphireBlock,
      {{"sapphire_block", "sapphire_block", "sapphire_block", "sapphire_block"}, true}},
-    {BlockID::Air, {{"", "", "", ""}, false}}};
+    {BlockID::Air, {{"", "", "", ""}, false}}
+};
 
 inline bool isSolid(BlockID id) {
     auto it = blockTypes.find(id);

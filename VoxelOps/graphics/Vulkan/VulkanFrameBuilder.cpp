@@ -3,7 +3,6 @@
 #include "../Camera.hpp"
 #include "../Frustum.hpp"
 #include "../../data/GameData.hpp"
-#include "../../player/Player.hpp"
 #include "../../voxels/Chunk.hpp"
 #include "../../../Shared/player/PlayerData.hpp"
 #include "graphics/Model.hpp"
@@ -16,11 +15,21 @@
 #include <glm/gtx/quaternion.hpp>
 
 VulkanFrameBuildResult VulkanFrameBuilder::buildFrameData(
-    FrameRenderData &frameData, const VulkanChunkRenderCache &chunkRenderCache,
-    const VkTexture &atlasTexture, const Camera &activeCamera, const Camera &cullingCamera,
-    const Player &player, ImDrawData *uiDrawData, int width, int height,
-    const VkModel *remotePlayerModel, const std::vector<const VkTexture *> &remotePlayerTextures,
-    const glm::ivec3 &cullingChunk) {
+    FrameRenderData &frameData,
+    const VulkanChunkRenderCache &chunkRenderCache,
+    const VkTexture &atlasTexture,
+    const Camera &activeCamera,
+    const Camera &cullingCamera,
+    const glm::vec3 &localPlayerPosition,
+    uint16_t chunkRenderDistance,
+    const std::vector<RenderRemotePlayerState> &remotePlayers,
+    ImDrawData *uiDrawData,
+    int width,
+    int height,
+    const VkModel *remotePlayerModel,
+    const std::vector<const VkTexture *> &remotePlayerTextures,
+    const glm::ivec3 &cullingChunk
+) {
     const auto measureMs = [](auto start, auto end) -> float {
         return static_cast<float>(std::chrono::duration<double, std::milli>(end - start).count());
     };
@@ -28,8 +37,11 @@ VulkanFrameBuildResult VulkanFrameBuilder::buildFrameData(
     VulkanFrameBuildResult out{};
     out.view = activeCamera.getViewMatrix();
     out.projection = glm::perspectiveRH_ZO(
-        glm::radians(GameData::FOV), static_cast<float>(width) / static_cast<float>(height), 0.1f,
-        1000.0f);
+        glm::radians(GameData::FOV),
+        static_cast<float>(width) / static_cast<float>(height),
+        0.1f,
+        1000.0f
+    );
     out.projection[1][1] *= -1.0f;
     out.viewProjection = out.projection * out.view;
 
@@ -37,7 +49,7 @@ VulkanFrameBuildResult VulkanFrameBuilder::buildFrameData(
     const glm::mat4 cullingViewProjection = out.projection * cullingCamera.getViewMatrix();
     frustum.extractPlanes(cullingViewProjection, true);
 
-    const int maxRenderDistance = std::max(2, static_cast<int>(player.renderDistance));
+    const int maxRenderDistance = std::max(2, static_cast<int>(chunkRenderDistance));
     const int64_t radius2 =
         static_cast<int64_t>(maxRenderDistance) * static_cast<int64_t>(maxRenderDistance);
     const auto frameBuildStart = std::chrono::steady_clock::now();
@@ -99,9 +111,9 @@ VulkanFrameBuildResult VulkanFrameBuilder::buildFrameData(
         const float uniformFitToCollision = targetHeight / std::max(modelSize.y, 1.0e-4f);
         const float modelMinY = localMin.y;
 
-        frameData.objects.reserve(frameData.objects.size() + player.connectedPlayers.size());
-        for (const auto &[_, state] : player.connectedPlayers) {
-            const glm::vec3 toLocal = state.position - player.getPosition();
+        frameData.objects.reserve(frameData.objects.size() + remotePlayers.size());
+        for (const RenderRemotePlayerState &state : remotePlayers) {
+            const glm::vec3 toLocal = state.position - localPlayerPosition;
             const float localDistSq = glm::dot(toLocal, toLocal);
             if (!std::isfinite(localDistSq) || localDistSq < localGhostRejectDistanceSq) {
                 continue;

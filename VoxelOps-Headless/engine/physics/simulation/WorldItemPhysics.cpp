@@ -6,14 +6,15 @@
 #include <cmath>
 
 namespace {
-constexpr float kMaxAxisStepDistance = 0.24f;
-constexpr float kGroundProbeDistance = 0.04f;
-constexpr float kMaxNudgeUp = 0.40f;
-constexpr float kMinHorizontalSleepSpeed = 0.01f;
+    constexpr float kMaxAxisStepDistance = 0.24f;
+    constexpr float kGroundProbeDistance = 0.04f;
+    constexpr float kMaxNudgeUp = 0.40f;
+    constexpr float kMinHorizontalSleepSpeed = 0.01f;
 } // namespace
 
-void WorldItemPhysics::Step(WorldItemEntity &item, float deltaSeconds, float tickRateHz,
-                                  const ChunkManager &chunkManager) {
+void WorldItemPhysics::Step(
+    WorldItemEntity &item, float deltaSeconds, float tickRateHz, const ChunkManager &chunkManager
+) {
     if (!std::isfinite(deltaSeconds) || deltaSeconds <= 0.0f) {
         return;
     }
@@ -61,8 +62,9 @@ void WorldItemPhysics::Step(WorldItemEntity &item, float deltaSeconds, float tic
         for (int i = 0; i < steps; ++i) {
             glm::vec3 candidate = position;
             candidate[axis] += stepMove;
-            const auto query = chunkManager.queryAabbCollision(candidate, kCollisionRadius,
-                                                               kCollisionHeight, true);
+            const auto query = chunkManager.queryAabbCollision(
+                candidate, kCollisionRadius, kCollisionHeight, true
+            );
             if (!query.collided) {
                 position = candidate;
                 continue;

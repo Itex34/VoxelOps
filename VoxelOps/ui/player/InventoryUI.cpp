@@ -49,8 +49,13 @@ bool InventoryUI::hasAuthoritativeSnapshot() const noexcept {
     return m_hasSnapshot;
 }
 
-bool InventoryUI::submitAction(ClientNetwork &clientNet, InventoryActionType type,
-                               uint16_t sourceSlot, uint16_t destinationSlot, uint16_t amount) {
+bool InventoryUI::submitAction(
+    ClientNetwork &clientNet,
+    InventoryActionType type,
+    uint16_t sourceSlot,
+    uint16_t destinationSlot,
+    uint16_t amount
+) {
     if (!hasAuthoritativeSnapshot()) {
         return false;
     }
@@ -100,8 +105,11 @@ void InventoryUI::draw(ClientNetwork &clientNet, bool connected) {
     ImGuiIO &io = ImGui::GetIO();
     const ImVec2 windowSize(760.0f, 520.0f);
     ImGui::SetNextWindowSize(windowSize, ImGuiCond_Always);
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
-                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowPos(
+        ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
+        ImGuiCond_Always,
+        ImVec2(0.5f, 0.5f)
+    );
     constexpr ImGuiWindowFlags windowFlags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;

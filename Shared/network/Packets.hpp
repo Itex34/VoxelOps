@@ -96,14 +96,6 @@ struct ShootResult {
     static std::optional<ShootResult> deserialize(const std::vector<uint8_t> &buf);
 };
 
-struct PlayerPosition {
-    uint32_t sequenceNumber = 0;
-    float posX = 0.f, posY = 0.f, posZ = 0.f;
-    float velX = 0.f, velY = 0.f, velZ = 0.f;
-    std::vector<uint8_t> serialize() const;
-    static std::optional<PlayerPosition> deserialize(const std::vector<uint8_t> &buf);
-};
-
 struct PlayerSnapshot {
     uint64_t id = 0;
     float px = 0.0f, py = 0.0f, pz = 0.0f;
@@ -148,7 +140,8 @@ struct ChunkData {
     int32_t chunkZ = 0;
     uint64_t version = 0;
     uint8_t flags = 0; // bit0: compressed, payload encodes raw CHUNK_VOLUME voxel bytes
-    std::vector<uint8_t> payload; // raw voxels when uncompressed; [rawSize:u32][lz4 bytes] when compressed
+    std::vector<uint8_t>
+        payload; // raw voxels when uncompressed; [rawSize:u32][lz4 bytes] when compressed
 
     std::vector<uint8_t> serialize() const;
     static std::optional<ChunkData> deserialize(const std::vector<uint8_t> &buf);

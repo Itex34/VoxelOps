@@ -6,19 +6,27 @@
 
 namespace {
 
-void SendBlockPlaceResult(HSteamNetConnection incoming, const BlockPlaceResult &result) {
-    const std::vector<uint8_t> bytes = result.serialize();
-    (void)SteamNetworkingSockets()->SendMessageToConnection(
-        incoming, bytes.data(), static_cast<uint32_t>(bytes.size()),
-        k_nSteamNetworkingSend_Reliable, nullptr);
-}
+    void SendBlockPlaceResult(HSteamNetConnection incoming, const BlockPlaceResult &result) {
+        const std::vector<uint8_t> bytes = result.serialize();
+        (void)SteamNetworkingSockets()->SendMessageToConnection(
+            incoming,
+            bytes.data(),
+            static_cast<uint32_t>(bytes.size()),
+            k_nSteamNetworkingSend_Reliable,
+            nullptr
+        );
+    }
 
-void SendBlockBreakResult(HSteamNetConnection incoming, const BlockBreakResult &result) {
-    const std::vector<uint8_t> bytes = result.serialize();
-    (void)SteamNetworkingSockets()->SendMessageToConnection(
-        incoming, bytes.data(), static_cast<uint32_t>(bytes.size()),
-        k_nSteamNetworkingSend_Reliable, nullptr);
-}
+    void SendBlockBreakResult(HSteamNetConnection incoming, const BlockBreakResult &result) {
+        const std::vector<uint8_t> bytes = result.serialize();
+        (void)SteamNetworkingSockets()->SendMessageToConnection(
+            incoming,
+            bytes.data(),
+            static_cast<uint32_t>(bytes.size()),
+            k_nSteamNetworkingSend_Reliable,
+            nullptr
+        );
+    }
 
 } // namespace
 
@@ -33,11 +41,13 @@ bool Runtime::TryGetRegisteredPlayerId(HSteamNetConnection incoming, PlayerID &o
     return true;
 }
 
-void Runtime::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, const void *data,
-                                                  uint32_t size) {
+void Runtime::HandleBlockPlaceRequestPacket(
+    HSteamNetConnection incoming, const void *data, uint32_t size
+) {
     BlockPlaceRequest request{};
-    if (!NetPacket::ParseBlockPlaceRequestPacket(reinterpret_cast<const uint8_t *>(data), size,
-                                                 request)) {
+    if (!NetPacket::ParseBlockPlaceRequestPacket(
+            reinterpret_cast<const uint8_t *>(data), size, request
+        )) {
         BlockPlaceResult result{};
         result.accepted = 0;
         result.rejectReason = BlockPlaceRejectReason::InvalidPacket;
@@ -61,11 +71,13 @@ void Runtime::HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, const 
     SendBlockPlaceResult(incoming, result);
 }
 
-void Runtime::HandleBlockBreakRequestPacket(HSteamNetConnection incoming, const void *data,
-                                                  uint32_t size) {
+void Runtime::HandleBlockBreakRequestPacket(
+    HSteamNetConnection incoming, const void *data, uint32_t size
+) {
     BlockBreakRequest request{};
-    if (!NetPacket::ParseBlockBreakRequestPacket(reinterpret_cast<const uint8_t *>(data), size,
-                                                 request)) {
+    if (!NetPacket::ParseBlockBreakRequestPacket(
+            reinterpret_cast<const uint8_t *>(data), size, request
+        )) {
         BlockBreakResult result{};
         result.accepted = 0;
         result.rejectReason = BlockBreakRejectReason::InvalidPacket;

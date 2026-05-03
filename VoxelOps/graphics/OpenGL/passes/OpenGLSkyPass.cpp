@@ -5,8 +5,9 @@
 
 #include <glad/glad.h>
 
-void OpenGLSkyPass::renderDirect(ISkyBackend &sky, const Camera &activeCamera,
-                                 const glm::mat4 &projection, const glm::mat4 &view) const {
+void OpenGLSkyPass::renderDirect(
+    ISkyBackend &sky, const Camera &activeCamera, const glm::mat4 &projection, const glm::mat4 &view
+) const {
     sky.setCameraFromActiveCamera(activeCamera);
     const bool framebufferSrgbWasEnabled = (glIsEnabled(GL_FRAMEBUFFER_SRGB) == GL_TRUE);
     if (sky.encodesOutputToSrgb() && framebufferSrgbWasEnabled) {
@@ -18,8 +19,9 @@ void OpenGLSkyPass::renderDirect(ISkyBackend &sky, const Camera &activeCamera,
     }
 }
 
-void OpenGLSkyPass::compositeExternal(ISkyBackend &sky, const Camera &activeCamera,
-                                      const glm::mat4 &projection, const glm::mat4 &view) const {
+void OpenGLSkyPass::compositeExternal(
+    ISkyBackend &sky, const Camera &activeCamera, const glm::mat4 &projection, const glm::mat4 &view
+) const {
     sky.setCameraFromActiveCamera(activeCamera);
     const bool framebufferSrgbWasEnabled = (glIsEnabled(GL_FRAMEBUFFER_SRGB) == GL_TRUE);
     if (sky.encodesOutputToSrgb() && framebufferSrgbWasEnabled) {

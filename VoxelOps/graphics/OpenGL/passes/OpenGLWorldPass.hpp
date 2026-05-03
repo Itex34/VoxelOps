@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../RenderFrameParams.hpp"
+#include "../../../render/RenderScene.hpp"
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
@@ -14,7 +14,7 @@ struct OpenGLWorldPassInput {
     Shader &debugShader;
     OpenGLChunkScene &chunkScene;
     OpenGLRemotePlayerRenderer &remotePlayerRenderer;
-    RenderFrameParams &frameParams;
+    RenderScene &frameParams;
     const glm::mat4 &view;
     const glm::mat4 &projection;
     const glm::mat4 &cullingViewProjection;
@@ -26,6 +26,6 @@ struct OpenGLWorldPassInput {
 };
 
 class OpenGLWorldPass {
-  public:
+public:
     void execute(const OpenGLWorldPassInput &in) const;
 };

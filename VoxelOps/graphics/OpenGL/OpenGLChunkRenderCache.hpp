@@ -1,6 +1,11 @@
 #pragma once
 
-#include "../../world/ChunkManager.hpp"
+#include "../../render/ChunkMeshData.hpp"
+#include "../Mesh.hpp"
+
+#include "../ChunkRegionConfig.hpp"
+#include "../../voxels/Chunk.hpp"
+#include "../../voxels/VoxelCoordHash.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -10,7 +15,7 @@
 class RegionMeshBuffer;
 
 class OpenGLChunkRenderCache {
-  public:
+public:
     struct RegionChunkMesh {
         ChunkMesh mesh;
         uint64_t revision = 0;
@@ -29,7 +34,9 @@ class OpenGLChunkRenderCache {
 
     using RegionMap = std::unordered_map<glm::ivec3, Region, IVec3Hash>;
 
-    void syncFromChunkManager(const ChunkManager &chunkManager);
+    void syncFromCpuChunkMeshes(
+        const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuMeshes
+    );
     [[nodiscard]] const RegionMap &regions() const noexcept {
         return m_regions;
     }
@@ -37,13 +44,16 @@ class OpenGLChunkRenderCache {
         return m_regions;
     }
 
-  private:
+private:
     Region &getOrCreateRegion(const glm::ivec3 &chunkPos);
-    bool rebuildRegion(const glm::ivec3 &regionPos,
-                       const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuMeshes,
-                       size_t reserveVertices = 0, size_t reserveIndices = 0);
-    void pruneMissingMeshes(
-        const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuMeshes);
+    bool rebuildRegion(
+        const glm::ivec3 &regionPos,
+        const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuMeshes,
+        size_t reserveVertices = 0,
+        size_t reserveIndices = 0
+    );
+    void
+    pruneMissingMeshes(const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuMeshes);
 
     static glm::ivec3 chunkToRegionPos(const glm::ivec3 &chunkPos);
     static int floorDiv(int a, int b);

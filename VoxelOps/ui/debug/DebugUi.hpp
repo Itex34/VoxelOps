@@ -98,7 +98,7 @@ struct UiVulkanInitInfo {
 };
 
 class DebugUi {
-  public:
+public:
     bool initialize(SDL_Window *window, SDL_GLContext glContext, const char *glslVersion);
     bool initializeForVulkan(SDL_Window *window, const UiVulkanInitInfo &initInfo);
     void processEvent(const SDL_Event &event);
@@ -114,7 +114,7 @@ class DebugUi {
     void toggleVisible() noexcept;
     [[nodiscard]] bool isVisible() const noexcept;
 
-  private:
+private:
     enum class BackendType : uint8_t { None = 0, OpenGL = 1, Vulkan = 2 };
 
     bool m_initialized = false;

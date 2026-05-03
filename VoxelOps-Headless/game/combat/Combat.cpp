@@ -15,18 +15,18 @@
 #include <vector>
 
 namespace {
-constexpr float kShootMaxDistance = 128.0f;
-constexpr float kShootMinIntervalSeconds = 1.0f / 8.0f;
-constexpr float kShootHitboxPadXZ = 0.08f;
-constexpr float kShootHitboxPadY = 0.04f;
-constexpr float kShootBlockOcclusionEpsilon = 0.06f;
-constexpr float kShootOriginTolerance = 0.60f;
-constexpr float kShootOriginOcclusionEpsilon = 0.02f;
-constexpr bool kEnableShootValidationLogs = false;
+    constexpr float kShootMaxDistance = 128.0f;
+    constexpr float kShootMinIntervalSeconds = 1.0f / 8.0f;
+    constexpr float kShootHitboxPadXZ = 0.08f;
+    constexpr float kShootHitboxPadY = 0.04f;
+    constexpr float kShootBlockOcclusionEpsilon = 0.06f;
+    constexpr float kShootOriginTolerance = 0.60f;
+    constexpr float kShootOriginOcclusionEpsilon = 0.02f;
+    constexpr bool kEnableShootValidationLogs = false;
 
-inline const Shared::PlayerData::MovementSettings &movementSettings() {
-    return Shared::PlayerData::GetMovementSettings();
-}
+    inline const Shared::PlayerData::MovementSettings &movementSettings() {
+        return Shared::PlayerData::GetMovementSettings();
+    }
 } // namespace
 
 const std::vector<ServerPlayerCombatSnapshot> &
@@ -50,8 +50,7 @@ void Runtime::RecordLagCompFrame(uint32_t serverTick) {
     LagCompensation::RecordFrame(m_lagCompFrames, serverTick, players);
 }
 
-ShootResult Runtime::ExecuteShootRequest(HSteamNetConnection incoming,
-                                               const ShootRequest &req) {
+ShootResult Runtime::ExecuteShootRequest(HSteamNetConnection incoming, const ShootRequest &req) {
     if (kEnableShootValidationLogs) {
         std::cout << "[shoot/validate] recv conn=" << incoming << " shotId=" << req.clientShotId
                   << " tick=" << req.clientTick << " weapon=" << req.weaponId << " pos=("
@@ -122,16 +121,23 @@ ShootResult Runtime::ExecuteShootRequest(HSteamNetConnection incoming,
         return ctx.result;
     }
 
-    ctx.lagFrame = LagCompensation::GetFrameForTick(m_lagCompFrames, currentServerTick,
-                                                    req.clientTick);
+    ctx.lagFrame =
+        LagCompensation::GetFrameForTick(m_lagCompFrames, currentServerTick, req.clientTick);
 
-    const std::optional<ServerPlayer> shooterOpt = m_playerManager.getPlayerCopy(ctx.session.playerId);
+    const std::optional<ServerPlayer> shooterOpt =
+        m_playerManager.getPlayerCopy(ctx.session.playerId);
     if (!shooterOpt.has_value() || !shooterOpt->isAlive) {
         return ctx.result;
     }
-    if (!Shoot::FinalizeContext(ctx, *shooterOpt, ctx.lagFrame, m_chunkManager,
-                                movementSettings().eyeHeight, kShootOriginTolerance,
-                                kShootOriginOcclusionEpsilon)) {
+    if (!Shoot::FinalizeContext(
+            ctx,
+            *shooterOpt,
+            ctx.lagFrame,
+            m_chunkManager,
+            movementSettings().eyeHeight,
+            kShootOriginTolerance,
+            kShootOriginOcclusionEpsilon
+        )) {
         return ctx.result;
     }
 
@@ -140,8 +146,7 @@ ShootResult Runtime::ExecuteShootRequest(HSteamNetConnection incoming,
                   << (ctx.lagFrame ? static_cast<int64_t>(ctx.lagFrame->serverTick) : -1)
                   << " origin=(" << ctx.rayOrigin.x << "," << ctx.rayOrigin.y << ","
                   << ctx.rayOrigin.z << ")"
-                  << " requestedOriginAccepted="
-                  << (ctx.requestedOriginAccepted ? "yes" : "no")
+                  << " requestedOriginAccepted=" << (ctx.requestedOriginAccepted ? "yes" : "no")
                   << " maxDistance=" << kShootMaxDistance << "\n";
     }
 
@@ -190,8 +195,8 @@ ShootResult Runtime::ExecuteShootRequest(HSteamNetConnection incoming,
                       << " region=" << Rules::HitRegionName(outcome.hitRegion)
                       << " damage=" << outcome.damageApplied
                       << " healthAfter=" << outcome.healthAfter
-                      << " killed=" << (outcome.killed ? "yes" : "no")
-                      << " point=(" << outcome.hitPoint.x << "," << outcome.hitPoint.y << ","
+                      << " killed=" << (outcome.killed ? "yes" : "no") << " point=("
+                      << outcome.hitPoint.x << "," << outcome.hitPoint.y << ","
                       << outcome.hitPoint.z << ")"
                       << "\n";
         }
@@ -201,8 +206,9 @@ ShootResult Runtime::ExecuteShootRequest(HSteamNetConnection incoming,
         std::string victimUsername;
         {
             std::lock_guard<std::mutex> lk(m_mutex);
-            CombatFeedback::ApplyKillScore(m_matchScores, m_matchEnded, ctx.session.playerId,
-                                           outcome.hitPlayerId);
+            CombatFeedback::ApplyKillScore(
+                m_matchScores, m_matchEnded, ctx.session.playerId, outcome.hitPlayerId
+            );
             for (const auto &[_, clientSession] : m_clients) {
                 if (clientSession.playerId == outcome.hitPlayerId) {
                     victimUsername = clientSession.username;
@@ -217,8 +223,11 @@ ShootResult Runtime::ExecuteShootRequest(HSteamNetConnection incoming,
 
         const std::string killfeedPacket =
             CombatFeedback::BuildKillfeedPacket(ctx.session.username, victimUsername, req.weaponId);
-        BroadcastRaw(killfeedPacket.data(), static_cast<uint32_t>(killfeedPacket.size()),
-                     k_HSteamNetConnection_Invalid);
+        BroadcastRaw(
+            killfeedPacket.data(),
+            static_cast<uint32_t>(killfeedPacket.size()),
+            k_HSteamNetConnection_Invalid
+        );
     }
 
     return ctx.result;

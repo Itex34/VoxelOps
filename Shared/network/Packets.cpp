@@ -7,83 +7,83 @@
 
 namespace {
 
-// little-endian writers
-inline void write_u8(std::vector<uint8_t> &dst, uint8_t v) {
-    dst.push_back(v);
-}
-inline void write_u16(std::vector<uint8_t> &dst, uint16_t v) {
-    dst.push_back(uint8_t(v & 0xFF));
-    dst.push_back(uint8_t((v >> 8) & 0xFF));
-}
-inline void write_u32(std::vector<uint8_t> &dst, uint32_t v) {
-    dst.push_back(uint8_t((v >> 0) & 0xFF));
-    dst.push_back(uint8_t((v >> 8) & 0xFF));
-    dst.push_back(uint8_t((v >> 16) & 0xFF));
-    dst.push_back(uint8_t((v >> 24) & 0xFF));
-}
-inline void write_i32(std::vector<uint8_t> &dst, int32_t v) {
-    write_u32(dst, static_cast<uint32_t>(v));
-}
-inline void write_u64(std::vector<uint8_t> &dst, uint64_t v) {
-    for (int i = 0; i < 8; ++i) {
-        dst.push_back(uint8_t((v >> (8 * i)) & 0xFF));
+    // little-endian writers
+    inline void write_u8(std::vector<uint8_t> &dst, uint8_t v) {
+        dst.push_back(v);
     }
-}
-inline void write_f32(std::vector<uint8_t> &dst, float v) {
-    uint32_t tmp;
-    static_assert(sizeof(float) == sizeof(uint32_t));
-    std::memcpy(&tmp, &v, sizeof(tmp));
-    write_u32(dst, tmp);
-}
+    inline void write_u16(std::vector<uint8_t> &dst, uint16_t v) {
+        dst.push_back(uint8_t(v & 0xFF));
+        dst.push_back(uint8_t((v >> 8) & 0xFF));
+    }
+    inline void write_u32(std::vector<uint8_t> &dst, uint32_t v) {
+        dst.push_back(uint8_t((v >> 0) & 0xFF));
+        dst.push_back(uint8_t((v >> 8) & 0xFF));
+        dst.push_back(uint8_t((v >> 16) & 0xFF));
+        dst.push_back(uint8_t((v >> 24) & 0xFF));
+    }
+    inline void write_i32(std::vector<uint8_t> &dst, int32_t v) {
+        write_u32(dst, static_cast<uint32_t>(v));
+    }
+    inline void write_u64(std::vector<uint8_t> &dst, uint64_t v) {
+        for (int i = 0; i < 8; ++i) {
+            dst.push_back(uint8_t((v >> (8 * i)) & 0xFF));
+        }
+    }
+    inline void write_f32(std::vector<uint8_t> &dst, float v) {
+        uint32_t tmp;
+        static_assert(sizeof(float) == sizeof(uint32_t));
+        std::memcpy(&tmp, &v, sizeof(tmp));
+        write_u32(dst, tmp);
+    }
 
-// little-endian readers
-inline bool read_u8(const std::vector<uint8_t> &src, size_t &off, uint8_t &out) {
-    if (off + 1 > src.size())
-        return false;
-    out = src[off];
-    off += 1;
-    return true;
-}
-inline bool read_u16(const std::vector<uint8_t> &src, size_t &off, uint16_t &out) {
-    if (off + 2 > src.size())
-        return false;
-    out = uint16_t(src[off]) | (uint16_t(src[off + 1]) << 8);
-    off += 2;
-    return true;
-}
-inline bool read_u32(const std::vector<uint8_t> &src, size_t &off, uint32_t &out) {
-    if (off + 4 > src.size())
-        return false;
-    out = uint32_t(src[off]) | (uint32_t(src[off + 1]) << 8) | (uint32_t(src[off + 2]) << 16) |
-          (uint32_t(src[off + 3]) << 24);
-    off += 4;
-    return true;
-}
-inline bool read_i32(const std::vector<uint8_t> &src, size_t &off, int32_t &out) {
-    uint32_t u = 0;
-    if (!read_u32(src, off, u))
-        return false;
-    out = static_cast<int32_t>(u);
-    return true;
-}
-inline bool read_u64(const std::vector<uint8_t> &src, size_t &off, uint64_t &out) {
-    if (off + 8 > src.size())
-        return false;
-    uint64_t v = 0;
-    for (int i = 0; i < 8; ++i) {
-        v |= (uint64_t(src[off + i]) << (8 * i));
+    // little-endian readers
+    inline bool read_u8(const std::vector<uint8_t> &src, size_t &off, uint8_t &out) {
+        if (off + 1 > src.size())
+            return false;
+        out = src[off];
+        off += 1;
+        return true;
     }
-    off += 8;
-    out = v;
-    return true;
-}
-inline bool read_f32(const std::vector<uint8_t> &src, size_t &off, float &out) {
-    uint32_t tmp;
-    if (!read_u32(src, off, tmp))
-        return false;
-    std::memcpy(&out, &tmp, sizeof(out));
-    return true;
-}
+    inline bool read_u16(const std::vector<uint8_t> &src, size_t &off, uint16_t &out) {
+        if (off + 2 > src.size())
+            return false;
+        out = uint16_t(src[off]) | (uint16_t(src[off + 1]) << 8);
+        off += 2;
+        return true;
+    }
+    inline bool read_u32(const std::vector<uint8_t> &src, size_t &off, uint32_t &out) {
+        if (off + 4 > src.size())
+            return false;
+        out = uint32_t(src[off]) | (uint32_t(src[off + 1]) << 8) | (uint32_t(src[off + 2]) << 16) |
+              (uint32_t(src[off + 3]) << 24);
+        off += 4;
+        return true;
+    }
+    inline bool read_i32(const std::vector<uint8_t> &src, size_t &off, int32_t &out) {
+        uint32_t u = 0;
+        if (!read_u32(src, off, u))
+            return false;
+        out = static_cast<int32_t>(u);
+        return true;
+    }
+    inline bool read_u64(const std::vector<uint8_t> &src, size_t &off, uint64_t &out) {
+        if (off + 8 > src.size())
+            return false;
+        uint64_t v = 0;
+        for (int i = 0; i < 8; ++i) {
+            v |= (uint64_t(src[off + i]) << (8 * i));
+        }
+        off += 8;
+        out = v;
+        return true;
+    }
+    inline bool read_f32(const std::vector<uint8_t> &src, size_t &off, float &out) {
+        uint32_t tmp;
+        if (!read_u32(src, off, tmp))
+            return false;
+        std::memcpy(&out, &tmp, sizeof(out));
+        return true;
+    }
 
 } // namespace
 
@@ -372,47 +372,6 @@ std::optional<ShootResult> ShootResult::deserialize(const std::vector<uint8_t> &
     if (!read_u32(buf, off, r.serverSeed))
         return std::nullopt;
     return r;
-}
-
-// -------------------- PlayerPosition --------------------
-std::vector<uint8_t> PlayerPosition::serialize() const {
-    std::vector<uint8_t> out;
-    out.reserve(1 + 4 + 6 * 4);
-    write_u8(out, static_cast<uint8_t>(PacketType::PlayerPosition));
-    write_u32(out, sequenceNumber);
-    write_f32(out, posX);
-    write_f32(out, posY);
-    write_f32(out, posZ);
-    write_f32(out, velX);
-    write_f32(out, velY);
-    write_f32(out, velZ);
-    return out;
-}
-
-std::optional<PlayerPosition> PlayerPosition::deserialize(const std::vector<uint8_t> &buf) {
-    size_t off = 0;
-    uint8_t type = 0;
-    if (!read_u8(buf, off, type))
-        return std::nullopt;
-    if (type != static_cast<uint8_t>(PacketType::PlayerPosition))
-        return std::nullopt;
-
-    PlayerPosition p;
-    if (!read_u32(buf, off, p.sequenceNumber))
-        return std::nullopt;
-    if (!read_f32(buf, off, p.posX))
-        return std::nullopt;
-    if (!read_f32(buf, off, p.posY))
-        return std::nullopt;
-    if (!read_f32(buf, off, p.posZ))
-        return std::nullopt;
-    if (!read_f32(buf, off, p.velX))
-        return std::nullopt;
-    if (!read_f32(buf, off, p.velY))
-        return std::nullopt;
-    if (!read_f32(buf, off, p.velZ))
-        return std::nullopt;
-    return p;
 }
 
 // -------------------- PlayerSnapshotFrame --------------------

@@ -21,7 +21,7 @@
 #include "../../Shared/network/Packets.hpp" //for packet types
 
 class ClientNetwork {
-  public:
+public:
     enum class ConnectionState : uint8_t { Disconnected = 0, Connecting = 1, Connected = 2 };
 
     struct ChunkQueueDepths {
@@ -71,8 +71,6 @@ class ClientNetwork {
     bool SendInventoryActionRequest(const InventoryActionRequest &request);
     bool SendBlockPlaceRequest(const BlockPlaceRequest &request);
     bool SendBlockBreakRequest(const BlockBreakRequest &request);
-    // Legacy state packet (kept for compatibility while migrating handlers).
-    bool SendPosition(uint32_t seq, const glm::vec3 &pos, const glm::vec3 &vel);
     bool SendChunkRequest(const glm::ivec3 &centerChunk, uint16_t viewDistance);
 
     void Poll();
@@ -88,9 +86,15 @@ class ClientNetwork {
     bool ShouldAutoReconnect() const noexcept;
     int GetPingMs() const noexcept;
 
-    bool SendShootRequest(uint32_t clientShotId, uint32_t clientTick, uint16_t weaponId,
-                          const glm::vec3 &pos, const glm::vec3 &dir, uint32_t seed = 0,
-                          uint8_t inputFlags = 0);
+    bool SendShootRequest(
+        uint32_t clientShotId,
+        uint32_t clientTick,
+        uint16_t weaponId,
+        const glm::vec3 &pos,
+        const glm::vec3 &dir,
+        uint32_t seed = 0,
+        uint8_t inputFlags = 0
+    );
 
     bool PopChunkData(ChunkData &out);
     bool PopChunkDelta(ChunkDelta &out);
@@ -106,16 +110,12 @@ class ClientNetwork {
     bool PopScoreboardSnapshot(ScoreboardSnapshot &out);
     ChunkQueueDepths GetChunkQueueDepths();
 
-  private:
+private:
     HSteamNetConnection m_conn = k_HSteamNetConnection_Invalid;
     std::atomic<bool> m_started{false};
     // helper serialization
     static void AppendUint32LE(std::vector<uint8_t> &out, uint32_t v);
     static void AppendFloatLE(std::vector<uint8_t> &out, float f);
-
-    // helpers to read LE from incoming buffer
-    static uint32_t ReadUint32LE(const uint8_t *ptr);
-    static float ReadFloatLE(const uint8_t *ptr);
 
     // handle messages received from server
     void OnMessage(const uint8_t *data, uint32_t size);
@@ -131,7 +131,7 @@ class ClientNetwork {
     bool m_allowAutoReconnect = true;
     bool m_useTransientIdentity = false;
 
-    std::mutex m_chunkQueueMutex;
+    std::mutex m_inboundMutex;
     std::deque<ChunkData> m_chunkDataQueue;
     std::deque<ChunkDelta> m_chunkDeltaQueue;
     std::deque<ChunkUnload> m_chunkUnloadQueue;
@@ -145,3 +145,4 @@ class ClientNetwork {
     std::deque<KillFeedEvent> m_killFeedQueue;
     std::deque<ScoreboardSnapshot> m_scoreboardQueue;
 };
+

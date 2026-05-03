@@ -9,71 +9,73 @@
 #include <iostream>
 
 namespace {
-inline bool IsNewerU32(uint32_t a, uint32_t b) {
-    return static_cast<int32_t>(a - b) > 0;
-}
-
-inline bool IsMoveInputActive(const NetworkInputState &input) {
-    constexpr float kMoveDeadzone = 0.01f;
-    const bool axisActive =
-        (std::abs(input.moveX) > kMoveDeadzone) || (std::abs(input.moveZ) > kMoveDeadzone);
-    const uint8_t moveFlags = kPlayerInputFlagForward | kPlayerInputFlagBackward |
-                              kPlayerInputFlagLeft | kPlayerInputFlagRight | kPlayerInputFlagJump |
-                              kPlayerInputFlagFlyUp | kPlayerInputFlagFlyDown;
-    const bool flagActive = (input.flags & moveFlags) != 0;
-    return axisActive || flagActive;
-}
-
-inline bool HasActiveReplayInput(const Runtime &runtime) {
-    for (const Runtime::PendingInputEntry &pending : runtime.pendingInputs) {
-        NetworkInputState replayInput{};
-        replayInput.moveX = pending.packet.moveX;
-        replayInput.moveZ = pending.packet.moveZ;
-        replayInput.flags = pending.packet.inputFlags;
-        replayInput.flyMode = (pending.packet.flyMode != 0);
-        if (IsMoveInputActive(replayInput)) {
-            return true;
-        }
+    inline bool IsNewerU32(uint32_t a, uint32_t b) {
+        return static_cast<int32_t>(a - b) > 0;
     }
-    return false;
-}
+
+    inline bool IsMoveInputActive(const NetworkInputState &input) {
+        constexpr float kMoveDeadzone = 0.01f;
+        const bool axisActive =
+            (std::abs(input.moveX) > kMoveDeadzone) || (std::abs(input.moveZ) > kMoveDeadzone);
+        const uint8_t moveFlags = kPlayerInputFlagForward | kPlayerInputFlagBackward |
+                                  kPlayerInputFlagLeft | kPlayerInputFlagRight |
+                                  kPlayerInputFlagJump | kPlayerInputFlagFlyUp |
+                                  kPlayerInputFlagFlyDown;
+        const bool flagActive = (input.flags & moveFlags) != 0;
+        return axisActive || flagActive;
+    }
+
+    inline bool HasActiveReplayInput(const Runtime &runtime) {
+        for (const RuntimePredictionState::PendingInputEntry &pending : runtime.prediction.pendingInputs) {
+            NetworkInputState replayInput{};
+            replayInput.moveX = pending.packet.moveX;
+            replayInput.moveZ = pending.packet.moveZ;
+            replayInput.flags = pending.packet.inputFlags;
+            replayInput.flyMode = (pending.packet.flyMode != 0);
+            if (IsMoveInputActive(replayInput)) {
+                return true;
+            }
+        }
+        return false;
+    }
 } // namespace
 
 bool ClientReconciler::Apply(Runtime &runtime, const ServerSnapshot &snapshot) {
-    if (runtime.hasAppliedServerTick &&
-        !IsNewerU32(snapshot.serverTick, runtime.lastAppliedServerTick)) {
+    if (runtime.prediction.hasAppliedServerTick &&
+        !IsNewerU32(snapshot.serverTick, runtime.prediction.lastAppliedServerTick)) {
         return false;
     }
 
-    runtime.justRespawned = false;
+    runtime.world.justRespawned = false;
     const bool wasAlive = runtime.combat.localPlayerAlive;
     runtime.combat.localPlayerAlive = snapshot.alive;
     runtime.combat.localRespawnSeconds = snapshot.respawnSeconds;
     if (wasAlive && !runtime.combat.localPlayerAlive) {
-        runtime.pendingInputs.clear();
-        runtime.localSimAccumulator = 0.0;
+        runtime.prediction.pendingInputs.clear();
+        runtime.prediction.localSimAccumulator = 0.0;
     }
     if (!wasAlive && runtime.combat.localPlayerAlive) {
         // Drop any stale pre-respawn inputs so replay starts from fresh movement.
-        runtime.pendingInputs.clear();
-        runtime.localSimAccumulator = 0.0;
-        runtime.renderStateNeedsResync = true;
-        runtime.hasSmoothedPlayerCameraPos = false;
+        runtime.prediction.pendingInputs.clear();
+        runtime.prediction.localSimAccumulator = 0.0;
+        runtime.world.renderStateNeedsResync = true;
+        runtime.prediction.hasSmoothedPlayerCameraPos = false;
         runtime.combat.localDeathKiller.clear();
-        runtime.justRespawned = true;
+        runtime.world.justRespawned = true;
     }
 
-    runtime.hasAppliedServerTick = true;
-    runtime.lastAppliedServerTick = snapshot.serverTick;
-    runtime.lastAckedInputTick = snapshot.ackedInputTick;
-    while (!runtime.pendingInputs.empty() &&
-           AppHelpers::IsAckedU32(runtime.pendingInputs.front().packet.inputTick,
-                                  runtime.lastAckedInputTick)) {
-        runtime.pendingInputs.pop_front();
+    runtime.prediction.hasAppliedServerTick = true;
+    runtime.prediction.lastAppliedServerTick = snapshot.serverTick;
+    runtime.prediction.lastAckedInputTick = snapshot.ackedInputTick;
+    while (!runtime.prediction.pendingInputs.empty() &&
+           AppHelpers::IsAckedU32(
+               runtime.prediction.pendingInputs.front().packet.inputTick, runtime.prediction.lastAckedInputTick
+           )) {
+        runtime.prediction.pendingInputs.pop_front();
     }
 
-    runtime.player->setFlyModeAllowed(snapshot.allowFlyMode);
-    const Player::SimulationState predictedState = runtime.player->captureSimulationState();
+    runtime.gameplay.player->setFlyModeAllowed(snapshot.allowFlyMode);
+    const Player::SimulationState predictedState = runtime.gameplay.player->captureSimulationState();
     const glm::vec3 predictedPos = predictedState.position;
 
     Player::SimulationState serverBaseState = predictedState;
@@ -84,16 +86,16 @@ bool ClientReconciler::Apply(Runtime &runtime, const ServerSnapshot &snapshot) {
     serverBaseState.jumpPressedLastTick = snapshot.jumpPressedLastTick;
     serverBaseState.timeSinceGrounded = std::max(0.0f, snapshot.timeSinceGrounded);
     serverBaseState.jumpBufferTimer = std::max(0.0f, snapshot.jumpBufferTimer);
-    runtime.player->restoreSimulationState(serverBaseState);
+    runtime.gameplay.player->restoreSimulationState(serverBaseState);
 
     constexpr size_t kMaxReplaySteps = 64;
     size_t replayCount = 0;
-    for (const Runtime::PendingInputEntry &pending : runtime.pendingInputs) {
+    for (const RuntimePredictionState::PendingInputEntry &pending : runtime.prediction.pendingInputs) {
         if (replayCount >= kMaxReplaySteps) {
             static uint32_t s_replayCapHitCount = 0;
             ++s_replayCapHitCount;
             if (s_replayCapHitCount <= 20 || (s_replayCapHitCount % 100) == 0) {
-                std::cerr << "[reconcile] replay cap hit pending=" << runtime.pendingInputs.size()
+                std::cerr << "[reconcile] replay cap hit pending=" << runtime.prediction.pendingInputs.size()
                           << " serverTick=" << snapshot.serverTick
                           << " ackedInputTick=" << snapshot.ackedInputTick << "\n";
             }
@@ -106,23 +108,22 @@ bool ClientReconciler::Apply(Runtime &runtime, const ServerSnapshot &snapshot) {
         replayInput.pitch = pending.packet.pitch;
         replayInput.flags = pending.packet.inputFlags;
         replayInput.flyMode = snapshot.allowFlyMode && (pending.packet.flyMode != 0);
-        runtime.player->simulateFromNetworkInput(replayInput, Runtime::LocalPredictionStep, false);
+        runtime.gameplay.player->simulateFromNetworkInput(replayInput, RuntimePredictionState::LocalPredictionStep, false);
         ++replayCount;
     }
 
-    Player::SimulationState reconciledState = runtime.player->captureSimulationState();
+    Player::SimulationState reconciledState = runtime.gameplay.player->captureSimulationState();
     // Keep local look/camera orientation on immediate mouse timeline.
     // Movement replay uses world-space move axes, so server reconciliation should
     // not pull view yaw/pitch backward to older packet samples.
     reconciledState.yaw = predictedState.yaw;
     reconciledState.pitch = predictedState.pitch;
     reconciledState.front = predictedState.front;
-    reconciledState.currentFov = predictedState.currentFov;
     const glm::vec3 simCorrection = reconciledState.position - predictedPos;
-    const float latencyBlend = AppHelpers::LatencyCorrectionBlend(runtime.clientNet);
+    const float latencyBlend = AppHelpers::LatencyCorrectionBlend(runtime.network.clientNet);
     const float latencyCurve = latencyBlend * latencyBlend;
     const float softTeleportDist =
-        Runtime::BasicAuthReconcileTeleportDistance + 1.5f + (3.0f * latencyCurve);
+        RuntimePredictionState::BasicAuthReconcileTeleportDistance + 1.5f + (3.0f * latencyCurve);
     const float hardSnapDist = softTeleportDist + 5.0f + (4.0f * latencyCurve);
     const float hardSnapDistSq = hardSnapDist * hardSnapDist;
 
@@ -142,25 +143,25 @@ bool ClientReconciler::Apply(Runtime &runtime, const ServerSnapshot &snapshot) {
 
     const glm::vec3 effectiveCorrection = finalState.position - predictedPos;
     const float effectiveCorrectionLenSq = glm::dot(effectiveCorrection, effectiveCorrection);
-    if (runtime.rbDiagActive) {
+    if (runtime.world.rbDiagActive) {
         static auto s_lastRbDiagLogAt = std::chrono::steady_clock::time_point{};
         const auto now = std::chrono::steady_clock::now();
         const float effectiveCorrectionLen = std::sqrt(std::max(0.0f, effectiveCorrectionLenSq));
         const bool correctionLarge = effectiveCorrectionLen >= 0.35f;
-        const bool inputBacklogHigh = runtime.pendingInputs.size() >= 20;
+        const bool inputBacklogHigh = runtime.prediction.pendingInputs.size() >= 20;
         if ((correctionLarge || inputBacklogHigh) &&
             (s_lastRbDiagLogAt == std::chrono::steady_clock::time_point{} ||
              (now - s_lastRbDiagLogAt) >= std::chrono::milliseconds(120))) {
             s_lastRbDiagLogAt = now;
             const ClientNetwork::ChunkQueueDepths queueDepths =
-                runtime.clientNet.GetChunkQueueDepths();
+                runtime.network.clientNet.GetChunkQueueDepths();
             const int32_t unackedTicks =
-                static_cast<int32_t>(runtime.inputTickCounter - snapshot.ackedInputTick);
+                static_cast<int32_t>(runtime.prediction.inputTickCounter - snapshot.ackedInputTick);
             std::cerr << "[rbdiag/client/reconcile]"
                       << " serverTick=" << snapshot.serverTick
                       << " ackedInputTick=" << snapshot.ackedInputTick
                       << " unackedTicks=" << unackedTicks << " replayCount=" << replayCount
-                      << " pendingInputs=" << runtime.pendingInputs.size()
+                      << " pendingInputs=" << runtime.prediction.pendingInputs.size()
                       << " corrLen=" << effectiveCorrectionLen << " corr=(" << effectiveCorrection.x
                       << "," << effectiveCorrection.y << "," << effectiveCorrection.z << ")"
                       << " predictedPos=(" << predictedPos.x << "," << predictedPos.y << ","
@@ -178,34 +179,34 @@ bool ClientReconciler::Apply(Runtime &runtime, const ServerSnapshot &snapshot) {
         }
     }
     const float microDeadzone =
-        Runtime::BasicAuthReconcileDeadzone * (0.60f + (0.40f * latencyBlend));
+        RuntimePredictionState::BasicAuthReconcileDeadzone * (0.60f + (0.40f * latencyBlend));
     const float microDeadzoneSq = microDeadzone * microDeadzone;
 
     const bool allowIdleSnap = latencyBlend >= 0.25f;
     constexpr float kIdleVelocityEps = 0.15f;
     const bool inputIdle = !HasActiveReplayInput(runtime) &&
-                           !IsMoveInputActive(runtime.player->getNetworkInputState());
+                           !IsMoveInputActive(runtime.gameplay.player->getNetworkInputState());
     const bool serverNearlyStopped = glm::length(snapshot.velocity) <= kIdleVelocityEps;
-    const float idleSnapDist = Runtime::BasicAuthReconcileDeadzone * 2.0f + (0.7f * latencyCurve);
+    const float idleSnapDist = RuntimePredictionState::BasicAuthReconcileDeadzone * 2.0f + (0.7f * latencyCurve);
     const float idleSnapDistSq = idleSnapDist * idleSnapDist;
 
     if (allowIdleSnap && inputIdle && snapshot.onGround && serverNearlyStopped &&
         effectiveCorrectionLenSq <= idleSnapDistSq) {
-        runtime.player->restoreSimulationState(finalState);
-        runtime.renderStateNeedsResync = true;
+        runtime.gameplay.player->restoreSimulationState(finalState);
+        runtime.world.renderStateNeedsResync = true;
         return true;
     }
 
     if (effectiveCorrectionLenSq <= microDeadzoneSq) {
         // Tiny corrections create visible "buzz" if applied every snapshot.
         // Let them accumulate until they become meaningful.
-        runtime.player->restoreSimulationState(predictedState);
+        runtime.gameplay.player->restoreSimulationState(predictedState);
         return true;
     }
 
     if (effectiveCorrectionLenSq > hardSnapDistSq) {
-        runtime.player->restoreSimulationState(finalState);
-        runtime.renderStateNeedsResync = true;
+        runtime.gameplay.player->restoreSimulationState(finalState);
+        runtime.world.renderStateNeedsResync = true;
     } else {
         // For non-teleport corrections, blend over time to avoid jagged motion.
         const float correctionLen = std::sqrt(effectiveCorrectionLenSq);
@@ -219,13 +220,16 @@ bool ClientReconciler::Apply(Runtime &runtime, const ServerSnapshot &snapshot) {
         Player::SimulationState blendedState = finalState;
         blendedState.position = predictedState.position + (effectiveCorrection * posBlend);
         blendedState.velocity = glm::mix(predictedState.velocity, finalState.velocity, velBlend);
-        runtime.player->restoreSimulationState(blendedState);
+        runtime.gameplay.player->restoreSimulationState(blendedState);
 
         // Only trigger resync for large corrections to avoid visual stutter
         if (effectiveCorrectionLenSq > (softTeleportDist * softTeleportDist)) {
-            runtime.renderStateNeedsResync = true;
+            runtime.world.renderStateNeedsResync = true;
         }
     }
 
     return true;
 }
+
+
+

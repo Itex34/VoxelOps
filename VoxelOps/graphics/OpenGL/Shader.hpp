@@ -7,7 +7,7 @@
 #include <glm/glm.hpp>
 
 class Shader {
-  public:
+public:
     unsigned int ID;
 
     Shader(const char *vertexPath, const char *fragmentPath, unsigned int extraFragmentShader = 0);
@@ -23,7 +23,7 @@ class Shader {
     void setVec3(const std::string &name, const glm::vec3 &value) const;
     void setVec2(const std::string &name, const glm::vec2 &value) const;
 
-  private:
+private:
     GLint getUniformLocation(const std::string &name) const;
 
     std::string loadFile(const char *path);

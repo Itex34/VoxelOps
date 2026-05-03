@@ -12,7 +12,7 @@ struct PlayerSnapshot;
 class ChunkManager;
 
 class PlayerManager {
-  public:
+public:
     PlayerManager();
     ~PlayerManager() = default;
 
@@ -48,15 +48,23 @@ class PlayerManager {
     std::vector<ServerPlayerCombatSnapshot> getAllCombatSnapshotsCopy(bool aliveOnly = false);
     bool applyDamage(PlayerID id, float damage, float &outHealthAfter, bool &outKilled);
     bool requestRespawn(PlayerID id);
-    bool applyInventoryAction(PlayerID id, const InventoryActionRequest &request,
-                              InventoryActionResult &outResult, InventorySnapshot &outSnapshot);
+    bool applyInventoryAction(
+        PlayerID id,
+        const InventoryActionRequest &request,
+        InventoryActionResult &outResult,
+        InventorySnapshot &outSnapshot
+    );
     bool getInventorySnapshot(PlayerID id, InventorySnapshot &outSnapshot);
     bool getInventorySlot(PlayerID id, uint16_t slotIndex, Slot &outSlot);
-    bool appendItemsToInventory(PlayerID id, uint16_t itemId, uint16_t quantity,
-                                uint16_t &outAcceptedQuantity,
-                                InventorySnapshot *outSnapshot = nullptr);
+    bool appendItemsToInventory(
+        PlayerID id,
+        uint16_t itemId,
+        uint16_t quantity,
+        uint16_t &outAcceptedQuantity,
+        InventorySnapshot *outSnapshot = nullptr
+    );
 
-  private:
+private:
     PlayerID addPlayerInternal();
 
     void sendBytes(const std::shared_ptr<ConnectionHandle> &conn, const std::vector<uint8_t> &buf);

@@ -2,8 +2,9 @@
 
 #include <array>
 
-void RenderPass::create(const vk::raii::Device &device, vk::Format colorFormat,
-                        vk::Format depthFormat) {
+void RenderPass::create(
+    const vk::raii::Device &device, vk::Format colorFormat, vk::Format depthFormat
+) {
     vk::AttachmentDescription colorAttachment{};
     colorAttachment.format = colorFormat;
     colorAttachment.samples = vk::SampleCountFlagBits::e1;

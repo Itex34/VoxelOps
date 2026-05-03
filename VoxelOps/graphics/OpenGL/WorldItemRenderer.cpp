@@ -3,6 +3,7 @@
 
 #include "WorldItemRenderer.hpp"
 #include "../../application/AppHelpers.hpp"
+#include "../../../Shared/runtime/Paths.hpp"
 
 #include "../Camera.hpp"
 #include "../../runtime/Runtime.hpp"
@@ -10,31 +11,35 @@
 #include "../../../Shared/player/Inventory.hpp"
 
 #include <cmath>
+#include <string>
 
 #include <glm/gtc/matrix_transform.hpp>
 
 namespace {
-glm::vec3 ColorForItem(uint16_t itemId) {
-    if (!Inventory::IsValidItemId(itemId)) {
+    glm::vec3 ColorForItem(uint16_t itemId) {
+        if (!Inventory::IsValidItemId(itemId)) {
+            return glm::vec3(0.85f, 0.85f, 0.85f);
+        }
+
+        const ItemType itemType = Items::ItemDatabase[itemId].type;
+        if (itemType == ItemType::Ammo) {
+            return glm::vec3(0.92f, 0.78f, 0.30f);
+        }
+        if (itemType == ItemType::Consumable) {
+            return glm::vec3(0.94f, 0.42f, 0.42f);
+        }
+        if (itemType == ItemType::Gun) {
+            return glm::vec3(0.38f, 0.64f, 0.95f);
+        }
         return glm::vec3(0.85f, 0.85f, 0.85f);
     }
-
-    const ItemType itemType = Items::ItemDatabase[itemId].type;
-    if (itemType == ItemType::Ammo) {
-        return glm::vec3(0.92f, 0.78f, 0.30f);
-    }
-    if (itemType == ItemType::Consumable) {
-        return glm::vec3(0.94f, 0.42f, 0.42f);
-    }
-    if (itemType == ItemType::Gun) {
-        return glm::vec3(0.38f, 0.64f, 0.95f);
-    }
-    return glm::vec3(0.85f, 0.85f, 0.85f);
-}
 } // namespace
 
 void WorldItemRenderer::render(const Runtime &runtime, const Camera &activeCamera) {
-    if (!runtime.dbgShader || runtime.worldItems.empty()) {
+    if (runtime.world.worldItems.empty()) {
+        return;
+    }
+    if (!ensureDebugShaderLoaded() || !m_debugShader) {
         return;
     }
 
@@ -54,9 +59,9 @@ void WorldItemRenderer::render(const Runtime &runtime, const Camera &activeCamer
     const glm::mat4 view = activeCamera.getViewMatrix();
     const float now = static_cast<float>(AppHelpers::GetTimeSeconds());
 
-    runtime.dbgShader->use();
-    runtime.dbgShader->setMat4("view", view);
-    runtime.dbgShader->setMat4("projection", projection);
+    m_debugShader->use();
+    m_debugShader->setMat4("view", view);
+    m_debugShader->setMat4("projection", projection);
 
     const bool cullFaceWasEnabled = glIsEnabled(GL_CULL_FACE) == GL_TRUE;
     GLint previousCullFaceMode = GL_BACK;
@@ -66,7 +71,7 @@ void WorldItemRenderer::render(const Runtime &runtime, const Camera &activeCamer
     glDisable(GL_CULL_FACE);
 
     glBindVertexArray(static_cast<GLuint>(m_worldItemVao));
-    for (const auto &[_, item] : runtime.worldItems) {
+    for (const auto &[_, item] : runtime.world.worldItems) {
         if (!Inventory::IsValidItemId(item.itemId)) {
             continue;
         }
@@ -83,8 +88,8 @@ void WorldItemRenderer::render(const Runtime &runtime, const Camera &activeCamer
         model = glm::rotate(model, glm::radians(spin), glm::vec3(0.0f, 1.0f, 0.0f));
         model = glm::scale(model, glm::vec3(itemScale));
 
-        runtime.dbgShader->setMat4("model", model);
-        runtime.dbgShader->setVec3("color", color);
+        m_debugShader->setMat4("model", model);
+        m_debugShader->setVec3("color", color);
         glDrawArrays(GL_TRIANGLES, 0, 36);
     }
     glBindVertexArray(0);
@@ -99,6 +104,8 @@ void WorldItemRenderer::render(const Runtime &runtime, const Camera &activeCamer
 }
 
 void WorldItemRenderer::shutdown() {
+    m_debugShader.reset();
+
     if (m_worldItemVbo != 0) {
         const GLuint vbo = static_cast<GLuint>(m_worldItemVbo);
         glDeleteBuffers(1, &vbo);
@@ -109,6 +116,19 @@ void WorldItemRenderer::shutdown() {
         glDeleteVertexArrays(1, &vao);
         m_worldItemVao = 0;
     }
+}
+
+bool WorldItemRenderer::ensureDebugShaderLoaded() {
+    if (m_debugShader) {
+        return true;
+    }
+
+    const std::string debugVertPath =
+        Shared::RuntimePaths::ResolveVoxelOpsPath("shaders/debugVert.vert").generic_string();
+    const std::string debugFragPath =
+        Shared::RuntimePaths::ResolveVoxelOpsPath("shaders/debugFrag.frag").generic_string();
+    m_debugShader = std::make_unique<Shader>(debugVertPath.c_str(), debugFragPath.c_str());
+    return m_debugShader != nullptr;
 }
 
 void WorldItemRenderer::ensureCubeMesh() {
@@ -133,7 +153,8 @@ void WorldItemRenderer::ensureCubeMesh() {
         0.5f,  -0.5f, 0.5f,  -0.5f, -0.5f, 0.5f,  -0.5f, -0.5f, -0.5f,
 
         -0.5f, 0.5f,  -0.5f, 0.5f,  0.5f,  -0.5f, 0.5f,  0.5f,  0.5f,
-        0.5f,  0.5f,  0.5f,  -0.5f, 0.5f,  0.5f,  -0.5f, 0.5f,  -0.5f};
+        0.5f,  0.5f,  0.5f,  -0.5f, 0.5f,  0.5f,  -0.5f, 0.5f,  -0.5f
+    };
 
     GLuint vao = 0;
     GLuint vbo = 0;
@@ -150,3 +171,4 @@ void WorldItemRenderer::ensureCubeMesh() {
     m_worldItemVao = static_cast<unsigned int>(vao);
     m_worldItemVbo = static_cast<unsigned int>(vbo);
 }
+

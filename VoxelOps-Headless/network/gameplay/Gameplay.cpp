@@ -7,7 +7,7 @@
 #include <cstdint>
 
 namespace {
-constexpr uint32_t kServerTickRateHz = 60u;
+    constexpr uint32_t kServerTickRateHz = 60u;
 }
 
 void Runtime::SpawnDroppedItem(PlayerID dropperId, uint16_t itemId, uint16_t quantity) {
@@ -54,8 +54,12 @@ void Runtime::SendInventorySnapshotToPlayer(PlayerID playerId) {
     }
     const std::vector<uint8_t> snapshotBytes = snapshot.serialize();
     (void)SteamNetworkingSockets()->SendMessageToConnection(
-        conn, snapshotBytes.data(), static_cast<uint32_t>(snapshotBytes.size()),
-        k_nSteamNetworkingSend_Reliable, nullptr);
+        conn,
+        snapshotBytes.data(),
+        static_cast<uint32_t>(snapshotBytes.size()),
+        k_nSteamNetworkingSend_Reliable,
+        nullptr
+    );
 }
 
 void Runtime::UpdateWorldItems(double deltaSeconds) {
@@ -64,8 +68,7 @@ void Runtime::UpdateWorldItems(double deltaSeconds) {
     }
 
     const float dt = static_cast<float>(deltaSeconds);
-    const float pickupRadiusSq =
-        WorldItemPhysics::kPickupRadius * WorldItemPhysics::kPickupRadius;
+    const float pickupRadiusSq = WorldItemPhysics::kPickupRadius * WorldItemPhysics::kPickupRadius;
     std::unordered_set<PlayerID> inventoryChangedPlayers;
 
     const std::vector<ServerPlayer> players = m_playerManager.getAllPlayersCopy();
@@ -86,8 +89,7 @@ void Runtime::UpdateWorldItems(double deltaSeconds) {
             continue;
         }
 
-        WorldItemPhysics::Step(item, dt, static_cast<float>(kServerTickRateHz),
-                                     m_chunkManager);
+        WorldItemPhysics::Step(item, dt, static_cast<float>(kServerTickRateHz), m_chunkManager);
 
         if (item.pickupCooldownSeconds <= 0.0f) {
             for (const ServerPlayer *player : alivePlayers) {
@@ -97,8 +99,9 @@ void Runtime::UpdateWorldItems(double deltaSeconds) {
                 }
 
                 uint16_t acceptedQuantity = 0;
-                if (m_playerManager.appendItemsToInventory(player->id, item.itemId, item.quantity,
-                                                           acceptedQuantity, nullptr) &&
+                if (m_playerManager.appendItemsToInventory(
+                        player->id, item.itemId, item.quantity, acceptedQuantity, nullptr
+                    ) &&
                     acceptedQuantity > 0) {
                     item.quantity = static_cast<uint16_t>(item.quantity - acceptedQuantity);
                     inventoryChangedPlayers.insert(player->id);
@@ -123,7 +126,8 @@ void Runtime::UpdateWorldItems(double deltaSeconds) {
 }
 
 void Runtime::SendWorldItemSnapshots(
-    const std::vector<std::pair<HSteamNetConnection, PlayerID>> &recipients, uint32_t serverTick) {
+    const std::vector<std::pair<HSteamNetConnection, PlayerID>> &recipients, uint32_t serverTick
+) {
     const std::vector<ServerPlayer> players = m_playerManager.getAllPlayersCopy();
     std::unordered_map<PlayerID, glm::vec3> playerPositions;
     playerPositions.reserve(players.size());
@@ -164,16 +168,22 @@ void Runtime::SendWorldItemSnapshots(
 
         const std::vector<uint8_t> bytes = snapshot.serialize();
         (void)SteamNetworkingSockets()->SendMessageToConnection(
-            conn, bytes.data(), static_cast<uint32_t>(bytes.size()),
-            k_nSteamNetworkingSend_UnreliableNoDelay, nullptr);
+            conn,
+            bytes.data(),
+            static_cast<uint32_t>(bytes.size()),
+            k_nSteamNetworkingSend_UnreliableNoDelay,
+            nullptr
+        );
     }
 }
 
-void Runtime::HandleInventoryActionRequestPacket(HSteamNetConnection incoming,
-                                                       const void *data, uint32_t size) {
+void Runtime::HandleInventoryActionRequestPacket(
+    HSteamNetConnection incoming, const void *data, uint32_t size
+) {
     InventoryActionRequest request{};
-    if (!NetPacket::ParseInventoryActionRequestPacket(reinterpret_cast<const uint8_t *>(data), size,
-                                                      request)) {
+    if (!NetPacket::ParseInventoryActionRequestPacket(
+            reinterpret_cast<const uint8_t *>(data), size, request
+        )) {
         std::cerr << "[recv] malformed InventoryActionRequest\n";
         return;
     }
@@ -209,20 +219,32 @@ void Runtime::HandleInventoryActionRequestPacket(HSteamNetConnection incoming,
         result.newRevision = 0;
         const std::vector<uint8_t> resultBytes = result.serialize();
         (void)SteamNetworkingSockets()->SendMessageToConnection(
-            incoming, resultBytes.data(), static_cast<uint32_t>(resultBytes.size()),
-            k_nSteamNetworkingSend_Reliable, nullptr);
+            incoming,
+            resultBytes.data(),
+            static_cast<uint32_t>(resultBytes.size()),
+            k_nSteamNetworkingSend_Reliable,
+            nullptr
+        );
         return;
     }
 
     const std::vector<uint8_t> resultBytes = result.serialize();
     (void)SteamNetworkingSockets()->SendMessageToConnection(
-        incoming, resultBytes.data(), static_cast<uint32_t>(resultBytes.size()),
-        k_nSteamNetworkingSend_Reliable, nullptr);
+        incoming,
+        resultBytes.data(),
+        static_cast<uint32_t>(resultBytes.size()),
+        k_nSteamNetworkingSend_Reliable,
+        nullptr
+    );
 
     const std::vector<uint8_t> snapshotBytes = snapshot.serialize();
     (void)SteamNetworkingSockets()->SendMessageToConnection(
-        incoming, snapshotBytes.data(), static_cast<uint32_t>(snapshotBytes.size()),
-        k_nSteamNetworkingSend_Reliable, nullptr);
+        incoming,
+        snapshotBytes.data(),
+        static_cast<uint32_t>(snapshotBytes.size()),
+        k_nSteamNetworkingSend_Reliable,
+        nullptr
+    );
 
     if (result.accepted != 0 && request.action.type == InventoryActionType::Drop &&
         hasPreDropSlot && !Inventory::IsEmpty(preDropSlot) &&
@@ -230,7 +252,8 @@ void Runtime::HandleInventoryActionRequestPacket(HSteamNetConnection incoming,
         const uint16_t requestedAmount = (request.action.amount == 0)
                                              ? preDropSlot.quantity
                                              : static_cast<uint16_t>(std::min<uint16_t>(
-                                                   request.action.amount, preDropSlot.quantity));
+                                                   request.action.amount, preDropSlot.quantity
+                                               ));
         if (requestedAmount > 0) {
             SpawnDroppedItem(playerId, preDropSlot.itemId, requestedAmount);
         }

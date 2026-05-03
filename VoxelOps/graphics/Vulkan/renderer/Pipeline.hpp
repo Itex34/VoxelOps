@@ -8,17 +8,21 @@
 enum class PipelineVertexLayout : uint8_t { PackedVoxel, ModelPosUv };
 
 class Pipeline {
-  public:
+public:
     struct PushConstants {
         glm::mat4 viewProjection{1.0f};
     };
 
-    void create(const vk::raii::Device &device, const vk::raii::RenderPass &renderPass,
-                const vk::raii::DescriptorSetLayout &textureDescriptorSetLayout,
-                const vk::raii::DescriptorSetLayout &modelDescriptorSetLayout,
-                const vk::raii::DescriptorSetLayout &giDescriptorSetLayout,
-                PipelineVertexLayout vertexLayout, const char *vertexShaderFile,
-                const char *fragmentShaderFile);
+    void create(
+        const vk::raii::Device &device,
+        const vk::raii::RenderPass &renderPass,
+        const vk::raii::DescriptorSetLayout &textureDescriptorSetLayout,
+        const vk::raii::DescriptorSetLayout &modelDescriptorSetLayout,
+        const vk::raii::DescriptorSetLayout &giDescriptorSetLayout,
+        PipelineVertexLayout vertexLayout,
+        const char *vertexShaderFile,
+        const char *fragmentShaderFile
+    );
 
     void cleanup();
 
@@ -30,10 +34,11 @@ class Pipeline {
     }
 
     void bind(const vk::raii::CommandBuffer &commandBuffer) const;
-    void pushViewProjection(const vk::raii::CommandBuffer &commandBuffer,
-                            const glm::mat4 &viewProjection) const;
+    void pushViewProjection(
+        const vk::raii::CommandBuffer &commandBuffer, const glm::mat4 &viewProjection
+    ) const;
 
-  private:
+private:
     vk::raii::PipelineLayout m_pipelineLayout{nullptr};
     vk::raii::Pipeline m_graphicsPipeline{nullptr};
 };

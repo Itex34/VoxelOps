@@ -24,7 +24,7 @@ class VulkanContext;
 class NrdBootstrap;
 
 class VulkanRenderer final : public IRenderBackend {
-  public:
+public:
     struct FrameTimingStats {
         bool gpuValid = false;
         float gpuFrameMs = 0.0f;
@@ -53,9 +53,14 @@ class VulkanRenderer final : public IRenderBackend {
     VulkanRenderer &operator=(VulkanRenderer &&) = delete;
 
     void init() override;
-    void renderFrame(uint32_t windowWidth, uint32_t windowHeight, const glm::mat4 &viewMatrix,
-                     const glm::mat4 &projectionMatrix, const glm::mat4 &viewProjection,
-                     const FrameRenderData &frameData) override;
+    void renderFrame(
+        uint32_t windowWidth,
+        uint32_t windowHeight,
+        const glm::mat4 &viewMatrix,
+        const glm::mat4 &projectionMatrix,
+        const glm::mat4 &viewProjection,
+        const FrameRenderData &frameData
+    ) override;
     void handleWindowResize(uint32_t windowWidth, uint32_t windowHeight) override;
     void cleanup() override;
     vk::RenderPass getRenderPassHandle() const noexcept;
@@ -66,7 +71,7 @@ class VulkanRenderer final : public IRenderBackend {
     bool isNrdBootstrapActive() const noexcept;
     uint32_t getNrdBootstrapDispatchCount() const noexcept;
 
-  private:
+private:
     static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 3;
     static constexpr vk::DeviceSize MIN_MODEL_BUFFER_BYTES = sizeof(glm::mat4);
     static constexpr vk::DeviceSize MIN_INDIRECT_BUFFER_BYTES = sizeof(IndexedIndirectCommand);
@@ -86,7 +91,8 @@ class VulkanRenderer final : public IRenderBackend {
     static constexpr uint32_t GI_RESTIR_GI_META_PREV_BINDING = GI_RESERVED_STORAGE_BINDINGS + 11;
     static constexpr uint32_t GI_RESTIR_GI_META_CURR_BINDING = GI_RESERVED_STORAGE_BINDINGS + 12;
     static constexpr uint32_t GI_NRD_DIFF_IN_BINDING = GI_RESERVED_STORAGE_BINDINGS + 13;
-    static constexpr uint32_t GI_NRD_NORMAL_ROUGHNESS_IN_BINDING = GI_RESERVED_STORAGE_BINDINGS + 14;
+    static constexpr uint32_t GI_NRD_NORMAL_ROUGHNESS_IN_BINDING =
+        GI_RESERVED_STORAGE_BINDINGS + 14;
     static constexpr uint32_t GI_NRD_MV_IN_BINDING = GI_RESERVED_STORAGE_BINDINGS + 15;
     static constexpr uint32_t GI_NRD_VIEWZ_IN_BINDING = GI_RESERVED_STORAGE_BINDINGS + 16;
     static constexpr uint32_t GI_NRD_DIFF_OUT_BINDING = GI_RESERVED_STORAGE_BINDINGS + 17;
@@ -251,14 +257,26 @@ class VulkanRenderer final : public IRenderBackend {
     void cleanupRestirMetaResources();
     void createRestirGiResources();
     void cleanupRestirGiResources();
+    void updateRestirHistoryAfterSubmit(
+        const FrameRenderData &frameData,
+        const glm::mat4 &viewMatrix,
+        const glm::mat4 &projectionMatrix,
+        const glm::mat4 &viewProjection,
+        vk::Fence currentFrameFence
+    );
+    void recordRestirPrePassBarriers(uint32_t imageIndex);
     void createNrdSignalResources();
     void cleanupNrdSignalResources();
 
     template <typename T>
-    void createPingPongImagePair(std::vector<std::array<T, 2>> &out, vk::Format format,
-                                 vk::Extent2D extent, vk::ImageUsageFlags usage,
-                                 const vk::ClearColorValue &clearValue,
-                                 vk::raii::CommandBuffer &commandBuffer);
+    void createPingPongImagePair(
+        std::vector<std::array<T, 2>> &out,
+        vk::Format format,
+        vk::Extent2D extent,
+        vk::ImageUsageFlags usage,
+        const vk::ClearColorValue &clearValue,
+        vk::raii::CommandBuffer &commandBuffer
+    );
 
 #if VOXELOPS_NRD_HEADERS
     bool createNrdRuntimeResources();
@@ -275,13 +293,18 @@ class VulkanRenderer final : public IRenderBackend {
     void createTimestampResources();
     void cleanupTimestampResources();
     void updateGpuTimingStatsForImage(uint32_t imageIndex);
-    void ensurePerImageDrawBufferCapacity(uint32_t imageIndex, vk::DeviceSize modelBytes,
-                                          vk::DeviceSize indirectBytes);
-    void updatePerImageDrawBuffers(uint32_t imageIndex, const std::vector<glm::mat4> &modelMatrices,
-                                   const std::vector<IndexedIndirectCommand> &indirectCommands);
+    void ensurePerImageDrawBufferCapacity(
+        uint32_t imageIndex, vk::DeviceSize modelBytes, vk::DeviceSize indirectBytes
+    );
+    void updatePerImageDrawBuffers(
+        uint32_t imageIndex,
+        const std::vector<glm::mat4> &modelMatrices,
+        const std::vector<IndexedIndirectCommand> &indirectCommands
+    );
     void updateModelDescriptorSet(uint32_t imageIndex);
-    void updateGiDescriptorSet(uint32_t imageIndex, const FrameRenderData &frameData,
-                               const glm::mat4 &viewProjection);
+    void updateGiDescriptorSet(
+        uint32_t imageIndex, const FrameRenderData &frameData, const glm::mat4 &viewProjection
+    );
     void cleanupPerImageDrawResources();
     void cleanupModelDescriptorResources();
     void cleanupGiDescriptorResources();
@@ -289,7 +312,12 @@ class VulkanRenderer final : public IRenderBackend {
     void recreateSwapchainDependentResources();
     void cleanupSwapchainDependentResources();
 
-    void recordCommandBuffer(uint32_t imageIndex, const glm::mat4 &viewProjection,
-                             const FrameRenderData &frameData, float &outChunkCpuMs,
-                             float &outModelCpuMs, float &outUiCpuMs);
+    void recordCommandBuffer(
+        uint32_t imageIndex,
+        const glm::mat4 &viewProjection,
+        const FrameRenderData &frameData,
+        float &outChunkCpuMs,
+        float &outModelCpuMs,
+        float &outUiCpuMs
+    );
 };

@@ -9,38 +9,43 @@
 #include <vector>
 
 namespace {
-vk::raii::ShaderModule loadShaderModule(const vk::raii::Device &device, const std::string &path) {
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file) {
-        throw std::runtime_error("Failed to open shader: " + path);
+    vk::raii::ShaderModule
+    loadShaderModule(const vk::raii::Device &device, const std::string &path) {
+        std::ifstream file(path, std::ios::binary | std::ios::ate);
+        if (!file) {
+            throw std::runtime_error("Failed to open shader: " + path);
+        }
+
+        const size_t size = static_cast<size_t>(file.tellg());
+        if (size == 0 || (size % 4) != 0) {
+            throw std::runtime_error("Invalid shader size: " + path);
+        }
+
+        std::vector<uint32_t> code(size / 4);
+        file.seekg(0);
+        file.read(reinterpret_cast<char *>(code.data()), static_cast<std::streamsize>(size));
+        if (!file) {
+            throw std::runtime_error("Failed to read shader: " + path);
+        }
+
+        vk::ShaderModuleCreateInfo shaderModuleInfo{};
+        shaderModuleInfo.codeSize = size;
+        shaderModuleInfo.pCode = code.data();
+
+        return vk::raii::ShaderModule(device, shaderModuleInfo);
     }
-
-    const size_t size = static_cast<size_t>(file.tellg());
-    if (size == 0 || (size % 4) != 0) {
-        throw std::runtime_error("Invalid shader size: " + path);
-    }
-
-    std::vector<uint32_t> code(size / 4);
-    file.seekg(0);
-    file.read(reinterpret_cast<char *>(code.data()), static_cast<std::streamsize>(size));
-    if (!file) {
-        throw std::runtime_error("Failed to read shader: " + path);
-    }
-
-    vk::ShaderModuleCreateInfo shaderModuleInfo{};
-    shaderModuleInfo.codeSize = size;
-    shaderModuleInfo.pCode = code.data();
-
-    return vk::raii::ShaderModule(device, shaderModuleInfo);
-}
 } // namespace
 
-void Pipeline::create(const vk::raii::Device &device, const vk::raii::RenderPass &renderPass,
-                      const vk::raii::DescriptorSetLayout &textureDescriptorSetLayout,
-                      const vk::raii::DescriptorSetLayout &modelDescriptorSetLayout,
-                      const vk::raii::DescriptorSetLayout &giDescriptorSetLayout,
-                      PipelineVertexLayout vertexLayout, const char *vertexShaderFile,
-                      const char *fragmentShaderFile) {
+void Pipeline::create(
+    const vk::raii::Device &device,
+    const vk::raii::RenderPass &renderPass,
+    const vk::raii::DescriptorSetLayout &textureDescriptorSetLayout,
+    const vk::raii::DescriptorSetLayout &modelDescriptorSetLayout,
+    const vk::raii::DescriptorSetLayout &giDescriptorSetLayout,
+    PipelineVertexLayout vertexLayout,
+    const char *vertexShaderFile,
+    const char *fragmentShaderFile
+) {
     std::string shaderDir;
 #ifdef SHADER_DIR
     shaderDir = SHADER_DIR;
@@ -89,8 +94,9 @@ void Pipeline::create(const vk::raii::Device &device, const vk::raii::RenderPass
     viewportState.viewportCount = 1;
     viewportState.scissorCount = 1;
 
-    std::array<vk::DynamicState, 2> dynamicStates = {vk::DynamicState::eViewport,
-                                                     vk::DynamicState::eScissor};
+    std::array<vk::DynamicState, 2> dynamicStates = {
+        vk::DynamicState::eViewport, vk::DynamicState::eScissor
+    };
     vk::PipelineDynamicStateCreateInfo dynamicState{};
     dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
     dynamicState.pDynamicStates = dynamicStates.data();
@@ -127,7 +133,8 @@ void Pipeline::create(const vk::raii::Device &device, const vk::raii::RenderPass
     pushConstantRange.size = static_cast<uint32_t>(sizeof(PushConstants));
 
     const std::array<vk::DescriptorSetLayout, 3> setLayouts = {
-        *textureDescriptorSetLayout, *modelDescriptorSetLayout, *giDescriptorSetLayout};
+        *textureDescriptorSetLayout, *modelDescriptorSetLayout, *giDescriptorSetLayout
+    };
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
     pipelineLayoutInfo.pSetLayouts = setLayouts.data();
@@ -162,11 +169,13 @@ void Pipeline::bind(const vk::raii::CommandBuffer &commandBuffer) const {
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_graphicsPipeline);
 }
 
-void Pipeline::pushViewProjection(const vk::raii::CommandBuffer &commandBuffer,
-                                  const glm::mat4 &viewProjection) const {
+void Pipeline::pushViewProjection(
+    const vk::raii::CommandBuffer &commandBuffer, const glm::mat4 &viewProjection
+) const {
     PushConstants pushConstants{};
     pushConstants.viewProjection = viewProjection;
 
-    commandBuffer.pushConstants<PushConstants>(*m_pipelineLayout, vk::ShaderStageFlagBits::eVertex,
-                                               0, pushConstants);
+    commandBuffer.pushConstants<PushConstants>(
+        *m_pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, pushConstants
+    );
 }

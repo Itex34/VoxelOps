@@ -5,8 +5,8 @@
 #include <utility>
 
 ShaderSkyBackend::ShaderSkyBackend(std::string vertexShaderPath, std::string fragmentShaderPath)
-    : m_VertexShaderPath(std::move(vertexShaderPath)),
-      m_FragmentShaderPath(std::move(fragmentShaderPath)) {}
+    : m_VertexShaderPath(std::move(vertexShaderPath))
+    , m_FragmentShaderPath(std::move(fragmentShaderPath)) {}
 
 void ShaderSkyBackend::initialize() {
     m_Sky.initialize(m_VertexShaderPath.c_str(), m_FragmentShaderPath.c_str());
@@ -57,8 +57,9 @@ bool ShaderSkyBackend::requiresExternalSceneTextures() const noexcept {
     return false;
 }
 
-void ShaderSkyBackend::setExternalSceneTextures(unsigned int sceneColorTex,
-                                                unsigned int sceneLinearDepthTex) {
+void ShaderSkyBackend::setExternalSceneTextures(
+    unsigned int sceneColorTex, unsigned int sceneLinearDepthTex
+) {
     (void)sceneColorTex;
     (void)sceneLinearDepthTex;
 }
@@ -69,8 +70,9 @@ bool ShaderSkyBackend::supportsExternalShadowMap() const noexcept {
     return false;
 }
 
-void ShaderSkyBackend::setExternalShadowMap(unsigned int shadowDepthCompareTex,
-                                            const glm::mat4 &shadowViewProj) {
+void ShaderSkyBackend::setExternalShadowMap(
+    unsigned int shadowDepthCompareTex, const glm::mat4 &shadowViewProj
+) {
     (void)shadowDepthCompareTex;
     (void)shadowViewProj;
 }

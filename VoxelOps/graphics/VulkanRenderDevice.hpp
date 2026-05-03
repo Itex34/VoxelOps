@@ -2,7 +2,6 @@
 
 #include "IRenderDevice.hpp"
 
-#include "../world/ChunkManager.hpp"
 #include "Vulkan/VulkanGiSettings.hpp"
 #include "Vulkan/VulkanGiSceneBuffers.hpp"
 #include "Vulkan/VulkanSceneUploader.hpp"
@@ -17,11 +16,10 @@
 class VulkanContext;
 class VulkanRenderer;
 class Camera;
-class Player;
 struct ImDrawData;
 
 class VulkanRenderDevice final : public IRenderDevice {
-  public:
+public:
     struct TimingSnapshot {
         bool gpuValid = false;
         float gpuFrameMs = 0.0f;
@@ -53,7 +51,6 @@ class VulkanRenderDevice final : public IRenderDevice {
 
     bool initialize(SDL_Window *window) override;
 
-
     VkInstance getVkInstanceHandle() const noexcept;
     VkPhysicalDevice getVkPhysicalDeviceHandle() const noexcept;
     VkDevice getVkDeviceHandle() const noexcept;
@@ -67,13 +64,13 @@ class VulkanRenderDevice final : public IRenderDevice {
 
     RenderDeviceCapabilities getCapabilities() const noexcept override;
 
-    void renderFrame(RenderFrameParams &params) override;
+    void renderFrame(RenderScene &scene) override;
     void onWindowResized(int width, int height) override;
     bool initializeDebugUi(DebugUi &debugUi, SDL_Window *window, void *nativeContext) override;
     void appendBackendDebugUiFrameData(UiFrameData &frameData) const override;
     void shutdown() override;
 
-  private:
+private:
     bool ensureInitialized();
 
     SDL_Window *m_window = nullptr;

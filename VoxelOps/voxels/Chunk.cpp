@@ -1,6 +1,10 @@
 #include "Chunk.hpp"
 
-Chunk::Chunk(glm::ivec3 pos) : position(pos), dirty(true), blocks{}, nonAirCount(0) {
+Chunk::Chunk(glm::ivec3 pos)
+    : position(pos)
+    , dirty(true)
+    , blocks{}
+    , nonAirCount(0) {
     blocks.fill(BlockID::Air);
 }
 
@@ -37,7 +41,6 @@ void Chunk::setBlock(int x, int y, int z, BlockID id) {
 }
 
 BlockID Chunk::removeBlock(int x, int y, int z) {
-
     if (!inBounds(x, y, z)) {
         assert(false && "removeBlock out of bounds");
         return BlockID::Air;

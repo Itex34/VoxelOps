@@ -8,15 +8,19 @@
 #include <utility>
 
 namespace {
-bool CanDeleteGlObjects() noexcept {
-    return SDL_GL_GetCurrentContext() != nullptr;
-}
+    bool CanDeleteGlObjects() noexcept {
+        return SDL_GL_GetCurrentContext() != nullptr;
+    }
 } // namespace
 
-OpenGLMesh::OpenGLMesh(std::vector<OpenGLModelVertex> vertices, std::vector<unsigned int> indices,
-                       std::vector<OpenGLModelTexture> textures)
-    : m_textures(std::move(textures)), m_indexCount(static_cast<GLsizei>(indices.size())),
-      m_vertexCount(vertices.size()) {
+OpenGLMesh::OpenGLMesh(
+    std::vector<OpenGLModelVertex> vertices,
+    std::vector<unsigned int> indices,
+    std::vector<OpenGLModelTexture> textures
+)
+    : m_textures(std::move(textures))
+    , m_indexCount(static_cast<GLsizei>(indices.size()))
+    , m_vertexCount(vertices.size()) {
     glGenVertexArrays(1, &m_vao);
     glGenBuffers(1, &m_vbo);
     glGenBuffers(1, &m_ebo);
@@ -24,29 +28,57 @@ OpenGLMesh::OpenGLMesh(std::vector<OpenGLModelVertex> vertices, std::vector<unsi
     glBindVertexArray(m_vao);
 
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(OpenGLModelVertex), nullptr,
-                 GL_STATIC_DRAW);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(OpenGLModelVertex),
-                    vertices.data());
+    glBufferData(
+        GL_ARRAY_BUFFER, vertices.size() * sizeof(OpenGLModelVertex), nullptr, GL_STATIC_DRAW
+    );
+    glBufferSubData(
+        GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(OpenGLModelVertex), vertices.data()
+    );
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), nullptr,
-                 GL_STATIC_DRAW);
-    glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, indices.size() * sizeof(unsigned int),
-                    indices.data());
+    glBufferData(
+        GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), nullptr, GL_STATIC_DRAW
+    );
+    glBufferSubData(
+        GL_ELEMENT_ARRAY_BUFFER, 0, indices.size() * sizeof(unsigned int), indices.data()
+    );
 
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(OpenGLModelVertex),
-                          reinterpret_cast<void *>(offsetof(OpenGLModelVertex, position)));
+    glVertexAttribPointer(
+        0,
+        3,
+        GL_FLOAT,
+        GL_FALSE,
+        sizeof(OpenGLModelVertex),
+        reinterpret_cast<void *>(offsetof(OpenGLModelVertex, position))
+    );
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(OpenGLModelVertex),
-                          reinterpret_cast<void *>(offsetof(OpenGLModelVertex, normal)));
+    glVertexAttribPointer(
+        1,
+        3,
+        GL_FLOAT,
+        GL_FALSE,
+        sizeof(OpenGLModelVertex),
+        reinterpret_cast<void *>(offsetof(OpenGLModelVertex, normal))
+    );
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(OpenGLModelVertex),
-                          reinterpret_cast<void *>(offsetof(OpenGLModelVertex, texCoords)));
+    glVertexAttribPointer(
+        2,
+        2,
+        GL_FLOAT,
+        GL_FALSE,
+        sizeof(OpenGLModelVertex),
+        reinterpret_cast<void *>(offsetof(OpenGLModelVertex, texCoords))
+    );
     glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(OpenGLModelVertex),
-                          reinterpret_cast<void *>(offsetof(OpenGLModelVertex, color)));
+    glVertexAttribPointer(
+        3,
+        3,
+        GL_FLOAT,
+        GL_FALSE,
+        sizeof(OpenGLModelVertex),
+        reinterpret_cast<void *>(offsetof(OpenGLModelVertex, color))
+    );
 
     glBindVertexArray(0);
 }
@@ -64,9 +96,12 @@ OpenGLMesh::~OpenGLMesh() {
 }
 
 OpenGLMesh::OpenGLMesh(OpenGLMesh &&other) noexcept
-    : m_vao(other.m_vao), m_vbo(other.m_vbo), m_ebo(other.m_ebo),
-      m_textures(std::move(other.m_textures)), m_indexCount(other.m_indexCount),
-      m_vertexCount(other.m_vertexCount) {
+    : m_vao(other.m_vao)
+    , m_vbo(other.m_vbo)
+    , m_ebo(other.m_ebo)
+    , m_textures(std::move(other.m_textures))
+    , m_indexCount(other.m_indexCount)
+    , m_vertexCount(other.m_vertexCount) {
     other.m_vao = 0;
     other.m_vbo = 0;
     other.m_ebo = 0;

@@ -18,10 +18,10 @@ struct ClientHudSystemContext {
 };
 
 class ClientHudSystem {
-  public:
+public:
     void draw(Runtime &runtime, const ClientHudSystemContext &ctx);
 
-  private:
+private:
     void drawConnectionPrompt(Runtime &runtime, const ClientHudSystemContext &ctx);
     void drawKillFeed(Runtime &runtime);
     void drawScoreboard(Runtime &runtime);

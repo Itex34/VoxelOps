@@ -15,9 +15,9 @@
 #include <utility>
 
 namespace {
-constexpr int64_t kSlowPlayerManagerUpdateUs = 4000;
-std::atomic<uint64_t> g_playerManagerSlowUpdateCount{0};
-std::atomic<bool> g_enablePlayerManagerPerfDiagnostics{false};
+    constexpr int64_t kSlowPlayerManagerUpdateUs = 4000;
+    std::atomic<uint64_t> g_playerManagerSlowUpdateCount{0};
+    std::atomic<bool> g_enablePlayerManagerPerfDiagnostics{false};
 } // namespace
 
 PlayerManager::PlayerManager() = default;
@@ -41,12 +41,13 @@ bool PlayerManager::requestRespawn(PlayerID id) {
     return PlayerLifecycle::requestRespawn(playersById, id, Clock::now());
 }
 
-PlayerID PlayerManager::onPlayerConnect(std::shared_ptr<ConnectionHandle> conn,
-                                        const glm::vec3 &spawnPos) {
+PlayerID
+PlayerManager::onPlayerConnect(std::shared_ptr<ConnectionHandle> conn, const glm::vec3 &spawnPos) {
     std::lock_guard<std::mutex> lock(mtx);
     const PlayerID id = addPlayerInternal();
-    PlayerLifecycle::onPlayerConnect(playersById, playersOrder, id, std::move(conn), spawnPos,
-                                     Clock::now());
+    PlayerLifecycle::onPlayerConnect(
+        playersById, playersOrder, id, std::move(conn), spawnPos, Clock::now()
+    );
     return id;
 }
 
@@ -103,12 +104,14 @@ void PlayerManager::update(double deltaSeconds, ChunkManager &chunkManager) {
     {
         std::lock_guard<std::mutex> lock(mtx);
         playerCountForLog = playersById.size();
-        PlayerUpdate::updatePlayers(playersById, playersOrder, deltaSeconds, chunkManager,
-                                          heartbeatTimeout);
+        PlayerUpdate::updatePlayers(
+            playersById, playersOrder, deltaSeconds, chunkManager, heartbeatTimeout
+        );
     }
 
     const int64_t updateUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                                 std::chrono::steady_clock::now() - updateStart)
+                                 std::chrono::steady_clock::now() - updateStart
+    )
                                  .count();
     if (g_enablePlayerManagerPerfDiagnostics.load(std::memory_order_acquire) &&
         updateUs >= kSlowPlayerManagerUpdateUs) {
@@ -126,15 +129,16 @@ std::vector<uint8_t> PlayerManager::buildSnapshotFor(PlayerID recipientId, uint3
     return PlayerSnapshots::buildSnapshotFor(recipientId, serverTick, playersById);
 }
 
-std::vector<std::vector<uint8_t>>
-PlayerManager::buildSnapshotsForRecipients(const std::vector<PlayerID> &recipientIds,
-                                           uint32_t serverTick) {
+std::vector<std::vector<uint8_t>> PlayerManager::buildSnapshotsForRecipients(
+    const std::vector<PlayerID> &recipientIds, uint32_t serverTick
+) {
     std::lock_guard<std::mutex> lock(mtx);
     return PlayerSnapshots::buildSnapshotsForRecipients(recipientIds, serverTick, playersById);
 }
 
-void PlayerManager::sendBytes(const std::shared_ptr<ConnectionHandle> &conn,
-                              const std::vector<uint8_t> &buf) {
+void PlayerManager::sendBytes(
+    const std::shared_ptr<ConnectionHandle> &conn, const std::vector<uint8_t> &buf
+) {
     if (!conn) {
         return;
     }
@@ -186,16 +190,19 @@ std::vector<ServerPlayerCombatSnapshot> PlayerManager::getAllCombatSnapshotsCopy
 
 bool PlayerManager::applyDamage(PlayerID id, float damage, float &outHealthAfter, bool &outKilled) {
     std::lock_guard<std::mutex> lock(mtx);
-    return PlayerCombat::applyDamage(playersById, id, damage, outHealthAfter, outKilled,
-                                           respawnDelay, Clock::now());
+    return PlayerCombat::applyDamage(
+        playersById, id, damage, outHealthAfter, outKilled, respawnDelay, Clock::now()
+    );
 }
 
-bool PlayerManager::applyInventoryAction(PlayerID id, const InventoryActionRequest &request,
-                                         InventoryActionResult &outResult,
-                                         InventorySnapshot &outSnapshot) {
+bool PlayerManager::applyInventoryAction(
+    PlayerID id,
+    const InventoryActionRequest &request,
+    InventoryActionResult &outResult,
+    InventorySnapshot &outSnapshot
+) {
     std::lock_guard<std::mutex> lock(mtx);
-    return PlayerInventory::applyInventoryAction(playersById, id, request, outResult,
-                                                       outSnapshot);
+    return PlayerInventory::applyInventoryAction(playersById, id, request, outResult, outSnapshot);
 }
 
 bool PlayerManager::getInventorySnapshot(PlayerID id, InventorySnapshot &outSnapshot) {
@@ -208,10 +215,15 @@ bool PlayerManager::getInventorySlot(PlayerID id, uint16_t slotIndex, Slot &outS
     return PlayerInventory::getInventorySlot(playersById, id, slotIndex, outSlot);
 }
 
-bool PlayerManager::appendItemsToInventory(PlayerID id, uint16_t itemId, uint16_t quantity,
-                                           uint16_t &outAcceptedQuantity,
-                                           InventorySnapshot *outSnapshot) {
+bool PlayerManager::appendItemsToInventory(
+    PlayerID id,
+    uint16_t itemId,
+    uint16_t quantity,
+    uint16_t &outAcceptedQuantity,
+    InventorySnapshot *outSnapshot
+) {
     std::lock_guard<std::mutex> lock(mtx);
-    return PlayerInventory::appendItemsToInventory(playersById, id, itemId, quantity,
-                                                         outAcceptedQuantity, outSnapshot);
+    return PlayerInventory::appendItemsToInventory(
+        playersById, id, itemId, quantity, outAcceptedQuantity, outSnapshot
+    );
 }

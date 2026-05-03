@@ -1,5 +1,6 @@
 #include "graphics/Vulkan/renderer/VulkanRenderer.hpp"
 
+#include "graphics/Vulkan/renderer/RestirConfig.hpp"
 #include "graphics/Vulkan/vulkan/VulkanContext.hpp"
 #include "graphics/Vulkan/vulkan/VulkanUtils.hpp"
 
@@ -11,251 +12,34 @@
 #include <vector>
 
 namespace {
-constexpr bool kRestirGiUseSpatialHistory = false;
-constexpr uint32_t kRestirHistorySlot = 0u;
+    constexpr bool kRestirGiUseSpatialHistory = false;
 
-struct alignas(16) GiReservedStorageParamsGpu {
-    glm::ivec4 originSpacingBlocks{0};
-    glm::uvec4 reservedCounts{0u};
-};
+    struct alignas(16) GiReservedStorageParamsGpu {
+        glm::ivec4 originSpacingBlocks{0};
+        glm::uvec4 reservedCounts{0u};
+    };
 
-struct alignas(16) GiLightingParamsGpu {
-    glm::uvec4 header{0u};
-    glm::uvec4 pathConfig{1u, 0u, 0u, 0u};
-    glm::uvec4 tracingConfig{0u, 0u, 0u, 0u};
-    glm::vec4 tuning{1.0f, 0.55f, 0.70f, 0.00f};
-    glm::vec4 sunDirection{0.25f, 0.85f, 0.42f, 0.0f};
-    glm::ivec4 shadowOccupancyMinWordCount{0};
-    glm::uvec4 shadowOccupancyDims{0u};
-    glm::ivec4 shadowWorldBoundsXy{0};
-    glm::ivec4 shadowWorldBoundsZ{0};
-    glm::vec4 shadowParams{64.0f, 0.08f, 2.0f, 1.0f};
-    glm::vec4 restirParams{0.00f, 0.00f, 0.0f, 0.0f};
-    glm::vec4 denoiseParams{0.32f, 0.12f, 2.0f, 0.24f};
-    glm::mat4 currViewProjection{1.0f};
-    glm::mat4 prevViewProjection{1.0f};
-    glm::mat4 nrdPrevViewProjection{1.0f};
-    std::array<GiReservedStorageParamsGpu, 3> reservedStorage{};
-};
+    struct alignas(16) GiLightingParamsGpu {
+        glm::uvec4 header{0u};
+        glm::uvec4 pathConfig{1u, 0u, 0u, 0u};
+        glm::uvec4 tracingConfig{0u, 0u, 0u, 0u};
+        glm::vec4 tuning{1.0f, 0.55f, 0.70f, 0.00f};
+        glm::vec4 sunDirection{0.25f, 0.85f, 0.42f, 0.0f};
+        glm::ivec4 shadowOccupancyMinWordCount{0};
+        glm::uvec4 shadowOccupancyDims{0u};
+        glm::ivec4 shadowWorldBoundsXy{0};
+        glm::ivec4 shadowWorldBoundsZ{0};
+        glm::vec4 shadowParams{64.0f, 0.08f, 2.0f, 1.0f};
+        glm::vec4 restirParams{0.00f, 0.00f, 0.0f, 0.0f};
+        glm::vec4 denoiseParams{0.32f, 0.12f, 2.0f, 0.24f};
+        glm::mat4 currViewProjection{1.0f};
+        glm::mat4 prevViewProjection{1.0f};
+        glm::mat4 nrdPrevViewProjection{1.0f};
+        std::array<GiReservedStorageParamsGpu, 3> reservedStorage{};
+    };
 } // namespace
-template <typename T>
-void VulkanRenderer::createPingPongImagePair(std::vector<std::array<T, 2>> &out, vk::Format format,
-                                             vk::Extent2D extent, vk::ImageUsageFlags usage,
-                                             const vk::ClearColorValue &clearValue,
-                                             vk::raii::CommandBuffer &commandBuffer) {
-    const vk::raii::Device &device = m_context.getDevice();
-    const vk::raii::PhysicalDevice &physicalDevice = m_context.getPhysicalDevice();
 
-    const vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
-
-    for (auto &pair : out) {
-        for (auto &res : pair) {
-            vk::ImageCreateInfo imageInfo{};
-            imageInfo.imageType = vk::ImageType::e2D;
-            imageInfo.extent = vk::Extent3D(extent.width, extent.height, 1u);
-            imageInfo.mipLevels = 1;
-            imageInfo.arrayLayers = 1;
-            imageInfo.format = format;
-            imageInfo.tiling = vk::ImageTiling::eOptimal;
-            imageInfo.initialLayout = vk::ImageLayout::eUndefined;
-            imageInfo.usage = usage;
-            imageInfo.samples = vk::SampleCountFlagBits::e1;
-            imageInfo.sharingMode = vk::SharingMode::eExclusive;
-            res.image = vk::raii::Image(device, imageInfo);
-
-            const vk::MemoryRequirements requirements = res.image.getMemoryRequirements();
-            vk::MemoryAllocateInfo allocInfo{};
-            allocInfo.allocationSize = requirements.size;
-            allocInfo.memoryTypeIndex =
-                VulkanUtils::findMemoryType(physicalDevice, requirements.memoryTypeBits,
-                                            vk::MemoryPropertyFlagBits::eDeviceLocal);
-            res.memory = vk::raii::DeviceMemory(device, allocInfo);
-            res.image.bindMemory(*res.memory, 0);
-
-            vk::ImageViewCreateInfo viewInfo{};
-            viewInfo.image = *res.image;
-            viewInfo.viewType = vk::ImageViewType::e2D;
-            viewInfo.format = format;
-            viewInfo.subresourceRange = range;
-            viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-            res.view = vk::raii::ImageView(device, viewInfo);
-
-            vk::ImageMemoryBarrier toGeneral{};
-            toGeneral.oldLayout = vk::ImageLayout::eUndefined;
-            toGeneral.newLayout = vk::ImageLayout::eGeneral;
-            toGeneral.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            toGeneral.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            toGeneral.image = *res.image;
-            toGeneral.subresourceRange = range;
-            toGeneral.srcAccessMask = {};
-            toGeneral.dstAccessMask = vk::AccessFlagBits::eShaderRead |
-                                      vk::AccessFlagBits::eShaderWrite |
-                                      vk::AccessFlagBits::eTransferWrite;
-            commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                                          vk::PipelineStageFlagBits::eTransfer |
-                                              vk::PipelineStageFlagBits::eFragmentShader |
-                                              vk::PipelineStageFlagBits::eComputeShader,
-                                          {}, {}, {}, toGeneral);
-            commandBuffer.clearColorImage(*res.image, vk::ImageLayout::eGeneral, clearValue, range);
-        }
-    }
-}
-
-vk::raii::Sampler VulkanRenderer::createSharedRestirSampler() {
-    vk::SamplerCreateInfo samplerInfo{};
-    samplerInfo.magFilter = vk::Filter::eNearest;
-    samplerInfo.minFilter = vk::Filter::eNearest;
-    samplerInfo.mipmapMode = vk::SamplerMipmapMode::eNearest;
-    samplerInfo.addressModeU = vk::SamplerAddressMode::eClampToEdge;
-    samplerInfo.addressModeV = vk::SamplerAddressMode::eClampToEdge;
-    samplerInfo.addressModeW = vk::SamplerAddressMode::eClampToEdge;
-    samplerInfo.anisotropyEnable = VK_FALSE;
-    samplerInfo.maxAnisotropy = 1.0f;
-    samplerInfo.borderColor = vk::BorderColor::eFloatOpaqueBlack;
-    samplerInfo.unnormalizedCoordinates = VK_FALSE;
-    samplerInfo.minLod = 0.0f;
-    samplerInfo.maxLod = 0.0f;
-    return vk::raii::Sampler(m_context.getDevice(), samplerInfo);
-}
-
-void VulkanRenderer::createRestirDiResources() {
-    cleanupRestirDiResources();
-    if (m_framebuffers.empty() || m_commandPool == nullptr)
-        return;
-
-    const vk::Extent2D extent = m_context.getSwapchainExtent();
-    if (extent.width == 0 || extent.height == 0)
-        return;
-
-    const size_t imageCount = m_framebuffers.size();
-    m_restirDiPerImage.resize(imageCount);
-    m_restirDiWriteParityPerImage.assign(imageCount, 0u);
-    m_restirDiValidPerImage.assign(imageCount, false);
-    m_restirDiPrevViewProjectionPerImage.assign(imageCount, glm::mat4(1.0f));
-    m_restirDiPrevViewPerImage.assign(imageCount, glm::mat4(1.0f));
-    m_restirDiPrevProjectionPerImage.assign(imageCount, glm::mat4(1.0f));
-    m_prevViewProjectionValidPerImage.assign(imageCount, false);
-
-    m_restirDiSampler = createSharedRestirSampler();
-
-    constexpr vk::ImageUsageFlags kUsage = vk::ImageUsageFlagBits::eSampled |
-                                           vk::ImageUsageFlagBits::eStorage |
-                                           vk::ImageUsageFlagBits::eTransferDst;
-
-    vk::raii::CommandBuffer cmd =
-        VulkanUtils::beginSingleTimeCommands(m_context.getDevice(), m_commandPool);
-    createPingPongImagePair(m_restirDiPerImage, vk::Format::eR16G16B16A16Sfloat, extent, kUsage,
-                            vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}), cmd);
-    VulkanUtils::endSingleTimeCommands(m_context.getDevice(), m_context.getGraphicsQueue(),
-                                       std::move(cmd));
-}
-
-void VulkanRenderer::cleanupRestirDiResources() {
-    m_restirDiSampler.clear();
-    m_restirDiPerImage.clear();
-    m_restirDiWriteParityPerImage.clear();
-    m_restirDiValidPerImage.clear();
-    m_restirDiPrevViewProjectionPerImage.clear();
-    m_restirDiPrevViewPerImage.clear();
-    m_restirDiPrevProjectionPerImage.clear();
-    m_prevViewProjectionValidPerImage.clear();
-}
-
-void VulkanRenderer::createRestirValidationResources() {
-    cleanupRestirValidationResources();
-    if (m_framebuffers.empty() || m_commandPool == nullptr)
-        return;
-
-    const vk::Extent2D extent = m_context.getSwapchainExtent();
-    if (extent.width == 0 || extent.height == 0)
-        return;
-
-    m_restirValidationPerImage.resize(m_framebuffers.size());
-    m_restirValidationSampler = createSharedRestirSampler();
-
-    constexpr vk::ImageUsageFlags kUsage = vk::ImageUsageFlagBits::eSampled |
-                                           vk::ImageUsageFlagBits::eStorage |
-                                           vk::ImageUsageFlagBits::eTransferDst;
-
-    vk::raii::CommandBuffer cmd =
-        VulkanUtils::beginSingleTimeCommands(m_context.getDevice(), m_commandPool);
-    createPingPongImagePair(m_restirValidationPerImage, vk::Format::eR16G16B16A16Sfloat, extent,
-                            kUsage,
-                            vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 1.0f, 0.0f}), cmd);
-    VulkanUtils::endSingleTimeCommands(m_context.getDevice(), m_context.getGraphicsQueue(),
-                                       std::move(cmd));
-}
-
-void VulkanRenderer::cleanupRestirValidationResources() {
-    m_restirValidationSampler.clear();
-    m_restirValidationPerImage.clear();
-}
-
-void VulkanRenderer::createRestirMetaResources() {
-    cleanupRestirMetaResources();
-    if (m_framebuffers.empty() || m_commandPool == nullptr)
-        return;
-
-    const vk::Extent2D extent = m_context.getSwapchainExtent();
-    if (extent.width == 0 || extent.height == 0)
-        return;
-
-    m_restirMetaPerImage.resize(m_framebuffers.size());
-    m_restirMetaSampler = createSharedRestirSampler();
-
-    constexpr vk::ImageUsageFlags kUsage = vk::ImageUsageFlagBits::eSampled |
-                                           vk::ImageUsageFlagBits::eStorage |
-                                           vk::ImageUsageFlagBits::eTransferDst;
-
-    vk::raii::CommandBuffer cmd =
-        VulkanUtils::beginSingleTimeCommands(m_context.getDevice(), m_commandPool);
-    createPingPongImagePair(m_restirMetaPerImage, vk::Format::eR16G16B16A16Sfloat, extent, kUsage,
-                            vk::ClearColorValue(std::array<float, 4>{1.0f, 0.0f, 0.0f, 0.0f}), cmd);
-    VulkanUtils::endSingleTimeCommands(m_context.getDevice(), m_context.getGraphicsQueue(),
-                                       std::move(cmd));
-}
-
-void VulkanRenderer::cleanupRestirMetaResources() {
-    m_restirMetaSampler.clear();
-    m_restirMetaPerImage.clear();
-}
-
-void VulkanRenderer::createRestirGiResources() {
-    cleanupRestirGiResources();
-    if (m_framebuffers.empty() || m_commandPool == nullptr)
-        return;
-
-    const vk::Extent2D extent = m_context.getSwapchainExtent();
-    if (extent.width == 0 || extent.height == 0)
-        return;
-
-    const size_t imageCount = m_framebuffers.size();
-    m_restirGiPerImage.resize(imageCount);
-    m_restirGiMetaPerImage.resize(imageCount);
-    m_restirGiSampler = createSharedRestirSampler();
-    m_restirGiMetaSampler = createSharedRestirSampler();
-
-    constexpr vk::ImageUsageFlags kUsage = vk::ImageUsageFlagBits::eSampled |
-                                           vk::ImageUsageFlagBits::eStorage |
-                                           vk::ImageUsageFlagBits::eTransferDst;
-
-    // Both pairs go into one command buffer — single queue submission
-    vk::raii::CommandBuffer cmd =
-        VulkanUtils::beginSingleTimeCommands(m_context.getDevice(), m_commandPool);
-    createPingPongImagePair(m_restirGiPerImage, vk::Format::eR16G16B16A16Sfloat, extent, kUsage,
-                            vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}), cmd);
-    createPingPongImagePair(m_restirGiMetaPerImage, vk::Format::eR16G16B16A16Sfloat, extent, kUsage,
-                            vk::ClearColorValue(std::array<float, 4>{1.0f, 0.0f, 0.0f, 0.0f}), cmd);
-    VulkanUtils::endSingleTimeCommands(m_context.getDevice(), m_context.getGraphicsQueue(),
-                                       std::move(cmd));
-}
-
-void VulkanRenderer::cleanupRestirGiResources() {
-    m_restirGiSampler.clear();
-    m_restirGiMetaSampler.clear();
-    m_restirGiPerImage.clear();
-    m_restirGiMetaPerImage.clear();
-}
+using namespace Vulkan::Restir;
 
 void VulkanRenderer::createGiDescriptorResources() {
     cleanupGiDescriptorResources();
@@ -356,11 +140,14 @@ void VulkanRenderer::createGiDescriptorResources() {
         m_giFallbackReservedStorageBuffers.emplace_back(nullptr);
         m_giFallbackReservedStorageBufferMemory.emplace_back(nullptr);
         VulkanUtils::createBuffer(
-            device, physicalDevice, sizeof(uint32_t),
+            device,
+            physicalDevice,
+            sizeof(uint32_t),
             vk::BufferUsageFlagBits::eStorageBuffer,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
             m_giFallbackReservedStorageBuffers.back(),
-            m_giFallbackReservedStorageBufferMemory.back());
+            m_giFallbackReservedStorageBufferMemory.back()
+        );
 
         const uint32_t zeroWord = 0u;
         void *mapped = m_giFallbackReservedStorageBufferMemory.back().mapMemory(0, VK_WHOLE_SIZE);
@@ -369,9 +156,14 @@ void VulkanRenderer::createGiDescriptorResources() {
     }
 
     VulkanUtils::createBuffer(
-        device, physicalDevice, sizeof(uint32_t), vk::BufferUsageFlagBits::eStorageBuffer,
+        device,
+        physicalDevice,
+        sizeof(uint32_t),
+        vk::BufferUsageFlagBits::eStorageBuffer,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        m_giFallbackShadowOccupancyBuffer, m_giFallbackShadowOccupancyBufferMemory);
+        m_giFallbackShadowOccupancyBuffer,
+        m_giFallbackShadowOccupancyBufferMemory
+    );
     {
         const uint32_t zeroWord = 0u;
         void *mapped = m_giFallbackShadowOccupancyBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
@@ -380,9 +172,14 @@ void VulkanRenderer::createGiDescriptorResources() {
     }
 
     VulkanUtils::createBuffer(
-        device, physicalDevice, sizeof(uint32_t), vk::BufferUsageFlagBits::eStorageBuffer,
+        device,
+        physicalDevice,
+        sizeof(uint32_t),
+        vk::BufferUsageFlagBits::eStorageBuffer,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        m_giFallbackMaterialBuffer, m_giFallbackMaterialBufferMemory);
+        m_giFallbackMaterialBuffer,
+        m_giFallbackMaterialBufferMemory
+    );
     {
         const uint32_t fallbackMaterial = 0u;
         void *mapped = m_giFallbackMaterialBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
@@ -391,17 +188,22 @@ void VulkanRenderer::createGiDescriptorResources() {
     }
 
     for (PerImageDrawResources &resources : m_perImageDrawResources) {
-        VulkanUtils::createBuffer(device, physicalDevice, sizeof(GiLightingParamsGpu),
-                                  vk::BufferUsageFlagBits::eUniformBuffer,
-                                  vk::MemoryPropertyFlagBits::eHostVisible |
-                                      vk::MemoryPropertyFlagBits::eHostCoherent,
-                                  resources.giParamsBuffer, resources.giParamsBufferMemory);
+        VulkanUtils::createBuffer(
+            device,
+            physicalDevice,
+            sizeof(GiLightingParamsGpu),
+            vk::BufferUsageFlagBits::eUniformBuffer,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            resources.giParamsBuffer,
+            resources.giParamsBufferMemory
+        );
         resources.giParamsMapped = resources.giParamsBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
     }
 }
 
-void VulkanRenderer::updateGiDescriptorSet(uint32_t imageIndex, const FrameRenderData &frameData,
-                                           const glm::mat4 &viewProjection) {
+void VulkanRenderer::updateGiDescriptorSet(
+    uint32_t imageIndex, const FrameRenderData &frameData, const glm::mat4 &viewProjection
+) {
     if (imageIndex >= m_perImageDrawResources.size() || imageIndex >= m_giDescriptorSets.size()) {
         return;
     }
@@ -446,9 +248,10 @@ void VulkanRenderer::updateGiDescriptorSet(uint32_t imageIndex, const FrameRende
     params.tuning.z = frameData.giLighting.sunIntensity;
     params.tuning.w = frameData.giLighting.sunShadowMinVisibility;
     params.sunDirection = glm::vec4(frameData.giLighting.sunDirection, 0.0f);
-    params.shadowOccupancyMinWordCount =
-        glm::ivec4(frameData.giLighting.shadowOccupancyMinBlocks,
-                   static_cast<int32_t>(frameData.giLighting.shadowOccupancyWordCount));
+    params.shadowOccupancyMinWordCount = glm::ivec4(
+        frameData.giLighting.shadowOccupancyMinBlocks,
+        static_cast<int32_t>(frameData.giLighting.shadowOccupancyWordCount)
+    );
     params.shadowOccupancyDims = glm::uvec4(frameData.giLighting.shadowOccupancyDims, 0u);
     params.shadowWorldBoundsXy = frameData.giLighting.shadowWorldBoundsXy;
     params.shadowWorldBoundsZ = frameData.giLighting.shadowWorldBoundsZ;
@@ -620,60 +423,80 @@ void VulkanRenderer::updateGiDescriptorSet(uint32_t imageIndex, const FrameRende
 
     std::vector<vk::WriteDescriptorSet> writes;
     writes.reserve(m_giRtDescriptorEnabled ? GI_BINDING_COUNT : GI_RT_SCENE_BINDING);
-    auto pushBufferWrite = [&](uint32_t binding, vk::DescriptorType type,
-                               const vk::DescriptorBufferInfo *info) {
-        vk::WriteDescriptorSet write{};
-        write.dstSet = *m_giDescriptorSets[imageIndex];
-        write.dstBinding = binding;
-        write.descriptorType = type;
-        write.descriptorCount = 1;
-        write.pBufferInfo = info;
-        writes.push_back(write);
-    };
-    auto pushImageWrite = [&](uint32_t binding, vk::DescriptorType type,
-                              const vk::DescriptorImageInfo *info) {
-        vk::WriteDescriptorSet write{};
-        write.dstSet = *m_giDescriptorSets[imageIndex];
-        write.dstBinding = binding;
-        write.descriptorType = type;
-        write.descriptorCount = 1;
-        write.pImageInfo = info;
-        writes.push_back(write);
-    };
+    auto pushBufferWrite =
+        [&](uint32_t binding, vk::DescriptorType type, const vk::DescriptorBufferInfo *info) {
+            vk::WriteDescriptorSet write{};
+            write.dstSet = *m_giDescriptorSets[imageIndex];
+            write.dstBinding = binding;
+            write.descriptorType = type;
+            write.descriptorCount = 1;
+            write.pBufferInfo = info;
+            writes.push_back(write);
+        };
+    auto pushImageWrite =
+        [&](uint32_t binding, vk::DescriptorType type, const vk::DescriptorImageInfo *info) {
+            vk::WriteDescriptorSet write{};
+            write.dstSet = *m_giDescriptorSets[imageIndex];
+            write.dstBinding = binding;
+            write.descriptorType = type;
+            write.descriptorCount = 1;
+            write.pImageInfo = info;
+            writes.push_back(write);
+        };
 
     for (uint32_t i = 0; i < GI_RESERVED_STORAGE_BINDINGS; ++i) {
         pushBufferWrite(i, vk::DescriptorType::eStorageBuffer, &bufferInfos[i]);
     }
-    pushBufferWrite(GI_PARAM_BINDING, vk::DescriptorType::eUniformBuffer,
-                    &bufferInfos[GI_PARAM_BINDING]);
-    pushBufferWrite(GI_SHADOW_OCCUPANCY_BINDING, vk::DescriptorType::eStorageBuffer,
-                    &bufferInfos[GI_SHADOW_OCCUPANCY_BINDING]);
-    pushBufferWrite(GI_MATERIAL_BINDING, vk::DescriptorType::eStorageBuffer,
-                    &bufferInfos[GI_MATERIAL_BINDING]);
-    pushImageWrite(GI_RESTIR_DI_PREV_BINDING, vk::DescriptorType::eCombinedImageSampler,
-                   &prevRestirInfo);
+    pushBufferWrite(
+        GI_PARAM_BINDING, vk::DescriptorType::eUniformBuffer, &bufferInfos[GI_PARAM_BINDING]
+    );
+    pushBufferWrite(
+        GI_SHADOW_OCCUPANCY_BINDING,
+        vk::DescriptorType::eStorageBuffer,
+        &bufferInfos[GI_SHADOW_OCCUPANCY_BINDING]
+    );
+    pushBufferWrite(
+        GI_MATERIAL_BINDING, vk::DescriptorType::eStorageBuffer, &bufferInfos[GI_MATERIAL_BINDING]
+    );
+    pushImageWrite(
+        GI_RESTIR_DI_PREV_BINDING, vk::DescriptorType::eCombinedImageSampler, &prevRestirInfo
+    );
     pushImageWrite(GI_RESTIR_DI_CURR_BINDING, vk::DescriptorType::eStorageImage, &currRestirInfo);
-    pushImageWrite(GI_RESTIR_VALIDATION_PREV_BINDING, vk::DescriptorType::eCombinedImageSampler,
-                   &prevValidationInfo);
-    pushImageWrite(GI_RESTIR_VALIDATION_CURR_BINDING, vk::DescriptorType::eStorageImage,
-                   &currValidationInfo);
-    pushImageWrite(GI_RESTIR_META_PREV_BINDING, vk::DescriptorType::eCombinedImageSampler,
-                   &prevMetaInfo);
+    pushImageWrite(
+        GI_RESTIR_VALIDATION_PREV_BINDING,
+        vk::DescriptorType::eCombinedImageSampler,
+        &prevValidationInfo
+    );
+    pushImageWrite(
+        GI_RESTIR_VALIDATION_CURR_BINDING, vk::DescriptorType::eStorageImage, &currValidationInfo
+    );
+    pushImageWrite(
+        GI_RESTIR_META_PREV_BINDING, vk::DescriptorType::eCombinedImageSampler, &prevMetaInfo
+    );
     pushImageWrite(GI_RESTIR_META_CURR_BINDING, vk::DescriptorType::eStorageImage, &currMetaInfo);
-    pushImageWrite(GI_RESTIR_GI_PREV_BINDING, vk::DescriptorType::eCombinedImageSampler,
-                   &prevRestirGiInfo);
+    pushImageWrite(
+        GI_RESTIR_GI_PREV_BINDING, vk::DescriptorType::eCombinedImageSampler, &prevRestirGiInfo
+    );
     pushImageWrite(GI_RESTIR_GI_CURR_BINDING, vk::DescriptorType::eStorageImage, &currRestirGiInfo);
-    pushImageWrite(GI_RESTIR_GI_META_PREV_BINDING, vk::DescriptorType::eCombinedImageSampler,
-                   &prevRestirGiMetaInfo);
-    pushImageWrite(GI_RESTIR_GI_META_CURR_BINDING, vk::DescriptorType::eStorageImage,
-                   &currRestirGiMetaInfo);
+    pushImageWrite(
+        GI_RESTIR_GI_META_PREV_BINDING,
+        vk::DescriptorType::eCombinedImageSampler,
+        &prevRestirGiMetaInfo
+    );
+    pushImageWrite(
+        GI_RESTIR_GI_META_CURR_BINDING, vk::DescriptorType::eStorageImage, &currRestirGiMetaInfo
+    );
     pushImageWrite(GI_NRD_DIFF_IN_BINDING, vk::DescriptorType::eStorageImage, &nrdDiffInInfo);
-    pushImageWrite(GI_NRD_NORMAL_ROUGHNESS_IN_BINDING, vk::DescriptorType::eStorageImage,
-                   &nrdNormalRoughnessInInfo);
+    pushImageWrite(
+        GI_NRD_NORMAL_ROUGHNESS_IN_BINDING,
+        vk::DescriptorType::eStorageImage,
+        &nrdNormalRoughnessInInfo
+    );
     pushImageWrite(GI_NRD_MV_IN_BINDING, vk::DescriptorType::eStorageImage, &nrdMvInInfo);
     pushImageWrite(GI_NRD_VIEWZ_IN_BINDING, vk::DescriptorType::eStorageImage, &nrdViewZInInfo);
-    pushImageWrite(GI_NRD_DIFF_OUT_BINDING, vk::DescriptorType::eCombinedImageSampler,
-                   &nrdDiffOutInfo);
+    pushImageWrite(
+        GI_NRD_DIFF_OUT_BINDING, vk::DescriptorType::eCombinedImageSampler, &nrdDiffOutInfo
+    );
 
     vk::WriteDescriptorSetAccelerationStructureKHR rtSceneInfo{};
     vk::AccelerationStructureKHR rtSceneHandle = frameData.giLighting.sceneTlas;
@@ -706,4 +529,3 @@ void VulkanRenderer::cleanupGiDescriptorResources() {
     m_giFallbackMaterialBuffer.clear();
     m_giFallbackMaterialBufferMemory.clear();
 }
-

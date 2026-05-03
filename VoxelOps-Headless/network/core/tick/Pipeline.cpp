@@ -2,18 +2,18 @@
 #include "../DiagnosticsFlags.hpp"
 
 namespace {
-constexpr auto kServerPerfLogInterval = std::chrono::seconds(1);
-constexpr double kSlowServerLoopWarnUs = 12000.0;
-constexpr double kSlowServerSimWarnUs = 5000.0;
+    constexpr auto kServerPerfLogInterval = std::chrono::seconds(1);
+    constexpr double kSlowServerLoopWarnUs = 12000.0;
+    constexpr double kSlowServerSimWarnUs = 5000.0;
 
-struct FrameTimings {
-    double messageDrainUs = 0.0;
-    double simUs = 0.0;
-    double snapshotUs = 0.0;
-    double chunkInterestUs = 0.0;
-    double chunkSendUs = 0.0;
-    double collisionPrewarmUs = 0.0;
-};
+    struct FrameTimings {
+        double messageDrainUs = 0.0;
+        double simUs = 0.0;
+        double snapshotUs = 0.0;
+        double chunkInterestUs = 0.0;
+        double chunkSendUs = 0.0;
+        double collisionPrewarmUs = 0.0;
+    };
 
 } // namespace
 
@@ -75,8 +75,12 @@ void Runtime::MainLoop() {
         lastFrameTime = frameNow;
         simAccumulator += deltaSeconds;
 
-        RunInboundMessagePhase(msgPacketsThisLoop, playerInputPacketsThisLoop,
-                               chunkRequestPacketsThisLoop, frameTimings.messageDrainUs);
+        RunInboundMessagePhase(
+            msgPacketsThisLoop,
+            playerInputPacketsThisLoop,
+            chunkRequestPacketsThisLoop,
+            frameTimings.messageDrainUs
+        );
         RunConnectionCleanupPhase();
         const uint64_t simTicksThisLoop =
             RunSimulationPhase(simAccumulator, serverTick, frameTimings.simUs, simBacklog);
@@ -87,13 +91,14 @@ void Runtime::MainLoop() {
             RunChunkInterestPhase(simBacklog, frameTimings.chunkInterestUs);
         const size_t chunksSentThisLoop =
             RunChunkSendPhase(simBacklog, nextChunkSendFlushAt, frameTimings.chunkSendUs);
-        const size_t collisionPrewarmGeneratedThisLoop =
-            RunCollisionPrewarmPhase(simBacklog, nextCollisionPrewarmAt,
-                                     frameTimings.collisionPrewarmUs);
+        const size_t collisionPrewarmGeneratedThisLoop = RunCollisionPrewarmPhase(
+            simBacklog, nextCollisionPrewarmAt, frameTimings.collisionPrewarmUs
+        );
 
         const double loopUs =
             static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(
-                                    std::chrono::steady_clock::now() - loopStart)
+                                    std::chrono::steady_clock::now() - loopStart
+            )
                                     .count());
         if (loopUs > perfLoopUsMax) {
             perfLoopUsMax = loopUs;
@@ -119,15 +124,14 @@ void Runtime::MainLoop() {
 
         if (DiagnosticsFlags::g_enableServerPerfDiagnostics.load(std::memory_order_acquire) &&
             (loopUs >= kSlowServerLoopWarnUs || frameTimings.simUs >= kSlowServerSimWarnUs)) {
-            std::cerr << "[perf/server] slow loopUs=" << loopUs
-                      << " simUs=" << frameTimings.simUs
+            std::cerr << "[perf/server] slow loopUs=" << loopUs << " simUs=" << frameTimings.simUs
                       << " msgDrainUs=" << frameTimings.messageDrainUs
                       << " prewarmUs=" << frameTimings.collisionPrewarmUs
                       << " snapshotUs=" << frameTimings.snapshotUs
                       << " chunkInterestUs=" << frameTimings.chunkInterestUs
                       << " chunkSendUs=" << frameTimings.chunkSendUs
-                      << " simTicks=" << simTicksThisLoop
-                      << " msgs=" << msgPacketsThisLoop << " inputs=" << playerInputPacketsThisLoop
+                      << " simTicks=" << simTicksThisLoop << " msgs=" << msgPacketsThisLoop
+                      << " inputs=" << playerInputPacketsThisLoop
                       << " chunkReq=" << chunkRequestPacketsThisLoop
                       << " prewarmGenerated=" << collisionPrewarmGeneratedThisLoop
                       << " chunkInterestTasks=" << chunkInterestTasksThisLoop

@@ -7,11 +7,11 @@
 #include <cmath>
 #include <random>
 
-void WorldGen::applyClientDecorationPass(ChunkManager& cm, ServerChunk& chunk, const glm::ivec3& chunkPos) {
+void WorldGen::applyClientDecorationPass(
+    ChunkManager &cm, ServerChunk &chunk, const glm::ivec3 &chunkPos
+) {
     const uint32_t seed = static_cast<uint32_t>(
-        (chunkPos.x * 73856093u) ^
-        (chunkPos.y * 19349663u) ^
-        (chunkPos.z * 83492791u)
+        (chunkPos.x * 73856093u) ^ (chunkPos.y * 19349663u) ^ (chunkPos.z * 83492791u)
     );
     std::mt19937 gen(seed);
     std::uniform_real_distribution<> chance(0.0, 1.0);
@@ -39,7 +39,7 @@ void WorldGen::applyClientDecorationPass(ChunkManager& cm, ServerChunk& chunk, c
     }
 }
 
-void WorldGen::generateInitialChunks(ChunkManager& cm, int radiusChunks) {
+void WorldGen::generateInitialChunks(ChunkManager &cm, int radiusChunks) {
     int minChunkY = WORLD_MIN_Y / CHUNK_SIZE;
     int maxChunkY = WORLD_MAX_Y / CHUNK_SIZE;
 
@@ -54,7 +54,7 @@ void WorldGen::generateInitialChunks(ChunkManager& cm, int radiusChunks) {
     cm.updateDirtyChunks();
 }
 
-void WorldGen::generateInitialChunksTwoPass(ChunkManager& cm, int radiusChunks) {
+void WorldGen::generateInitialChunksTwoPass(ChunkManager &cm, int radiusChunks) {
     int minChunkY = WORLD_MIN_Y / CHUNK_SIZE;
     int maxChunkY = WORLD_MAX_Y / CHUNK_SIZE;
 
@@ -69,8 +69,9 @@ void WorldGen::generateInitialChunksTwoPass(ChunkManager& cm, int radiusChunks) 
 
     // PASS 2: decoration (mirrors client WorldGen two-pass decoration behavior)
     auto snap = cm.snapshotChunkMap();
-    for (auto& [pos, chunkPtr] : snap) {
-        if (!chunkPtr) continue;
+    for (auto &[pos, chunkPtr] : snap) {
+        if (!chunkPtr)
+            continue;
         applyClientDecorationPass(cm, *chunkPtr, pos);
         std::lock_guard<std::shared_mutex> lk(cm.mapMutex);
         cm.decoratedChunks.insert(pos);
@@ -79,8 +80,9 @@ void WorldGen::generateInitialChunksTwoPass(ChunkManager& cm, int radiusChunks) 
     cm.updateDirtyChunks();
 }
 
-void WorldGen::generateChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
-    if (!cm.inBounds(pos)) return;
+void WorldGen::generateChunkAt(ChunkManager &cm, const glm::ivec3 &pos) {
+    if (!cm.inBounds(pos))
+        return;
 
     auto chunk = std::make_unique<ServerChunk>(pos);
 
@@ -109,11 +111,16 @@ void WorldGen::generateChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
 
             for (int y = 0; y < CHUNK_SIZE; ++y) {
                 int worldY = pos.y * CHUNK_SIZE + y;
-                if (worldY == WORLD_MIN_Y) chunk->applyEdit(x, y, z, BlockID::Bedrock);
-                else if (worldY < height - 2) chunk->applyEdit(x, y, z, BlockID::Stone);
-                else if (worldY < height - 1) chunk->applyEdit(x, y, z, BlockID::Dirt);
-                else if (worldY < height) chunk->applyEdit(x, y, z, BlockID::Grass);
-                else chunk->applyEdit(x, y, z, BlockID::Air);
+                if (worldY == WORLD_MIN_Y)
+                    chunk->applyEdit(x, y, z, BlockID::Bedrock);
+                else if (worldY < height - 2)
+                    chunk->applyEdit(x, y, z, BlockID::Stone);
+                else if (worldY < height - 1)
+                    chunk->applyEdit(x, y, z, BlockID::Dirt);
+                else if (worldY < height)
+                    chunk->applyEdit(x, y, z, BlockID::Grass);
+                else
+                    chunk->applyEdit(x, y, z, BlockID::Air);
             }
         }
     }
@@ -122,7 +129,7 @@ void WorldGen::generateChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
     applyClientDecorationPass(cm, *chunk, pos);
 
     bool shouldDecorateExisting = false;
-    ServerChunk* existingChunk = nullptr;
+    ServerChunk *existingChunk = nullptr;
     {
         std::lock_guard<std::shared_mutex> lk(cm.mapMutex);
         auto it = cm.chunkMap.find(pos);
@@ -146,8 +153,9 @@ void WorldGen::generateChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
     }
 }
 
-void WorldGen::generateTerrainChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
-    if (!cm.inBounds(pos)) return;
+void WorldGen::generateTerrainChunkAt(ChunkManager &cm, const glm::ivec3 &pos) {
+    if (!cm.inBounds(pos))
+        return;
 
     auto chunk = std::make_unique<ServerChunk>(pos);
 
@@ -176,11 +184,16 @@ void WorldGen::generateTerrainChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
 
             for (int y = 0; y < CHUNK_SIZE; ++y) {
                 int worldY = pos.y * CHUNK_SIZE + y;
-                if (worldY == WORLD_MIN_Y) chunk->applyEdit(x, y, z, BlockID::Bedrock);
-                else if (worldY < height - 2) chunk->applyEdit(x, y, z, BlockID::Stone);
-                else if (worldY < height - 1) chunk->applyEdit(x, y, z, BlockID::Dirt);
-                else if (worldY < height) chunk->applyEdit(x, y, z, BlockID::Grass);
-                else chunk->applyEdit(x, y, z, BlockID::Air);
+                if (worldY == WORLD_MIN_Y)
+                    chunk->applyEdit(x, y, z, BlockID::Bedrock);
+                else if (worldY < height - 2)
+                    chunk->applyEdit(x, y, z, BlockID::Stone);
+                else if (worldY < height - 1)
+                    chunk->applyEdit(x, y, z, BlockID::Dirt);
+                else if (worldY < height)
+                    chunk->applyEdit(x, y, z, BlockID::Grass);
+                else
+                    chunk->applyEdit(x, y, z, BlockID::Air);
             }
         }
     }
@@ -199,8 +212,8 @@ void WorldGen::generateTerrainChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
     }
 }
 
-void WorldGen::decorateChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
-    ServerChunk* chunkPtr = nullptr;
+void WorldGen::decorateChunkAt(ChunkManager &cm, const glm::ivec3 &pos) {
+    ServerChunk *chunkPtr = nullptr;
     {
         std::lock_guard<std::shared_mutex> lk(cm.mapMutex);
         auto it = cm.chunkMap.find(pos);
@@ -208,7 +221,8 @@ void WorldGen::decorateChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
             chunkPtr = it->second.get();
         }
     }
-    if (!chunkPtr) return;
+    if (!chunkPtr)
+        return;
 
     applyClientDecorationPass(cm, *chunkPtr, pos);
 
@@ -216,13 +230,14 @@ void WorldGen::decorateChunkAt(ChunkManager& cm, const glm::ivec3& pos) {
     cm.decoratedChunks.insert(pos);
 }
 
-void WorldGen::placeTree(ChunkManager& cm, ServerChunk& chunk, const glm::ivec3& basePos, std::mt19937& gen) {
+void WorldGen::placeTree(
+    ChunkManager &cm, ServerChunk &chunk, const glm::ivec3 &basePos, std::mt19937 &gen
+) {
     std::uniform_int_distribution<> trunkH(10, 14);
     int trunkHeight = trunkH(gen);
 
     glm::ivec3 trunkOffsets[4] = {
-        glm::ivec3(0, 0, 0), glm::ivec3(1, 0, 0),
-        glm::ivec3(0, 0, 1), glm::ivec3(1, 0, 1)
+        glm::ivec3(0, 0, 0), glm::ivec3(1, 0, 0), glm::ivec3(0, 0, 1), glm::ivec3(1, 0, 1)
     };
 
     for (int i = 0; i < trunkHeight; ++i) {
@@ -249,8 +264,10 @@ void WorldGen::placeTree(ChunkManager& cm, ServerChunk& chunk, const glm::ivec3&
                 if (dist <= crownRadius + 0.25f) {
                     float edgeFactor = (dist / float(crownRadius));
                     float skipProb = glm::smoothstep(0.7f, 1.0f, edgeFactor) * 0.65f;
-                    if (dy == crownBaseYOffset) skipProb *= 0.55f;
-                    if (holeChance(gen) < skipProb) continue;
+                    if (dy == crownBaseYOffset)
+                        skipProb *= 0.55f;
+                    if (holeChance(gen) < skipProb)
+                        continue;
 
                     glm::ivec3 leafPos(basePos.x + dx, layerY, basePos.z + dz);
                     if (cm.getBlockSafe(chunk, leafPos) == BlockID::Air) {
@@ -269,7 +286,8 @@ void WorldGen::placeTree(ChunkManager& cm, ServerChunk& chunk, const glm::ivec3&
             if (dist <= taperRadius + 0.25f) {
                 glm::ivec3 leafPos(basePos.x + dx, taperY, basePos.z + dz);
                 if (cm.getBlockSafe(chunk, leafPos) == BlockID::Air) {
-                    if (dist > (taperRadius - 0.5f) && holeChance(gen) < 0.25f) continue;
+                    if (dist > (taperRadius - 0.5f) && holeChance(gen) < 0.25f)
+                        continue;
                     cm.setBlockSafe(chunk, leafPos, BlockID::Leaves);
                 }
             }

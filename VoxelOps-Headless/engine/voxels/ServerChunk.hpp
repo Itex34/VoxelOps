@@ -31,7 +31,7 @@ struct EditOp {
 using ClientId = uint64_t; // or whatever type you use to identify connections
 
 class ServerChunk {
-  public:
+public:
     ServerChunk(glm::ivec3 pos = glm::ivec3(0));
 
     // Thread-safe accessors. These lock internally.
@@ -92,11 +92,10 @@ class ServerChunk {
         return (unsigned)x < CHUNK_SIZE && (unsigned)y < CHUNK_SIZE && (unsigned)z < CHUNK_SIZE;
     }
 
-
     void fillRawVoxelBytes(uint8_t *outBuf, size_t bufSize) const;
     void loadRawVoxelBytes(const uint8_t *data, size_t bufSize);
 
-  private:
+private:
     // internal index arithmetic (same as client)
     static inline constexpr int idx(int x, int y, int z) noexcept {
         return x + CHUNK_SIZE * (y + CHUNK_SIZE * z);
@@ -105,7 +104,8 @@ class ServerChunk {
     // helper to get steady_clock now in ns (inline for header)
     static inline uint64_t nowNs() noexcept {
         return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                         std::chrono::steady_clock::now().time_since_epoch())
+                                         std::chrono::steady_clock::now().time_since_epoch()
+        )
                                          .count());
     }
 
@@ -117,7 +117,8 @@ class ServerChunk {
     // authority metadata
     mutable std::shared_mutex m_mutex; // shared for readers, exclusive for writers
     std::atomic<int64_t> m_version{
-        0}; // increment on every applied edit (atomic for lock-free reads)
+        0
+    }; // increment on every applied edit (atomic for lock-free reads)
     std::atomic<bool> m_dirty{false};
 
     // bounded edit log to support diffs. Keep it reasonably sized.
@@ -138,6 +139,4 @@ class ServerChunk {
     // compression helpers: prefer LZ4; here we provide placeholder wrapper signatures
     static std::vector<uint8_t> compressBlob(const uint8_t *data, size_t size);
     static std::vector<uint8_t> decompressBlob(const uint8_t *data, size_t size);
-
-
 };

@@ -6,9 +6,9 @@ namespace {
     constexpr size_t kMaxBufferedInputs = 256;
     constexpr int32_t kMaxInputLeadTicks = 120;
     constexpr int32_t kMaxInputGapTicks = 8;
-}
+} // namespace
 
-bool InputBuffer::enqueue(const PlayerInput& input) {
+bool InputBuffer::enqueue(const PlayerInput &input) {
     if (!hasReceivedInput_) {
         lastProcessedInputTick_ = (input.inputTick > 0) ? (input.inputTick - 1) : 0;
         hasReceivedInput_ = true;
@@ -32,11 +32,8 @@ bool InputBuffer::enqueue(const PlayerInput& input) {
         ++s_inputRebaseLogCount;
 
         if (s_inputRebaseLogCount <= 30 || (s_inputRebaseLogCount % 100) == 0) {
-            std::cerr
-                << "[input] rebase inputTick=" << input.inputTick
-                << " lead=" << leadTicks
-                << " maxLead=" << kMaxInputLeadTicks
-                << "\n";
+            std::cerr << "[input] rebase inputTick=" << input.inputTick << " lead=" << leadTicks
+                      << " maxLead=" << kMaxInputLeadTicks << "\n";
         }
 
         return true;
@@ -51,7 +48,7 @@ bool InputBuffer::enqueue(const PlayerInput& input) {
     return true;
 }
 
-bool InputBuffer::consumeNext(PlayerInput& outInput) {
+bool InputBuffer::consumeNext(PlayerInput &outInput) {
     if (!hasReceivedInput_ && !pendingInputs_.empty()) {
         const uint32_t firstTick = pendingInputs_.begin()->first;
         lastProcessedInputTick_ = (firstTick > 0) ? (firstTick - 1) : 0;
@@ -73,8 +70,7 @@ bool InputBuffer::consumeNext(PlayerInput& outInput) {
         lastProcessedInputTick_ = expectedTick;
         advancedInputTick = true;
         consumed = true;
-    }
-    else if (!pendingInputs_.empty()) {
+    } else if (!pendingInputs_.empty()) {
         const uint32_t oldestTick = pendingInputs_.begin()->first;
         const uint32_t gap = (oldestTick > expectedTick) ? (oldestTick - expectedTick) : 0;
         if (gap > static_cast<uint32_t>(kMaxInputGapTicks)) {
@@ -84,10 +80,8 @@ bool InputBuffer::consumeNext(PlayerInput& outInput) {
     }
 
     if (advancedInputTick) {
-        while (
-            !pendingInputs_.empty() &&
-            !Shared::Utils::IsNewerU32(pendingInputs_.begin()->first, lastProcessedInputTick_)
-        ) {
+        while (!pendingInputs_.empty() &&
+               !Shared::Utils::IsNewerU32(pendingInputs_.begin()->first, lastProcessedInputTick_)) {
             pendingInputs_.erase(pendingInputs_.begin());
         }
     }

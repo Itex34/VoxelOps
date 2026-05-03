@@ -7,11 +7,12 @@
 #include <array>
 
 namespace {
-constexpr float kLegsRatio = 0.45f;
-constexpr float kBodyRatio = 0.37f;
-constexpr float kHeadRatio = 0.18f;
-static_assert(kLegsRatio + kBodyRatio + kHeadRatio > 0.99f,
-              "Region ratios must cover full height.");
+    constexpr float kLegsRatio = 0.45f;
+    constexpr float kBodyRatio = 0.37f;
+    constexpr float kHeadRatio = 0.18f;
+    static_assert(
+        kLegsRatio + kBodyRatio + kHeadRatio > 0.99f, "Region ratios must cover full height."
+    );
 } // namespace
 
 bool ModelGeometry::loadFromFile(const std::string &path, std::string *outError) {
@@ -69,8 +70,9 @@ void ModelGeometry::reset() {
     }
 }
 
-void ModelGeometry::processNode(aiNode *node, const aiScene *scene,
-                                const aiMatrix4x4 &parentTransform) {
+void ModelGeometry::processNode(
+    aiNode *node, const aiScene *scene, const aiMatrix4x4 &parentTransform
+) {
     const aiMatrix4x4 currentTransform = parentTransform * node->mTransformation;
     for (unsigned int i = 0; i < node->mNumMeshes; ++i) {
         aiMesh *mesh = scene->mMeshes[node->mMeshes[i]];
@@ -125,12 +127,16 @@ void ModelGeometry::finalizeRegionAabbs() {
     const float legsTop = minY + height * kLegsRatio;
     const float bodyTop = legsTop + height * kBodyRatio;
 
-    std::array<glm::vec3, 3> regionMin{glm::vec3(std::numeric_limits<float>::max()),
-                                       glm::vec3(std::numeric_limits<float>::max()),
-                                       glm::vec3(std::numeric_limits<float>::max())};
-    std::array<glm::vec3, 3> regionMax{glm::vec3(std::numeric_limits<float>::lowest()),
-                                       glm::vec3(std::numeric_limits<float>::lowest()),
-                                       glm::vec3(std::numeric_limits<float>::lowest())};
+    std::array<glm::vec3, 3> regionMin{
+        glm::vec3(std::numeric_limits<float>::max()),
+        glm::vec3(std::numeric_limits<float>::max()),
+        glm::vec3(std::numeric_limits<float>::max())
+    };
+    std::array<glm::vec3, 3> regionMax{
+        glm::vec3(std::numeric_limits<float>::lowest()),
+        glm::vec3(std::numeric_limits<float>::lowest()),
+        glm::vec3(std::numeric_limits<float>::lowest())
+    };
     std::array<bool, 3> hasRegion{false, false, false};
 
     for (const glm::vec3 &v : m_localVertices) {

@@ -7,7 +7,7 @@
 struct Runtime;
 
 class ClientReconciler {
-  public:
+public:
     struct ServerSnapshot {
         uint32_t serverTick = 0;
         uint32_t ackedInputTick = 0;

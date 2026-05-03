@@ -4,24 +4,24 @@
 #include <cmath>
 
 namespace {
-constexpr double kSnapshotTickSeconds = 1.0 / 60.0;
+    constexpr double kSnapshotTickSeconds = 1.0 / 60.0;
 
-float NormalizeYawDegrees(float yawDegrees) {
-    if (!std::isfinite(yawDegrees)) {
-        return 0.0f;
+    float NormalizeYawDegrees(float yawDegrees) {
+        if (!std::isfinite(yawDegrees)) {
+            return 0.0f;
+        }
+        float y = std::fmod(yawDegrees, 360.0f);
+        if (y >= 180.0f)
+            y -= 360.0f;
+        if (y < -180.0f)
+            y += 360.0f;
+        return y;
     }
-    float y = std::fmod(yawDegrees, 360.0f);
-    if (y >= 180.0f)
-        y -= 360.0f;
-    if (y < -180.0f)
-        y += 360.0f;
-    return y;
-}
 
-float LerpYawDegrees(float from, float to, float t) {
-    const float delta = NormalizeYawDegrees(to - from);
-    return from + delta * t;
-}
+    float LerpYawDegrees(float from, float to, float t) {
+        const float delta = NormalizeYawDegrees(to - from);
+        return from + delta * t;
+    }
 } // namespace
 
 void SnapshotInterpolator::PushFrame(const PlayerSnapshotFrame &frame) {
@@ -61,8 +61,9 @@ bool SnapshotInterpolator::GetRenderTime(double &outRenderTime) const {
     return true;
 }
 
-bool SnapshotInterpolator::BuildRemotePlayers(double renderTime,
-                                              std::vector<InterpolatedPlayer> &outPlayers) const {
+bool SnapshotInterpolator::BuildRemotePlayers(
+    double renderTime, std::vector<InterpolatedPlayer> &outPlayers
+) const {
     outPlayers.clear();
     if (!m_hasLatestServerTimeSeconds) {
         return false;

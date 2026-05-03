@@ -2,9 +2,9 @@
 #include "../../protocol/Validation.hpp"
 
 namespace {
-bool IsLikelyIdentityToken(const std::string &value) {
-    return NetValidation::IsValidIdentity(value);
-}
+    bool IsLikelyIdentityToken(const std::string &value) {
+        return NetValidation::IsValidIdentity(value);
+    }
 } // namespace
 
 void Runtime::SaveHistoryToFile() {
@@ -185,8 +185,9 @@ std::vector<std::pair<std::string, bool>> Runtime::GetConnectedUsers() {
             users.emplace_back(std::move(label), session.isAdmin);
         }
     }
-    std::sort(users.begin(), users.end(),
-              [](const auto &a, const auto &b) { return a.first < b.first; });
+    std::sort(users.begin(), users.end(), [](const auto &a, const auto &b) {
+        return a.first < b.first;
+    });
     return users;
 }
 

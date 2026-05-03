@@ -3,17 +3,17 @@
 #include "../vulkan/VulkanUtils.hpp"
 
 namespace {
-vk::DeviceSize growCapacity(vk::DeviceSize minimum, vk::DeviceSize required) {
-    if (required <= minimum) {
-        return minimum;
-    }
+    vk::DeviceSize growCapacity(vk::DeviceSize minimum, vk::DeviceSize required) {
+        if (required <= minimum) {
+            return minimum;
+        }
 
-    vk::DeviceSize capacity = minimum;
-    while (capacity < required) {
-        capacity *= 2;
+        vk::DeviceSize capacity = minimum;
+        while (capacity < required) {
+            capacity *= 2;
+        }
+        return capacity;
     }
-    return capacity;
-}
 } // namespace
 
 void VulkanRenderer::createModelDescriptorResources() {
@@ -47,8 +47,9 @@ void VulkanRenderer::createModelDescriptorResources() {
     poolInfo.pPoolSizes = &poolSize;
     m_modelDescriptorPool = vk::raii::DescriptorPool(device, poolInfo);
 
-    std::vector<vk::DescriptorSetLayout> layouts(m_framebuffers.size(),
-                                                 *m_modelDescriptorSetLayout);
+    std::vector<vk::DescriptorSetLayout> layouts(
+        m_framebuffers.size(), *m_modelDescriptorSetLayout
+    );
     vk::DescriptorSetAllocateInfo allocateInfo{};
     allocateInfo.descriptorPool = *m_modelDescriptorPool;
     allocateInfo.descriptorSetCount = static_cast<uint32_t>(layouts.size());
@@ -59,20 +60,15 @@ void VulkanRenderer::createModelDescriptorResources() {
     m_perImageDrawResources.resize(m_framebuffers.size());
 }
 
-
-
 void VulkanRenderer::cleanupModelDescriptorResources() {
     m_modelDescriptorSets.clear();
     m_modelDescriptorPool.clear();
     m_modelDescriptorSetLayout.clear();
 }
 
-
-
-
-void VulkanRenderer::ensurePerImageDrawBufferCapacity(uint32_t imageIndex,
-                                                      vk::DeviceSize modelBytes,
-                                                      vk::DeviceSize indirectBytes) {
+void VulkanRenderer::ensurePerImageDrawBufferCapacity(
+    uint32_t imageIndex, vk::DeviceSize modelBytes, vk::DeviceSize indirectBytes
+) {
     if (imageIndex >= m_perImageDrawResources.size()) {
         return;
     }
@@ -93,11 +89,15 @@ void VulkanRenderer::ensurePerImageDrawBufferCapacity(uint32_t imageIndex,
         resources.modelMatrixCapacityBytes =
             growCapacity(MIN_MODEL_BUFFER_BYTES, requiredModelBytes);
 
-        VulkanUtils::createBuffer(device, physicalDevice, resources.modelMatrixCapacityBytes,
-                                  vk::BufferUsageFlagBits::eStorageBuffer,
-                                  vk::MemoryPropertyFlagBits::eHostVisible |
-                                      vk::MemoryPropertyFlagBits::eHostCoherent,
-                                  resources.modelMatrixBuffer, resources.modelMatrixBufferMemory);
+        VulkanUtils::createBuffer(
+            device,
+            physicalDevice,
+            resources.modelMatrixCapacityBytes,
+            vk::BufferUsageFlagBits::eStorageBuffer,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            resources.modelMatrixBuffer,
+            resources.modelMatrixBufferMemory
+        );
         resources.modelMatrixMapped = resources.modelMatrixBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
 
         updateModelDescriptorSet(imageIndex);
@@ -116,19 +116,24 @@ void VulkanRenderer::ensurePerImageDrawBufferCapacity(uint32_t imageIndex,
             growCapacity(MIN_INDIRECT_BUFFER_BYTES, requiredIndirectBytes);
 
         VulkanUtils::createBuffer(
-            device, physicalDevice, resources.indirectCommandCapacityBytes,
+            device,
+            physicalDevice,
+            resources.indirectCommandCapacityBytes,
             vk::BufferUsageFlagBits::eIndirectBuffer,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            resources.indirectCommandBuffer, resources.indirectCommandBufferMemory);
+            resources.indirectCommandBuffer,
+            resources.indirectCommandBufferMemory
+        );
         resources.indirectCommandMapped =
             resources.indirectCommandBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
     }
 }
 
-
 void VulkanRenderer::updatePerImageDrawBuffers(
-    uint32_t imageIndex, const std::vector<glm::mat4> &modelMatrices,
-    const std::vector<IndexedIndirectCommand> &indirectCommands) {
+    uint32_t imageIndex,
+    const std::vector<glm::mat4> &modelMatrices,
+    const std::vector<IndexedIndirectCommand> &indirectCommands
+) {
     if (imageIndex >= m_perImageDrawResources.size()) {
         return;
     }
@@ -142,17 +147,19 @@ void VulkanRenderer::updatePerImageDrawBuffers(
     PerImageDrawResources &resources = m_perImageDrawResources[imageIndex];
 
     if (!modelMatrices.empty() && resources.modelMatrixMapped != nullptr) {
-        std::memcpy(resources.modelMatrixMapped, modelMatrices.data(),
-                    static_cast<size_t>(modelBytes));
+        std::memcpy(
+            resources.modelMatrixMapped, modelMatrices.data(), static_cast<size_t>(modelBytes)
+        );
     }
 
     if (!indirectCommands.empty() && resources.indirectCommandMapped != nullptr) {
-        std::memcpy(resources.indirectCommandMapped, indirectCommands.data(),
-                    static_cast<size_t>(indirectBytes));
+        std::memcpy(
+            resources.indirectCommandMapped,
+            indirectCommands.data(),
+            static_cast<size_t>(indirectBytes)
+        );
     }
 }
-
-
 
 void VulkanRenderer::updateModelDescriptorSet(uint32_t imageIndex) {
     if (imageIndex >= m_perImageDrawResources.size() ||
@@ -182,8 +189,6 @@ void VulkanRenderer::updateModelDescriptorSet(uint32_t imageIndex) {
     const std::array<vk::WriteDescriptorSet, 1> writes = {write};
     device.updateDescriptorSets(writes, {});
 }
-
-
 
 void VulkanRenderer::cleanupPerImageDrawResources() {
     for (PerImageDrawResources &resources : m_perImageDrawResources) {

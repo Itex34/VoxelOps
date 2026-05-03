@@ -3,7 +3,7 @@
 #include "../GraphicsBackend.hpp"
 
 class Backend {
-  public:
+public:
     Backend();
 
     int getOpenGLVersionMajor() const noexcept;
@@ -15,7 +15,7 @@ class Backend {
     std::string_view getActiveBackendName() const noexcept;
     bool isInitialized() const noexcept;
 
-  private:
+private:
     int OpenGLVersionMajor = 0;
     int OpenGLVersionMinor = 0;
     bool supportsMDI = false;

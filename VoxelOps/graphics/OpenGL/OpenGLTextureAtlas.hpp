@@ -3,7 +3,7 @@
 #include <glad/glad.h>
 
 class OpenGLTextureAtlas {
-  public:
+public:
     OpenGLTextureAtlas() = default;
     ~OpenGLTextureAtlas();
 
@@ -15,9 +15,10 @@ class OpenGLTextureAtlas {
     bool initialize();
     void cleanup();
 
-    [[nodiscard]] GLuint getArrayTextureId() const noexcept { return m_arrayTextureId; }
+    [[nodiscard]] GLuint getArrayTextureId() const noexcept {
+        return m_arrayTextureId;
+    }
 
-  private:
+private:
     GLuint m_arrayTextureId = 0;
 };
-

@@ -9,11 +9,13 @@
 #include <limits>
 
 namespace {
-constexpr uint32_t kExpectedDecodedPayloadBytes = static_cast<uint32_t>(CHUNK_VOLUME * sizeof(BlockID));
+    constexpr uint32_t kExpectedDecodedPayloadBytes =
+        static_cast<uint32_t>(CHUNK_VOLUME * sizeof(BlockID));
 } // namespace
 
-bool DecompressChunkPayload(uint8_t flags, const std::vector<uint8_t> &payload,
-                            std::vector<uint8_t> &outRawPayload) {
+bool DecompressChunkPayload(
+    uint8_t flags, const std::vector<uint8_t> &payload, std::vector<uint8_t> &outRawPayload
+) {
     if ((flags & ~Shared::ChunkWireFormat::kKnownChunkFlagsMask) != 0u) {
         return false;
     }
@@ -49,9 +51,13 @@ bool DecompressChunkPayload(uint8_t flags, const std::vector<uint8_t> &payload,
         return compressedSize == 0;
     }
 
-    const int decoded =
-        LZ4_decompress_safe(reinterpret_cast<const char *>(payload.data() + Shared::ChunkWireFormat::kCompressedHeaderSize),
-                            reinterpret_cast<char *>(outRawPayload.data()),
-                            static_cast<int>(compressedSize), static_cast<int>(rawSize));
+    const int decoded = LZ4_decompress_safe(
+        reinterpret_cast<const char *>(
+            payload.data() + Shared::ChunkWireFormat::kCompressedHeaderSize
+        ),
+        reinterpret_cast<char *>(outRawPayload.data()),
+        static_cast<int>(compressedSize),
+        static_cast<int>(rawSize)
+    );
     return decoded == static_cast<int>(rawSize);
 }

@@ -16,16 +16,22 @@ struct RayResult {
 };
 
 class RayManager {
-  public:
+public:
     RayManager();
 
     RayResult rayHasBlockIntersectBatch(std::list<Ray> &rays);
-    RayResult rayHasBlockIntersectSingle(const Ray &ray, const ChunkManager &chunkManager,
-                                         float maxDistance); // for block breaking/placing
+    RayResult rayHasBlockIntersectSingle(
+        const Ray &ray,
+        const ChunkManager &chunkManager,
+        float maxDistance
+    ); // for block breaking/placing
 
-    RayResult rayHasBlockIntersectSinglePrecise(const Ray &ray, const ChunkManager &chunkManager,
-                                                float maxDistance); // for shooting
-  private:
+    RayResult rayHasBlockIntersectSinglePrecise(
+        const Ray &ray,
+        const ChunkManager &chunkManager,
+        float maxDistance
+    ); // for shooting
+private:
     // ChunkManager& chunkManager;
 
     glm::ivec3 chunkHitCoords;

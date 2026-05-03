@@ -6,23 +6,26 @@
 #include "../Mesh.hpp"
 
 class RegionMeshBuffer {
-  public:
+public:
     RegionMeshBuffer(size_t maxVertexBytes, size_t maxIndexBytes);
 
     ~RegionMeshBuffer();
 
-    ChunkMesh createChunkMesh(const std::vector<VoxelVertex> &vertices,
-                              const std::vector<uint16_t> &indices);
+    ChunkMesh
+    createChunkMesh(const std::vector<VoxelVertex> &vertices, const std::vector<uint16_t> &indices);
 
     void destroyChunkMesh(ChunkMesh &mesh);
     void drawChunkMesh(const ChunkMesh &mesh) const;
 
-    void uploadSubData(const ChunkMesh &mesh, const std::vector<VoxelVertex> &vertices,
-                       const std::vector<uint16_t> &indices);
+    void uploadSubData(
+        const ChunkMesh &mesh,
+        const std::vector<VoxelVertex> &vertices,
+        const std::vector<uint16_t> &indices
+    );
 
     void orphanBuffers();
 
-  private:
+private:
     GLuint vao = 0;
     GLuint vbo = 0;
     GLuint ebo = 0;

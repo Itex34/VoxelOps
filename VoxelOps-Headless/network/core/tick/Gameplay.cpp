@@ -1,7 +1,6 @@
 #include "../Runtime.hpp"
 
-bool Runtime::RunScoreboardPhase(
-    std::chrono::steady_clock::time_point &nextScoreboardBroadcastAt) {
+bool Runtime::RunScoreboardPhase(std::chrono::steady_clock::time_point &nextScoreboardBroadcastAt) {
     const auto kScoreboardBroadcastInterval = std::chrono::seconds(1);
     const auto scoreboardNow = std::chrono::steady_clock::now();
     if (scoreboardNow < nextScoreboardBroadcastAt) {
@@ -43,13 +42,16 @@ bool Runtime::RunScoreboardPhase(
                 }
                 candidates.push_back(WinnerCandidate{session.username, kills});
             }
-            std::sort(candidates.begin(), candidates.end(),
-                      [](const WinnerCandidate &a, const WinnerCandidate &b) {
-                          if (a.kills != b.kills) {
-                              return a.kills > b.kills;
-                          }
-                          return a.username < b.username;
-                      });
+            std::sort(
+                candidates.begin(),
+                candidates.end(),
+                [](const WinnerCandidate &a, const WinnerCandidate &b) {
+                    if (a.kills != b.kills) {
+                        return a.kills > b.kills;
+                    }
+                    return a.username < b.username;
+                }
+            );
 
             if (candidates.empty()) {
                 m_matchWinner = "No winner";

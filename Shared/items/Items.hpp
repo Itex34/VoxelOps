@@ -37,9 +37,9 @@ struct ItemData {
 
 namespace Items {
 
-enum class Consumable : uint16_t { OrangeBerry = 0, RedBerry, COUNT };
+    enum class Consumable : uint16_t { OrangeBerry = 0, RedBerry, COUNT };
 
-enum class AmmoType : uint16_t { PistolAmmo = 0, ArAmmo, SniperAmmo, COUNT };
+    enum class AmmoType : uint16_t { PistolAmmo = 0, ArAmmo, SniperAmmo, COUNT };
 
-extern std::array<ItemData, MAX_ITEMS> ItemDatabase;
+    extern std::array<ItemData, MAX_ITEMS> ItemDatabase;
 } // namespace Items

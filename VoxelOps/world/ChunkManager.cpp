@@ -17,7 +17,7 @@ static ProcessMemoryStatsMB getProcessMemoryMB() {
 }
 
 #include "ChunkManager.hpp"
-#include "../graphics/ChunkMesher.hpp"
+#include "../render/meshing/ChunkMesher.hpp"
 #include "../network/DecompressChunk.hpp"
 
 #include <cmath>
@@ -31,14 +31,14 @@ static ProcessMemoryStatsMB getProcessMemoryMB() {
 #include <vector>
 
 namespace {
-uint32_t fnv1a32(const uint8_t *data, size_t size) {
-    uint32_t h = 2166136261u;
-    for (size_t i = 0; i < size; ++i) {
-        h ^= static_cast<uint32_t>(data[i]);
-        h *= 16777619u;
+    uint32_t fnv1a32(const uint8_t *data, size_t size) {
+        uint32_t h = 2166136261u;
+        for (size_t i = 0; i < size; ++i) {
+            h ^= static_cast<uint32_t>(data[i]);
+            h *= 16777619u;
+        }
+        return h;
     }
-    return h;
-}
 } // namespace
 
 constexpr bool kEnableMissingChunkUnloadLogs = false;
@@ -50,7 +50,6 @@ ChunkManager::ChunkManager() {
     // chunkMap.clear();
 }
 
-
 ChunkManager::~ChunkManager() = default;
 
 void ChunkManager::markChunkDirty(const glm::ivec3 &pos) {
@@ -59,54 +58,6 @@ void ChunkManager::markChunkDirty(const glm::ivec3 &pos) {
 
 void ChunkManager::updateDirtyChunks(size_t maxChunksPerCall, int64_t maxBudgetUs) {
     m_chunkMesher->updateDirtyChunks(maxChunksPerCall, maxBudgetUs);
-}
-
-void ChunkManager::updateChunks(const glm::ivec3 &playerWorldPos, int renderDistance) {
-
-    std::vector<glm::ivec3> toErase;
-    std::unordered_set<glm::ivec2, IVec2Hash> columnsToRefresh;
-    std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> desired;
-
-    glm::ivec3 playerChunk = worldToChunkPos(playerWorldPos);
-    const int64_t radius2 =
-        static_cast<int64_t>(renderDistance) * static_cast<int64_t>(renderDistance);
-
-    const int minY = floorDiv(WORLD_MIN_Y, CHUNK_SIZE);
-    const int maxY = floorDiv(WORLD_MAX_Y, CHUNK_SIZE);
-
-    for (int x = playerChunk.x - renderDistance; x <= playerChunk.x + renderDistance; ++x) {
-        const int64_t dx = static_cast<int64_t>(x - playerChunk.x);
-        const int64_t dx2 = dx * dx;
-        for (int z = playerChunk.z - renderDistance; z <= playerChunk.z + renderDistance; ++z) {
-            const int64_t dz = static_cast<int64_t>(z - playerChunk.z);
-            if (dx2 + dz * dz > radius2) {
-                continue;
-            }
-            for (int y = minY; y <= maxY; ++y) {
-                const glm::ivec3 pos(x, y, z);
-                if (!inBounds(pos)) {
-                    continue;
-                }
-                desired.insert(pos);
-            }
-        }
-    }
-
-    for (auto &[pos, chunk] : chunkMap) {
-        if (desired.find(pos) == desired.end()) {
-            toErase.push_back(pos);
-        }
-    }
-
-    for (auto &pos : toErase) {
-        columnsToRefresh.insert(glm::ivec2(pos.x, pos.z));
-        chunkMap.erase(pos);
-        m_networkChunkVersions.erase(pos);
-        m_chunkMesher->onChunkRemoved(pos);
-    }
-
-    // Client is network-driven; missing chunks are requested via ChunkRequest and populated by
-    // applyNetworkChunkData/applyNetworkChunkDelta.
 }
 
 bool ChunkManager::applyNetworkChunkData(const ChunkData &packet) {
@@ -177,8 +128,9 @@ bool ChunkManager::applyNetworkChunkData(const ChunkData &packet) {
 
     markChunkDirty(chunkPos);
 
-    static const glm::ivec3 dirs[6] = {{1, 0, 0},  {-1, 0, 0}, {0, 1, 0},
-                                       {0, -1, 0}, {0, 0, 1},  {0, 0, -1}};
+    static const glm::ivec3 dirs[6] = {
+        {1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}
+    };
     for (const glm::ivec3 &d : dirs) {
         const glm::ivec3 n = chunkPos + d;
         if (chunkMap.find(n) != chunkMap.end()) {
@@ -242,8 +194,9 @@ NetworkChunkDeltaApplyResult ChunkManager::applyNetworkChunkDelta(const ChunkDel
     rebuildSet.insert(chunkPos);
 
     for (const ChunkDeltaOp &op : packet.edits) {
-        if (!Chunk::inBounds(static_cast<int>(op.x), static_cast<int>(op.y),
-                             static_cast<int>(op.z))) {
+        if (!Chunk::inBounds(
+                static_cast<int>(op.x), static_cast<int>(op.y), static_cast<int>(op.z)
+            )) {
             continue;
         }
 
@@ -254,9 +207,9 @@ NetworkChunkDeltaApplyResult ChunkManager::applyNetworkChunkDelta(const ChunkDel
             continue;
         }
 
-        chunk.setBlock(static_cast<int>(op.x), static_cast<int>(op.y), static_cast<int>(op.z),
-                       newId);
-
+        chunk.setBlock(
+            static_cast<int>(op.x), static_cast<int>(op.y), static_cast<int>(op.z), newId
+        );
 
         if (op.x == 0)
             rebuildSet.insert(chunkPos + glm::ivec3(-1, 0, 0));
@@ -304,8 +257,9 @@ void ChunkManager::applyNetworkChunkUnload(const ChunkUnload &packet) {
     m_networkChunkVersions.erase(chunkPos);
     m_chunkMesher->onChunkRemoved(chunkPos);
 
-    static const glm::ivec3 dirs[6] = {{1, 0, 0},  {-1, 0, 0}, {0, 1, 0},
-                                       {0, -1, 0}, {0, 0, 1},  {0, 0, -1}};
+    static const glm::ivec3 dirs[6] = {
+        {1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}
+    };
     for (const glm::ivec3 &d : dirs) {
         const glm::ivec3 n = chunkPos + d;
         if (chunkMap.find(n) != chunkMap.end()) {
@@ -555,25 +509,3 @@ ChunkManager::getCpuChunkMeshesImpl() const noexcept {
     return m_chunkMesher->getCpuChunkMeshes();
 }
 
-ChunkColumn &ChunkManager::getOrCreateColumn(int colX, int colZ) {
-    glm::ivec2 pos(colX, colZ);
-
-    auto it = chunkColumns.find(pos);
-
-    if (it != chunkColumns.end()) {
-        return it->second;
-    }
-
-    ChunkColumn &newCol = chunkColumns[pos];
-
-    newCol.chunkX = colX;
-    newCol.chunkZ = colZ;
-
-    for (int x = 0; x < 16; ++x) {
-        for (int z = 0; z < 16; ++z) {
-            newCol.sunLitBlocksYvalue[x][z] = -128;
-        }
-    }
-
-    return newCol;
-}

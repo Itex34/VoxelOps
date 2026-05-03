@@ -1,8 +1,10 @@
 #include "../Runtime.hpp"
 
-double Runtime::RunSnapshotPhase(uint32_t serverTick,
-                                       std::chrono::steady_clock::time_point &lastSnapshotTime,
-                                       const std::chrono::duration<double> &snapshotInterval) {
+double Runtime::RunSnapshotPhase(
+    uint32_t serverTick,
+    std::chrono::steady_clock::time_point &lastSnapshotTime,
+    const std::chrono::duration<double> &snapshotInterval
+) {
     const auto snapshotNow = std::chrono::steady_clock::now();
     const auto snapshotStart = std::chrono::steady_clock::now();
     bool snapshotRan = false;
@@ -43,8 +45,12 @@ double Runtime::RunSnapshotPhase(uint32_t serverTick,
             }
             activeRecipients.emplace_back(conn, recipientPlayerId);
             SteamNetworkingSockets()->SendMessageToConnection(
-                conn, snapshot.data(), static_cast<uint32_t>(snapshot.size()),
-                k_nSteamNetworkingSend_UnreliableNoDelay, nullptr);
+                conn,
+                snapshot.data(),
+                static_cast<uint32_t>(snapshot.size()),
+                k_nSteamNetworkingSend_UnreliableNoDelay,
+                nullptr
+            );
         }
         if (!activeRecipients.empty()) {
             SendWorldItemSnapshots(activeRecipients, serverTick);
@@ -70,7 +76,8 @@ double Runtime::RunSnapshotPhase(uint32_t serverTick,
     }
 
     return snapshotRan ? static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(
-                                                 std::chrono::steady_clock::now() - snapshotStart)
+                                                 std::chrono::steady_clock::now() - snapshotStart
+                         )
                                                  .count())
                        : 0.0;
 }

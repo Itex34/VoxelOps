@@ -11,7 +11,7 @@
 #include <glm/vec3.hpp>
 
 class ModelGeometry {
-  public:
+public:
     bool loadFromFile(const std::string &path, std::string *outError = nullptr);
 
     [[nodiscard]] float getLocalMinY() const noexcept;
@@ -21,7 +21,7 @@ class ModelGeometry {
     [[nodiscard]] const ModelRegionAabb &getLocalRegionAabb(ModelRegion region) const noexcept;
     [[nodiscard]] const std::vector<ModelLocalTriangle> &getLocalTriangles() const noexcept;
 
-  private:
+private:
     void reset();
     void processNode(aiNode *node, const aiScene *scene, const aiMatrix4x4 &parentTransform);
     void processMesh(aiMesh *mesh, const aiMatrix4x4 &nodeTransform);

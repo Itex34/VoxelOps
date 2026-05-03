@@ -11,7 +11,7 @@ class UploadContext;
 struct CpuChunkMesh;
 
 class VulkanRayTracingScene {
-  public:
+public:
     VulkanRayTracingScene();
     ~VulkanRayTracingScene();
 
@@ -24,19 +24,25 @@ class VulkanRayTracingScene {
     void collectRetiredResources(uint64_t frameCounter);
     void reset();
 
-    bool uploadChunkGeometry(VulkanContext &context, UploadContext &uploadContext,
-                             uint64_t frameCounter, const glm::ivec3 &chunkPos,
-                             const CpuChunkMesh &cpuMesh);
+    bool uploadChunkGeometry(
+        VulkanContext &context,
+        UploadContext &uploadContext,
+        uint64_t frameCounter,
+        const glm::ivec3 &chunkPos,
+        const CpuChunkMesh &cpuMesh
+    );
     void removeChunkGeometry(uint64_t frameCounter, const glm::ivec3 &chunkPos);
     bool rebuild(VulkanContext &context, uint64_t frameCounter);
 
-    [[nodiscard]] bool isDirty() const noexcept { return m_dirty; }
+    [[nodiscard]] bool isDirty() const noexcept {
+        return m_dirty;
+    }
     [[nodiscard]] bool isReady() const noexcept;
     [[nodiscard]] VkAccelerationStructureKHR activeTlas() const noexcept {
         return m_activeTlas;
     }
 
-  private:
+private:
     struct RtSceneState;
 
     std::unique_ptr<RtSceneState> m_state;

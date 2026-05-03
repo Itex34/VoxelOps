@@ -23,16 +23,28 @@ struct HitResult {
 };
 
 class HitboxManager {
-  public:
-    static std::vector<Hitbox> buildBlockyHitboxes(float playerHeight = 1.8f,
-                                                   float halfWidth = 0.3f, float halfDepth = 0.2f,
-                                                   bool originAtFeet = true);
+public:
+    static std::vector<Hitbox> buildBlockyHitboxes(
+        float playerHeight = 1.8f,
+        float halfWidth = 0.3f,
+        float halfDepth = 0.2f,
+        bool originAtFeet = true
+    );
 
-    static bool rayIntersectsAABB(const glm::vec3 &rayOrigin, const glm::vec3 &rayDir,
-                                  const Hitbox &box, const glm::mat4 &modelMatrix,
-                                  glm::vec3 &outHitPointWorld, float &outDistance);
+    static bool rayIntersectsAABB(
+        const glm::vec3 &rayOrigin,
+        const glm::vec3 &rayDir,
+        const Hitbox &box,
+        const glm::mat4 &modelMatrix,
+        glm::vec3 &outHitPointWorld,
+        float &outDistance
+    );
 
-    static HitResult raycastHitboxes(const glm::vec3 &rayOrigin, const glm::vec3 &rayDir,
-                                     const std::vector<Hitbox> &hitboxes,
-                                     const glm::mat4 &modelMatrix, float maxDistance = 100.0f);
+    static HitResult raycastHitboxes(
+        const glm::vec3 &rayOrigin,
+        const glm::vec3 &rayDir,
+        const std::vector<Hitbox> &hitboxes,
+        const glm::mat4 &modelMatrix,
+        float maxDistance = 100.0f
+    );
 };

@@ -9,8 +9,9 @@
 #include <stdexcept>
 #include <utility>
 
-void UploadContext::init(const vk::raii::Device &device, uint32_t queueFamilyIndex,
-                         const vk::raii::Queue &queue) {
+void UploadContext::init(
+    const vk::raii::Device &device, uint32_t queueFamilyIndex, const vk::raii::Queue &queue
+) {
     cleanup();
 
     m_device = &device;
@@ -64,25 +65,31 @@ void UploadContext::waitIdle() {
             m_device->waitForFences(fences, vk::True, std::numeric_limits<uint64_t>::max());
         if (waitResult != vk::Result::eSuccess) {
             throw std::runtime_error(
-                "UploadContext::waitIdle failed while waiting for upload fence.");
+                "UploadContext::waitIdle failed while waiting for upload fence."
+            );
         }
     }
 
     m_pendingUploads.clear();
 }
 
-UploadContext::StagingBuffer
-UploadContext::createStagingBuffer(const vk::raii::PhysicalDevice &physicalDevice, const void *data,
-                                   vk::DeviceSize size) {
+UploadContext::StagingBuffer UploadContext::createStagingBuffer(
+    const vk::raii::PhysicalDevice &physicalDevice, const void *data, vk::DeviceSize size
+) {
     if (!m_device) {
         throw std::runtime_error("UploadContext::createStagingBuffer called before init.");
     }
 
     StagingBuffer stagingBuffer{};
     VulkanUtils::createBuffer(
-        *m_device, physicalDevice, size, vk::BufferUsageFlagBits::eTransferSrc,
+        *m_device,
+        physicalDevice,
+        size,
+        vk::BufferUsageFlagBits::eTransferSrc,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        stagingBuffer.buffer, stagingBuffer.memory);
+        stagingBuffer.buffer,
+        stagingBuffer.memory
+    );
 
     if (data && size > 0) {
         void *mapped = stagingBuffer.memory.mapMemory(0, size);
@@ -93,8 +100,9 @@ UploadContext::createStagingBuffer(const vk::raii::PhysicalDevice &physicalDevic
     return stagingBuffer;
 }
 
-void UploadContext::submitCopyBuffer(StagingBuffer &&stagingBuffer, vk::Buffer dstBuffer,
-                                     vk::DeviceSize size) {
+void UploadContext::submitCopyBuffer(
+    StagingBuffer &&stagingBuffer, vk::Buffer dstBuffer, vk::DeviceSize size
+) {
     if (!m_device || !m_queue) {
         throw std::runtime_error("UploadContext::submitCopyBuffer called before init.");
     }
@@ -107,8 +115,9 @@ void UploadContext::submitCopyBuffer(StagingBuffer &&stagingBuffer, vk::Buffer d
     vk::BufferCopy copyRegion{};
     copyRegion.size = size;
     const std::array<vk::BufferCopy, 1> copyRegions = {copyRegion};
-    pendingUpload.commandBuffer.copyBuffer(*pendingUpload.stagingBuffers[0].buffer, dstBuffer,
-                                           copyRegions);
+    pendingUpload.commandBuffer.copyBuffer(
+        *pendingUpload.stagingBuffers[0].buffer, dstBuffer, copyRegions
+    );
 
     submitPendingUpload(std::move(pendingUpload));
 }
@@ -153,13 +162,19 @@ void UploadContext::submitCopyBufferBatch(std::vector<BufferCopyUpload> &&upload
     submitPendingUpload(std::move(pendingUpload));
 }
 
-void UploadContext::submitImageUpload(StagingBuffer &&stagingBuffer, vk::Image image,
-                                      uint32_t width, uint32_t height) {
+void UploadContext::submitImageUpload(
+    StagingBuffer &&stagingBuffer, vk::Image image, uint32_t width, uint32_t height
+) {
     submitImageUploadArray(std::move(stagingBuffer), image, width, height, 1);
 }
 
-void UploadContext::submitImageUploadArray(StagingBuffer &&stagingBuffer, vk::Image image,
-                                           uint32_t width, uint32_t height, uint32_t layerCount) {
+void UploadContext::submitImageUploadArray(
+    StagingBuffer &&stagingBuffer,
+    vk::Image image,
+    uint32_t width,
+    uint32_t height,
+    uint32_t layerCount
+) {
     if (!m_device || !m_queue) {
         throw std::runtime_error("UploadContext::submitImageUploadArray called before init.");
     }
@@ -187,9 +202,14 @@ void UploadContext::submitImageUploadArray(StagingBuffer &&stagingBuffer, vk::Im
     toTransferDstBarrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
 
     const std::array<vk::ImageMemoryBarrier, 1> toTransferDstBarriers = {toTransferDstBarrier};
-    pendingUpload.commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                                                vk::PipelineStageFlagBits::eTransfer, {}, {}, {},
-                                                toTransferDstBarriers);
+    pendingUpload.commandBuffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTopOfPipe,
+        vk::PipelineStageFlagBits::eTransfer,
+        {},
+        {},
+        {},
+        toTransferDstBarriers
+    );
 
     const vk::DeviceSize bytesPerLayer =
         static_cast<vk::DeviceSize>(width) * static_cast<vk::DeviceSize>(height) * 4u;
@@ -209,9 +229,12 @@ void UploadContext::submitImageUploadArray(StagingBuffer &&stagingBuffer, vk::Im
         copyRegions.push_back(copyRegion);
     }
 
-    pendingUpload.commandBuffer.copyBufferToImage(*pendingUpload.stagingBuffers[0].buffer, image,
-                                                  vk::ImageLayout::eTransferDstOptimal,
-                                                  copyRegions);
+    pendingUpload.commandBuffer.copyBufferToImage(
+        *pendingUpload.stagingBuffers[0].buffer,
+        image,
+        vk::ImageLayout::eTransferDstOptimal,
+        copyRegions
+    );
 
     vk::ImageMemoryBarrier toShaderReadBarrier{};
     toShaderReadBarrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
@@ -228,9 +251,14 @@ void UploadContext::submitImageUploadArray(StagingBuffer &&stagingBuffer, vk::Im
     toShaderReadBarrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
 
     const std::array<vk::ImageMemoryBarrier, 1> toShaderReadBarriers = {toShaderReadBarrier};
-    pendingUpload.commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                                                vk::PipelineStageFlagBits::eFragmentShader, {}, {},
-                                                {}, toShaderReadBarriers);
+    pendingUpload.commandBuffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTransfer,
+        vk::PipelineStageFlagBits::eFragmentShader,
+        {},
+        {},
+        {},
+        toShaderReadBarriers
+    );
 
     submitPendingUpload(std::move(pendingUpload));
 }

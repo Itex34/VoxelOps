@@ -4,6 +4,7 @@
 #include "../Frustum.hpp"
 #include "Shader.hpp"
 #include "../../../Shared/runtime/Paths.hpp"
+#include "../../../Shared/world/Constants.hpp"
 
 #include <glad/glad.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -15,23 +16,23 @@
 #include <string>
 
 namespace {
-// positions only cube used for wireframe debug
-float kCubeVertices[] = {
-    0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0,
+    // positions only cube used for wireframe debug
+    float kCubeVertices[] = {
+        0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0,
 
-    0, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 0, 1,
+        0, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 0, 1,
 
-    0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1,
-};
+        0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1,
+    };
 
-int floorDivLocal(int a, int b) {
-    int q = a / b;
-    int r = a % b;
-    if ((r != 0) && ((r > 0) != (b > 0))) {
-        q--;
+    int floorDivLocal(int a, int b) {
+        int q = a / b;
+        int r = a % b;
+        if ((r != 0) && ((r > 0) != (b > 0))) {
+            q--;
+        }
+        return q;
     }
-    return q;
-}
 } // namespace
 
 OpenGLChunkScene::OpenGLChunkScene() {
@@ -61,12 +62,15 @@ OpenGLChunkScene::~OpenGLChunkScene() {
     }
 }
 
-void OpenGLChunkScene::syncFromChunkManager(const ChunkManager &chunkManager) {
-    m_chunkCache.syncFromChunkManager(chunkManager);
+void OpenGLChunkScene::syncFromCpuChunkMeshes(
+    const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuMeshes
+) {
+    m_chunkCache.syncFromCpuChunkMeshes(cpuMeshes);
 }
 
-void OpenGLChunkScene::renderChunks(Shader &shader, Frustum &frustum, const glm::vec3 &viewPosition,
-                                    int maxRenderDistance) {
+void OpenGLChunkScene::renderChunks(
+    Shader &shader, Frustum &frustum, const glm::vec3 &viewPosition, int maxRenderDistance
+) {
     const auto drainChunkErrors = [](const char *stage, const glm::ivec3 &chunkPos) {
         unsigned int firstError = GL_NO_ERROR;
         int count = 0;
@@ -92,12 +96,16 @@ void OpenGLChunkScene::renderChunks(Shader &shader, Frustum &frustum, const glm:
         return count;
     };
 
-    const glm::ivec3 playerBlockPos(static_cast<int>(std::floor(viewPosition.x)),
-                                    static_cast<int>(std::floor(viewPosition.y)),
-                                    static_cast<int>(std::floor(viewPosition.z)));
+    const glm::ivec3 playerBlockPos(
+        static_cast<int>(std::floor(viewPosition.x)),
+        static_cast<int>(std::floor(viewPosition.y)),
+        static_cast<int>(std::floor(viewPosition.z))
+    );
     const glm::ivec3 playerChunkPos(
-        floorDivLocal(playerBlockPos.x, CHUNK_SIZE), floorDivLocal(playerBlockPos.y, CHUNK_SIZE),
-        floorDivLocal(playerBlockPos.z, CHUNK_SIZE));
+        floorDivLocal(playerBlockPos.x, CHUNK_SIZE),
+        floorDivLocal(playerBlockPos.y, CHUNK_SIZE),
+        floorDivLocal(playerBlockPos.z, CHUNK_SIZE)
+    );
 
     for (auto &[regionPos, region] : m_chunkCache.regions()) {
         glm::vec3 regionMin = glm::vec3(regionPos * REGION_SIZE * CHUNK_SIZE);
@@ -142,58 +150,6 @@ void OpenGLChunkScene::renderChunks(Shader &shader, Frustum &frustum, const glm:
             gpu.drawChunkMesh(mesh);
         }
     }
-}
-
-void OpenGLChunkScene::renderChunksDepthPass(uint32_t shadowProgram, const glm::mat4 &lightViewProj,
-                                             const glm::vec3 &viewPosition,
-                                             int maxRenderDistance) {
-    if (shadowProgram == 0) {
-        return;
-    }
-
-    const glm::ivec3 playerBlockPos(static_cast<int>(std::floor(viewPosition.x)),
-                                    static_cast<int>(std::floor(viewPosition.y)),
-                                    static_cast<int>(std::floor(viewPosition.z)));
-    const glm::ivec3 playerChunkPos(
-        floorDivLocal(playerBlockPos.x, CHUNK_SIZE), floorDivLocal(playerBlockPos.y, CHUNK_SIZE),
-        floorDivLocal(playerBlockPos.z, CHUNK_SIZE));
-    const int shadowCullDistance = std::max(1, maxRenderDistance + 4);
-    const int64_t radius2 =
-        static_cast<int64_t>(shadowCullDistance) * static_cast<int64_t>(shadowCullDistance);
-
-    const GLint lightVpLoc = glGetUniformLocation(shadowProgram, "uLightViewProj");
-    const GLint modelLoc = glGetUniformLocation(shadowProgram, "uModel");
-    if (lightVpLoc < 0 || modelLoc < 0) {
-        return;
-    }
-
-    glUseProgram(shadowProgram);
-    glUniformMatrix4fv(lightVpLoc, 1, GL_FALSE, glm::value_ptr(lightViewProj));
-
-    for (auto &[regionPos, region] : m_chunkCache.regions()) {
-        (void)regionPos;
-        RegionMeshBuffer &gpu = *region.gpu;
-        for (const auto &[chunkPos, regionMesh] : region.chunks) {
-            const ChunkMesh &mesh = regionMesh.mesh;
-            if (!mesh.valid) {
-                continue;
-            }
-            glm::ivec3 d = chunkPos - playerChunkPos;
-            const int64_t dist2 = static_cast<int64_t>(d.x) * static_cast<int64_t>(d.x) +
-                                  static_cast<int64_t>(d.z) * static_cast<int64_t>(d.z);
-            if (dist2 > radius2) {
-                continue;
-            }
-
-            glm::vec3 min = glm::vec3(chunkPos * CHUNK_SIZE);
-            glm::mat4 model(1.0f);
-            model[3] = glm::vec4(min, 1.0f);
-            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-            gpu.drawChunkMesh(mesh);
-        }
-    }
-
-    glUseProgram(0);
 }
 
 void OpenGLChunkScene::renderChunkBorders(const glm::mat4 &view, const glm::mat4 &projection) {

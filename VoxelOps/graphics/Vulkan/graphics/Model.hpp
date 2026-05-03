@@ -18,12 +18,14 @@ struct VkModelLocalTriangle {
 class UploadContext;
 
 class VkModel {
-  public:
+public:
     void loadModel(const std::string &path);
 
-    void initGpuResources(const vk::raii::Device &device,
-                          const vk::raii::PhysicalDevice &physicalDevice,
-                          UploadContext &uploadContext);
+    void initGpuResources(
+        const vk::raii::Device &device,
+        const vk::raii::PhysicalDevice &physicalDevice,
+        UploadContext &uploadContext
+    );
     void cleanupGpuResources();
 
     const std::vector<VkMesh> &getMeshes() const {
@@ -49,7 +51,7 @@ class VkModel {
         return m_localTriangles;
     }
 
-  private:
+private:
     void processNode(aiNode *node, const aiScene *scene, const aiMatrix4x4 &parentTransform);
     VkMesh processMesh(aiMesh *mesh, const aiMatrix4x4 &nodeTransform);
     std::string resolveMeshTexturePath(const aiMesh *mesh, const aiScene *scene) const;

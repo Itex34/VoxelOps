@@ -66,8 +66,9 @@ void VkMesh::setGeometry(std::vector<Vertex> vertices, std::vector<uint32_t> ind
     m_indexCount = static_cast<uint32_t>(m_indices.size());
 }
 
-void VkMesh::setPackedVoxelGeometry(std::vector<PackedVoxelVertex> vertices,
-                                    std::vector<uint16_t> indices) {
+void VkMesh::setPackedVoxelGeometry(
+    std::vector<PackedVoxelVertex> vertices, std::vector<uint16_t> indices
+) {
     m_geometryFormat = GeometryFormat::PackedVoxel;
     m_packedVertices = std::move(vertices);
     m_packedIndices = std::move(indices);
@@ -84,8 +85,11 @@ bool VkMesh::hasGeometry() const {
     return !m_vertices.empty() && !m_indices.empty();
 }
 
-void VkMesh::init(const vk::raii::Device &device, const vk::raii::PhysicalDevice &physicalDevice,
-                  UploadContext &uploadContext) {
+void VkMesh::init(
+    const vk::raii::Device &device,
+    const vk::raii::PhysicalDevice &physicalDevice,
+    UploadContext &uploadContext
+) {
     cleanup();
 
     if (m_geometryFormat == GeometryFormat::Float32 && (m_vertices.empty() || m_indices.empty())) {
@@ -128,23 +132,41 @@ void VkMesh::init(const vk::raii::Device &device, const vk::raii::PhysicalDevice
     const vk::DeviceSize indexBufferSize = indexStride * static_cast<vk::DeviceSize>(indexCount);
 
     VulkanUtils::createBuffer(
-        device, physicalDevice, vertexBufferSize,
+        device,
+        physicalDevice,
+        vertexBufferSize,
         vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
-        vk::MemoryPropertyFlagBits::eDeviceLocal, m_vertexBuffer, m_vertexBufferMemory);
+        vk::MemoryPropertyFlagBits::eDeviceLocal,
+        m_vertexBuffer,
+        m_vertexBufferMemory
+    );
 
     VulkanUtils::createBuffer(
-        device, physicalDevice, indexBufferSize,
+        device,
+        physicalDevice,
+        indexBufferSize,
         vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
-        vk::MemoryPropertyFlagBits::eDeviceLocal, m_indexBuffer, m_indexBufferMemory);
+        vk::MemoryPropertyFlagBits::eDeviceLocal,
+        m_indexBuffer,
+        m_indexBufferMemory
+    );
 
     std::vector<UploadContext::BufferCopyUpload> uploads;
     uploads.reserve(2);
-    uploads.push_back(UploadContext::BufferCopyUpload{
-        uploadContext.createStagingBuffer(physicalDevice, vertexData, vertexBufferSize),
-        *m_vertexBuffer, vertexBufferSize});
-    uploads.push_back(UploadContext::BufferCopyUpload{
-        uploadContext.createStagingBuffer(physicalDevice, indexData, indexBufferSize),
-        *m_indexBuffer, indexBufferSize});
+    uploads.push_back(
+        UploadContext::BufferCopyUpload{
+            uploadContext.createStagingBuffer(physicalDevice, vertexData, vertexBufferSize),
+            *m_vertexBuffer,
+            vertexBufferSize
+        }
+    );
+    uploads.push_back(
+        UploadContext::BufferCopyUpload{
+            uploadContext.createStagingBuffer(physicalDevice, indexData, indexBufferSize),
+            *m_indexBuffer,
+            indexBufferSize
+        }
+    );
     uploadContext.submitCopyBufferBatch(std::move(uploads));
 }
 

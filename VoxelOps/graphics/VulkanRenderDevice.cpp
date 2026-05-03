@@ -5,14 +5,25 @@
 #include "Vulkan/renderer/VulkanRenderer.hpp"
 #include "Vulkan/vulkan/VulkanContext.hpp"
 #include "data/GameData.hpp"
-#include "../player/Player.hpp"
 #include "../ui/debug/DebugUi.hpp"
+#include "../../Shared/world/Constants.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <exception>
 #include <iostream>
+
+namespace {
+    int floorDivLocal(int a, int b) {
+        int q = a / b;
+        int r = a % b;
+        if ((r != 0) && ((r > 0) != (b > 0))) {
+            q--;
+        }
+        return q;
+    }
+} // namespace
 
 VulkanRenderDevice::VulkanRenderDevice() = default;
 
@@ -35,8 +46,11 @@ bool VulkanRenderDevice::initialize(SDL_Window *window) {
         m_renderer = std::make_unique<VulkanRenderer>(*m_context);
         m_renderer->init();
 
-        m_uploadContext.init(m_context->getDevice(), m_context->getGraphicsQueueFamily(),
-                             m_context->getGraphicsQueue());
+        m_uploadContext.init(
+            m_context->getDevice(),
+            m_context->getGraphicsQueueFamily(),
+            m_context->getGraphicsQueue()
+        );
 
         if (!m_sceneUploader.initialize(*m_context, m_uploadContext)) {
             return false;
@@ -68,8 +82,9 @@ void VulkanRenderDevice::onWindowResized(int width, int height) {
     }
 }
 
-bool VulkanRenderDevice::initializeDebugUi(DebugUi &debugUi, SDL_Window *window,
-                                           void *nativeContext) {
+bool VulkanRenderDevice::initializeDebugUi(
+    DebugUi &debugUi, SDL_Window *window, void *nativeContext
+) {
     (void)nativeContext;
     if (!m_context || !m_renderer) {
         return false;
@@ -178,22 +193,21 @@ RenderDeviceCapabilities VulkanRenderDevice::getCapabilities() const noexcept {
         .backendTier = GraphicsBackend::Performance,
         .backendName = "Vulkan",
         .mdiUsable = mdiUsable,
-        .supportsGL43Shaders = false,
         .supportsBakedChunkLighting = false,
         .supportsGiRuntimeControls = true,
         .supportsFirstPersonViewmodel = false,
-        .compositesUiInRenderFrame = true,
-        .requiresOpenGlStateSetup = false};
+        .compositesUiInRenderFrame = true
+    };
 }
 
-void VulkanRenderDevice::renderFrame(RenderFrameParams &params) {
-    const Camera &activeCamera = params.activeCamera;
-    const Camera &cullingCamera = params.cullingCamera ? *params.cullingCamera : activeCamera;
-
-    ChunkManager &chunkManager = params.chunkManager;
-    const Player &player = params.player;
-    ImDrawData *uiDrawData = params.uiDrawData;
-    const glm::vec3 &sunDirection = params.sunDirection;
+void VulkanRenderDevice::renderFrame(RenderScene &scene) {
+    const Camera &activeCamera = scene.activeCamera;
+    const Camera &cullingCamera = scene.cullingCamera ? *scene.cullingCamera : activeCamera;
+    ImDrawData *uiDrawData = scene.uiDrawData;
+    const glm::vec3 &sunDirection = scene.sunDirection;
+    if (scene.chunkWorld.cpuChunkMeshes == nullptr || scene.chunkWorld.chunks == nullptr) {
+        return;
+    }
 
     const auto measureMs = [](auto start, auto end) -> float {
         return static_cast<float>(std::chrono::duration<double, std::milli>(end - start).count());
@@ -213,16 +227,28 @@ void VulkanRenderDevice::renderFrame(RenderFrameParams &params) {
     m_sceneUploader.collectRetiredChunkMeshes(m_frameCounter);
     m_rtScene.collectRetiredResources(m_frameCounter);
 
-    const glm::ivec3 cullingChunk = chunkManager.worldToChunkPos(
-        glm::ivec3(static_cast<int>(std::floor(cullingCamera.position.x)),
-                   static_cast<int>(std::floor(cullingCamera.position.y)),
-                   static_cast<int>(std::floor(cullingCamera.position.z))));
+    const glm::ivec3 cullingBlockPos(
+        static_cast<int>(std::floor(cullingCamera.position.x)),
+        static_cast<int>(std::floor(cullingCamera.position.y)),
+        static_cast<int>(std::floor(cullingCamera.position.z))
+    );
+    const glm::ivec3 cullingChunk(
+        floorDivLocal(cullingBlockPos.x, CHUNK_SIZE),
+        floorDivLocal(cullingBlockPos.y, CHUNK_SIZE),
+        floorDivLocal(cullingBlockPos.z, CHUNK_SIZE)
+    );
 
     const auto meshSyncStart = std::chrono::steady_clock::now();
     m_uploadContext.poll();
     if (m_context) {
-        m_sceneUploader.syncChunkCache(chunkManager, cullingChunk, m_frameCounter, *m_context,
-                                       m_uploadContext, m_rtScene);
+        m_sceneUploader.syncChunkCache(
+            *scene.chunkWorld.cpuChunkMeshes,
+            cullingChunk,
+            m_frameCounter,
+            *m_context,
+            m_uploadContext,
+            m_rtScene
+        );
     }
     if (m_context && m_rtScene.isDirty()) {
         (void)m_rtScene.rebuild(*m_context, m_frameCounter);
@@ -247,21 +273,28 @@ void VulkanRenderDevice::renderFrame(RenderFrameParams &params) {
     const bool hardwareRtSupported =
         (m_context != nullptr) && m_context->isHardwareRayTracingSupported();
     const VulkanGiSettings::FrameDecision giDecision = m_giSettings.beginFrame(
-        cullingCamera.position, sunDirection, hardwareRtSupported, sceneTlas,
-        std::clamp(GameData::giTracingBackendPreference, 0, 2));
+        cullingCamera.position,
+        sunDirection,
+        hardwareRtSupported,
+        sceneTlas,
+        std::clamp(GameData::giTracingBackendPreference, 0, 2)
+    );
 
     m_frameData.clear();
     m_frameData.giLighting.sceneTlas = sceneTlas;
     m_giSettings.fillLightingData(
-        m_frameData.giLighting, giDecision,
-        static_cast<uint32_t>(std::clamp(GameData::giNrdDebugView, 0, 5)));
+        m_frameData.giLighting,
+        giDecision,
+        static_cast<uint32_t>(std::clamp(GameData::giNrdDebugView, 0, 5))
+    );
     m_lastTimingSnapshot.giHardwareRtSupported = giDecision.hardwareRtSupported;
     m_lastTimingSnapshot.giRtSceneReady = giDecision.rtSceneReady;
     m_lastTimingSnapshot.giTracingBackend = giDecision.backend;
 
     const auto giIntegrateStart = std::chrono::steady_clock::now();
-    const bool giTraceReady =
-        m_giSceneBuffers.rebuild(chunkManager, m_sceneUploader.chunkRenderCache(), *m_context);
+    const bool giTraceReady = m_giSceneBuffers.rebuild(
+        *scene.chunkWorld.chunks, m_sceneUploader.chunkRenderCache(), *m_context
+    );
     const auto giIntegrateEnd = std::chrono::steady_clock::now();
     m_lastTimingSnapshot.cpuGiIntegrateMs = measureMs(giIntegrateStart, giIntegrateEnd);
     if (giTraceReady) {
@@ -274,10 +307,21 @@ void VulkanRenderDevice::renderFrame(RenderFrameParams &params) {
 
     (void)m_sceneUploader.ensureRemotePlayerAssetsLoaded(*m_context, m_uploadContext);
     const VulkanFrameBuildResult frameBuild = VulkanFrameBuilder::buildFrameData(
-        m_frameData, m_sceneUploader.chunkRenderCache(), m_sceneUploader.atlasTexture(),
-        activeCamera, cullingCamera, player, uiDrawData, width, height,
-        m_sceneUploader.remotePlayerModel(), m_sceneUploader.remotePlayerTextureViews(),
-        cullingChunk);
+        m_frameData,
+        m_sceneUploader.chunkRenderCache(),
+        m_sceneUploader.atlasTexture(),
+        activeCamera,
+        cullingCamera,
+        scene.localPlayerPosition,
+        scene.chunkRenderDistance,
+        scene.remotePlayers,
+        uiDrawData,
+        width,
+        height,
+        m_sceneUploader.remotePlayerModel(),
+        m_sceneUploader.remotePlayerTextureViews(),
+        cullingChunk
+    );
 
     const glm::mat4 view = frameBuild.view;
     const glm::mat4 projection = frameBuild.projection;
@@ -285,8 +329,14 @@ void VulkanRenderDevice::renderFrame(RenderFrameParams &params) {
     m_lastTimingSnapshot.cpuFrameBuildMs = frameBuild.cpuFrameBuildMs;
 
     try {
-        m_renderer->renderFrame(static_cast<uint32_t>(width), static_cast<uint32_t>(height), view,
-                                projection, viewProjection, m_frameData);
+        m_renderer->renderFrame(
+            static_cast<uint32_t>(width),
+            static_cast<uint32_t>(height),
+            view,
+            projection,
+            viewProjection,
+            m_frameData
+        );
         const VulkanRenderer::FrameTimingStats &rendererStats =
             m_renderer->getLastFrameTimingStats();
         m_lastTimingSnapshot.gpuValid = rendererStats.gpuValid;
@@ -304,7 +354,6 @@ void VulkanRenderDevice::renderFrame(RenderFrameParams &params) {
         std::cerr << "[Vulkan] renderFrame failed: " << e.what() << "\n";
     }
 }
-
 
 void VulkanRenderDevice::shutdown() {
     if (!m_initialized && !m_context && !m_renderer) {

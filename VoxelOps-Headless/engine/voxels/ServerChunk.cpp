@@ -8,7 +8,8 @@
 #include <iomanip>
 
 // ---- constructor ----------------------------------------------------------------
-ServerChunk::ServerChunk(glm::ivec3 pos) : position(pos) {
+ServerChunk::ServerChunk(glm::ivec3 pos)
+    : position(pos) {
     // initialize all to "air" (assume BlockID(0) == air)
     m_blocks.fill(static_cast<BlockID>(0));
     m_nonAirCount = 0;
@@ -84,8 +85,8 @@ int64_t ServerChunk::applyEdit(int x, int y, int z, BlockID id) {
 }
 
 // ---- diff generation -----------------------------------------------------------
-std::optional<std::vector<EditOp>> ServerChunk::diffSince(int64_t knownVersion,
-                                                          size_t maxOps) const {
+std::optional<std::vector<EditOp>>
+ServerChunk::diffSince(int64_t knownVersion, size_t maxOps) const {
     std::shared_lock<std::shared_mutex> lk(m_mutex);
     touchLockedAtomic();
 
@@ -299,8 +300,9 @@ bool ServerChunk::saveToDisk(const std::string &path) const {
     std::ofstream fout(path, std::ios::binary | std::ios::out | std::ios::trunc);
     if (!fout)
         return false;
-    fout.write(reinterpret_cast<const char *>(blob.data()),
-               static_cast<std::streamsize>(blob.size()));
+    fout.write(
+        reinterpret_cast<const char *>(blob.data()), static_cast<std::streamsize>(blob.size())
+    );
     return !!fout;
 }
 

@@ -20,7 +20,8 @@ size_t Runtime::RunChunkInterestPhase(bool simBacklog, double &chunkInterestUs) 
     {
         std::lock_guard<std::mutex> lk(m_mutex);
         chunkInterestTasks.reserve(
-            std::min<size_t>(kChunkInterestUpdatesPerLoop, m_clients.size()));
+            std::min<size_t>(kChunkInterestUpdatesPerLoop, m_clients.size())
+        );
         for (auto &[conn, session] : m_clients) {
             if (!session.hasChunkInterest) {
                 continue;
@@ -31,7 +32,8 @@ size_t Runtime::RunChunkInterestPhase(bool simBacklog, double &chunkInterestUs) 
             }
 
             chunkInterestTasks.push_back(
-                ChunkInterestTask{conn, session.interestCenterChunk, session.viewDistance});
+                ChunkInterestTask{conn, session.interestCenterChunk, session.viewDistance}
+            );
             session.chunkInterestDirty = false;
             session.nextChunkInterestUpdateAt = chunkInterestNow + kChunkInterestUpdateInterval;
 
@@ -44,14 +46,17 @@ size_t Runtime::RunChunkInterestPhase(bool simBacklog, double &chunkInterestUs) 
         UpdateChunkStreamingForClient(task.conn, task.centerChunk, task.viewDistance);
     }
     chunkInterestUs = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(
-                                              std::chrono::steady_clock::now() - chunkInterestStart)
+                                              std::chrono::steady_clock::now() - chunkInterestStart
+    )
                                               .count());
     return chunkInterestTasks.size();
 }
 
-size_t Runtime::RunChunkSendPhase(bool simBacklog,
-                                        std::chrono::steady_clock::time_point &nextChunkSendFlushAt,
-                                        double &chunkSendUs) {
+size_t Runtime::RunChunkSendPhase(
+    bool simBacklog,
+    std::chrono::steady_clock::time_point &nextChunkSendFlushAt,
+    double &chunkSendUs
+) {
     constexpr size_t kChunkSendGlobalBudgetPerFlush = 8;
     constexpr size_t kChunkSendPerClientBudgetPerFlush = 4;
     const auto kChunkSendFlushInterval = std::chrono::milliseconds(16);
@@ -70,15 +75,18 @@ size_t Runtime::RunChunkSendPhase(bool simBacklog,
     const size_t chunksSentThisLoop =
         FlushChunkSendQueues(kChunkSendGlobalBudgetPerFlush, kChunkSendPerClientBudgetPerFlush);
     chunkSendUs = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(
-                                          std::chrono::steady_clock::now() - chunkSendStart)
+                                          std::chrono::steady_clock::now() - chunkSendStart
+    )
                                           .count());
     nextChunkSendFlushAt = chunkSendNow + kChunkSendFlushInterval;
     return chunksSentThisLoop;
 }
 
 size_t Runtime::RunCollisionPrewarmPhase(
-    bool simBacklog, std::chrono::steady_clock::time_point &nextCollisionPrewarmAt,
-    double &collisionPrewarmUs) {
+    bool simBacklog,
+    std::chrono::steady_clock::time_point &nextCollisionPrewarmAt,
+    double &collisionPrewarmUs
+) {
     constexpr int kCollisionPrewarmRadiusXZ = 1;
     constexpr int kCollisionPrewarmRadiusY = 1;
     constexpr size_t kMaxCollisionPrewarmGenerationsPerLoop = 8;
@@ -115,7 +123,8 @@ size_t Runtime::RunCollisionPrewarmPhase(
             break;
         }
         const int64_t elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                                      std::chrono::steady_clock::now() - collisionPrewarmStart)
+                                      std::chrono::steady_clock::now() - collisionPrewarmStart
+        )
                                       .count();
         if (elapsedUs >= kCollisionPrewarmBudgetUs) {
             break;
@@ -127,28 +136,33 @@ size_t Runtime::RunCollisionPrewarmPhase(
         }
 
         const ServerPlayer &player = *playerOpt;
-        const glm::ivec3 playerWorldPos(static_cast<int>(std::floor(player.position.x)),
-                                        static_cast<int>(std::floor(player.position.y)),
-                                        static_cast<int>(std::floor(player.position.z)));
+        const glm::ivec3 playerWorldPos(
+            static_cast<int>(std::floor(player.position.x)),
+            static_cast<int>(std::floor(player.position.y)),
+            static_cast<int>(std::floor(player.position.z))
+        );
         const glm::ivec3 centerChunk = m_chunkManager.worldToChunkPos(playerWorldPos);
 
         bool hitLoopBudget = false;
         for (int dx = -kCollisionPrewarmRadiusXZ; dx <= kCollisionPrewarmRadiusXZ && !hitLoopBudget;
              ++dx) {
             for (int dz = -kCollisionPrewarmRadiusXZ;
-                 dz <= kCollisionPrewarmRadiusXZ && !hitLoopBudget; ++dz) {
+                 dz <= kCollisionPrewarmRadiusXZ && !hitLoopBudget;
+                 ++dz) {
                 for (int dy = -kCollisionPrewarmRadiusY; dy <= kCollisionPrewarmRadiusY; ++dy) {
                     const int64_t innerElapsedUs =
                         std::chrono::duration_cast<std::chrono::microseconds>(
-                            std::chrono::steady_clock::now() - collisionPrewarmStart)
+                            std::chrono::steady_clock::now() - collisionPrewarmStart
+                        )
                             .count();
                     if (innerElapsedUs >= kCollisionPrewarmBudgetUs) {
                         hitLoopBudget = true;
                         break;
                     }
 
-                    const glm::ivec3 chunkPos(centerChunk.x + dx, centerChunk.y + dy,
-                                              centerChunk.z + dz);
+                    const glm::ivec3 chunkPos(
+                        centerChunk.x + dx, centerChunk.y + dy, centerChunk.z + dz
+                    );
                     if (!m_chunkManager.inBounds(chunkPos)) {
                         continue;
                     }
@@ -168,7 +182,8 @@ size_t Runtime::RunCollisionPrewarmPhase(
     }
     collisionPrewarmUs =
         static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(
-                                std::chrono::steady_clock::now() - collisionPrewarmStart)
+                                std::chrono::steady_clock::now() - collisionPrewarmStart
+        )
                                 .count());
     nextCollisionPrewarmAt = std::chrono::steady_clock::now() + kCollisionPrewarmInterval;
     return collisionPrewarmGeneratedThisLoop;

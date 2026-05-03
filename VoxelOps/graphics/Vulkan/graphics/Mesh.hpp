@@ -10,7 +10,7 @@
 class UploadContext;
 
 class VkMesh {
-  public:
+public:
     struct PackedVoxelVertex {
         uint32_t low = 0;
         uint32_t high = 0;
@@ -36,11 +36,14 @@ class VkMesh {
     VkMesh &operator=(VkMesh &&) noexcept = default;
 
     void setGeometry(std::vector<Vertex> vertices, std::vector<uint32_t> indices);
-    void setPackedVoxelGeometry(std::vector<PackedVoxelVertex> vertices,
-                                std::vector<uint16_t> indices);
+    void
+    setPackedVoxelGeometry(std::vector<PackedVoxelVertex> vertices, std::vector<uint16_t> indices);
 
-    void init(const vk::raii::Device &device, const vk::raii::PhysicalDevice &physicalDevice,
-              UploadContext &uploadContext);
+    void init(
+        const vk::raii::Device &device,
+        const vk::raii::PhysicalDevice &physicalDevice,
+        UploadContext &uploadContext
+    );
     void cleanup();
 
     bool hasGeometry() const;
@@ -56,7 +59,7 @@ class VkMesh {
         return m_indexCount;
     }
 
-  private:
+private:
     enum class GeometryFormat : uint8_t { Float32, PackedVoxel };
 
     static std::vector<Vertex> createDefaultCubeVertices();

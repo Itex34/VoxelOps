@@ -12,7 +12,7 @@
 class Runtime;
 
 class Network {
-  public:
+public:
     Network();
     ~Network();
 
@@ -35,9 +35,10 @@ class Network {
     void SetDebugLoggingEnabled(bool enabled);
     bool IsDebugLoggingEnabled();
 
-    void BroadcastRaw(const void *data, uint32_t len,
-                      HSteamNetConnection except = k_HSteamNetConnection_Invalid);
+    void BroadcastRaw(
+        const void *data, uint32_t len, HSteamNetConnection except = k_HSteamNetConnection_Invalid
+    );
 
-  private:
+private:
     std::unique_ptr<Runtime> m_runtime;
 };

@@ -72,8 +72,9 @@ void OpenGLModel::loadModel(const std::string &path) {
     finalizeRegionAabbsFromVertices();
 }
 
-void OpenGLModel::processNode(aiNode *node, const aiScene *scene,
-                              const aiMatrix4x4 &parentTransform) {
+void OpenGLModel::processNode(
+    aiNode *node, const aiScene *scene, const aiMatrix4x4 &parentTransform
+) {
     const aiMatrix4x4 currentTransform = parentTransform * node->mTransformation;
 
     for (unsigned int i = 0; i < node->mNumMeshes; i++) {
@@ -86,8 +87,8 @@ void OpenGLModel::processNode(aiNode *node, const aiScene *scene,
     }
 }
 
-OpenGLMesh OpenGLModel::processMesh(aiMesh *mesh, const aiScene *scene,
-                                    const aiMatrix4x4 &nodeTransform) {
+OpenGLMesh
+OpenGLModel::processMesh(aiMesh *mesh, const aiScene *scene, const aiMatrix4x4 &nodeTransform) {
     std::vector<OpenGLModelVertex> vertices;
     std::vector<unsigned int> indices;
     std::vector<OpenGLModelTexture> textures;
@@ -135,8 +136,9 @@ OpenGLMesh OpenGLModel::processMesh(aiMesh *mesh, const aiScene *scene,
         }
 
         if (uvChannel < AI_MAX_NUMBER_OF_TEXTURECOORDS) {
-            vertex.texCoords = {mesh->mTextureCoords[uvChannel][i].x,
-                                mesh->mTextureCoords[uvChannel][i].y};
+            vertex.texCoords = {
+                mesh->mTextureCoords[uvChannel][i].x, mesh->mTextureCoords[uvChannel][i].y
+            };
         } else {
             vertex.texCoords = {0.0f, 0.0f};
         }
@@ -180,9 +182,8 @@ OpenGLMesh OpenGLModel::processMesh(aiMesh *mesh, const aiScene *scene,
     return OpenGLMesh(std::move(vertices), std::move(indices), std::move(textures));
 }
 
-std::vector<OpenGLModelTexture> OpenGLModel::loadMaterialTextures(aiMaterial *mat,
-                                                                  aiTextureType type,
-                                                                  const aiScene *scene) {
+std::vector<OpenGLModelTexture>
+OpenGLModel::loadMaterialTextures(aiMaterial *mat, aiTextureType type, const aiScene *scene) {
     std::vector<OpenGLModelTexture> textures;
     for (unsigned int i = 0; i < mat->GetTextureCount(type); i++) {
         aiString str;
@@ -263,22 +264,36 @@ unsigned int OpenGLModel::TextureFromAssimp(const aiTexture *aiTex) {
     if (aiTex->mHeight == 0) {
         int width, height, nrChannels;
         stbi_set_flip_vertically_on_load(false);
-        unsigned char *data =
-            stbi_load_from_memory(reinterpret_cast<unsigned char *>(aiTex->pcData), aiTex->mWidth,
-                                  &width, &height, &nrChannels, 0);
+        unsigned char *data = stbi_load_from_memory(
+            reinterpret_cast<unsigned char *>(aiTex->pcData),
+            aiTex->mWidth,
+            &width,
+            &height,
+            &nrChannels,
+            0
+        );
 
         if (data) {
             GLenum format = (nrChannels == 4) ? GL_RGBA : GL_RGB;
-            glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE,
-                         data);
+            glTexImage2D(
+                GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data
+            );
             stbi_image_free(data);
         } else {
             std::cout << "Failed to load embedded texture from memory." << std::endl;
         }
     } else {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, static_cast<GLsizei>(aiTex->mWidth),
-                     static_cast<GLsizei>(aiTex->mHeight), 0, GL_BGRA, GL_UNSIGNED_BYTE,
-                     aiTex->pcData);
+        glTexImage2D(
+            GL_TEXTURE_2D,
+            0,
+            GL_RGBA8,
+            static_cast<GLsizei>(aiTex->mWidth),
+            static_cast<GLsizei>(aiTex->mHeight),
+            0,
+            GL_BGRA,
+            GL_UNSIGNED_BYTE,
+            aiTex->pcData
+        );
     }
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -297,8 +312,9 @@ void OpenGLModel::finalizeRegionAabbsFromVertices() {
     constexpr float kLegsRatio = 0.45f;
     constexpr float kBodyRatio = 0.37f;
     constexpr float kHeadRatio = 0.18f;
-    static_assert(kLegsRatio + kBodyRatio + kHeadRatio > 0.99f,
-                  "Region ratios must cover full height.");
+    static_assert(
+        kLegsRatio + kBodyRatio + kHeadRatio > 0.99f, "Region ratios must cover full height."
+    );
 
     const float minY = m_localMinBounds.y;
     const float maxY = m_localMaxBounds.y;
@@ -306,12 +322,16 @@ void OpenGLModel::finalizeRegionAabbsFromVertices() {
     const float legsTop = minY + height * kLegsRatio;
     const float bodyTop = legsTop + height * kBodyRatio;
 
-    std::array<glm::vec3, 3> regionMin{glm::vec3(std::numeric_limits<float>::max()),
-                                       glm::vec3(std::numeric_limits<float>::max()),
-                                       glm::vec3(std::numeric_limits<float>::max())};
-    std::array<glm::vec3, 3> regionMax{glm::vec3(std::numeric_limits<float>::lowest()),
-                                       glm::vec3(std::numeric_limits<float>::lowest()),
-                                       glm::vec3(std::numeric_limits<float>::lowest())};
+    std::array<glm::vec3, 3> regionMin{
+        glm::vec3(std::numeric_limits<float>::max()),
+        glm::vec3(std::numeric_limits<float>::max()),
+        glm::vec3(std::numeric_limits<float>::max())
+    };
+    std::array<glm::vec3, 3> regionMax{
+        glm::vec3(std::numeric_limits<float>::lowest()),
+        glm::vec3(std::numeric_limits<float>::lowest()),
+        glm::vec3(std::numeric_limits<float>::lowest())
+    };
     std::array<bool, 3> hasRegion{false, false, false};
 
     for (const glm::vec3 &v : m_localVertices) {
@@ -362,8 +382,9 @@ void OpenGLModel::finalizeRegionAabbsFromVertices() {
     }
 }
 
-void OpenGLModel::draw(const glm::vec3 &position, const glm::quat &rotation,
-                       const glm::vec3 &scale, Shader &shader) {
+void OpenGLModel::draw(
+    const glm::vec3 &position, const glm::quat &rotation, const glm::vec3 &scale, Shader &shader
+) {
     glm::mat4 scaleMat = glm::scale(glm::mat4(1.0f), scale);
     glm::mat4 rotationMat = glm::toMat4(rotation);
     glm::mat4 translationMat = glm::translate(glm::mat4(1.0f), position);

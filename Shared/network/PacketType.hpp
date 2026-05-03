@@ -11,7 +11,6 @@ enum class PacketType : uint8_t {
 
     PlayerInput = 8, // client -> server: seq + movement input
     PlayerSnapshot = 9,
-    PlayerPosition = 10, // client -> server: seq + px,py,pz,vx,vy,vz
 
     ShootRequest = 11, // client -> server: request to fire
     ShootResult = 12,  // server -> client: authoritative shot result

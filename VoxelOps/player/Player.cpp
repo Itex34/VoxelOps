@@ -2,18 +2,14 @@
 
 #include "../world/ChunkManager.hpp"
 #include "../graphics/ModelGeometry.hpp"
-#include "../data/GameData.hpp"
-#include "../../Shared/network/Packets.hpp"
 #include "../../Shared/player/HitboxCache.hpp"
 #include "../../Shared/player/MeshHitCache.hpp"
 #include "../../Shared/player/PlayerData.hpp"
-#include "../../Shared/player/MovementSimulation.hpp"
 #include "../../Shared/runtime/Paths.hpp"
 
-#include <SDL3/SDL.h>
+
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp>
-#include <imgui.h>
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -22,9 +18,6 @@ namespace {
 inline const Shared::PlayerData::MovementSettings &movementSettings() {
     return Shared::PlayerData::GetMovementSettings();
 }
-// Match authoritative server collision behavior to reduce airborne reconciliation jitter.
-constexpr bool kClientBlockOnMissingCollisionChunk = true;
-constexpr float kCollisionSkin = 0.001f;
 constexpr bool kPlayerModelYawInvert = true;
 constexpr float kPlayerModelYawOffsetDeg = 0.0f;
 
@@ -45,19 +38,7 @@ float ToModelYawDegrees(float lookYawDegrees) {
     return NormalizeYawDegrees(signedYaw + kPlayerModelYawOffsetDeg);
 }
 
-inline int ifloor(float v) {
-    return static_cast<int>(std::floor(v));
-}
-
 constexpr bool kEnableHitboxDiagnostics = true;
-
-bool IsImGuiTextInputActive() {
-    if (ImGui::GetCurrentContext() == nullptr) {
-        return false;
-    }
-    const ImGuiIO &io = ImGui::GetIO();
-    return io.WantTextInput || io.WantCaptureKeyboard;
-}
 
 const std::string &SharedHitboxCachePath() {
     static const std::string kPath =
@@ -425,324 +406,21 @@ void Player::decayStepUpOffset(float dt) noexcept {
     }
 }
 
-bool Player::checkCollision(const glm::vec3 &pos) const {
-    if (flyMode)
-        return false; // [FLY MODE] disables collisions
 
-    // Shrink AABB slightly so face-touching at block boundaries is not treated as penetration.
-    float minX = pos.x - playerRadius + kCollisionSkin;
-    float maxX = pos.x + playerRadius - kCollisionSkin;
-    float minY = pos.y + kCollisionSkin;
-    float maxY = pos.y + playerHeight - kCollisionSkin;
-    float minZ = pos.z - playerRadius + kCollisionSkin;
-    float maxZ = pos.z + playerRadius - kCollisionSkin;
-
-    int ix0 = ifloor(minX);
-    int iy0 = ifloor(minY);
-    int iz0 = ifloor(minZ);
-    int ix1 = ifloor(maxX);
-    int iy1 = ifloor(maxY);
-    int iz1 = ifloor(maxZ);
-
-    for (int x = ix0; x <= ix1; ++x) {
-        for (int y = iy0; y <= iy1; ++y) {
-            for (int z = iz0; z <= iz1; ++z) {
-                const glm::ivec3 worldPos(x, y, z);
-                const glm::ivec3 chunkPos = chunkManager.worldToChunkPos(worldPos);
-                if (chunkManager.inBounds(chunkPos) && !chunkManager.hasChunkLoaded(chunkPos)) {
-                    if (kClientBlockOnMissingCollisionChunk && m_treatMissingCollisionAsSolid) {
-                        // Optional conservative mode near stream edges.
-                        return true;
-                    }
-                    continue;
-                }
-                if (chunkManager.getBlockGlobal(x, y, z) != BlockID::Air) {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
-}
-
-void Player::moveAndCollide(const glm::vec3 &delta, bool allowStepUp, float *outStepUpHeight) {
-    Shared::Movement::State state;
-    state.position = position;
-    state.velocity = velocity;
-    state.onGround = onGround;
-    state.flyMode = flyMode;
-    state.jumpPressedLastTick = m_jumpPressedLastTick;
-    state.timeSinceGrounded = m_timeSinceGrounded;
-    state.jumpBufferTimer = m_jumpBufferTimer;
-
-    const float stepUpHeight = Shared::Movement::MoveAndCollide(
-        state, delta, movementSettings(), allowStepUp,
-        [this](const glm::vec3 &testPos) { return checkCollision(testPos); });
-
-    position = state.position;
-    velocity = state.velocity;
-    onGround = state.onGround;
-
-    if (outStepUpHeight != nullptr) {
-        *outStepUpHeight = stepUpHeight;
-    }
-}
 
 void Player::setPosition(const glm::vec3 &p) noexcept {
     position = p;
     syncCameraToBody();
 }
 
-Player::SimulationState Player::captureSimulationState() const noexcept {
-    SimulationState state;
-    state.position = position;
-    state.velocity = velocity;
-    state.front = front;
-    state.yaw = yaw;
-    state.pitch = pitch;
-    state.onGround = onGround;
-    state.flyMode = flyMode;
-    state.jumpPressedLastTick = m_jumpPressedLastTick;
-    state.timeSinceGrounded = m_timeSinceGrounded;
-    state.jumpBufferTimer = m_jumpBufferTimer;
-    state.currentFov = currentFov;
-    state.stepUpVisualOffset = m_stepUpVisualOffset;
-    return state;
-}
 
-void Player::restoreSimulationState(const SimulationState &state) noexcept {
-    position = state.position;
-    velocity = state.velocity;
-    front = state.front;
-    yaw = static_cast<double>(NormalizeYawDegrees(static_cast<float>(state.yaw)));
-    pitch = glm::clamp(state.pitch, -89.0f, 89.0f);
-    onGround = state.onGround;
-    flyMode = m_flyModeAllowed && state.flyMode;
-    m_jumpPressedLastTick = state.jumpPressedLastTick;
-    m_timeSinceGrounded = state.timeSinceGrounded;
-    m_jumpBufferTimer = state.jumpBufferTimer;
-    currentFov = state.currentFov;
-    m_stepUpVisualOffset = std::max(0.0f, state.stepUpVisualOffset);
 
-    camera.updateRotation(static_cast<float>(yaw), pitch);
-    front = camera.front;
-    syncCameraToBody();
-}
 
-void Player::setFlyModeAllowed(bool allowed) noexcept {
-    if (m_flyModeAllowed == allowed) {
-        return;
-    }
-    m_flyModeAllowed = allowed;
-    if (!m_flyModeAllowed) {
-        flyMode = false;
-    }
-}
 
-void Player::setTreatMissingCollisionAsSolid(bool enabled) noexcept {
-    m_treatMissingCollisionAsSolid = enabled;
-}
 
-void Player::simulateFromNetworkInput(const NetworkInputState &input, double deltaTime,
-                                      bool updateFov) {
-    simulateMovement(input, static_cast<float>(deltaTime), updateFov);
-}
-
-void Player::simulateMovement(const NetworkInputState &input, float dt, bool updateFov) {
-    const auto &movement = movementSettings();
-
-    yaw = static_cast<double>(NormalizeYawDegrees(input.yaw));
-    pitch = glm::clamp(input.pitch, -89.0f, 89.0f);
-    camera.updateRotation(static_cast<float>(yaw), pitch);
-    front = camera.front;
-
-    const uint8_t flags = input.flags;
-    const bool sprint = (flags & kPlayerInputFlagSprint) != 0;
-
-    if (updateFov) {
-        const float targetFov = sprint ? runningFov * runningFovMultiplier : walkFov;
-        const float fovSmoothSpeed = 20.0f;
-        currentFov += (targetFov - currentFov) * fovSmoothSpeed * dt;
-    }
-
-    Shared::Movement::State state;
-    state.position = position;
-    state.velocity = velocity;
-    state.onGround = onGround;
-    state.flyMode = flyMode;
-    state.jumpPressedLastTick = m_jumpPressedLastTick;
-    state.timeSinceGrounded = m_timeSinceGrounded;
-    state.jumpBufferTimer = m_jumpBufferTimer;
-
-    Shared::Movement::InputState simInput;
-    simInput.moveX = input.moveX;
-    simInput.moveZ = input.moveZ;
-    simInput.flags = input.flags;
-    simInput.flyMode = input.flyMode;
-
-    Shared::Movement::Options simOptions;
-    simOptions.allowFlyMode = m_flyModeAllowed;
-    simOptions.allowStepUp = true;
-    simOptions.requireSprintForStepUp = true;
-
-    float steppedHeight = 0.0f;
-    Shared::Movement::Simulate(
-        state, simInput, dt, movement, simOptions,
-        [this](const glm::vec3 &testPos) { return checkCollision(testPos); }, &steppedHeight);
-
-    position = state.position;
-    velocity = state.velocity;
-    onGround = state.onGround;
-    flyMode = state.flyMode;
-    m_jumpPressedLastTick = state.jumpPressedLastTick;
-    m_timeSinceGrounded = state.timeSinceGrounded;
-    m_jumpBufferTimer = state.jumpBufferTimer;
-
-    if (steppedHeight > 0.0f) {
-        // Apply only a fraction of physical step-up for a gentler camera response.
-        // Keep the offset stable during consecutive step ticks to avoid visual chatter.
-        const float visualStep = std::min(steppedHeight * m_stepUpVisualScale, m_stepUpOffsetMax);
-        m_stepUpVisualOffset = std::max(m_stepUpVisualOffset, visualStep);
-    } else if (!onGround && velocity.y < 0.0f) {
-        // While falling, bleed step-up compensation quickly instead of hard-resetting it.
-        const float keep = std::exp(-18.0f * dt);
-        m_stepUpVisualOffset *= std::clamp(keep, 0.0f, 1.0f);
-        if (m_stepUpVisualOffset < 1e-4f) {
-            m_stepUpVisualOffset = 0.0f;
-        }
-    } else {
-        decayStepUpOffset(dt);
-    }
-
-    syncCameraToBody();
-}
 
 // update (called each frame)
-void Player::update(SDL_Window *window, double deltaTime) {
-    (void)window;
-    int keyCount = 0;
-    const bool *keys = SDL_GetKeyboardState(&keyCount);
-    const auto keyDown = [keys, keyCount](SDL_Scancode scancode) -> bool {
-        return keys != nullptr && scancode < keyCount && keys[scancode];
-    };
 
-    static bool f8PressedLast = false;
-    const bool allowGameplayInput = GameData::gameplayInputEnabled && !IsImGuiTextInputActive();
-    const bool f8Pressed = allowGameplayInput && keyDown(SDL_SCANCODE_F8);
-    if (m_flyModeAllowed && f8Pressed && !f8PressedLast) {
-        flyMode = !flyMode;
-        std::cout << (flyMode ? "Fly mode ON\n" : "Fly mode OFF\n");
-        velocity = glm::vec3(0.0f);
-        onGround = false;
-        m_jumpPressedLastTick = false;
-        m_timeSinceGrounded = 0.0f;
-        m_jumpBufferTimer = 0.0f;
-    } else if (!m_flyModeAllowed) {
-        flyMode = false;
-    }
-    f8PressedLast = f8Pressed;
-
-    const bool keyW = allowGameplayInput && keyDown(SDL_SCANCODE_W);
-    const bool keyS = allowGameplayInput && keyDown(SDL_SCANCODE_S);
-    const bool keyA = allowGameplayInput && keyDown(SDL_SCANCODE_A);
-    const bool keyD = allowGameplayInput && keyDown(SDL_SCANCODE_D);
-    const bool keyShift = allowGameplayInput && keyDown(SDL_SCANCODE_LSHIFT);
-    const bool keySpace = allowGameplayInput && keyDown(SDL_SCANCODE_SPACE);
-    const bool keyCtrl = allowGameplayInput && keyDown(SDL_SCANCODE_LCTRL);
-
-    const glm::vec2 localMove((keyD ? 1.0f : 0.0f) - (keyA ? 1.0f : 0.0f),
-                              (keyW ? 1.0f : 0.0f) - (keyS ? 1.0f : 0.0f));
-    glm::vec2 localMoveNormalized = localMove;
-    if (glm::length(localMoveNormalized) > 1.0f) {
-        localMoveNormalized = glm::normalize(localMoveNormalized);
-    }
-    const float yawRad = glm::radians(static_cast<float>(yaw));
-    const glm::vec2 forward2D(std::cos(yawRad), std::sin(yawRad));
-    const glm::vec2 right2D(-forward2D.y, forward2D.x);
-    const glm::vec2 worldMove = right2D * localMoveNormalized.x + forward2D * localMoveNormalized.y;
-    m_networkInput.moveX = worldMove.x;
-    m_networkInput.moveZ = worldMove.y;
-    m_networkInput.yaw = NormalizeYawDegrees(static_cast<float>(yaw));
-    m_networkInput.pitch = pitch;
-    m_networkInput.flyMode = flyMode;
-    m_networkInput.flags = 0;
-    if (keyW)
-        m_networkInput.flags |= kPlayerInputFlagForward;
-    if (keyS)
-        m_networkInput.flags |= kPlayerInputFlagBackward;
-    if (keyA)
-        m_networkInput.flags |= kPlayerInputFlagLeft;
-    if (keyD)
-        m_networkInput.flags |= kPlayerInputFlagRight;
-    if (keySpace)
-        m_networkInput.flags |= kPlayerInputFlagJump;
-    if (keyShift)
-        m_networkInput.flags |= kPlayerInputFlagSprint;
-    if (flyMode && keySpace)
-        m_networkInput.flags |= kPlayerInputFlagFlyUp;
-    if (flyMode && keyCtrl)
-        m_networkInput.flags |= kPlayerInputFlagFlyDown;
-
-    if (deltaTime > 0.0) {
-        simulateMovement(m_networkInput, static_cast<float>(deltaTime), true);
-    }
-}
-
-NetworkInputState Player::captureCurrentInput(SDL_Window *window) const noexcept {
-    (void)window;
-    int keyCount = 0;
-    const bool *keys = SDL_GetKeyboardState(&keyCount);
-    const auto keyDown = [keys, keyCount](SDL_Scancode scancode) -> bool {
-        return keys != nullptr && scancode < keyCount && keys[scancode];
-    };
-
-    NetworkInputState input;
-
-    const bool allowGameplayInput = GameData::gameplayInputEnabled && !IsImGuiTextInputActive();
-
-    const bool keyW = allowGameplayInput && keyDown(SDL_SCANCODE_W);
-    const bool keyS = allowGameplayInput && keyDown(SDL_SCANCODE_S);
-    const bool keyA = allowGameplayInput && keyDown(SDL_SCANCODE_A);
-    const bool keyD = allowGameplayInput && keyDown(SDL_SCANCODE_D);
-    const bool keyShift = allowGameplayInput && keyDown(SDL_SCANCODE_LSHIFT);
-    const bool keySpace = allowGameplayInput && keyDown(SDL_SCANCODE_SPACE);
-    const bool keyCtrl = allowGameplayInput && keyDown(SDL_SCANCODE_LCTRL);
-
-    const glm::vec2 localMove((keyD ? 1.0f : 0.0f) - (keyA ? 1.0f : 0.0f),
-                              (keyW ? 1.0f : 0.0f) - (keyS ? 1.0f : 0.0f));
-    glm::vec2 localMoveNormalized = localMove;
-    if (glm::length(localMoveNormalized) > 1.0f) {
-        localMoveNormalized = glm::normalize(localMoveNormalized);
-    }
-    const float yawRad = glm::radians(static_cast<float>(yaw));
-    const glm::vec2 forward2D(std::cos(yawRad), std::sin(yawRad));
-    const glm::vec2 right2D(-forward2D.y, forward2D.x);
-    const glm::vec2 worldMove = right2D * localMoveNormalized.x + forward2D * localMoveNormalized.y;
-    input.moveX = worldMove.x;
-    input.moveZ = worldMove.y;
-    input.yaw = NormalizeYawDegrees(static_cast<float>(yaw));
-    input.pitch = pitch;
-    input.flyMode = flyMode;
-    input.flags = 0;
-    if (keyW)
-        input.flags |= kPlayerInputFlagForward;
-    if (keyS)
-        input.flags |= kPlayerInputFlagBackward;
-    if (keyA)
-        input.flags |= kPlayerInputFlagLeft;
-    if (keyD)
-        input.flags |= kPlayerInputFlagRight;
-    if (keySpace)
-        input.flags |= kPlayerInputFlagJump;
-    if (keyShift)
-        input.flags |= kPlayerInputFlagSprint;
-    if (flyMode && keySpace)
-        input.flags |= kPlayerInputFlagFlyUp;
-    if (flyMode && keyCtrl)
-        input.flags |= kPlayerInputFlagFlyDown;
-
-    return input;
-}
 
 void Player::setConnectedPlayers(const std::unordered_map<PlayerID, PlayerState> &players) {
     m_remotePlayerTargets.clear();
@@ -775,65 +453,31 @@ void Player::updateRemotePlayers(float deltaTime) {
         return;
     }
 
+    const float dt = std::max(0.0f, deltaTime);
+    const float blend = std::clamp(1.0f - std::exp(-12.0f * dt), 0.0f, 1.0f);
+
     for (auto &[id, current] : connectedPlayers) {
         auto targetIt = m_remotePlayerTargets.find(id);
         if (targetIt == m_remotePlayerTargets.end()) {
             continue;
         }
-        current = targetIt->second;
+        const PlayerState &target = targetIt->second;
+        current.position = glm::mix(current.position, target.position, blend);
+        current.rotation = glm::normalize(glm::slerp(current.rotation, target.rotation, blend));
+        current.scale = glm::mix(current.scale, target.scale, blend);
+        current.weaponId = target.weaponId;
     }
 }
 
-void Player::processMouse(bool dbgCam, double xpos, double ypos) noexcept {
-    if (dbgCam)
-        return;
 
-    if (firstMouse) {
-        lastX = xpos;
-        lastY = ypos;
-        firstMouse = false;
-        return;
-    }
 
-    double xoffset = xpos - lastX;
-    double yoffset = ypos - lastY;
-    lastX = xpos;
-    lastY = ypos;
 
-    xoffset *= mouseSensitivity;
-    yoffset *= mouseSensitivity;
 
-    yaw = static_cast<double>(NormalizeYawDegrees(static_cast<float>(yaw + xoffset)));
-    pitch -= static_cast<float>(yoffset);
-    pitch = glm::clamp(pitch, -89.0f, 89.0f);
-
-    camera.updateRotation(yaw, pitch);
-
-    // keep front consistent and update model matrix orientation
-    front = camera.front;
-    updateModelMatrix();
-}
-
-bool Player::isGrounded() const noexcept {
-    return onGround;
-}
-
-glm::mat4 Player::getViewMatrix() const noexcept {
-    return camera.getViewMatrix();
-}
-
-// client side for now
-void Player::placeBlock(BlockMode blockMode) {
-    Ray ray(camera.position, camera.front);
-    if (rayManager.rayHasBlockIntersectSingle(ray, chunkManager, maxReach).hit) {
-    }
-}
 
 void Player::breakBlock() {
     Ray ray(camera.position, camera.front);
     if (rayManager.rayHasBlockIntersectSingle(ray, chunkManager, maxReach).hit) {
-        glm::ivec3 hitBlock =
-            rayManager.rayHasBlockIntersectSingle(ray, chunkManager, maxReach).hitBlockWorld;
+        glm::ivec3 hitBlock = rayManager.rayHasBlockIntersectSingle(ray, chunkManager, maxReach).hitBlockWorld;
 
         chunkManager.playerBreakBlockAt(hitBlock);
     }

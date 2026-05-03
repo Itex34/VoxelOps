@@ -14,9 +14,9 @@ static int FloorDiv(int a, int b) {
     return q;
 }
 
-void Runtime::UpdateChunkStreamingForClient(HSteamNetConnection conn,
-                                                  const glm::ivec3 &centerChunk,
-                                                  uint16_t viewDistance) {
+void Runtime::UpdateChunkStreamingForClient(
+    HSteamNetConnection conn, const glm::ivec3 &centerChunk, uint16_t viewDistance
+) {
     constexpr size_t kMaxChunkPrepQueuePerUpdate = 128;
     constexpr size_t kMaxPendingChunkData = 256;
     constexpr size_t kMaxChunkUnloadsPerUpdate = 24;
@@ -30,7 +30,8 @@ void Runtime::UpdateChunkStreamingForClient(HSteamNetConnection conn,
     const int radius = static_cast<int>(clampedViewDistance);
     const int64_t radius2 = static_cast<int64_t>(radius) * static_cast<int64_t>(radius);
     desired.reserve(
-        static_cast<size_t>((radius * 2 + 1) * (radius * 2 + 1) * (maxChunkY - minChunkY + 1)));
+        static_cast<size_t>((radius * 2 + 1) * (radius * 2 + 1) * (maxChunkY - minChunkY + 1))
+    );
 
     for (int x = centerChunk.x - radius; x <= centerChunk.x + radius; ++x) {
         const int64_t dx = static_cast<int64_t>(x - centerChunk.x);
@@ -243,8 +244,12 @@ void Runtime::UpdateChunkStreamingForClient(HSteamNetConnection conn,
     }
 }
 
-void Runtime::HandlePlayerInputPacket(HSteamNetConnection incoming, const void *data,
-                                            uint32_t size, uint64_t &playerInputPacketsThisLoop) {
+void Runtime::HandlePlayerInputPacket(
+    HSteamNetConnection incoming,
+    const void *data,
+    uint32_t size,
+    uint64_t &playerInputPacketsThisLoop
+) {
     ++playerInputPacketsThisLoop;
     PlayerInput input{};
     if (!NetPacket::ParsePlayerInputPacket(reinterpret_cast<const uint8_t *>(data), size, input)) {
@@ -271,8 +276,12 @@ void Runtime::HandlePlayerInputPacket(HSteamNetConnection incoming, const void *
     }
 }
 
-void Runtime::HandleChunkRequestPacket(HSteamNetConnection incoming, const void *data,
-                                             uint32_t size, uint64_t &chunkRequestPacketsThisLoop) {
+void Runtime::HandleChunkRequestPacket(
+    HSteamNetConnection incoming,
+    const void *data,
+    uint32_t size,
+    uint64_t &chunkRequestPacketsThisLoop
+) {
     ++chunkRequestPacketsThisLoop;
     ChunkRequest req{};
     if (!NetPacket::ParseChunkRequestPacket(reinterpret_cast<const uint8_t *>(data), size, req)) {

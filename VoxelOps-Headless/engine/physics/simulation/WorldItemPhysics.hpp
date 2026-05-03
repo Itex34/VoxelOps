@@ -16,7 +16,7 @@ struct WorldItemEntity {
 };
 
 class WorldItemPhysics {
-  public:
+public:
     static constexpr float kGravity = 24.0f;
     static constexpr float kAirDampingPerTick = 0.995f;
     static constexpr float kGroundDampingPerTick = 0.90f;
@@ -27,6 +27,10 @@ class WorldItemPhysics {
     static constexpr float kCollisionRadius = 0.17f;
     static constexpr float kCollisionHeight = 0.22f;
 
-    static void Step(WorldItemEntity &item, float deltaSeconds, float tickRateHz,
-                     const ChunkManager &chunkManager);
+    static void Step(
+        WorldItemEntity &item,
+        float deltaSeconds,
+        float tickRateHz,
+        const ChunkManager &chunkManager
+    );
 };

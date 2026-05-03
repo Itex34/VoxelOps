@@ -6,29 +6,29 @@
 #include <iostream>
 
 namespace {
-bool hasExtension(const char *extensionName) {
-    GLint extensionCount = 0;
-    glGetIntegerv(GL_NUM_EXTENSIONS, &extensionCount);
+    bool hasExtension(const char *extensionName) {
+        GLint extensionCount = 0;
+        glGetIntegerv(GL_NUM_EXTENSIONS, &extensionCount);
 
-    for (GLint i = 0; i < extensionCount; ++i) {
-        const char *extension =
-            reinterpret_cast<const char *>(glGetStringi(GL_EXTENSIONS, static_cast<GLuint>(i)));
-        if (extension && std::strcmp(extension, extensionName) == 0) {
-            return true;
+        for (GLint i = 0; i < extensionCount; ++i) {
+            const char *extension =
+                reinterpret_cast<const char *>(glGetStringi(GL_EXTENSIONS, static_cast<GLuint>(i)));
+            if (extension && std::strcmp(extension, extensionName) == 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    std::string_view backendName(GraphicsBackend backend) {
+        switch (backend) {
+        case GraphicsBackend::Performance:
+            return "Performance";
+        default:
+            return "Unknown";
         }
     }
-
-    return false;
-}
-
-std::string_view backendName(GraphicsBackend backend) {
-    switch (backend) {
-    case GraphicsBackend::Performance:
-        return "Performance";
-    default:
-        return "Unknown";
-    }
-}
 } // namespace
 
 Backend::Backend() {

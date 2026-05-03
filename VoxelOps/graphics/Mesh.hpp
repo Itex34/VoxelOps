@@ -2,17 +2,13 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "../render/VoxelVertex.hpp"
 
 struct VertexPacked {
     uint16_t px, py, pz;
     uint32_t normal;
     uint16_t u, v;
     uint32_t color;
-};
-
-struct VoxelVertex {
-    uint32_t low;
-    uint32_t high;
 };
 
 struct BufferRange {

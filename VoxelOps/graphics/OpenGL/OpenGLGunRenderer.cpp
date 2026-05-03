@@ -39,8 +39,8 @@ bool OpenGLGunRenderer::loadWeaponModel(uint16_t weaponId, const std::string &mo
         m_models[weaponId] = std::make_unique<OpenGLModel>(modelPath);
         return true;
     } catch (const std::exception &e) {
-        std::cerr << "[gun] failed to load model for weaponId=" << weaponId << " from "
-                  << modelPath << ": " << e.what() << "\n";
+        std::cerr << "[gun] failed to load model for weaponId=" << weaponId << " from " << modelPath
+                  << ": " << e.what() << "\n";
         m_models.erase(weaponId);
         return false;
     }
@@ -58,10 +58,13 @@ OpenGLModel *OpenGLGunRenderer::findWeaponModel(uint16_t weaponId) {
     return it->second.get();
 }
 
-bool OpenGLGunRenderer::bindSharedLighting(const glm::mat4 &view, const glm::mat4 &projection,
-                                           const glm::vec3 &lightDir,
-                                           const glm::vec3 &lightColor,
-                                           const glm::vec3 &ambientColor) {
+bool OpenGLGunRenderer::bindSharedLighting(
+    const glm::mat4 &view,
+    const glm::mat4 &projection,
+    const glm::vec3 &lightDir,
+    const glm::vec3 &lightColor,
+    const glm::vec3 &ambientColor
+) {
     if (!m_shader) {
         return false;
     }
@@ -76,12 +79,17 @@ bool OpenGLGunRenderer::bindSharedLighting(const glm::mat4 &view, const glm::mat
     return true;
 }
 
-bool OpenGLGunRenderer::renderWorldWeapon(uint16_t weaponId, const glm::vec3 &position,
-                                          const glm::quat &rotation, const glm::vec3 &scale,
-                                          const glm::mat4 &view, const glm::mat4 &projection,
-                                          const glm::vec3 &lightDir,
-                                          const glm::vec3 &lightColor,
-                                          const glm::vec3 &ambientColor) {
+bool OpenGLGunRenderer::renderWorldWeapon(
+    uint16_t weaponId,
+    const glm::vec3 &position,
+    const glm::quat &rotation,
+    const glm::vec3 &scale,
+    const glm::mat4 &view,
+    const glm::mat4 &projection,
+    const glm::vec3 &lightDir,
+    const glm::vec3 &lightColor,
+    const glm::vec3 &ambientColor
+) {
     OpenGLModel *model = findWeaponModel(weaponId);
     if (model == nullptr) {
         return false;
@@ -94,11 +102,17 @@ bool OpenGLGunRenderer::renderWorldWeapon(uint16_t weaponId, const glm::vec3 &po
     return true;
 }
 
-bool OpenGLGunRenderer::renderViewWeapon(uint16_t weaponId, const glm::vec3 &position,
-                                         const glm::quat &rotation, const glm::vec3 &scale,
-                                         const glm::mat4 &view, const glm::mat4 &projection,
-                                         const glm::vec3 &lightDir, const glm::vec3 &lightColor,
-                                         const glm::vec3 &ambientColor) {
+bool OpenGLGunRenderer::renderViewWeapon(
+    uint16_t weaponId,
+    const glm::vec3 &position,
+    const glm::quat &rotation,
+    const glm::vec3 &scale,
+    const glm::mat4 &view,
+    const glm::mat4 &projection,
+    const glm::vec3 &lightDir,
+    const glm::vec3 &lightColor,
+    const glm::vec3 &ambientColor
+) {
     OpenGLModel *model = findWeaponModel(weaponId);
     if (model == nullptr) {
         return false;

@@ -6,11 +6,12 @@ class Camera;
 struct Runtime;
 
 class IGunSceneRenderer {
-  public:
+public:
     virtual ~IGunSceneRenderer() = default;
 
-    virtual void renderRemotePlayerGuns(Runtime &runtime, const Camera &activeCamera,
-                                        const glm::vec3 &sunDirection) = 0;
-    virtual void renderHeldGun(Runtime &runtime, const Camera &activeCamera,
-                               const glm::vec3 &sunDirection) = 0;
+    virtual void renderRemotePlayerGuns(
+        Runtime &runtime, const Camera &activeCamera, const glm::vec3 &sunDirection
+    ) = 0;
+    virtual void
+    renderHeldGun(Runtime &runtime, const Camera &activeCamera, const glm::vec3 &sunDirection) = 0;
 };

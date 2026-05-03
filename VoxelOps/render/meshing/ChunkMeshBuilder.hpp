@@ -1,10 +1,13 @@
 #pragma once
-#include "../voxels/Chunk.hpp"
-#include "../voxels/Voxel.hpp"
-#include "Mesh.hpp"
-#include "AtlasLayout.hpp"
+#include "../../voxels/Chunk.hpp"
+#include "../../voxels/Voxel.hpp"
+#include "../../graphics/AtlasLayout.hpp"
+#include "../VoxelVertex.hpp"
 #include <array>
 #include <cstdint>
+#include <functional>
+#include <unordered_map>
+#include <vector>
 
 struct QuadKey {
     uint32_t x0, y0, z0;
@@ -59,24 +62,31 @@ struct MeshBuildProfileSnapshot {
 };
 
 class ChunkMeshBuilder {
-  public:
+public:
     using SunTopGetter = std::function<int(int, int)>;
 
-    BuiltChunkMesh buildChunkMesh(const Chunk &center, const Chunk *neighbors[6],
-                                  const glm::ivec3 &chunkPos, const AtlasLayout &atlasLayout,
-                                  bool enableAO);
+    BuiltChunkMesh buildChunkMesh(
+        const Chunk &center,
+        const Chunk *neighbors[6],
+        const glm::ivec3 &chunkPos,
+        const AtlasLayout &atlasLayout,
+        bool enableAO
+    );
 
     static MeshBuildProfileSnapshot getProfileSnapshot();
     static void resetProfileSnapshot();
 
-  private:
+private:
     std::unordered_map<QuadKey, uint16_t, QuadKeyHash> quadEmitMap;
-    std::unordered_map<QuadKey, std::pair<std::array<uint8_t, 4>, std::array<uint8_t, 4>>,
-                       QuadKeyHash>
+    std::unordered_map<
+        QuadKey,
+        std::pair<std::array<uint8_t, 4>, std::array<uint8_t, 4>>,
+        QuadKeyHash>
         quadMap;
 
-    inline BlockID getBlockWithNeighbors(int x, int y, int z, const Chunk &chunk,
-                                         const Chunk *neighbors[6]) noexcept {
+    inline BlockID getBlockWithNeighbors(
+        int x, int y, int z, const Chunk &chunk, const Chunk *neighbors[6]
+    ) noexcept {
         if ((unsigned)x < CHUNK_SIZE && (unsigned)y < CHUNK_SIZE && (unsigned)z < CHUNK_SIZE) {
             return chunk.getBlockUnchecked(x, y, z);
         }
@@ -109,8 +119,8 @@ class ChunkMeshBuilder {
         return BlockID::Air;
     }
 
-    inline BlockID getBlockSafe(int x, int y, int z, const Chunk &chunk,
-                                const Chunk *neighbors[6]) noexcept {
+    inline BlockID
+    getBlockSafe(int x, int y, int z, const Chunk &chunk, const Chunk *neighbors[6]) noexcept {
         // hard reject unsupported vertical access
         if (y < -1 || y > CHUNK_SIZE)
             return BlockID::Air;

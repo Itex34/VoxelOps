@@ -1,82 +1,82 @@
 ﻿#include "ChunkMeshBuilder.hpp"
 
-#include "Lighting.hpp"
-#include "../voxels/Voxel.hpp"
+#include "../../graphics/Lighting.hpp"
+#include "../../voxels/Voxel.hpp"
 #include <atomic>
 #include <chrono>
 #include <array>
 #include <mutex>
 
 namespace {
-using Clock = std::chrono::steady_clock;
+    using Clock = std::chrono::steady_clock;
 
-std::atomic<uint64_t> g_profileChunks{0};
-std::atomic<uint64_t> g_profileTotalUs{0};
-std::atomic<uint64_t> g_profileBlockGridUs{0};
-std::atomic<uint64_t> g_profileSolidCacheUs{0};
-std::atomic<uint64_t> g_profileAoPrepUs{0};
-std::atomic<uint64_t> g_profileMaskTransitionUs{0};
-std::atomic<uint64_t> g_profileMaskLightingUs{0};
-std::atomic<uint64_t> g_profileMaskBuildUs{0};
-std::atomic<uint64_t> g_profileGreedyEmitUs{0};
+    std::atomic<uint64_t> g_profileChunks{0};
+    std::atomic<uint64_t> g_profileTotalUs{0};
+    std::atomic<uint64_t> g_profileBlockGridUs{0};
+    std::atomic<uint64_t> g_profileSolidCacheUs{0};
+    std::atomic<uint64_t> g_profileAoPrepUs{0};
+    std::atomic<uint64_t> g_profileMaskTransitionUs{0};
+    std::atomic<uint64_t> g_profileMaskLightingUs{0};
+    std::atomic<uint64_t> g_profileMaskBuildUs{0};
+    std::atomic<uint64_t> g_profileGreedyEmitUs{0};
 
-using MatIdLut = std::array<std::array<uint8_t, 6>, size_t(BlockID::COUNT)>;
+    using MatIdLut = std::array<std::array<uint8_t, 6>, size_t(BlockID::COUNT)>;
 
-MatIdLut buildMatIdLut(const AtlasLayout &atlasLayout) {
-    MatIdLut lut{};
-    for (size_t bi = 0; bi < size_t(BlockID::COUNT); ++bi) {
-        const BlockID bid = static_cast<BlockID>(bi);
-        auto bit = blockTypes.find(bid);
-        if (bit == blockTypes.end()) {
-            continue;
-        }
-
-        const BlockType &bt = bit->second;
-        for (int face = 0; face < 6; ++face) {
-            const std::string *tileName = nullptr;
-            switch (face) {
-            case 0:
-            case 1:
-                tileName = &bt.textures.RLSide;
-                break;
-            case 4:
-            case 5:
-                tileName = &bt.textures.FBSide;
-                break;
-            case 2:
-                tileName = &bt.textures.top;
-                break;
-            case 3:
-                tileName = &bt.textures.bottom;
-                break;
-            default:
-                break;
-            }
-
-            if (tileName == nullptr || tileName->empty()) {
-                lut[bi][face] = 0;
+    MatIdLut buildMatIdLut(const AtlasLayout &atlasLayout) {
+        MatIdLut lut{};
+        for (size_t bi = 0; bi < size_t(BlockID::COUNT); ++bi) {
+            const BlockID bid = static_cast<BlockID>(bi);
+            auto bit = blockTypes.find(bid);
+            if (bit == blockTypes.end()) {
                 continue;
             }
 
-            auto tit = atlasLayout.tileMap.find(*tileName);
-            if (tit == atlasLayout.tileMap.end()) {
-                lut[bi][face] = 0;
-                continue;
-            }
+            const BlockType &bt = bit->second;
+            for (int face = 0; face < 6; ++face) {
+                const std::string *tileName = nullptr;
+                switch (face) {
+                case 0:
+                case 1:
+                    tileName = &bt.textures.RLSide;
+                    break;
+                case 4:
+                case 5:
+                    tileName = &bt.textures.FBSide;
+                    break;
+                case 2:
+                    tileName = &bt.textures.top;
+                    break;
+                case 3:
+                    tileName = &bt.textures.bottom;
+                    break;
+                default:
+                    break;
+                }
 
-            const glm::ivec2 tile = tit->second;
-            lut[bi][face] = uint8_t(tile.y * TEXTURE_ATLAS_SIZE + tile.x);
+                if (tileName == nullptr || tileName->empty()) {
+                    lut[bi][face] = 0;
+                    continue;
+                }
+
+                auto tit = atlasLayout.tileMap.find(*tileName);
+                if (tit == atlasLayout.tileMap.end()) {
+                    lut[bi][face] = 0;
+                    continue;
+                }
+
+                const glm::ivec2 tile = tit->second;
+                lut[bi][face] = uint8_t(tile.y * TEXTURE_ATLAS_SIZE + tile.x);
+            }
         }
+        return lut;
     }
-    return lut;
-}
 
-const MatIdLut &getCachedMatIdLut(const AtlasLayout &atlasLayout) {
-    static std::once_flag once;
-    static MatIdLut lut{};
-    std::call_once(once, [&]() { lut = buildMatIdLut(atlasLayout); });
-    return lut;
-}
+    const MatIdLut &getCachedMatIdLut(const AtlasLayout &atlasLayout) {
+        static std::once_flag once;
+        static MatIdLut lut{};
+        std::call_once(once, [&]() { lut = buildMatIdLut(atlasLayout); });
+        return lut;
+    }
 } // namespace
 
 inline uint32_t clampToCorner(float v) {
@@ -87,9 +87,12 @@ inline uint32_t clampToCorner(float v) {
     return iv & 0x1Fu;
 }
 
-inline VoxelVertex packVoxelVertex(const glm::vec3 &posLocal, uint8_t face, uint8_t corner,
-                                   uint8_t matId,
-                                   uint8_t ao // 0..15
+inline VoxelVertex packVoxelVertex(
+    const glm::vec3 &posLocal,
+    uint8_t face,
+    uint8_t corner,
+    uint8_t matId,
+    uint8_t ao // 0..15
 
 ) {
     uint32_t qx = uint32_t(posLocal.x) & 0x1Fu;
@@ -104,10 +107,13 @@ inline VoxelVertex packVoxelVertex(const glm::vec3 &posLocal, uint8_t face, uint
     return {low, high};
 }
 
-
-BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(const Chunk &center, const Chunk *neighbors[6],
-                                                const glm::ivec3 &chunkPos,
-                                                const AtlasLayout &atlasLayout, bool enableAO) {
+BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(
+    const Chunk &center,
+    const Chunk *neighbors[6],
+    const glm::ivec3 &chunkPos,
+    const AtlasLayout &atlasLayout,
+    bool enableAO
+) {
     const auto tTotal0 = Clock::now();
     uint64_t blockGridUs = 0;
     uint64_t solidCacheUs = 0;
@@ -123,7 +129,8 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(const Chunk &center, const Chunk
 
     if (center.isCompletelyAir()) {
         const uint64_t totalUs = uint64_t(
-            std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - tTotal0).count());
+            std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - tTotal0).count()
+        );
         g_profileChunks.fetch_add(1, std::memory_order_relaxed);
         g_profileTotalUs.fetch_add(totalUs, std::memory_order_relaxed);
         return {std::move(vertices), std::move(indices)};
@@ -140,7 +147,8 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(const Chunk &center, const Chunk
         const auto tSolid0 = Clock::now();
         lighting.buildSolidPadded(center, neighbors, solidPadded.data());
         solidCacheUs = uint64_t(
-            std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - tSolid0).count());
+            std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - tSolid0).count()
+        );
     }
 
     constexpr int gridSize = CHUNK_SIZE + 2; // coordinates in [-1 .. CHUNK_SIZE]
@@ -157,14 +165,15 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(const Chunk &center, const Chunk
         }
     }
     blockGridUs = uint64_t(
-        std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - tGrid0).count());
-
+        std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - tGrid0).count()
+    );
 
     if (enableAO) {
         const auto t0 = Clock::now();
         lighting.prepareChunkAO(center, chunkPos, neighbors, cornerAO.data(), solidPadded.data());
         aoPrepUs = uint64_t(
-            std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count());
+            std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count()
+        );
     }
 
     const MatIdLut &matIdLut = getCachedMatIdLut(atlasLayout);
@@ -173,7 +182,6 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(const Chunk &center, const Chunk
     uint16_t currentMaskGen = 1;
 
     for (int d = 0; d < 3; ++d) {
-
         const int u = (d + 1) % 3;
         const int v = (d + 2) % 3;
 
@@ -322,7 +330,6 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(const Chunk &center, const Chunk
                             c.ao[3] = cornerAO[ci3];
                         }
 
-
                         uint32_t key = 0u;
                         if (enableAO) {
                             key |= (uint32_t(c.ao[0] & 0xFu) << 0);
@@ -343,7 +350,6 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(const Chunk &center, const Chunk
             const auto tEmit0 = Clock::now();
             for (int j = 0; j < CHUNK_SIZE; ++j) {
                 for (int i = 0; i < CHUNK_SIZE;) {
-
                     GreedyCell &c = mask[j * CHUNK_SIZE + i];
                     if (c.gen != currentMaskGen) {
                         ++i;
@@ -381,9 +387,11 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(const Chunk &center, const Chunk
                     glm::vec3 vtx[4] = {
                         {ox, oy, oz},
                         {ox + dux * float(w), oy + duy * float(w), oz + duz * float(w)},
-                        {ox + dux * float(w) + dvx * float(h), oy + duy * float(w) + dvy * float(h),
+                        {ox + dux * float(w) + dvx * float(h),
+                         oy + duy * float(w) + dvy * float(h),
                          oz + duz * float(w) + dvz * float(h)},
-                        {ox + dvx * float(h), oy + dvy * float(h), oz + dvz * float(h)}};
+                        {ox + dvx * float(h), oy + dvy * float(h), oz + dvz * float(h)}
+                    };
 
                     int face = (d == 0)   ? (c.sign > 0 ? 0 : 1)
                                : (d == 1) ? (c.sign > 0 ? 2 : 3)
@@ -392,8 +400,9 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(const Chunk &center, const Chunk
                     for (int k = 0; k < 4; ++k) {
                         uint8_t uvCorner = uvRemap[face][k];
 
-                        vertices.push_back(packVoxelVertex(vtx[k], face, uvCorner, c.matId,
-                                                           enableAO ? c.ao[k] : 0));
+                        vertices.push_back(
+                            packVoxelVertex(vtx[k], face, uvCorner, c.matId, enableAO ? c.ao[k] : 0)
+                        );
                     }
 
                     if (c.sign > 0) {
@@ -436,7 +445,8 @@ BuiltChunkMesh ChunkMeshBuilder::buildChunkMesh(const Chunk &center, const Chunk
         uint64_t(std::chrono::duration_cast<std::chrono::microseconds>(greedyEmitDur).count());
 
     const uint64_t totalUs = uint64_t(
-        std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - tTotal0).count());
+        std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - tTotal0).count()
+    );
     g_profileChunks.fetch_add(1, std::memory_order_relaxed);
     g_profileTotalUs.fetch_add(totalUs, std::memory_order_relaxed);
     g_profileBlockGridUs.fetch_add(blockGridUs, std::memory_order_relaxed);

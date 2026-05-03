@@ -4,8 +4,7 @@
 
 #include "GraphicsBackend.hpp"
 #include "RenderApi.hpp"
-
-#include "RenderFrameParams.hpp"
+#include "../render/RenderScene.hpp"
 
 struct SDL_Window;
 class DebugUi;
@@ -17,16 +16,14 @@ struct RenderDeviceCapabilities {
     GraphicsBackend backendTier = GraphicsBackend::Performance;
     std::string_view backendName = "Unknown";
     bool mdiUsable = false;
-    bool supportsGL43Shaders = false;
     bool supportsBakedChunkLighting = false;
     bool supportsGiRuntimeControls = false;
     bool supportsFirstPersonViewmodel = false;
     bool compositesUiInRenderFrame = false;
-    bool requiresOpenGlStateSetup = false;
 };
 
 class IRenderDevice {
-  public:
+public:
     virtual ~IRenderDevice() = default;
 
     virtual RenderDeviceCapabilities getCapabilities() const noexcept = 0;
@@ -35,7 +32,7 @@ class IRenderDevice {
         (void)window;
         return true;
     }
-    virtual void renderFrame(RenderFrameParams &params) = 0;
+    virtual void renderFrame(RenderScene &scene) = 0;
     virtual void onWindowResized(int width, int height) {
         (void)width;
         (void)height;

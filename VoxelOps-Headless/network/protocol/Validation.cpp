@@ -4,16 +4,16 @@
 
 namespace NetValidation {
 
-std::string NormalizeIdentity(std::string identity) {
-    return Shared::NetValidation::NormalizeIdentity(identity);
-}
+    std::string NormalizeIdentity(std::string identity) {
+        return Shared::NetValidation::NormalizeIdentity(identity);
+    }
 
-bool IsValidIdentity(const std::string &identity) {
-    return Shared::NetValidation::IsValidIdentity(identity);
-}
+    bool IsValidIdentity(const std::string &identity) {
+        return Shared::NetValidation::IsValidIdentity(identity);
+    }
 
-std::string NormalizeDisplayName(std::string name) {
-    return Shared::NetValidation::NormalizeDisplayName(name);
-}
+    std::string NormalizeDisplayName(std::string name) {
+        return Shared::NetValidation::NormalizeDisplayName(name);
+    }
 
 } // namespace NetValidation

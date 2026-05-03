@@ -31,19 +31,26 @@ struct RayShootHit {
 };
 
 class RayManager {
-  public:
+public:
     RayManager();
 
     RayResult rayHasBlockIntersectBatch(std::list<Ray> &rays);
-    RayResult rayHasBlockIntersectSingle(const Ray &ray, const ChunkManager &chunkManager,
-                                         float maxDistance); // for block breaking/placing
+    RayResult rayHasBlockIntersectSingle(
+        const Ray &ray,
+        const ChunkManager &chunkManager,
+        float maxDistance
+    ); // for block breaking/placing
 
     // for shooting
-    RayShootHit rayShoot(const glm::vec3 &origin, const glm::vec3 &dir,
-                         const ChunkManager &chunkManager, const std::vector<Player *> &players,
-                         float maxDistance);
+    RayShootHit rayShoot(
+        const glm::vec3 &origin,
+        const glm::vec3 &dir,
+        const ChunkManager &chunkManager,
+        const std::vector<Player *> &players,
+        float maxDistance
+    );
 
-  private:
+private:
     // ChunkManager& chunkManager;
 
     glm::ivec3 chunkHitCoords;

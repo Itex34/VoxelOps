@@ -24,14 +24,15 @@
 #include "OpenGLMesh.hpp"
 
 class OpenGLModel {
-  public:
+public:
     std::vector<OpenGLModelTexture> textures_loaded;
     std::vector<OpenGLMesh> meshes;
     std::string directory;
 
     explicit OpenGLModel(const std::string &path);
-    void draw(const glm::vec3 &position, const glm::quat &rotation, const glm::vec3 &scale,
-              Shader &shader);
+    void draw(
+        const glm::vec3 &position, const glm::quat &rotation, const glm::vec3 &scale, Shader &shader
+    );
     [[nodiscard]] float getLocalMinY() const noexcept;
     [[nodiscard]] float getLocalHeight() const noexcept;
     [[nodiscard]] glm::vec3 getLocalSize() const noexcept;
@@ -40,12 +41,12 @@ class OpenGLModel {
     [[nodiscard]] const ModelRegionAabb &getLocalRegionAabb(ModelRegion region) const noexcept;
     [[nodiscard]] const std::vector<ModelLocalTriangle> &getLocalTriangles() const noexcept;
 
-  private:
+private:
     void loadModel(const std::string &path);
     void processNode(aiNode *node, const aiScene *scene, const aiMatrix4x4 &parentTransform);
     OpenGLMesh processMesh(aiMesh *mesh, const aiScene *scene, const aiMatrix4x4 &nodeTransform);
-    std::vector<OpenGLModelTexture> loadMaterialTextures(aiMaterial *mat, aiTextureType type,
-                                                          const aiScene *scene);
+    std::vector<OpenGLModelTexture>
+    loadMaterialTextures(aiMaterial *mat, aiTextureType type, const aiScene *scene);
     unsigned int TextureFromFile(const char *path, const std::string &directory);
     unsigned int TextureFromAssimp(const aiTexture *aiTex);
     void finalizeRegionAabbsFromVertices();

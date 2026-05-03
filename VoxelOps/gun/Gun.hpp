@@ -8,8 +8,10 @@
 #include <cstdint>
 
 class Gun {
-  public:
-    Gun(GunType inType = GunType::Pistol, float inFireInterval = 0.2f, float inReloadTime = 3.0f,
+public:
+    Gun(GunType inType = GunType::Pistol,
+        float inFireInterval = 0.2f,
+        float inReloadTime = 3.0f,
         unsigned int inMaxAmmo = 30) noexcept;
     ~Gun();
 
@@ -47,13 +49,13 @@ class Gun {
         return fireInterval;
     }
 
-  public:
+public:
     glm::vec3 gunCamOffset = glm::vec3(0.08f, -0.05f, -0.12f); // example typical values (meters)
     glm::vec3 hitPoint = glm::vec3(0.0f);
 
     static constexpr float maxShootDistance = 10000.0f;
 
-  private:
+private:
     // settings
     GunType gunType = GunType::Pistol;
     float reloadTime;   // seconds

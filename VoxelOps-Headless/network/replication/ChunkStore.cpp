@@ -12,7 +12,9 @@ static inline int64_t makeKey(glm::ivec3 p) {
            ((int64_t(p.z) & 0x1FFFFF) << 42);
 }
 
-ChunkStore::ChunkStore(std::string dir, uint64_t seed) : m_worldDir(std::move(dir)), m_seed(seed) {
+ChunkStore::ChunkStore(std::string dir, uint64_t seed)
+    : m_worldDir(std::move(dir))
+    , m_seed(seed) {
     std::filesystem::create_directories(m_worldDir);
 }
 

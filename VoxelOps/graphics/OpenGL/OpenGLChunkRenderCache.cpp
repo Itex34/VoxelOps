@@ -11,13 +11,15 @@
 #include <vector>
 
 namespace {
-constexpr double kRegionRebuildLogThresholdMs = 10.0;
-constexpr bool kEnableRegionLifecycleLogs = false;
+    constexpr double kRegionRebuildLogThresholdMs = 10.0;
+    constexpr bool kEnableRegionLifecycleLogs = false;
 } // namespace
 
 OpenGLChunkRenderCache::Region::Region(glm::ivec3 pos, size_t vertexBytes_, size_t indexBytes_)
-    : regionPos(pos), gpu(std::make_unique<RegionMeshBuffer>(vertexBytes_, indexBytes_)),
-      vertexBytes(vertexBytes_), indexBytes(indexBytes_) {}
+    : regionPos(pos)
+    , gpu(std::make_unique<RegionMeshBuffer>(vertexBytes_, indexBytes_))
+    , vertexBytes(vertexBytes_)
+    , indexBytes(indexBytes_) {}
 
 int OpenGLChunkRenderCache::floorDiv(int a, int b) {
     int q = a / b;
@@ -29,12 +31,15 @@ int OpenGLChunkRenderCache::floorDiv(int a, int b) {
 }
 
 glm::ivec3 OpenGLChunkRenderCache::chunkToRegionPos(const glm::ivec3 &chunkPos) {
-    return glm::ivec3(floorDiv(chunkPos.x, REGION_SIZE), floorDiv(chunkPos.y, REGION_SIZE),
-                      floorDiv(chunkPos.z, REGION_SIZE));
+    return glm::ivec3(
+        floorDiv(chunkPos.x, REGION_SIZE),
+        floorDiv(chunkPos.y, REGION_SIZE),
+        floorDiv(chunkPos.z, REGION_SIZE)
+    );
 }
 
-OpenGLChunkRenderCache::Region &OpenGLChunkRenderCache::getOrCreateRegion(
-    const glm::ivec3 &chunkPos) {
+OpenGLChunkRenderCache::Region &
+OpenGLChunkRenderCache::getOrCreateRegion(const glm::ivec3 &chunkPos) {
     const glm::ivec3 regionPos = chunkToRegionPos(chunkPos);
     auto it = m_regions.find(regionPos);
     if (it != m_regions.end()) {
@@ -52,7 +57,8 @@ OpenGLChunkRenderCache::Region &OpenGLChunkRenderCache::getOrCreateRegion(
 }
 
 void OpenGLChunkRenderCache::pruneMissingMeshes(
-    const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuMeshes) {
+    const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuMeshes
+) {
     for (auto regionIt = m_regions.begin(); regionIt != m_regions.end();) {
         Region &region = regionIt->second;
         for (auto chunkIt = region.chunks.begin(); chunkIt != region.chunks.end();) {
@@ -74,8 +80,10 @@ void OpenGLChunkRenderCache::pruneMissingMeshes(
 
 bool OpenGLChunkRenderCache::rebuildRegion(
     const glm::ivec3 &regionPos,
-    const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuMeshes, size_t reserveVertices,
-    size_t reserveIndices) {
+    const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuMeshes,
+    size_t reserveVertices,
+    size_t reserveIndices
+) {
     auto it = m_regions.find(regionPos);
     if (it == m_regions.end()) {
         return false;
@@ -158,8 +166,9 @@ bool OpenGLChunkRenderCache::rebuildRegion(
     return true;
 }
 
-void OpenGLChunkRenderCache::syncFromChunkManager(const ChunkManager &chunkManager) {
-    const auto &cpuMeshes = chunkManager.getCpuChunkMeshes();
+void OpenGLChunkRenderCache::syncFromCpuChunkMeshes(
+    const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuMeshes
+) {
     pruneMissingMeshes(cpuMeshes);
 
     for (const auto &[chunkPos, cpuMesh] : cpuMeshes) {
@@ -180,8 +189,9 @@ void OpenGLChunkRenderCache::syncFromChunkManager(const ChunkManager &chunkManag
         ChunkMesh mesh = region.gpu->createChunkMesh(cpuMesh.vertices, cpuMesh.indices);
         if (mesh.status == ChunkMeshStatus::OutOfMemory) {
             const glm::ivec3 regionPos = chunkToRegionPos(chunkPos);
-            const bool rebuilt =
-                rebuildRegion(regionPos, cpuMeshes, cpuMesh.vertices.size(), cpuMesh.indices.size());
+            const bool rebuilt = rebuildRegion(
+                regionPos, cpuMeshes, cpuMesh.vertices.size(), cpuMesh.indices.size()
+            );
             if (!rebuilt) {
                 std::cerr << "[OpenGLChunkRenderCache] Region rebuild failed permanently\n";
                 continue;
@@ -193,7 +203,9 @@ void OpenGLChunkRenderCache::syncFromChunkManager(const ChunkManager &chunkManag
                 std::cerr << "[OpenGLChunkRenderCache] Chunk mesh upload failed after rebuild\n";
                 continue;
             }
-            rebuiltRegion.chunks.emplace(chunkPos, RegionChunkMesh{std::move(mesh), cpuMesh.revision});
+            rebuiltRegion.chunks.emplace(
+                chunkPos, RegionChunkMesh{std::move(mesh), cpuMesh.revision}
+            );
             continue;
         }
 

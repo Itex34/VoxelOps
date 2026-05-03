@@ -12,10 +12,11 @@
 
 using namespace AppHelpers;
 
-void OpenGLGunSceneRenderer::renderRemotePlayerGuns(Runtime &runtime, const Camera &activeCamera,
-                                                    const glm::vec3 &sunDirection) {
-    if (!runtime.gunRenderer || runtime.combat.preloadedGuns.empty() ||
-        runtime.player->connectedPlayers.empty()) {
+void OpenGLGunSceneRenderer::renderRemotePlayerGuns(
+    Runtime &runtime, const Camera &activeCamera, const glm::vec3 &sunDirection
+) {
+    if (!runtime.render.gunRenderer || runtime.combat.preloadedGuns.empty() ||
+        runtime.gameplay.player->connectedPlayers.empty()) {
         return;
     }
 
@@ -35,8 +36,8 @@ void OpenGLGunSceneRenderer::renderRemotePlayerGuns(Runtime &runtime, const Came
         glm::perspective(glm::radians(GameData::FOV), aspect, 0.1f, 100000.0f);
     const glm::mat4 view = activeCamera.getViewMatrix();
 
-    for (const auto &[_, remoteState] : runtime.player->connectedPlayers) {
-        const glm::vec3 toLocal = remoteState.position - runtime.player->getPosition();
+    for (const auto &[_, remoteState] : runtime.gameplay.player->connectedPlayers) {
+        const glm::vec3 toLocal = remoteState.position - runtime.gameplay.player->getPosition();
         const float localDistSq = glm::dot(toLocal, toLocal);
         if (!std::isfinite(localDistSq) || localDistSq < localGhostRejectDistanceSq) {
             continue;
@@ -45,7 +46,7 @@ void OpenGLGunSceneRenderer::renderRemotePlayerGuns(Runtime &runtime, const Came
         const uint16_t weaponId = remoteState.weaponId;
         auto gunIt = runtime.combat.preloadedGuns.find(weaponId);
         if (gunIt == runtime.combat.preloadedGuns.end() || !gunIt->second ||
-            !runtime.gunRenderer->hasWeaponModel(weaponId)) {
+            !runtime.render.gunRenderer->hasWeaponModel(weaponId)) {
             continue;
         }
 
@@ -67,24 +68,35 @@ void OpenGLGunSceneRenderer::renderRemotePlayerGuns(Runtime &runtime, const Came
         const glm::quat yawOffset =
             glm::angleAxis(glm::radians(definition->worldEulerDeg.y), glm::vec3(0.0f, 1.0f, 0.0f));
         const glm::quat ownerYawCorrection = glm::angleAxis(
-            glm::radians(kRemoteGunOwnerYawCorrectionDeg), glm::vec3(0.0f, 1.0f, 0.0f));
+            glm::radians(kRemoteGunOwnerYawCorrectionDeg), glm::vec3(0.0f, 1.0f, 0.0f)
+        );
         const glm::quat pitchOffset =
             glm::angleAxis(glm::radians(definition->worldEulerDeg.x), glm::vec3(1.0f, 0.0f, 0.0f));
         const glm::quat rollOffset =
             glm::angleAxis(glm::radians(definition->worldEulerDeg.z), glm::vec3(0.0f, 0.0f, 1.0f));
-        const glm::quat gunRot = glm::normalize(remoteState.rotation * ownerYawCorrection *
-                                                yawOffset * pitchOffset * rollOffset);
+        const glm::quat gunRot = glm::normalize(
+            remoteState.rotation * ownerYawCorrection * yawOffset * pitchOffset * rollOffset
+        );
         const glm::vec3 gunScale = definition->worldScale * remoteState.scale;
 
-        (void)runtime.gunRenderer->renderWorldWeapon(
-            weaponId, gunPos, gunRot, gunScale, view, projection, glm::normalize(sunDirection),
-            glm::vec3(1.0f, 0.98f, 0.96f), glm::vec3(0.36f, 0.40f, 0.46f));
+        (void)runtime.render.gunRenderer->renderWorldWeapon(
+            weaponId,
+            gunPos,
+            gunRot,
+            gunScale,
+            view,
+            projection,
+            glm::normalize(sunDirection),
+            glm::vec3(1.0f, 0.98f, 0.96f),
+            glm::vec3(0.36f, 0.40f, 0.46f)
+        );
     }
 }
 
-void OpenGLGunSceneRenderer::renderHeldGun(Runtime &runtime, const Camera &activeCamera,
-                                           const glm::vec3 &sunDirection) {
-    if (!runtime.gunRenderer || !runtime.combat.equippedGun) {
+void OpenGLGunSceneRenderer::renderHeldGun(
+    Runtime &runtime, const Camera &activeCamera, const glm::vec3 &sunDirection
+) {
+    if (!runtime.render.gunRenderer || !runtime.combat.equippedGun) {
         return;
     }
 
@@ -113,18 +125,22 @@ void OpenGLGunSceneRenderer::renderHeldGun(Runtime &runtime, const Camera &activ
     right = glm::normalize(right);
     up = glm::normalize(glm::cross(right, forward));
 
-    const glm::vec3 gunPos = activeCamera.position + right * runtime.combat.equippedGunViewOffset.x +
+    const glm::vec3 gunPos = activeCamera.position +
+                             right * runtime.combat.equippedGunViewOffset.x +
                              up * runtime.combat.equippedGunViewOffset.y +
                              forward * runtime.combat.equippedGunViewOffset.z;
 
     const glm::mat4 lookBasis = glm::inverse(glm::lookAt(glm::vec3(0.0f), forward, up));
     glm::quat gunRot = glm::normalize(glm::quat_cast(glm::mat3(lookBasis)));
-    const glm::quat yawOffset = glm::angleAxis(glm::radians(runtime.combat.equippedGunViewEulerDeg.y),
-                                               glm::vec3(0.0f, 1.0f, 0.0f));
-    const glm::quat pitchOffset = glm::angleAxis(glm::radians(runtime.combat.equippedGunViewEulerDeg.x),
-                                                 glm::vec3(1.0f, 0.0f, 0.0f));
-    const glm::quat rollOffset = glm::angleAxis(glm::radians(runtime.combat.equippedGunViewEulerDeg.z),
-                                                glm::vec3(0.0f, 0.0f, 1.0f));
+    const glm::quat yawOffset = glm::angleAxis(
+        glm::radians(runtime.combat.equippedGunViewEulerDeg.y), glm::vec3(0.0f, 1.0f, 0.0f)
+    );
+    const glm::quat pitchOffset = glm::angleAxis(
+        glm::radians(runtime.combat.equippedGunViewEulerDeg.x), glm::vec3(1.0f, 0.0f, 0.0f)
+    );
+    const glm::quat rollOffset = glm::angleAxis(
+        glm::radians(runtime.combat.equippedGunViewEulerDeg.z), glm::vec3(0.0f, 0.0f, 1.0f)
+    );
     gunRot = glm::normalize(gunRot * yawOffset * pitchOffset * rollOffset);
 
     const float aspect =
@@ -133,7 +149,17 @@ void OpenGLGunSceneRenderer::renderHeldGun(Runtime &runtime, const Camera &activ
         glm::perspective(glm::radians(GameData::FOV), aspect, 0.02f, 200.0f);
     const glm::mat4 view = activeCamera.getViewMatrix();
 
-    (void)runtime.gunRenderer->renderViewWeapon(
-        heldWeaponId, gunPos, gunRot, runtime.combat.equippedGunViewScale, view, projection,
-        glm::normalize(sunDirection), glm::vec3(1.0f, 0.98f, 0.96f), glm::vec3(0.42f, 0.44f, 0.47f));
+    (void)runtime.render.gunRenderer->renderViewWeapon(
+        heldWeaponId,
+        gunPos,
+        gunRot,
+        runtime.combat.equippedGunViewScale,
+        view,
+        projection,
+        glm::normalize(sunDirection),
+        glm::vec3(1.0f, 0.98f, 0.96f),
+        glm::vec3(0.42f, 0.44f, 0.47f)
+    );
 }
+
+

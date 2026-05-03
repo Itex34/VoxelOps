@@ -3,8 +3,9 @@
 Runtime *Runtime::s_instance = nullptr;
 
 Runtime::Runtime()
-    : m_quit(false), m_pollGroup(k_HSteamNetPollGroup_Invalid),
-      m_listenSock(k_HSteamListenSocket_Invalid) {
+    : m_quit(false)
+    , m_pollGroup(k_HSteamNetPollGroup_Invalid)
+    , m_listenSock(k_HSteamListenSocket_Invalid) {
     // allow only one instance to own the static callback bridge
     s_instance = this;
 }
@@ -64,8 +65,10 @@ bool Runtime::Start(uint16_t port) {
 
     // Prepare listen socket option to install our connection-status callback
     SteamNetworkingConfigValue_t opt;
-    opt.SetPtr(k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged,
-               reinterpret_cast<void *>(Runtime::SteamNetConnectionStatusChangedCallback));
+    opt.SetPtr(
+        k_ESteamNetworkingConfig_Callback_ConnectionStatusChanged,
+        reinterpret_cast<void *>(Runtime::SteamNetConnectionStatusChangedCallback)
+    );
 
     // Create listen socket bound to the chosen port
     SteamNetworkingIPAddr addr;

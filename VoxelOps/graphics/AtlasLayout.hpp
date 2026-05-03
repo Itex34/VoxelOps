@@ -16,4 +16,3 @@ struct AtlasLayout {
 
     [[nodiscard]] uint8_t tileLayerOrDefault(const std::string &tileName) const noexcept;
 };
-

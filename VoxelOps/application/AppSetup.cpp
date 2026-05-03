@@ -1,8 +1,6 @@
-#include <glad/glad.h>
-#include <SDL3/SDL.h>
-
 #include "App.hpp"
 #include "AppHelpers.hpp"
+#include "../../Shared/runtime/Paths.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -12,32 +10,29 @@
 using namespace AppHelpers;
 
 void App::configureBackendPolicy(Runtime &runtime) {
-    const RenderDeviceCapabilities caps = runtime.renderer->getCapabilities();
+    const RenderDeviceCapabilities caps = runtime.render.renderer->getCapabilities();
 
-    runtime.supportsGL43Shaders = caps.supportsGL43Shaders;
-    runtime.chunkManager->enableAO = true;
-    runtime.chunkManager->enableShadows = false;
-    runtime.chunkManager->setMeshBakedLightingEnabled(caps.supportsBakedChunkLighting);
+    runtime.gameplay.chunkManager->enableAO = true;
+    runtime.gameplay.chunkManager->setMeshBakedLightingEnabled(caps.supportsBakedChunkLighting);
 
     std::cout << "[App] Render API: " << caps.apiName << " | Backend tier: " << caps.backendName
               << " | MDI usable: " << (caps.mdiUsable ? "yes" : "no")
-              << " | AO: " << (runtime.chunkManager->enableAO ? "on" : "off")
-              << " | Shadows: " << (runtime.chunkManager->enableShadows ? "on" : "off")
-              << " | Chunk shader profile: " << (runtime.supportsGL43Shaders ? "GL43" : "GL33")
+              << " | AO: " << (runtime.gameplay.chunkManager->enableAO ? "on" : "off")
               << "\n";
 }
 
 void App::initGameplay(Runtime &runtime) {
-    runtime.chunkManager = std::make_unique<ChunkManager>();
+    runtime.gameplay.chunkManager = std::make_unique<ChunkManager>();
     configureBackendPolicy(runtime);
 
     const std::string playerModelPath =
         Shared::RuntimePaths::ResolveModelsPath("MinecraftPlayer/Player.fbx").generic_string();
 
-    runtime.player = std::make_unique<Player>(glm::vec3(0.0f, 60.0f, 0.0f), *runtime.chunkManager,
-                                              playerModelPath);
-    runtime.interpolatedPlayerCamera = runtime.player->getCamera();
-    runtime.inputCallbacks = std::make_unique<InputCallbacks>(*runtime.player);
+    runtime.gameplay.player = std::make_unique<Player>(
+        glm::vec3(0.0f, 60.0f, 0.0f), *runtime.gameplay.chunkManager, playerModelPath
+    );
+    runtime.render.interpolatedPlayerCamera = runtime.gameplay.player->getCamera();
+    runtime.gameplay.inputCallbacks = std::make_unique<InputCallbacks>(*runtime.gameplay.player);
     runtime.combat.preloadedGuns.clear();
     runtime.combat.equippedGun = nullptr;
 }
@@ -49,9 +44,9 @@ void App::preloadGuns(Runtime &runtime) {
     for (const GunDefinition &definition : GetGunDefinitions()) {
         const uint16_t weaponId = ToWeaponId(definition.type);
         runtime.combat.preloadedGuns[weaponId] = BuildGunFromDefinition(definition);
-        if (runtime.gunRenderer) {
+        if (runtime.render.gunRenderer) {
             const std::string modelPath = ResolveGunModelPath(definition);
-            (void)runtime.gunRenderer->loadWeaponModel(weaponId, modelPath);
+            (void)runtime.render.gunRenderer->loadWeaponModel(weaponId, modelPath);
         }
         std::cout << "[gun] preloaded " << definition.displayName << " (weaponId=" << weaponId
                   << ")"
@@ -60,7 +55,7 @@ void App::preloadGuns(Runtime &runtime) {
 }
 
 bool App::equipGun(Runtime &runtime, GunType gunType) {
-    if (!runtime.gunRenderer) {
+    if (!runtime.render.gunRenderer) {
         runtime.combat.equippedGun = nullptr;
         return false;
     }
@@ -81,9 +76,9 @@ bool App::equipGun(Runtime &runtime, GunType gunType) {
         std::cerr << "[gun] preloaded entry missing for weaponId=" << weaponId
                   << ", loading on-demand.\n";
         runtime.combat.preloadedGuns[weaponId] = BuildGunFromDefinition(*definition);
-        if (runtime.gunRenderer) {
+        if (runtime.render.gunRenderer) {
             const std::string modelPath = ResolveGunModelPath(*definition);
-            (void)runtime.gunRenderer->loadWeaponModel(weaponId, modelPath);
+            (void)runtime.render.gunRenderer->loadWeaponModel(weaponId, modelPath);
         }
         it = runtime.combat.preloadedGuns.find(weaponId);
         if (it == runtime.combat.preloadedGuns.end() || !it->second) {
@@ -100,10 +95,10 @@ bool App::equipGun(Runtime &runtime, GunType gunType) {
     runtime.combat.equippedGunViewScale = definition->viewScale;
     runtime.combat.equippedGunViewEulerDeg = definition->viewEulerDeg;
 
-    if (runtime.clientNet.IsConnected() && runtime.player) {
-        const NetworkInputState &input = runtime.player->getNetworkInputState();
+    if (runtime.network.clientNet.IsConnected() && runtime.gameplay.player) {
+        const NetworkInputState &input = runtime.gameplay.player->getNetworkInputState();
         PlayerInput packet;
-        packet.inputTick = runtime.inputTickCounter++;
+        packet.inputTick = runtime.prediction.inputTickCounter++;
         packet.inputFlags = input.flags;
         packet.flyMode = input.flyMode ? 1 : 0;
         packet.weaponId = weaponId;
@@ -111,15 +106,15 @@ bool App::equipGun(Runtime &runtime, GunType gunType) {
         packet.pitch = input.pitch;
         packet.moveX = input.moveX;
         packet.moveZ = input.moveZ;
-        if (runtime.clientNet.SendPlayerInput(packet)) {
-            Runtime::PendingInputEntry entry;
+        if (runtime.network.clientNet.SendPlayerInput(packet)) {
+            RuntimePredictionState::PendingInputEntry entry;
             entry.packet = packet;
-            entry.deltaSeconds = Runtime::InputSendInterval;
-            runtime.pendingInputs.push_back(entry);
-            while (runtime.pendingInputs.size() > Runtime::MaxPendingInputs) {
-                runtime.pendingInputs.pop_front();
+            entry.deltaSeconds = RuntimePredictionState::InputSendInterval;
+            runtime.prediction.pendingInputs.push_back(entry);
+            while (runtime.prediction.pendingInputs.size() > RuntimePredictionState::MaxPendingInputs) {
+                runtime.prediction.pendingInputs.pop_front();
             }
-            runtime.lastInputSendTime = GetTimeSeconds();
+            runtime.prediction.lastInputSendTime = GetTimeSeconds();
         }
     }
 
@@ -129,53 +124,41 @@ bool App::equipGun(Runtime &runtime, GunType gunType) {
     return true;
 }
 
-void App::initCallbacks(Runtime &runtime) {
-    runtime.callbackContext = CallbackContext{.inputCallbacks = runtime.inputCallbacks.get(),
-                                              .useDebugCamera = &m_UseDebugCamera};
+void App::initCallbacks(Runtime &) {
     applyMouseInputModes();
 }
 
 void App::initRenderResources(Runtime &runtime) {
-    const RenderDeviceCapabilities caps = runtime.renderer->getCapabilities();
-    runtime.gunRenderer = CreateGunRenderer(caps.api);
-    runtime.gunSceneRenderer = CreateGunSceneRenderer(caps.api);
+    const RenderDeviceCapabilities caps = runtime.render.renderer->getCapabilities();
+    runtime.render.gunRenderer = CreateGunRenderer(caps.api);
+    runtime.render.gunSceneRenderer = CreateGunSceneRenderer(caps.api);
+    runtime.combat.preloadedGuns.clear();
+    runtime.combat.equippedGun = nullptr;
 
-    if (!caps.requiresOpenGlStateSetup) {
-        runtime.dbgShader.reset();
-        runtime.combat.preloadedGuns.clear();
-        runtime.combat.equippedGun = nullptr;
-        runtime.supportsGL43Shaders = false;
+    if (!runtime.render.gunRenderer) {
         return;
     }
 
-    const std::string debugVertPath =
-        Shared::RuntimePaths::ResolveVoxelOpsPath("shaders/debugVert.vert").generic_string();
-    const std::string debugFragPath =
-        Shared::RuntimePaths::ResolveVoxelOpsPath("shaders/debugFrag.frag").generic_string();
-    runtime.dbgShader = std::make_unique<Shader>(debugVertPath.c_str(), debugFragPath.c_str());
-    if (!runtime.gunRenderer || !runtime.gunRenderer->initialize()) {
-        runtime.gunRenderer.reset();
-    } else {
-        preloadGuns(runtime);
-        (void)equipGun(runtime, kDefaultGunType);
+    if (!runtime.render.gunRenderer->initialize()) {
+        runtime.render.gunRenderer.reset();
+        return;
     }
 
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);
-    glFrontFace(GL_CCW);
+    preloadGuns(runtime);
+    (void)equipGun(runtime, kDefaultGunType);
 }
 
 void App::initUi(Runtime &runtime) {
-    runtime.debugUi = std::make_unique<DebugUi>();
-    runtime.inventoryUi = std::make_unique<InventoryUI>();
+    runtime.ui.debugUi = std::make_unique<DebugUi>();
+    runtime.ui.inventoryUi = std::make_unique<InventoryUI>();
 
-    if (!runtime.renderer->initializeDebugUi(*runtime.debugUi, m_Window,
-                                             reinterpret_cast<void *>(m_GlContext))) {
-        const RenderDeviceCapabilities caps = runtime.renderer->getCapabilities();
+    if (!runtime.render.renderer->initializeDebugUi(
+            *runtime.ui.debugUi, m_Window, reinterpret_cast<void *>(m_GlContext)
+        )) {
+        const RenderDeviceCapabilities caps = runtime.render.renderer->getCapabilities();
         std::cerr << "[App] Failed to initialize ImGui backend for " << caps.apiName << ".\n";
-        runtime.debugUi.reset();
-        runtime.inventoryUi.reset();
+        runtime.ui.debugUi.reset();
+        runtime.ui.inventoryUi.reset();
         m_ShowDebugUi = false;
         m_ShowInventoryUi = false;
         m_ForceCursorEnabled = false;
@@ -184,8 +167,8 @@ void App::initUi(Runtime &runtime) {
         return;
     }
 
-    runtime.debugUi->setVisible(m_ShowDebugUi);
-    runtime.inventoryUi->setVisible(m_ShowInventoryUi);
+    runtime.ui.debugUi->setVisible(m_ShowDebugUi);
+    runtime.ui.inventoryUi->setVisible(m_ShowInventoryUi);
     if (m_ShowDebugUi || m_ShowInventoryUi) {
         GameData::cursorEnabled = true;
     }
@@ -194,46 +177,56 @@ void App::initUi(Runtime &runtime) {
 
 void App::initNetworking(Runtime &runtime) {
     const double now = GetTimeSeconds();
-    runtime.lastInputSendTime = now;
-    runtime.lastChunkRequestSendTime = now;
+    runtime.prediction.lastInputSendTime = now;
+    runtime.world.lastChunkRequestSendTime = now;
     runtime.combat.lastShootSendTime = now - runtime.combat.shootSendInterval;
-    runtime.connection.nextReconnectAttemptTime = now;
-    runtime.connection.reconnectBackoffSeconds = 1.0;
-    runtime.hasLastChunkRequestCenter = false;
-    runtime.connection.usernamePromptError.clear();
-    runtime.connection.pendingServerEndpointInput.fill('\0');
-    runtime.connection.pendingUsernameInput.fill('\0');
+    runtime.app.connection.nextReconnectAttemptTime = now;
+    runtime.app.connection.reconnectBackoffSeconds = 1.0;
+    runtime.world.hasLastChunkRequestCenter = false;
+    runtime.app.connection.usernamePromptError.clear();
+    runtime.app.connection.pendingServerEndpointInput.fill('\0');
+    runtime.app.connection.pendingUsernameInput.fill('\0');
     {
         const std::string endpoint = m_ServerIp + ":" + std::to_string(m_ServerPort);
         const size_t copyLen =
-            std::min(endpoint.size(), runtime.connection.pendingServerEndpointInput.size() - 1);
-        std::memcpy(runtime.connection.pendingServerEndpointInput.data(), endpoint.data(), copyLen);
-        runtime.connection.pendingServerEndpointInput[copyLen] = '\0';
+            std::min(endpoint.size(), runtime.app.connection.pendingServerEndpointInput.size() - 1);
+        std::memcpy(runtime.app.connection.pendingServerEndpointInput.data(), endpoint.data(), copyLen);
+        runtime.app.connection.pendingServerEndpointInput[copyLen] = '\0';
     }
     if (!m_RequestedUsername.empty()) {
-        const size_t copyLen =
-            std::min(m_RequestedUsername.size(), runtime.connection.pendingUsernameInput.size() - 1);
-        std::memcpy(runtime.connection.pendingUsernameInput.data(), m_RequestedUsername.data(), copyLen);
-        runtime.connection.pendingUsernameInput[copyLen] = '\0';
+        const size_t copyLen = std::min(
+            m_RequestedUsername.size(), runtime.app.connection.pendingUsernameInput.size() - 1
+        );
+        std::memcpy(
+            runtime.app.connection.pendingUsernameInput.data(), m_RequestedUsername.data(), copyLen
+        );
+        runtime.app.connection.pendingUsernameInput[copyLen] = '\0';
     }
 
-    if (!runtime.clientNet.Start()) {
+    if (!runtime.network.clientNet.Start()) {
         std::cerr << "Failed to start networking\n";
-        runtime.connection.lastConnectionStatus = runtime.clientNet.GetConnectionStatusText();
+        runtime.app.connection.lastConnectionStatus = runtime.network.clientNet.GetConnectionStatusText();
         return;
     }
 
-    runtime.connection.lastConnectionStatus = runtime.clientNet.GetConnectionStatusText();
+    runtime.app.connection.lastConnectionStatus = runtime.network.clientNet.GetConnectionStatusText();
 }
 
 bool App::beginConnectionAttempt(Runtime &runtime) {
-    if (!runtime.clientNet.ConnectTo(m_ServerIp, m_ServerPort)) {
+    if (!runtime.network.clientNet.ConnectTo(m_ServerIp, m_ServerPort)) {
         std::cerr << "ConnectTo(" << m_ServerIp << ":" << m_ServerPort << ") failed\n";
         return false;
     }
-    if (!runtime.clientNet.SendConnectRequest(m_RequestedUsername)) {
+    if (!runtime.network.clientNet.SendConnectRequest(m_RequestedUsername)) {
         std::cerr << "Failed to send connect request\n";
         return false;
     }
     return true;
 }
+
+
+
+
+
+
+

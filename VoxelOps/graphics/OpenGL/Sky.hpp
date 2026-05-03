@@ -8,7 +8,7 @@
 class Shader;
 
 class Sky {
-  public:
+public:
     Sky();
     ~Sky();
 
@@ -24,7 +24,7 @@ class Sky {
     void setExposure(float exposure) noexcept;
     float getExposure() const noexcept;
 
-  private:
+private:
     std::unique_ptr<Shader> m_Shader;
     glm::vec3 m_SunDir = glm::normalize(glm::vec3(1.0f, 0.01f, 0.0f));
     float m_Exposure = 4.2f;

@@ -14,7 +14,7 @@ struct BlockPatch {
 struct PlaceResult {
 
     std::array<uint8_t, 6> chunkNormalsToCenterBlock;
-    glm::vec3()
+    glm::vec3 position;
 };
 
 } // namespace BlockPlace

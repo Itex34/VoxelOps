@@ -3,37 +3,40 @@
 #include <algorithm>
 
 namespace {
-constexpr float kOccupancyEpsilon = 0.001f;
+    constexpr float kOccupancyEpsilon = 0.001f;
 
-template <typename ChunkCoordT>
-std::vector<ChunkCoordT>
-BuildCorrectiveChunks(const std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> &chunks) {
-    std::vector<ChunkCoordT> corrective;
-    corrective.reserve(chunks.size());
-    for (const glm::ivec3 &chunkPos : chunks) {
-        corrective.push_back(ChunkCoordT{chunkPos.x, chunkPos.y, chunkPos.z});
+    template <typename ChunkCoordT>
+    std::vector<ChunkCoordT>
+    BuildCorrectiveChunks(const std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> &chunks) {
+        std::vector<ChunkCoordT> corrective;
+        corrective.reserve(chunks.size());
+        for (const glm::ivec3 &chunkPos : chunks) {
+            corrective.push_back(ChunkCoordT{chunkPos.x, chunkPos.y, chunkPos.z});
+        }
+        return corrective;
     }
-    return corrective;
-}
 
-template <typename ResultT, typename RejectReasonT, typename ChunkCoordT>
-ResultT MakeRejectedEditResult(
-    uint32_t requestId, RejectReasonT reason,
-    const std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> &touchedChunks,
-    bool includeCorrectiveChunks) {
-    ResultT result{};
-    result.requestId = requestId;
-    result.accepted = 0;
-    result.rejectReason = reason;
-    if (includeCorrectiveChunks) {
-        result.correctiveChunks = BuildCorrectiveChunks<ChunkCoordT>(touchedChunks);
+    template <typename ResultT, typename RejectReasonT, typename ChunkCoordT>
+    ResultT MakeRejectedEditResult(
+        uint32_t requestId,
+        RejectReasonT reason,
+        const std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> &touchedChunks,
+        bool includeCorrectiveChunks
+    ) {
+        ResultT result{};
+        result.requestId = requestId;
+        result.accepted = 0;
+        result.rejectReason = reason;
+        if (includeCorrectiveChunks) {
+            result.correctiveChunks = BuildCorrectiveChunks<ChunkCoordT>(touchedChunks);
+        }
+        return result;
     }
-    return result;
-}
 } // namespace
 
-bool Runtime::IsAnyAlivePlayerOccupyingBlock(const std::vector<ServerPlayer> &players,
-                                                   const glm::ivec3 &worldPos) const {
+bool Runtime::IsAnyAlivePlayerOccupyingBlock(
+    const std::vector<ServerPlayer> &players, const glm::ivec3 &worldPos
+) const {
     for (const ServerPlayer &player : players) {
         if (!player.isAlive) {
             continue;
@@ -63,7 +66,8 @@ bool Runtime::IsAnyAlivePlayerOccupyingBlock(const std::vector<ServerPlayer> &pl
 
 bool Runtime::ApplyBlockEditsAndBuildDeltas(
     const std::unordered_map<glm::ivec3, BlockID, IVec3Hash, IVec3Eq> &normalizedEdits,
-    std::vector<ChunkDelta> &outboundDeltas) {
+    std::vector<ChunkDelta> &outboundDeltas
+) {
     struct ChunkDeltaAggregate {
         std::vector<ChunkDeltaOp> edits;
         uint64_t resultingVersion = 0;
@@ -82,8 +86,13 @@ bool Runtime::ApplyBlockEditsAndBuildDeltas(
         const glm::ivec3 localPos = m_chunkManager.worldToLocalPos(worldPos);
         ChunkDeltaAggregate &aggregate = perChunkEdits[chunkPos];
         aggregate.edits.push_back(
-            ChunkDeltaOp{static_cast<uint8_t>(localPos.x), static_cast<uint8_t>(localPos.y),
-                         static_cast<uint8_t>(localPos.z), static_cast<uint8_t>(newId)});
+            ChunkDeltaOp{
+                static_cast<uint8_t>(localPos.x),
+                static_cast<uint8_t>(localPos.y),
+                static_cast<uint8_t>(localPos.z),
+                static_cast<uint8_t>(newId)
+            }
+        );
     }
 
     outboundDeltas.clear();
@@ -131,14 +140,18 @@ void Runtime::BroadcastChunkDeltas(const std::vector<ChunkDelta> &outboundDeltas
         const std::vector<uint8_t> bytes = delta.serialize();
         for (HSteamNetConnection conn : recipients) {
             (void)SteamNetworkingSockets()->SendMessageToConnection(
-                conn, bytes.data(), static_cast<uint32_t>(bytes.size()),
-                k_nSteamNetworkingSend_Reliable, nullptr);
+                conn,
+                bytes.data(),
+                static_cast<uint32_t>(bytes.size()),
+                k_nSteamNetworkingSend_Reliable,
+                nullptr
+            );
         }
     }
 }
 
-BlockPlaceResult Runtime::ExecuteBlockPlaceRequest(PlayerID requesterId,
-                                                         const BlockPlaceRequest &request) {
+BlockPlaceResult
+Runtime::ExecuteBlockPlaceRequest(PlayerID requesterId, const BlockPlaceRequest &request) {
     (void)requesterId;
 
     std::unordered_map<glm::ivec3, BlockID, IVec3Hash, IVec3Eq> normalizedEdits;
@@ -148,17 +161,23 @@ BlockPlaceResult Runtime::ExecuteBlockPlaceRequest(PlayerID requesterId,
     for (const BlockPlaceEdit &edit : request.edits) {
         if (edit.blockId == static_cast<uint8_t>(BlockID::Air) ||
             edit.blockId >= static_cast<uint8_t>(BlockID::COUNT)) {
-            return MakeRejectedEditResult<BlockPlaceResult, BlockPlaceRejectReason,
-                                          BlockPlaceChunkCoord>(
-                request.requestId, BlockPlaceRejectReason::InvalidPacket, touchedChunks, true);
+            return MakeRejectedEditResult<
+                BlockPlaceResult,
+                BlockPlaceRejectReason,
+                BlockPlaceChunkCoord>(
+                request.requestId, BlockPlaceRejectReason::InvalidPacket, touchedChunks, true
+            );
         }
 
         const glm::ivec3 worldPos(edit.worldX, edit.worldY, edit.worldZ);
         const glm::ivec3 chunkPos = m_chunkManager.worldToChunkPos(worldPos);
         if (!m_chunkManager.inBounds(chunkPos)) {
-            return MakeRejectedEditResult<BlockPlaceResult, BlockPlaceRejectReason,
-                                          BlockPlaceChunkCoord>(
-                request.requestId, BlockPlaceRejectReason::OutOfBounds, touchedChunks, true);
+            return MakeRejectedEditResult<
+                BlockPlaceResult,
+                BlockPlaceRejectReason,
+                BlockPlaceChunkCoord>(
+                request.requestId, BlockPlaceRejectReason::OutOfBounds, touchedChunks, true
+            );
         }
 
         normalizedEdits[worldPos] = static_cast<BlockID>(edit.blockId);
@@ -166,26 +185,35 @@ BlockPlaceResult Runtime::ExecuteBlockPlaceRequest(PlayerID requesterId,
     }
 
     if (normalizedEdits.empty()) {
-        return MakeRejectedEditResult<BlockPlaceResult, BlockPlaceRejectReason,
-                                      BlockPlaceChunkCoord>(
-            request.requestId, BlockPlaceRejectReason::InvalidPacket, touchedChunks, false);
+        return MakeRejectedEditResult<
+            BlockPlaceResult,
+            BlockPlaceRejectReason,
+            BlockPlaceChunkCoord>(
+            request.requestId, BlockPlaceRejectReason::InvalidPacket, touchedChunks, false
+        );
     }
 
     const std::vector<ServerPlayer> players = m_playerManager.getAllPlayersCopy();
     for (const auto &[worldPos, newId] : normalizedEdits) {
         (void)newId;
         if (IsAnyAlivePlayerOccupyingBlock(players, worldPos)) {
-            return MakeRejectedEditResult<BlockPlaceResult, BlockPlaceRejectReason,
-                                          BlockPlaceChunkCoord>(
-                request.requestId, BlockPlaceRejectReason::PlayerOccupied, touchedChunks, true);
+            return MakeRejectedEditResult<
+                BlockPlaceResult,
+                BlockPlaceRejectReason,
+                BlockPlaceChunkCoord>(
+                request.requestId, BlockPlaceRejectReason::PlayerOccupied, touchedChunks, true
+            );
         }
     }
 
     std::vector<ChunkDelta> outboundDeltas;
     if (!ApplyBlockEditsAndBuildDeltas(normalizedEdits, outboundDeltas)) {
-        return MakeRejectedEditResult<BlockPlaceResult, BlockPlaceRejectReason,
-                                      BlockPlaceChunkCoord>(
-            request.requestId, BlockPlaceRejectReason::ServerError, touchedChunks, true);
+        return MakeRejectedEditResult<
+            BlockPlaceResult,
+            BlockPlaceRejectReason,
+            BlockPlaceChunkCoord>(
+            request.requestId, BlockPlaceRejectReason::ServerError, touchedChunks, true
+        );
     }
 
     BroadcastChunkDeltas(outboundDeltas);
@@ -197,8 +225,8 @@ BlockPlaceResult Runtime::ExecuteBlockPlaceRequest(PlayerID requesterId,
     return result;
 }
 
-BlockBreakResult Runtime::ExecuteBlockBreakRequest(PlayerID requesterId,
-                                                         const BlockBreakRequest &request) {
+BlockBreakResult
+Runtime::ExecuteBlockBreakRequest(PlayerID requesterId, const BlockBreakRequest &request) {
     (void)requesterId;
 
     std::unordered_map<glm::ivec3, BlockID, IVec3Hash, IVec3Eq> normalizedEdits;
@@ -209,9 +237,12 @@ BlockBreakResult Runtime::ExecuteBlockBreakRequest(PlayerID requesterId,
         const glm::ivec3 worldPos(edit.worldX, edit.worldY, edit.worldZ);
         const glm::ivec3 chunkPos = m_chunkManager.worldToChunkPos(worldPos);
         if (!m_chunkManager.inBounds(chunkPos)) {
-            return MakeRejectedEditResult<BlockBreakResult, BlockBreakRejectReason,
-                                          BlockBreakChunkCoord>(
-                request.requestId, BlockBreakRejectReason::OutOfBounds, touchedChunks, true);
+            return MakeRejectedEditResult<
+                BlockBreakResult,
+                BlockBreakRejectReason,
+                BlockBreakChunkCoord>(
+                request.requestId, BlockBreakRejectReason::OutOfBounds, touchedChunks, true
+            );
         }
 
         normalizedEdits[worldPos] = BlockID::Air;
@@ -219,26 +250,35 @@ BlockBreakResult Runtime::ExecuteBlockBreakRequest(PlayerID requesterId,
     }
 
     if (normalizedEdits.empty()) {
-        return MakeRejectedEditResult<BlockBreakResult, BlockBreakRejectReason,
-                                      BlockBreakChunkCoord>(
-            request.requestId, BlockBreakRejectReason::InvalidPacket, touchedChunks, false);
+        return MakeRejectedEditResult<
+            BlockBreakResult,
+            BlockBreakRejectReason,
+            BlockBreakChunkCoord>(
+            request.requestId, BlockBreakRejectReason::InvalidPacket, touchedChunks, false
+        );
     }
 
     const std::vector<ServerPlayer> players = m_playerManager.getAllPlayersCopy();
     for (const auto &[worldPos, newId] : normalizedEdits) {
         (void)newId;
         if (IsAnyAlivePlayerOccupyingBlock(players, worldPos)) {
-            return MakeRejectedEditResult<BlockBreakResult, BlockBreakRejectReason,
-                                          BlockBreakChunkCoord>(
-                request.requestId, BlockBreakRejectReason::PlayerOccupied, touchedChunks, true);
+            return MakeRejectedEditResult<
+                BlockBreakResult,
+                BlockBreakRejectReason,
+                BlockBreakChunkCoord>(
+                request.requestId, BlockBreakRejectReason::PlayerOccupied, touchedChunks, true
+            );
         }
     }
 
     std::vector<ChunkDelta> outboundDeltas;
     if (!ApplyBlockEditsAndBuildDeltas(normalizedEdits, outboundDeltas)) {
-        return MakeRejectedEditResult<BlockBreakResult, BlockBreakRejectReason,
-                                      BlockBreakChunkCoord>(
-            request.requestId, BlockBreakRejectReason::ServerError, touchedChunks, true);
+        return MakeRejectedEditResult<
+            BlockBreakResult,
+            BlockBreakRejectReason,
+            BlockBreakChunkCoord>(
+            request.requestId, BlockBreakRejectReason::ServerError, touchedChunks, true
+        );
     }
 
     BroadcastChunkDeltas(outboundDeltas);

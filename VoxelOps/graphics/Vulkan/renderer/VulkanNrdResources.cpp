@@ -4,7 +4,6 @@
 #include "NrdBootstrap.hpp"
 #include "../graphics/Model.hpp"
 
-
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -29,119 +28,119 @@
 
 namespace {
 #if VOXELOPS_NRD_HEADERS
-vk::raii::ShaderModule loadShaderModuleFromBytes(const vk::raii::Device &device, const void *bytes,
-                                                 size_t size) {
-    if (bytes == nullptr || size == 0 || (size % 4) != 0) {
-        throw std::runtime_error("Invalid NRD shader module bytecode.");
+    vk::raii::ShaderModule
+    loadShaderModuleFromBytes(const vk::raii::Device &device, const void *bytes, size_t size) {
+        if (bytes == nullptr || size == 0 || (size % 4) != 0) {
+            throw std::runtime_error("Invalid NRD shader module bytecode.");
+        }
+
+        vk::ShaderModuleCreateInfo shaderModuleInfo{};
+        shaderModuleInfo.codeSize = size;
+        shaderModuleInfo.pCode = reinterpret_cast<const uint32_t *>(bytes);
+        return vk::raii::ShaderModule(device, shaderModuleInfo);
     }
 
-    vk::ShaderModuleCreateInfo shaderModuleInfo{};
-    shaderModuleInfo.codeSize = size;
-    shaderModuleInfo.pCode = reinterpret_cast<const uint32_t *>(bytes);
-    return vk::raii::ShaderModule(device, shaderModuleInfo);
-}
+    vk::Format mapNrdFormatToVk(nrd::Format format) {
+        switch (format) {
+        case nrd::Format::R8_UNORM:
+            return vk::Format::eR8Unorm;
+        case nrd::Format::R8_SNORM:
+            return vk::Format::eR8Snorm;
+        case nrd::Format::R8_UINT:
+            return vk::Format::eR8Uint;
+        case nrd::Format::R8_SINT:
+            return vk::Format::eR8Sint;
+        case nrd::Format::RG8_UNORM:
+            return vk::Format::eR8G8Unorm;
+        case nrd::Format::RG8_SNORM:
+            return vk::Format::eR8G8Snorm;
+        case nrd::Format::RG8_UINT:
+            return vk::Format::eR8G8Uint;
+        case nrd::Format::RG8_SINT:
+            return vk::Format::eR8G8Sint;
+        case nrd::Format::RGBA8_UNORM:
+            return vk::Format::eR8G8B8A8Unorm;
+        case nrd::Format::RGBA8_SNORM:
+            return vk::Format::eR8G8B8A8Snorm;
+        case nrd::Format::RGBA8_UINT:
+            return vk::Format::eR8G8B8A8Uint;
+        case nrd::Format::RGBA8_SINT:
+            return vk::Format::eR8G8B8A8Sint;
+        case nrd::Format::RGBA8_SRGB:
+            return vk::Format::eR8G8B8A8Srgb;
+        case nrd::Format::R16_UNORM:
+            return vk::Format::eR16Unorm;
+        case nrd::Format::R16_SNORM:
+            return vk::Format::eR16Snorm;
+        case nrd::Format::R16_UINT:
+            return vk::Format::eR16Uint;
+        case nrd::Format::R16_SINT:
+            return vk::Format::eR16Sint;
+        case nrd::Format::R16_SFLOAT:
+            return vk::Format::eR16Sfloat;
+        case nrd::Format::RG16_UNORM:
+            return vk::Format::eR16G16Unorm;
+        case nrd::Format::RG16_SNORM:
+            return vk::Format::eR16G16Snorm;
+        case nrd::Format::RG16_UINT:
+            return vk::Format::eR16G16Uint;
+        case nrd::Format::RG16_SINT:
+            return vk::Format::eR16G16Sint;
+        case nrd::Format::RG16_SFLOAT:
+            return vk::Format::eR16G16Sfloat;
+        case nrd::Format::RGBA16_UNORM:
+            return vk::Format::eR16G16B16A16Unorm;
+        case nrd::Format::RGBA16_SNORM:
+            return vk::Format::eR16G16B16A16Snorm;
+        case nrd::Format::RGBA16_UINT:
+            return vk::Format::eR16G16B16A16Uint;
+        case nrd::Format::RGBA16_SINT:
+            return vk::Format::eR16G16B16A16Sint;
+        case nrd::Format::RGBA16_SFLOAT:
+            return vk::Format::eR16G16B16A16Sfloat;
+        case nrd::Format::R32_UINT:
+            return vk::Format::eR32Uint;
+        case nrd::Format::R32_SINT:
+            return vk::Format::eR32Sint;
+        case nrd::Format::R32_SFLOAT:
+            return vk::Format::eR32Sfloat;
+        case nrd::Format::RG32_UINT:
+            return vk::Format::eR32G32Uint;
+        case nrd::Format::RG32_SINT:
+            return vk::Format::eR32G32Sint;
+        case nrd::Format::RG32_SFLOAT:
+            return vk::Format::eR32G32Sfloat;
+        case nrd::Format::RGB32_UINT:
+            return vk::Format::eR32G32B32Uint;
+        case nrd::Format::RGB32_SINT:
+            return vk::Format::eR32G32B32Sint;
+        case nrd::Format::RGB32_SFLOAT:
+            return vk::Format::eR32G32B32Sfloat;
+        case nrd::Format::RGBA32_UINT:
+            return vk::Format::eR32G32B32A32Uint;
+        case nrd::Format::RGBA32_SINT:
+            return vk::Format::eR32G32B32A32Sint;
+        case nrd::Format::RGBA32_SFLOAT:
+            return vk::Format::eR32G32B32A32Sfloat;
+        case nrd::Format::R10_G10_B10_A2_UNORM:
+            return vk::Format::eA2B10G10R10UnormPack32;
+        case nrd::Format::R10_G10_B10_A2_UINT:
+            return vk::Format::eA2B10G10R10UintPack32;
+        case nrd::Format::R11_G11_B10_UFLOAT:
+            return vk::Format::eB10G11R11UfloatPack32;
+        case nrd::Format::R9_G9_B9_E5_UFLOAT:
+            return vk::Format::eE5B9G9R9UfloatPack32;
+        default:
+            break;
+        }
+        return vk::Format::eUndefined;
+    } // namespace
 
-vk::Format mapNrdFormatToVk(nrd::Format format) {
-    switch (format) {
-    case nrd::Format::R8_UNORM:
-        return vk::Format::eR8Unorm;
-    case nrd::Format::R8_SNORM:
-        return vk::Format::eR8Snorm;
-    case nrd::Format::R8_UINT:
-        return vk::Format::eR8Uint;
-    case nrd::Format::R8_SINT:
-        return vk::Format::eR8Sint;
-    case nrd::Format::RG8_UNORM:
-        return vk::Format::eR8G8Unorm;
-    case nrd::Format::RG8_SNORM:
-        return vk::Format::eR8G8Snorm;
-    case nrd::Format::RG8_UINT:
-        return vk::Format::eR8G8Uint;
-    case nrd::Format::RG8_SINT:
-        return vk::Format::eR8G8Sint;
-    case nrd::Format::RGBA8_UNORM:
-        return vk::Format::eR8G8B8A8Unorm;
-    case nrd::Format::RGBA8_SNORM:
-        return vk::Format::eR8G8B8A8Snorm;
-    case nrd::Format::RGBA8_UINT:
-        return vk::Format::eR8G8B8A8Uint;
-    case nrd::Format::RGBA8_SINT:
-        return vk::Format::eR8G8B8A8Sint;
-    case nrd::Format::RGBA8_SRGB:
-        return vk::Format::eR8G8B8A8Srgb;
-    case nrd::Format::R16_UNORM:
-        return vk::Format::eR16Unorm;
-    case nrd::Format::R16_SNORM:
-        return vk::Format::eR16Snorm;
-    case nrd::Format::R16_UINT:
-        return vk::Format::eR16Uint;
-    case nrd::Format::R16_SINT:
-        return vk::Format::eR16Sint;
-    case nrd::Format::R16_SFLOAT:
-        return vk::Format::eR16Sfloat;
-    case nrd::Format::RG16_UNORM:
-        return vk::Format::eR16G16Unorm;
-    case nrd::Format::RG16_SNORM:
-        return vk::Format::eR16G16Snorm;
-    case nrd::Format::RG16_UINT:
-        return vk::Format::eR16G16Uint;
-    case nrd::Format::RG16_SINT:
-        return vk::Format::eR16G16Sint;
-    case nrd::Format::RG16_SFLOAT:
-        return vk::Format::eR16G16Sfloat;
-    case nrd::Format::RGBA16_UNORM:
-        return vk::Format::eR16G16B16A16Unorm;
-    case nrd::Format::RGBA16_SNORM:
-        return vk::Format::eR16G16B16A16Snorm;
-    case nrd::Format::RGBA16_UINT:
-        return vk::Format::eR16G16B16A16Uint;
-    case nrd::Format::RGBA16_SINT:
-        return vk::Format::eR16G16B16A16Sint;
-    case nrd::Format::RGBA16_SFLOAT:
-        return vk::Format::eR16G16B16A16Sfloat;
-    case nrd::Format::R32_UINT:
-        return vk::Format::eR32Uint;
-    case nrd::Format::R32_SINT:
-        return vk::Format::eR32Sint;
-    case nrd::Format::R32_SFLOAT:
-        return vk::Format::eR32Sfloat;
-    case nrd::Format::RG32_UINT:
-        return vk::Format::eR32G32Uint;
-    case nrd::Format::RG32_SINT:
-        return vk::Format::eR32G32Sint;
-    case nrd::Format::RG32_SFLOAT:
-        return vk::Format::eR32G32Sfloat;
-    case nrd::Format::RGB32_UINT:
-        return vk::Format::eR32G32B32Uint;
-    case nrd::Format::RGB32_SINT:
-        return vk::Format::eR32G32B32Sint;
-    case nrd::Format::RGB32_SFLOAT:
-        return vk::Format::eR32G32B32Sfloat;
-    case nrd::Format::RGBA32_UINT:
-        return vk::Format::eR32G32B32A32Uint;
-    case nrd::Format::RGBA32_SINT:
-        return vk::Format::eR32G32B32A32Sint;
-    case nrd::Format::RGBA32_SFLOAT:
-        return vk::Format::eR32G32B32A32Sfloat;
-    case nrd::Format::R10_G10_B10_A2_UNORM:
-        return vk::Format::eA2B10G10R10UnormPack32;
-    case nrd::Format::R10_G10_B10_A2_UINT:
-        return vk::Format::eA2B10G10R10UintPack32;
-    case nrd::Format::R11_G11_B10_UFLOAT:
-        return vk::Format::eB10G11R11UfloatPack32;
-    case nrd::Format::R9_G9_B9_E5_UFLOAT:
-        return vk::Format::eE5B9G9R9UfloatPack32;
-    default:
-        break;
+    uint32_t divideUp(uint32_t x, uint16_t y) {
+        return (x + static_cast<uint32_t>(y) - 1u) / static_cast<uint32_t>(y);
     }
-    return vk::Format::eUndefined;
-} //namespace
-
-uint32_t divideUp(uint32_t x, uint16_t y) {
-    return (x + static_cast<uint32_t>(y) - 1u) / static_cast<uint32_t>(y);
-}
 #endif
-}
+} // namespace
 
 void VulkanRenderer::createNrdSignalResources() {
     cleanupNrdSignalResources();
@@ -192,16 +191,20 @@ void VulkanRenderer::createNrdSignalResources() {
 
     const auto supportsStorage = [&](vk::Format format) -> bool {
         const vk::FormatProperties props = physicalDevice.getFormatProperties(format);
-        return static_cast<bool>(props.optimalTilingFeatures &
-                                 vk::FormatFeatureFlagBits::eStorageImage);
+        return static_cast<bool>(
+            props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eStorageImage
+        );
     };
     if (!supportsStorage(kDiffFormat) || !supportsStorage(kNormalRoughnessFormat) ||
         !supportsStorage(kMotionFormat) || !supportsStorage(kViewZFormat)) {
         throw std::runtime_error(
-            "NRD signal formats are not supported as storage images by this Vulkan device.");
+            "NRD signal formats are not supported as storage images by this Vulkan device."
+        );
     }
 
-    const auto createSignal = [&](RestirDiReservoirResources &dst, vk::Format format, uint32_t w,
+    const auto createSignal = [&](RestirDiReservoirResources &dst,
+                                  vk::Format format,
+                                  uint32_t w,
                                   uint32_t h) {
         vk::ImageCreateInfo imageInfo{};
         imageInfo.imageType = vk::ImageType::e2D;
@@ -220,7 +223,8 @@ void VulkanRenderer::createNrdSignalResources() {
         vk::MemoryAllocateInfo allocInfo{};
         allocInfo.allocationSize = requirements.size;
         allocInfo.memoryTypeIndex = VulkanUtils::findMemoryType(
-            physicalDevice, requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
+            physicalDevice, requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal
+        );
         dst.memory = vk::raii::DeviceMemory(device, allocInfo);
         dst.image.bindMemory(*dst.memory, 0);
 
@@ -265,11 +269,15 @@ void VulkanRenderer::createNrdSignalResources() {
         toGeneral.dstAccessMask = vk::AccessFlagBits::eShaderRead |
                                   vk::AccessFlagBits::eShaderWrite |
                                   vk::AccessFlagBits::eTransferWrite;
-        commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                                      vk::PipelineStageFlagBits::eTransfer |
-                                          vk::PipelineStageFlagBits::eFragmentShader |
-                                          vk::PipelineStageFlagBits::eComputeShader,
-                                      {}, {}, {}, toGeneral);
+        commandBuffer.pipelineBarrier(
+            vk::PipelineStageFlagBits::eTopOfPipe,
+            vk::PipelineStageFlagBits::eTransfer | vk::PipelineStageFlagBits::eFragmentShader |
+                vk::PipelineStageFlagBits::eComputeShader,
+            {},
+            {},
+            {},
+            toGeneral
+        );
         commandBuffer.clearColorImage(image, vk::ImageLayout::eGeneral, clearValue, range);
     };
 
@@ -287,8 +295,9 @@ void VulkanRenderer::createNrdSignalResources() {
     transitionAndClear(*resources.viewZIn.image, clearViewZ);
     transitionAndClear(*resources.diffOut.image, clearZero);
 
-    VulkanUtils::endSingleTimeCommands(device, m_context.getGraphicsQueue(),
-                                       std::move(commandBuffer));
+    VulkanUtils::endSingleTimeCommands(
+        device, m_context.getGraphicsQueue(), std::move(commandBuffer)
+    );
 }
 
 void VulkanRenderer::cleanupNrdSignalResources() {
@@ -317,12 +326,6 @@ void VulkanRenderer::cleanupNrdSignalResources() {
     m_nrdPrevProjection = glm::mat4(1.0f);
     m_nrdPrevMatricesValid = false;
 }
-
-
-
-
-
-
 
 #if VOXELOPS_NRD_HEADERS
 bool VulkanRenderer::createNrdRuntimeResources() {
@@ -382,8 +385,10 @@ bool VulkanRenderer::createNrdRuntimeResources() {
 
         {
             std::vector<vk::DescriptorSetLayoutBinding> bindings;
-            bindings.reserve(static_cast<size_t>(m_nrdTextureCapacity) +
-                             static_cast<size_t>(m_nrdStorageCapacity));
+            bindings.reserve(
+                static_cast<size_t>(m_nrdTextureCapacity) +
+                static_cast<size_t>(m_nrdStorageCapacity)
+            );
 
             const auto pushBinding = [&](uint32_t binding, vk::DescriptorType type) {
                 for (const vk::DescriptorSetLayoutBinding &existing : bindings) {
@@ -392,7 +397,8 @@ bool VulkanRenderer::createNrdRuntimeResources() {
                     }
                     if (existing.descriptorType != type) {
                         throw std::runtime_error(
-                            "NRD descriptor binding collision in resources set layout.");
+                            "NRD descriptor binding collision in resources set layout."
+                        );
                     }
                     return;
                 }
@@ -411,8 +417,9 @@ bool VulkanRenderer::createNrdRuntimeResources() {
             for (uint32_t i = 0; i < m_nrdStorageCapacity; ++i) {
                 pushBinding(m_nrdStorageBinding + i, vk::DescriptorType::eStorageImage);
             }
-            std::sort(bindings.begin(), bindings.end(),
-                      [](const auto &a, const auto &b) { return a.binding < b.binding; });
+            std::sort(bindings.begin(), bindings.end(), [](const auto &a, const auto &b) {
+                return a.binding < b.binding;
+            });
 
             vk::DescriptorSetLayoutCreateInfo layoutInfo{};
             layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
@@ -513,8 +520,10 @@ bool VulkanRenderer::createNrdRuntimeResources() {
             }
 
             vk::raii::ShaderModule computeShader = loadShaderModuleFromBytes(
-                device, pipelineDesc.computeShaderSPIRV.bytecode,
-                static_cast<size_t>(pipelineDesc.computeShaderSPIRV.size));
+                device,
+                pipelineDesc.computeShaderSPIRV.bytecode,
+                static_cast<size_t>(pipelineDesc.computeShaderSPIRV.size)
+            );
             vk::PipelineShaderStageCreateInfo stageInfo{};
             stageInfo.stage = vk::ShaderStageFlagBits::eCompute;
             stageInfo.module = *computeShader;
@@ -537,13 +546,15 @@ bool VulkanRenderer::createNrdRuntimeResources() {
             const vk::FormatProperties props = physicalDevice.getFormatProperties(format);
             if ((props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImage) ==
                 vk::FormatFeatureFlags()) {
-                throw std::runtime_error("NRD sampled format " + formatId +
-                                         " is not supported by this Vulkan device.");
+                throw std::runtime_error(
+                    "NRD sampled format " + formatId + " is not supported by this Vulkan device."
+                );
             }
             if ((props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eStorageImage) ==
                 vk::FormatFeatureFlags()) {
-                throw std::runtime_error("NRD storage format " + formatId +
-                                         " is not supported by this Vulkan device.");
+                throw std::runtime_error(
+                    "NRD storage format " + formatId + " is not supported by this Vulkan device."
+                );
             }
 
             dst.format = format;
@@ -566,9 +577,11 @@ bool VulkanRenderer::createNrdRuntimeResources() {
             const vk::MemoryRequirements requirements = dst.image.image.getMemoryRequirements();
             vk::MemoryAllocateInfo allocInfo{};
             allocInfo.allocationSize = requirements.size;
-            allocInfo.memoryTypeIndex =
-                VulkanUtils::findMemoryType(physicalDevice, requirements.memoryTypeBits,
-                                            vk::MemoryPropertyFlagBits::eDeviceLocal);
+            allocInfo.memoryTypeIndex = VulkanUtils::findMemoryType(
+                physicalDevice,
+                requirements.memoryTypeBits,
+                vk::MemoryPropertyFlagBits::eDeviceLocal
+            );
             dst.image.memory = vk::raii::DeviceMemory(device, allocInfo);
             dst.image.image.bindMemory(*dst.image.memory, 0);
 
@@ -596,15 +609,21 @@ bool VulkanRenderer::createNrdRuntimeResources() {
         }
 
         const uint32_t maxDispatchSets = std::max(
-            64u, std::max(instanceDesc->descriptorPoolDesc.setsMaxNum, instanceDesc->pipelinesNum));
+            64u, std::max(instanceDesc->descriptorPoolDesc.setsMaxNum, instanceDesc->pipelinesNum)
+        );
         const uint32_t maxConstantsSets = maxDispatchSets;
         const vk::DeviceSize constantBufferBytes =
             static_cast<vk::DeviceSize>(m_nrdConstantBufferStride) *
             static_cast<vk::DeviceSize>(maxConstantsSets);
         VulkanUtils::createBuffer(
-            device, physicalDevice, constantBufferBytes, vk::BufferUsageFlagBits::eUniformBuffer,
+            device,
+            physicalDevice,
+            constantBufferBytes,
+            vk::BufferUsageFlagBits::eUniformBuffer,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            runtime.constantBuffer, runtime.constantMemory);
+            runtime.constantBuffer,
+            runtime.constantMemory
+        );
         runtime.constantMapped = runtime.constantMemory.mapMemory(0, constantBufferBytes);
 
         std::array<vk::DescriptorPoolSize, 4> poolSizes{};
@@ -624,8 +643,9 @@ bool VulkanRenderer::createNrdRuntimeResources() {
         poolInfo.pPoolSizes = poolSizes.data();
         runtime.descriptorPool = vk::raii::DescriptorPool(device, poolInfo);
 
-        std::vector<vk::DescriptorSetLayout> layouts(maxDispatchSets + 1u,
-                                                     *m_nrdResourcesSetLayout);
+        std::vector<vk::DescriptorSetLayout> layouts(
+            maxDispatchSets + 1u, *m_nrdResourcesSetLayout
+        );
         layouts[maxDispatchSets] = *m_nrdConstantsSetLayout;
         vk::DescriptorSetAllocateInfo allocInfo{};
         allocInfo.descriptorPool = *runtime.descriptorPool;
@@ -687,15 +707,21 @@ bool VulkanRenderer::createNrdRuntimeResources() {
                 barrier.srcAccessMask = {};
                 barrier.dstAccessMask =
                     vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
-                commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                                              vk::PipelineStageFlagBits::eComputeShader, {}, {}, {},
-                                              barrier);
+                commandBuffer.pipelineBarrier(
+                    vk::PipelineStageFlagBits::eTopOfPipe,
+                    vk::PipelineStageFlagBits::eComputeShader,
+                    {},
+                    {},
+                    {},
+                    barrier
+                );
             }
         };
         transitionPool(runtime.permanentPool);
         transitionPool(runtime.transientPool);
-        VulkanUtils::endSingleTimeCommands(device, m_context.getGraphicsQueue(),
-                                           std::move(commandBuffer));
+        VulkanUtils::endSingleTimeCommands(
+            device, m_context.getGraphicsQueue(), std::move(commandBuffer)
+        );
 
         m_nrdRuntimeReady = true;
         return true;
@@ -708,9 +734,6 @@ bool VulkanRenderer::createNrdRuntimeResources() {
     cleanupNrdRuntimeResources();
     return false;
 }
-
-
-
 
 void VulkanRenderer::cleanupNrdRuntimeResources() {
     for (NrdRuntimePerImage &runtime : m_nrdRuntimePerImage) {
@@ -925,35 +948,43 @@ void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData 
         const uint32_t dynamicOffset = cbIndex * m_nrdConstantBufferStride;
         const std::array<uint32_t, 1> dynamicOffsets = {dynamicOffset};
 
-        m_commandBuffers[imageIndex].bindPipeline(vk::PipelineBindPoint::eCompute,
-                                                  *m_nrdPipelines[dispatch.pipelineIndex]);
+        m_commandBuffers[imageIndex].bindPipeline(
+            vk::PipelineBindPoint::eCompute, *m_nrdPipelines[dispatch.pipelineIndex]
+        );
         const vk::DescriptorSet resourcesSet = resourceSetForDispatch;
-        m_commandBuffers[imageIndex].bindDescriptorSets(vk::PipelineBindPoint::eCompute,
-                                                        *m_nrdPipelineLayout,
-                                                        m_nrdSetResourcesIndex, resourcesSet, {});
+        m_commandBuffers[imageIndex].bindDescriptorSets(
+            vk::PipelineBindPoint::eCompute,
+            *m_nrdPipelineLayout,
+            m_nrdSetResourcesIndex,
+            resourcesSet,
+            {}
+        );
         const vk::DescriptorSet constantsSet = *runtime.constantsSet;
         m_commandBuffers[imageIndex].bindDescriptorSets(
-            vk::PipelineBindPoint::eCompute, *m_nrdPipelineLayout, m_nrdSetConstantsIndex,
-            constantsSet, dynamicOffsets);
+            vk::PipelineBindPoint::eCompute,
+            *m_nrdPipelineLayout,
+            m_nrdSetConstantsIndex,
+            constantsSet,
+            dynamicOffsets
+        );
         m_commandBuffers[imageIndex].dispatch(dispatch.gridWidth, dispatch.gridHeight, 1u);
 
         vk::MemoryBarrier barrier{};
         barrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
         barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
-        m_commandBuffers[imageIndex].pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
-                                                     vk::PipelineStageFlagBits::eComputeShader, {},
-                                                     barrier, {}, {});
+        m_commandBuffers[imageIndex].pipelineBarrier(
+            vk::PipelineStageFlagBits::eComputeShader,
+            vk::PipelineStageFlagBits::eComputeShader,
+            {},
+            barrier,
+            {},
+            {}
+        );
     }
 
     setNrdValidForAllImages(dispatchedAll);
 }
 #endif
-
-
-
-
-
-
 
 void VulkanRenderer::barrierNrdSignalsForCompute(uint32_t imageIndex) {
     if (m_nrdPerImage.empty()) {
@@ -977,11 +1008,18 @@ void VulkanRenderer::barrierNrdSignalsForCompute(uint32_t imageIndex) {
     };
 
     std::array<vk::ImageMemoryBarrier, 5> barriers = {
-        makeBarrier(*nrd.diffIn.image),   makeBarrier(*nrd.normalRoughnessIn.image),
-        makeBarrier(*nrd.motionIn.image), makeBarrier(*nrd.viewZIn.image),
+        makeBarrier(*nrd.diffIn.image),
+        makeBarrier(*nrd.normalRoughnessIn.image),
+        makeBarrier(*nrd.motionIn.image),
+        makeBarrier(*nrd.viewZIn.image),
         makeBarrier(*nrd.diffOut.image),
     };
-    m_commandBuffers[imageIndex].pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
-                                                 vk::PipelineStageFlagBits::eComputeShader, {}, {},
-                                                 {}, barriers);
+    m_commandBuffers[imageIndex].pipelineBarrier(
+        vk::PipelineStageFlagBits::eFragmentShader,
+        vk::PipelineStageFlagBits::eComputeShader,
+        {},
+        {},
+        {},
+        barriers
+    );
 }

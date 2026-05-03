@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../Shared/runtime/Paths.hpp"
+#include "../../Shared/network/Packets.hpp"
 
 #include <array>
 #include <string>

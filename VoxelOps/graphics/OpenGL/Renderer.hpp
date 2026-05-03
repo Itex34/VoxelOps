@@ -1,11 +1,8 @@
 #pragma once
 #include <glad/glad.h>
-#include <iostream>
-#include <glm/mat4x4.hpp>
-#include <glm/vec3.hpp>
-#include <functional>
-#include <array>
+#include <cstddef>
 #include <memory>
+#include <string_view>
 
 #include "Backend.hpp"
 #include "OpenGLChunkScene.hpp"
@@ -13,7 +10,7 @@
 #include "OpenGLTextureAtlas.hpp"
 #include "passes/OpenGLSkyPass.hpp"
 #include "passes/OpenGLWorldPass.hpp"
-#include "../RenderFrameParams.hpp"
+#include "../../render/RenderScene.hpp"
 #include "../ISkyBackend.hpp"
 #include "../OpenGL/Shader.hpp"
 
@@ -55,11 +52,10 @@ struct BufferRange;
 struct ChunkMesh;
 
 class Renderer {
-  public:
+public:
     Renderer() = default;
     ~Renderer();
 
-    GLuint loadTexture(const char *path);
     const Backend &getBackend() const noexcept;
     GraphicsBackend getActiveBackend() const noexcept;
     std::string_view getActiveBackendName() const noexcept;
@@ -69,19 +65,10 @@ class Renderer {
 
     void beginFrame();
     void endFrame();
-    void renderFrame(RenderFrameParams &params);
+    void renderFrame(RenderScene &scene);
 
-  private:
-    bool ensureSceneCaptureResources(int width, int height);
-    void releaseSceneCaptureResources();
-    bool ensureDepthLinearizeProgram();
+private:
     bool ensureChunkAndSkyResources();
-    void runDepthLinearizePass(const glm::mat4 &projection);
-    bool ensureSunShadowResources();
-    void releaseSunShadowResources();
-    bool runSunShadowMomentsBlurPass();
-    bool renderSunShadowMaps(RenderFrameParams &params, const glm::mat4 &projection,
-                             const glm::mat4 &view, glm::mat4 &outShadowViewProj);
 
     Backend m_ActiveBackend;
     OpenGLChunkScene m_chunkScene;
@@ -89,27 +76,8 @@ class Renderer {
     OpenGLSkyPass m_skyPass;
     OpenGLWorldPass m_worldPass;
     std::unique_ptr<Shader> m_ChunkShader;
+    std::unique_ptr<Shader> m_DebugShader;
     std::unique_ptr<ISkyBackend> m_SkyBackend;
     OpenGLTextureAtlas m_textureAtlas;
     bool m_ChunkUniformsInitialized = false;
-    GLuint m_SceneFbo = 0;
-    GLuint m_SceneColorTex = 0;
-    GLuint m_SceneDepthTex = 0;
-    GLuint m_SceneLinearDepthTex = 0;
-    GLuint m_DepthLinearizeProgram = 0;
-    GLuint m_FullscreenTriangleVao = 0;
-    static constexpr int kSunShadowCascadeCount = 2;
-    std::array<GLuint, kSunShadowCascadeCount> m_SunShadowFbo = {};
-    std::array<GLuint, kSunShadowCascadeCount> m_SunShadowDepthTex = {};
-    GLuint m_SunShadowMomentsTex = 0;
-    GLuint m_SunShadowMomentsTempTex = 0;
-    GLuint m_SunShadowMomentsFbo = 0;
-    GLuint m_SunShadowProgram = 0;
-    GLuint m_SunShadowMomentsBlurProgram = 0;
-    std::array<glm::mat4, kSunShadowCascadeCount> m_LastSunShadowViewProjVoxel = {glm::mat4(1.0f),
-                                                                                  glm::mat4(1.0f)};
-    std::array<float, kSunShadowCascadeCount> m_SunShadowCascadeFarMeters = {0.0f, 0.0f};
-    int m_SceneWidth = 0;
-    int m_SceneHeight = 0;
-    int m_SunShadowMapSize = 2048;
 };

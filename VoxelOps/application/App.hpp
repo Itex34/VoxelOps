@@ -1,25 +1,24 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <SDL3/SDL.h>
 #include <glm/vec3.hpp>
 #include "../runtime/Runtime.hpp"
+#include "../graphics/IWorldItemRenderer.hpp"
 #include "../graphics/RenderDeviceFactory.hpp"
-#include "../graphics/OpenGL/WorldItemRenderer.hpp"
 class Camera;
 enum class GunType : uint16_t;
-class FrameOrchestrator;
 
 class App {
-  public:
+public:
     App() = default;
 
     int Run(int argc, char **argv);
     void Exit();
 
-  private:
-    friend class FrameOrchestrator;
+private:
     bool initWindowAndContext();
     void initCallbacks(Runtime &runtime);
     void initRenderResources(Runtime &runtime);
@@ -34,9 +33,6 @@ class App {
 
     void updateDebugCamera(Runtime &runtime);
     void updateToggleStates(Runtime &runtime);
-    void processWorldInteraction(Runtime &runtime);
-    void processShooting(Runtime &runtime);
-    void processChunkStreaming(Runtime &runtime, bool prioritizeMovement);
     void renderWorldItems(Runtime &runtime, const Camera &activeCamera);
     bool equipGun(Runtime &runtime, GunType gunType);
     void applyMouseInputModes();
@@ -66,7 +62,7 @@ class App {
     float m_SunShadowLowSunBiasBoost = 5.8f;
     bool m_SunShadowFrontFaceCullAtLowSun = true;
     float m_SunShadowFrontFaceCullGrazingThreshold = 0.78f;
-    WorldItemRenderer m_worldItemRenderer;
+    std::unique_ptr<IWorldItemRenderer> m_worldItemRenderer;
 
     std::string m_ServerIp = "variety-reduction.gl.at.ply.gg:20047";
     uint16_t m_ServerPort = 27015;

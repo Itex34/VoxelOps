@@ -6,7 +6,7 @@
 #include <vector>
 
 class FrameSync {
-  public:
+public:
     void init(const vk::raii::Device &device, uint32_t maxFramesInFlight);
     void recreateSwapchainSync(const vk::raii::Device &device, size_t swapchainImageCount);
     void cleanup();
@@ -35,7 +35,7 @@ class FrameSync {
         m_imagesInFlight[imageIndex] = fence;
     }
 
-  private:
+private:
     std::vector<vk::raii::Semaphore> m_imageAvailableSemaphores;
     std::vector<vk::raii::Semaphore> m_renderFinishedSemaphores;
     std::vector<vk::raii::Fence> m_inFlightFences;

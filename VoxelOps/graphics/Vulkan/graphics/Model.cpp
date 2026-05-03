@@ -15,22 +15,24 @@
 #include <utility>
 
 namespace {
-constexpr float kWClipEpsilon = 1.0e-6f;
+    constexpr float kWClipEpsilon = 1.0e-6f;
 
-std::string buildAssimpErrorMessage(const std::string &path, const Assimp::Importer &importer) {
-    std::string message = "Failed to load model '" + path + "'";
-    const char *importerError = importer.GetErrorString();
-    if (importerError && importerError[0] != '\0') {
-        message += ": ";
-        message += importerError;
+    std::string buildAssimpErrorMessage(const std::string &path, const Assimp::Importer &importer) {
+        std::string message = "Failed to load model '" + path + "'";
+        const char *importerError = importer.GetErrorString();
+        if (importerError && importerError[0] != '\0') {
+            message += ": ";
+            message += importerError;
+        }
+        return message;
     }
-    return message;
-}
 } // namespace
 
-void VkModel::initGpuResources(const vk::raii::Device &device,
-                               const vk::raii::PhysicalDevice &physicalDevice,
-                               UploadContext &uploadContext) {
+void VkModel::initGpuResources(
+    const vk::raii::Device &device,
+    const vk::raii::PhysicalDevice &physicalDevice,
+    UploadContext &uploadContext
+) {
     for (VkMesh &mesh : m_meshes) {
         mesh.init(device, physicalDevice, uploadContext);
     }
@@ -53,9 +55,11 @@ void VkModel::loadModel(const std::string &path) {
     m_directory = std::filesystem::path(path).parent_path().string();
 
     Assimp::Importer importer;
-    const aiScene *scene =
-        importer.ReadFile(path, aiProcess_Triangulate | aiProcess_JoinIdenticalVertices |
-                                    aiProcess_ImproveCacheLocality | aiProcess_FlipUVs);
+    const aiScene *scene = importer.ReadFile(
+        path,
+        aiProcess_Triangulate | aiProcess_JoinIdenticalVertices | aiProcess_ImproveCacheLocality |
+            aiProcess_FlipUVs
+    );
 
     if (!scene || !scene->mRootNode || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) != 0) {
         throw std::runtime_error(buildAssimpErrorMessage(path, importer));

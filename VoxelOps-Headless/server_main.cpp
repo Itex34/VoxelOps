@@ -38,20 +38,23 @@ static std::string trim_copy(const std::string &in) {
 }
 
 static std::string to_lower_copy(std::string in) {
-    std::transform(in.begin(), in.end(), in.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::transform(in.begin(), in.end(), in.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
     return in;
 }
 
 static void print_console_help() {
-    std::print("[Console] Commands:\n"
-               "  help\n"
-               "  players\n"
-               "  admins\n"
-               "  admin grant <username|id:identity>\n"
-               "  admin revoke <username|id:identity>\n"
-               "  debug [on|off]\n"
-               "  stop | quit | exit\n");
+    std::print(
+        "[Console] Commands:\n"
+        "  help\n"
+        "  players\n"
+        "  admins\n"
+        "  admin grant <username|id:identity>\n"
+        "  admin revoke <username|id:identity>\n"
+        "  debug [on|off]\n"
+        "  stop | quit | exit\n"
+    );
 }
 
 struct ServerLaunchOptions {
@@ -313,8 +316,9 @@ int main(int argc, char **argv) {
             msg.push_back(static_cast<char>(PacketType::Message));
             msg += "server_heartbeat";
 
-            serverNet.BroadcastRaw(msg.data(), static_cast<uint32_t>(msg.size()),
-                                   k_HSteamNetConnection_Invalid);
+            serverNet.BroadcastRaw(
+                msg.data(), static_cast<uint32_t>(msg.size()), k_HSteamNetConnection_Invalid
+            );
             if (serverNet.IsDebugLoggingEnabled()) {
                 std::cout << "[Server] Heartbeat broadcasted.\n";
             }

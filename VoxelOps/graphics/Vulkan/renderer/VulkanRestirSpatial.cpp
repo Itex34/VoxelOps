@@ -19,24 +19,20 @@
 #include <stdexcept>
 #include <string>
 
-
-
 using namespace Vulkan::Restir;
 
 namespace {
-constexpr bool kRestirGiDispatchSpatialPass = false;
+    constexpr bool kRestirGiDispatchSpatialPass = false;
 
-
-struct alignas(16) RestirGiSpatialPushConstants {
-    glm::uvec2 extent{0u, 0u};
-    glm::vec2 invExtent{0.0f, 0.0f};
-    float spatialWeight = 0.10f;
-    float lumaPhi = 2.0f;
-    float normalPower = 12.0f;
-    float depthScale = 1200.0f;
-};
-}
-
+    struct alignas(16) RestirGiSpatialPushConstants {
+        glm::uvec2 extent{0u, 0u};
+        glm::vec2 invExtent{0.0f, 0.0f};
+        float spatialWeight = 0.10f;
+        float lumaPhi = 2.0f;
+        float normalPower = 12.0f;
+        float depthScale = 1200.0f;
+    };
+} // namespace
 
 void VulkanRenderer::createRestirGiSpatialResources() {
     cleanupRestirGiSpatialResources();
@@ -80,9 +76,11 @@ void VulkanRenderer::createRestirGiSpatialResources() {
                 const vk::MemoryRequirements requirements = reservoir.image.getMemoryRequirements();
                 vk::MemoryAllocateInfo allocInfo{};
                 allocInfo.allocationSize = requirements.size;
-                allocInfo.memoryTypeIndex =
-                    VulkanUtils::findMemoryType(physicalDevice, requirements.memoryTypeBits,
-                                                vk::MemoryPropertyFlagBits::eDeviceLocal);
+                allocInfo.memoryTypeIndex = VulkanUtils::findMemoryType(
+                    physicalDevice,
+                    requirements.memoryTypeBits,
+                    vk::MemoryPropertyFlagBits::eDeviceLocal
+                );
                 reservoir.memory = vk::raii::DeviceMemory(device, allocInfo);
                 reservoir.image.bindMemory(*reservoir.memory, 0);
             }
@@ -103,9 +101,11 @@ void VulkanRenderer::createRestirGiSpatialResources() {
                 const vk::MemoryRequirements requirements = meta.image.getMemoryRequirements();
                 vk::MemoryAllocateInfo allocInfo{};
                 allocInfo.allocationSize = requirements.size;
-                allocInfo.memoryTypeIndex =
-                    VulkanUtils::findMemoryType(physicalDevice, requirements.memoryTypeBits,
-                                                vk::MemoryPropertyFlagBits::eDeviceLocal);
+                allocInfo.memoryTypeIndex = VulkanUtils::findMemoryType(
+                    physicalDevice,
+                    requirements.memoryTypeBits,
+                    vk::MemoryPropertyFlagBits::eDeviceLocal
+                );
                 meta.memory = vk::raii::DeviceMemory(device, allocInfo);
                 meta.image.bindMemory(*meta.memory, 0);
             }
@@ -154,8 +154,12 @@ void VulkanRenderer::createRestirGiSpatialResources() {
     spatialGiMetaBinding.stageFlags = vk::ShaderStageFlagBits::eCompute;
 
     const std::array<vk::DescriptorSetLayoutBinding, 5> bindings = {
-        temporalGiBinding, temporalGiMetaBinding, temporalValidationBinding, spatialGiBinding,
-        spatialGiMetaBinding};
+        temporalGiBinding,
+        temporalGiMetaBinding,
+        temporalValidationBinding,
+        spatialGiBinding,
+        spatialGiMetaBinding
+    };
 
     vk::DescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
@@ -198,7 +202,8 @@ void VulkanRenderer::createRestirGiSpatialResources() {
     pushConstantRange.size = static_cast<uint32_t>(sizeof(RestirGiSpatialPushConstants));
 
     const std::array<vk::DescriptorSetLayout, 1> computeLayouts = {
-        *m_restirGiSpatialDescriptorSetLayout};
+        *m_restirGiSpatialDescriptorSetLayout
+    };
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(computeLayouts.size());
     pipelineLayoutInfo.pSetLayouts = computeLayouts.data();
@@ -234,13 +239,18 @@ void VulkanRenderer::createRestirGiSpatialResources() {
             toGeneral.dstAccessMask = vk::AccessFlagBits::eShaderRead |
                                       vk::AccessFlagBits::eShaderWrite |
                                       vk::AccessFlagBits::eTransferWrite;
-            commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                                          vk::PipelineStageFlagBits::eTransfer |
-                                              vk::PipelineStageFlagBits::eFragmentShader |
-                                              vk::PipelineStageFlagBits::eComputeShader,
-                                          {}, {}, {}, toGeneral);
-            commandBuffer.clearColorImage(*reservoir.image, vk::ImageLayout::eGeneral, clearZero,
-                                          range);
+            commandBuffer.pipelineBarrier(
+                vk::PipelineStageFlagBits::eTopOfPipe,
+                vk::PipelineStageFlagBits::eTransfer | vk::PipelineStageFlagBits::eFragmentShader |
+                    vk::PipelineStageFlagBits::eComputeShader,
+                {},
+                {},
+                {},
+                toGeneral
+            );
+            commandBuffer.clearColorImage(
+                *reservoir.image, vk::ImageLayout::eGeneral, clearZero, range
+            );
         }
     }
     for (const auto &perImage : m_restirGiSpatialMetaPerImage) {
@@ -256,19 +266,22 @@ void VulkanRenderer::createRestirGiSpatialResources() {
             toGeneral.dstAccessMask = vk::AccessFlagBits::eShaderRead |
                                       vk::AccessFlagBits::eShaderWrite |
                                       vk::AccessFlagBits::eTransferWrite;
-            commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                                          vk::PipelineStageFlagBits::eTransfer |
-                                              vk::PipelineStageFlagBits::eFragmentShader |
-                                              vk::PipelineStageFlagBits::eComputeShader,
-                                          {}, {}, {}, toGeneral);
+            commandBuffer.pipelineBarrier(
+                vk::PipelineStageFlagBits::eTopOfPipe,
+                vk::PipelineStageFlagBits::eTransfer | vk::PipelineStageFlagBits::eFragmentShader |
+                    vk::PipelineStageFlagBits::eComputeShader,
+                {},
+                {},
+                {},
+                toGeneral
+            );
             commandBuffer.clearColorImage(*meta.image, vk::ImageLayout::eGeneral, clearMeta, range);
         }
     }
-    VulkanUtils::endSingleTimeCommands(device, m_context.getGraphicsQueue(),
-                                       std::move(commandBuffer));
+    VulkanUtils::endSingleTimeCommands(
+        device, m_context.getGraphicsQueue(), std::move(commandBuffer)
+    );
 }
-
-
 
 void VulkanRenderer::cleanupRestirGiSpatialResources() {
     m_restirGiSpatialPipeline.clear();
@@ -279,10 +292,6 @@ void VulkanRenderer::cleanupRestirGiSpatialResources() {
     m_restirGiSpatialPerImage.clear();
     m_restirGiSpatialMetaPerImage.clear();
 }
-
-
-
-
 
 void VulkanRenderer::updateRestirGiSpatialDescriptorSet(uint32_t imageIndex, uint32_t writeParity) {
     const uint32_t historyIndex = kRestirHistorySlot;
@@ -358,8 +367,9 @@ void VulkanRenderer::updateRestirGiSpatialDescriptorSet(uint32_t imageIndex, uin
     device.updateDescriptorSets(writes, {});
 }
 
-void VulkanRenderer::dispatchRestirGiSpatialPass(uint32_t imageIndex,
-                                                 const FrameRenderData &frameData) {
+void VulkanRenderer::dispatchRestirGiSpatialPass(
+    uint32_t imageIndex, const FrameRenderData &frameData
+) {
     if (!kRestirGiDispatchSpatialPass) {
         return;
     }
@@ -438,24 +448,33 @@ void VulkanRenderer::dispatchRestirGiSpatialPass(uint32_t imageIndex,
 
     m_commandBuffers[imageIndex].pipelineBarrier(
         vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
-        vk::PipelineStageFlagBits::eComputeShader, {}, {}, {}, barriers);
+        vk::PipelineStageFlagBits::eComputeShader,
+        {},
+        {},
+        {},
+        barriers
+    );
 
-    m_commandBuffers[imageIndex].bindPipeline(vk::PipelineBindPoint::eCompute,
-                                              *m_restirGiSpatialPipeline);
+    m_commandBuffers[imageIndex].bindPipeline(
+        vk::PipelineBindPoint::eCompute, *m_restirGiSpatialPipeline
+    );
     const vk::DescriptorSet descriptorSet = *m_restirGiSpatialDescriptorSets[imageIndex];
     m_commandBuffers[imageIndex].bindDescriptorSets(
-        vk::PipelineBindPoint::eCompute, *m_restirGiSpatialPipelineLayout, 0, descriptorSet, {});
+        vk::PipelineBindPoint::eCompute, *m_restirGiSpatialPipelineLayout, 0, descriptorSet, {}
+    );
 
     RestirGiSpatialPushConstants push{};
     push.extent = glm::uvec2(extent.width, extent.height);
-    push.invExtent = glm::vec2(1.0f / static_cast<float>(extent.width),
-                               1.0f / static_cast<float>(extent.height));
+    push.invExtent = glm::vec2(
+        1.0f / static_cast<float>(extent.width), 1.0f / static_cast<float>(extent.height)
+    );
     push.spatialWeight = glm::clamp(frameData.giLighting.restirSpatialReuse, 0.0f, 0.35f);
     push.lumaPhi = std::max(frameData.giLighting.denoiseLumaPhi, 0.05f);
     push.normalPower = 10.0f;
     push.depthScale = 24.0f;
     m_commandBuffers[imageIndex].pushConstants<RestirGiSpatialPushConstants>(
-        *m_restirGiSpatialPipelineLayout, vk::ShaderStageFlagBits::eCompute, 0, push);
+        *m_restirGiSpatialPipelineLayout, vk::ShaderStageFlagBits::eCompute, 0, push
+    );
 
     const uint32_t groupCountX = (extent.width + 7u) / 8u;
     const uint32_t groupCountY = (extent.height + 7u) / 8u;
@@ -497,8 +516,9 @@ void VulkanRenderer::clearTemporalGiWriteTargets(uint32_t imageIndex) {
             addTarget(*m_restirDiPerImage[historyIndex][writeParity].image, clearZero);
         }
         if (historyIndex < m_restirValidationPerImage.size()) {
-            addTarget(*m_restirValidationPerImage[historyIndex][writeParity].image,
-                      clearValidation);
+            addTarget(
+                *m_restirValidationPerImage[historyIndex][writeParity].image, clearValidation
+            );
         }
         if (historyIndex < m_restirMetaPerImage.size()) {
             addTarget(*m_restirMetaPerImage[historyIndex][writeParity].image, clearMeta);
@@ -560,15 +580,25 @@ void VulkanRenderer::clearTemporalGiWriteTargets(uint32_t imageIndex) {
     m_commandBuffers[imageIndex].pipelineBarrier(
         vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader |
             vk::PipelineStageFlagBits::eTransfer,
-        vk::PipelineStageFlagBits::eTransfer, {}, {}, {}, toTransfer);
+        vk::PipelineStageFlagBits::eTransfer,
+        {},
+        {},
+        {},
+        toTransfer
+    );
 
     for (const ClearTarget &target : targets) {
-        m_commandBuffers[imageIndex].clearColorImage(target.image, vk::ImageLayout::eGeneral,
-                                                     target.clear, range);
+        m_commandBuffers[imageIndex].clearColorImage(
+            target.image, vk::ImageLayout::eGeneral, target.clear, range
+        );
     }
 
-    m_commandBuffers[imageIndex].pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                                                 vk::PipelineStageFlagBits::eFragmentShader |
-                                                     vk::PipelineStageFlagBits::eComputeShader,
-                                                 {}, {}, {}, toShader);
+    m_commandBuffers[imageIndex].pipelineBarrier(
+        vk::PipelineStageFlagBits::eTransfer,
+        vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
+        {},
+        {},
+        {},
+        toShader
+    );
 }

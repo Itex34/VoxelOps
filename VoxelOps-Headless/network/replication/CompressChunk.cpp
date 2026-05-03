@@ -7,9 +7,9 @@
 #include <limits>
 
 namespace {
-constexpr size_t kMinCompressBytes = 1024;
-constexpr size_t kMinSavingsBytes = 64;
-constexpr size_t kMinSavingsPercent = 8;
+    constexpr size_t kMinCompressBytes = 1024;
+    constexpr size_t kMinSavingsBytes = 64;
+    constexpr size_t kMinSavingsPercent = 8;
 } // namespace
 
 CompressedChunkPayload CompressChunkPayload(const std::vector<uint8_t> &rawPayload) {
@@ -38,13 +38,16 @@ CompressedChunkPayload CompressChunkPayload(const std::vector<uint8_t> &rawPaylo
     const int compressedSize = LZ4_compress_default(
         reinterpret_cast<const char *>(rawPayload.data()),
         reinterpret_cast<char *>(candidate.data() + Shared::ChunkWireFormat::kCompressedHeaderSize),
-        inputSize, bound);
+        inputSize,
+        bound
+    );
     if (compressedSize <= 0) {
         return result;
     }
 
-    candidate.resize(Shared::ChunkWireFormat::kCompressedHeaderSize +
-                     static_cast<size_t>(compressedSize));
+    candidate.resize(
+        Shared::ChunkWireFormat::kCompressedHeaderSize + static_cast<size_t>(compressedSize)
+    );
 
     const size_t compressedTotal = candidate.size();
     const size_t requiredSavingsByPercent = (rawPayload.size() * kMinSavingsPercent) / 100;

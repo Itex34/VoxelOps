@@ -52,7 +52,9 @@ void Runtime::RunRespawnDiagnosticsPhase(uint64_t simTicksThisLoop, uint32_t ser
             m_respawnDiagUntilByPlayer[playerId] = rbDiagNow + std::chrono::seconds(10);
             m_respawnDiagNextLogAtByPlayer[playerId] = rbDiagNow;
         }
-        if (DiagnosticsFlags::g_enableRespawnRubberbandDiagnostics.load(std::memory_order_acquire)) {
+        if (DiagnosticsFlags::g_enableRespawnRubberbandDiagnostics.load(
+                std::memory_order_acquire
+            )) {
             std::cerr << "[rbdiag/server] respawn reset players=" << respawnedPlayers.size()
                       << " conns=" << pipelineResets.size() << "\n";
         }

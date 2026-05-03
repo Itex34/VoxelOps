@@ -8,73 +8,79 @@
 
 namespace ShootValidation {
 
-bool IsDirectionValid(const ShootRequest &request, glm::vec3 &outNormalizedDir) {
-    const glm::vec3 requestDir(request.dirX, request.dirY, request.dirZ);
-    const float dirLenSq = glm::dot(requestDir, requestDir);
-    if (!std::isfinite(dirLenSq) || dirLenSq < 1e-8f) {
-        return false;
+    bool IsDirectionValid(const ShootRequest &request, glm::vec3 &outNormalizedDir) {
+        const glm::vec3 requestDir(request.dirX, request.dirY, request.dirZ);
+        const float dirLenSq = glm::dot(requestDir, requestDir);
+        if (!std::isfinite(dirLenSq) || dirLenSq < 1e-8f) {
+            return false;
+        }
+        outNormalizedDir = glm::normalize(requestDir);
+        return true;
     }
-    outNormalizedDir = glm::normalize(requestDir);
-    return true;
-}
 
-ShootGateResult RunShootGate(ShootGateState &state,
-                             const ShootRequest &request,
-                             float minShotIntervalSeconds) {
-    ShootGateResult gate{};
-    if (state.hasLastShootClientShotId &&
-        !LagCompensation::IsNewerU32(request.clientShotId, state.lastShootClientShotId)) {
-        gate.rejectedReplay = true;
+    ShootGateResult
+    RunShootGate(ShootGateState &state, const ShootRequest &request, float minShotIntervalSeconds) {
+        ShootGateResult gate{};
+        if (state.hasLastShootClientShotId &&
+            !LagCompensation::IsNewerU32(request.clientShotId, state.lastShootClientShotId)) {
+            gate.rejectedReplay = true;
+            return gate;
+        }
+
+        state.lastShootClientShotId = request.clientShotId;
+        state.hasLastShootClientShotId = true;
+
+        const auto now = std::chrono::steady_clock::now();
+        if (state.lastAcceptedShootTime != std::chrono::steady_clock::time_point::min()) {
+            const float elapsedSeconds =
+                std::chrono::duration<float>(now - state.lastAcceptedShootTime).count();
+            if (elapsedSeconds < minShotIntervalSeconds) {
+                gate.rejectedCooldown = true;
+                return gate;
+            }
+        }
+
+        state.lastAcceptedShootTime = now;
         return gate;
     }
 
-    state.lastShootClientShotId = request.clientShotId;
-    state.hasLastShootClientShotId = true;
+    ValidatedOrigin ComputeValidatedOrigin(
+        const ChunkManager &chunkManager,
+        const glm::vec3 &shooterEyePos,
+        const glm::vec3 &requestPos,
+        float originTolerance,
+        float originOcclusionEpsilon
+    ) {
+        ValidatedOrigin out{};
+        out.origin = shooterEyePos;
+        out.requestedOriginAccepted = false;
 
-    const auto now = std::chrono::steady_clock::now();
-    if (state.lastAcceptedShootTime != std::chrono::steady_clock::time_point::min()) {
-        const float elapsedSeconds =
-            std::chrono::duration<float>(now - state.lastAcceptedShootTime).count();
-        if (elapsedSeconds < minShotIntervalSeconds) {
-            gate.rejectedCooldown = true;
-            return gate;
+        const glm::vec3 eyeToRequest = requestPos - shooterEyePos;
+        const float eyeToRequestDist = glm::length(eyeToRequest);
+        if (!std::isfinite(eyeToRequestDist) || eyeToRequestDist > originTolerance) {
+            return out;
         }
-    }
 
-    state.lastAcceptedShootTime = now;
-    return gate;
-}
+        if (eyeToRequestDist <= 1e-4f) {
+            out.origin = requestPos;
+            out.requestedOriginAccepted = true;
+            return out;
+        }
 
-ValidatedOrigin ComputeValidatedOrigin(const ChunkManager &chunkManager,
-                                       const glm::vec3 &shooterEyePos,
-                                       const glm::vec3 &requestPos,
-                                       float originTolerance,
-                                       float originOcclusionEpsilon) {
-    ValidatedOrigin out{};
-    out.origin = shooterEyePos;
-    out.requestedOriginAccepted = false;
-
-    const glm::vec3 eyeToRequest = requestPos - shooterEyePos;
-    const float eyeToRequestDist = glm::length(eyeToRequest);
-    if (!std::isfinite(eyeToRequestDist) || eyeToRequestDist > originTolerance) {
+        float eyePathHitDistance = 0.0f;
+        glm::vec3 eyePathHitPoint(0.0f);
+        const bool eyePathBlocked = WorldRaycast::FindFirstSolidBlockHit(
+            chunkManager,
+            shooterEyePos,
+            eyeToRequest,
+            eyeToRequestDist,
+            eyePathHitDistance,
+            eyePathHitPoint
+        );
+        out.requestedOriginAccepted =
+            !eyePathBlocked || ((eyePathHitDistance + originOcclusionEpsilon) >= eyeToRequestDist);
+        out.origin = out.requestedOriginAccepted ? requestPos : shooterEyePos;
         return out;
     }
-
-    if (eyeToRequestDist <= 1e-4f) {
-        out.origin = requestPos;
-        out.requestedOriginAccepted = true;
-        return out;
-    }
-
-    float eyePathHitDistance = 0.0f;
-    glm::vec3 eyePathHitPoint(0.0f);
-    const bool eyePathBlocked =
-        WorldRaycast::FindFirstSolidBlockHit(chunkManager, shooterEyePos, eyeToRequest,
-                                             eyeToRequestDist, eyePathHitDistance, eyePathHitPoint);
-    out.requestedOriginAccepted =
-        !eyePathBlocked || ((eyePathHitDistance + originOcclusionEpsilon) >= eyeToRequestDist);
-    out.origin = out.requestedOriginAccepted ? requestPos : shooterEyePos;
-    return out;
-}
 
 } // namespace ShootValidation

@@ -2,12 +2,12 @@
 
 #include "VulkanChunkRenderCache.hpp"
 #include "renderer/RenderFrameData.hpp"
+#include "../../render/RenderScene.hpp"
 
 #include <glm/glm.hpp>
 #include <vector>
 
 class Camera;
-class Player;
 class VkModel;
 class VkTexture;
 struct ImDrawData;
@@ -20,11 +20,21 @@ struct VulkanFrameBuildResult {
 };
 
 class VulkanFrameBuilder {
-  public:
+public:
     static VulkanFrameBuildResult buildFrameData(
-        FrameRenderData &frameData, const VulkanChunkRenderCache &chunkRenderCache,
-        const VkTexture &atlasTexture, const Camera &activeCamera, const Camera &cullingCamera,
-        const Player &player, ImDrawData *uiDrawData, int width, int height,
-        const VkModel *remotePlayerModel, const std::vector<const VkTexture *> &remotePlayerTextures,
-        const glm::ivec3 &cullingChunk);
+        FrameRenderData &frameData,
+        const VulkanChunkRenderCache &chunkRenderCache,
+        const VkTexture &atlasTexture,
+        const Camera &activeCamera,
+        const Camera &cullingCamera,
+        const glm::vec3 &localPlayerPosition,
+        uint16_t chunkRenderDistance,
+        const std::vector<RenderRemotePlayerState> &remotePlayers,
+        ImDrawData *uiDrawData,
+        int width,
+        int height,
+        const VkModel *remotePlayerModel,
+        const std::vector<const VkTexture *> &remotePlayerTextures,
+        const glm::ivec3 &cullingChunk
+    );
 };

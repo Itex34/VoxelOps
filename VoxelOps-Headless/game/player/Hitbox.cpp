@@ -8,8 +8,9 @@
 // Small epsilon to avoid self-intersection / numerical issues
 static constexpr float RAY_EPSILON = 1e-5f;
 
-std::vector<Hitbox> HitboxManager::buildBlockyHitboxes(float playerHeight, float halfWidth,
-                                                       float halfDepth, bool originAtFeet) {
+std::vector<Hitbox> HitboxManager::buildBlockyHitboxes(
+    float playerHeight, float halfWidth, float halfDepth, bool originAtFeet
+) {
     std::vector<Hitbox> boxes;
     const float eps = 0.01f; // small expansion to avoid seam misses
 
@@ -35,19 +36,22 @@ std::vector<Hitbox> HitboxManager::buildBlockyHitboxes(float playerHeight, float
     boxes.push_back(
         Hitbox{/*min*/ glm::vec3(-halfWidth + eps, headMin + yShift - eps, -halfDepth + eps),
                /*max*/ glm::vec3(halfWidth - eps, headMax + yShift + eps, halfDepth - eps),
-               /*region*/ HitRegion::Head});
+               /*region*/ HitRegion::Head}
+    );
 
     // BODY (torso)
     boxes.push_back(
         Hitbox{/*min*/ glm::vec3(-halfWidth + eps, torsoMin + yShift - eps, -halfDepth + eps),
                /*max*/ glm::vec3(halfWidth - eps, torsoMax + yShift + eps, halfDepth - eps),
-               /*region*/ HitRegion::Body});
+               /*region*/ HitRegion::Body}
+    );
 
     // LEGS (both legs combined)
     boxes.push_back(
         Hitbox{/*min*/ glm::vec3(-halfWidth + eps, legsMin + yShift - eps, -halfDepth + eps),
                /*max*/ glm::vec3(halfWidth - eps, legsMax + yShift + eps, halfDepth - eps),
-               /*region*/ HitRegion::Legs});
+               /*region*/ HitRegion::Legs}
+    );
 
     return boxes;
 }
@@ -61,9 +65,14 @@ std::vector<Hitbox> HitboxManager::buildBlockyHitboxes(float playerHeight, float
  *
  * Returns true if intersection occurs within positive t (>= RAY_EPSILON).
  */
-bool HitboxManager::rayIntersectsAABB(const glm::vec3 &rayOrigin, const glm::vec3 &rayDir,
-                                      const Hitbox &box, const glm::mat4 &modelMatrix,
-                                      glm::vec3 &outHitPointWorld, float &outDistance) {
+bool HitboxManager::rayIntersectsAABB(
+    const glm::vec3 &rayOrigin,
+    const glm::vec3 &rayDir,
+    const Hitbox &box,
+    const glm::mat4 &modelMatrix,
+    glm::vec3 &outHitPointWorld,
+    float &outDistance
+) {
     // Compute inverse model to bring ray into local space
     glm::mat4 invModel = glm::inverse(modelMatrix);
 
@@ -132,9 +141,13 @@ bool HitboxManager::rayIntersectsAABB(const glm::vec3 &rayOrigin, const glm::vec
  * Raycast a set of hitboxes and return closest hit (if any).
  * rayDir is expected to be a direction (doesn't have to be normalized).
  */
-HitResult HitboxManager::raycastHitboxes(const glm::vec3 &rayOrigin, const glm::vec3 &rayDir,
-                                         const std::vector<Hitbox> &hitboxes,
-                                         const glm::mat4 &modelMatrix, float maxDistance) {
+HitResult HitboxManager::raycastHitboxes(
+    const glm::vec3 &rayOrigin,
+    const glm::vec3 &rayDir,
+    const std::vector<Hitbox> &hitboxes,
+    const glm::mat4 &modelMatrix,
+    float maxDistance
+) {
     HitResult result;
     result.hit = false;
     result.region = HitRegion::Unknown;

@@ -1,10 +1,14 @@
 #include "../Runtime.hpp"
 #include "../../protocol/PacketValidation.hpp"
 
-void Runtime::DispatchInboundPacket(HSteamNetConnection incoming, PacketType packetType,
-                                          const void *data, uint32_t size,
-                                          uint64_t &playerInputPacketsThisLoop,
-                                          uint64_t &chunkRequestPacketsThisLoop) {
+void Runtime::DispatchInboundPacket(
+    HSteamNetConnection incoming,
+    PacketType packetType,
+    const void *data,
+    uint32_t size,
+    uint64_t &playerInputPacketsThisLoop,
+    uint64_t &chunkRequestPacketsThisLoop
+) {
     switch (packetType) {
     case PacketType::ConnectRequest:
         HandleConnectRequest(incoming, data, size);
@@ -14,9 +18,6 @@ void Runtime::DispatchInboundPacket(HSteamNetConnection incoming, PacketType pac
         return;
     case PacketType::PlayerInput:
         HandlePlayerInputPacket(incoming, data, size, playerInputPacketsThisLoop);
-        return;
-    case PacketType::PlayerPosition:
-        // Legacy packet still accepted on the wire but ignored by authoritative movement.
         return;
     case PacketType::ChunkRequest:
         HandleChunkRequestPacket(incoming, data, size, chunkRequestPacketsThisLoop);
@@ -38,10 +39,12 @@ void Runtime::DispatchInboundPacket(HSteamNetConnection incoming, PacketType pac
     }
 }
 
-void Runtime::RunInboundMessagePhase(uint64_t &msgPacketsThisLoop,
-                                           uint64_t &playerInputPacketsThisLoop,
-                                           uint64_t &chunkRequestPacketsThisLoop,
-                                           double &messageDrainUs) {
+void Runtime::RunInboundMessagePhase(
+    uint64_t &msgPacketsThisLoop,
+    uint64_t &playerInputPacketsThisLoop,
+    uint64_t &chunkRequestPacketsThisLoop,
+    double &messageDrainUs
+) {
     constexpr size_t kMaxInboundMessagesPerLoop = 256;
     constexpr int64_t kInboundMessageBudgetUs = 3000;
 
@@ -55,7 +58,8 @@ void Runtime::RunInboundMessagePhase(uint64_t &msgPacketsThisLoop,
     const auto reachedMessageDrainBudget = [&]() {
         ++inboundMessagesProcessed;
         const int64_t elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                                      std::chrono::steady_clock::now() - messageDrainStart)
+                                      std::chrono::steady_clock::now() - messageDrainStart
+        )
                                       .count();
         return elapsedUs >= kInboundMessageBudgetUs;
     };
@@ -98,8 +102,9 @@ void Runtime::RunInboundMessagePhase(uint64_t &msgPacketsThisLoop,
         }
 
         ++msgPacketsThisLoop;
-        DispatchInboundPacket(incoming, packetType, data, cb, playerInputPacketsThisLoop,
-                              chunkRequestPacketsThisLoop);
+        DispatchInboundPacket(
+            incoming, packetType, data, cb, playerInputPacketsThisLoop, chunkRequestPacketsThisLoop
+        );
         pMsg->Release();
         if (reachedMessageDrainBudget()) {
             break;
@@ -107,7 +112,8 @@ void Runtime::RunInboundMessagePhase(uint64_t &msgPacketsThisLoop,
     }
 
     messageDrainUs = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(
-                                             std::chrono::steady_clock::now() - messageDrainStart)
+                                             std::chrono::steady_clock::now() - messageDrainStart
+    )
                                              .count());
 }
 

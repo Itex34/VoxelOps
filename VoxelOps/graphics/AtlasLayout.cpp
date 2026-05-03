@@ -42,4 +42,3 @@ uint8_t AtlasLayout::tileLayerOrDefault(const std::string &tileName) const noexc
     const glm::ivec2 tile = it->second;
     return static_cast<uint8_t>(tile.y * TEXTURE_ATLAS_SIZE + tile.x);
 }
-

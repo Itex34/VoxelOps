@@ -11,7 +11,7 @@
 #include "../../Shared/network/Packets.hpp"
 
 class SnapshotInterpolator {
-  public:
+public:
     struct InterpolatedPlayer {
         PlayerID id = 0;
         glm::vec3 position{0.0f};
@@ -31,7 +31,7 @@ class SnapshotInterpolator {
         return m_interpolationDelaySeconds;
     }
 
-  private:
+private:
     struct RemoteSnapshot {
         uint32_t serverTick = 0;
         glm::vec3 position{0.0f};

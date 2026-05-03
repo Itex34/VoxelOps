@@ -3,48 +3,27 @@
 #include "App.hpp"
 #include "AppHelpers.hpp"
 #include "../graphics/RenderDeviceFactory.hpp"
-
-#include <cstdlib>
+#include "../../Shared/runtime/Paths.hpp"
 #include <iostream>
-#include <string>
-#include <string_view>
 
 using namespace AppHelpers;
 
-namespace {
-RenderApi ParseRenderApiFromEnv() {
-    const char *renderApiEnv = std::getenv("VOXELOPS_RENDER_API");
-    if (renderApiEnv == nullptr) {
-        return RenderApi::OpenGL;
-    }
-
-    std::string apiName = TrimAscii(std::string_view(renderApiEnv));
-    for (char &c : apiName) {
-        if (c >= 'A' && c <= 'Z') {
-            c = static_cast<char>(c - 'A' + 'a');
-        }
-    }
-
-    if (apiName == "vulkan" || apiName == "vk") {
-        return RenderApi::Vulkan;
-    }
-    return RenderApi::OpenGL;
-}
-} // namespace
-
 void App::shutdown(Runtime &runtime) {
-    runtime.clientNet.Shutdown();
-    m_worldItemRenderer.shutdown();
-    if (runtime.debugUi) {
-        runtime.debugUi->shutdown();
-        runtime.debugUi.reset();
+    runtime.network.clientNet.Shutdown();
+    if (m_worldItemRenderer) {
+        m_worldItemRenderer->shutdown();
+        m_worldItemRenderer.reset();
     }
-    runtime.inventoryUi.reset();
-    runtime.gunSceneRenderer.reset();
-    runtime.gunRenderer.reset();
-    if (runtime.renderer) {
-        runtime.renderer->shutdown();
-        runtime.renderer.reset();
+    if (runtime.ui.debugUi) {
+        runtime.ui.debugUi->shutdown();
+        runtime.ui.debugUi.reset();
+    }
+    runtime.ui.inventoryUi.reset();
+    runtime.render.gunSceneRenderer.reset();
+    runtime.render.gunRenderer.reset();
+    if (runtime.render.renderer) {
+        runtime.render.renderer->shutdown();
+        runtime.render.renderer.reset();
     }
 
     if (m_GlContext != nullptr) {
@@ -80,7 +59,7 @@ int App::Run(int argc, char **argv) {
     }
     std::cout << "\n";
 
-    m_RenderApi = ParseRenderApiFromEnv();
+    m_RenderApi = ResolveRenderApiFromEnvironment();
     std::cout << "[App] Requested render API: " << GetRenderApiName(m_RenderApi) << "\n";
 
     if (!initWindowAndContext()) {
@@ -89,17 +68,18 @@ int App::Run(int argc, char **argv) {
     m_ShouldQuit = false;
 
     Runtime runtime;
-    runtime.renderer = CreateRenderDevice(m_RenderApi);
-    if (!runtime.renderer) {
+    runtime.render.renderer = CreateRenderDevice(m_RenderApi);
+    if (!runtime.render.renderer) {
         std::cerr << "[App] Failed to create render device.\n";
         return -1;
     }
-    if (!runtime.renderer->initialize(m_Window)) {
+    if (!runtime.render.renderer->initialize(m_Window)) {
         std::cerr << "[App] Failed to initialize render device.\n";
         return -1;
     }
-    const RenderDeviceCapabilities caps = runtime.renderer->getCapabilities();
+    const RenderDeviceCapabilities caps = runtime.render.renderer->getCapabilities();
     std::cout << "[App] Render API selected: " << caps.apiName << "\n";
+    m_worldItemRenderer = CreateWorldItemRenderer(caps.api);
     initGameplay(runtime);
     initCallbacks(runtime);
     initRenderResources(runtime);
@@ -118,3 +98,6 @@ int App::Run(int argc, char **argv) {
     shutdown(runtime);
     return 0;
 }
+
+
+

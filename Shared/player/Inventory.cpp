@@ -3,17 +3,17 @@
 #include <algorithm>
 
 namespace {
-constexpr uint16_t kHotbarStart = 0;
-constexpr uint16_t kBackpackStart = kHotbarStart + kHotbarSlots;
-constexpr uint16_t kAmmoStart = kBackpackStart + kBackpackSlots;
-constexpr uint16_t kAmmoEnd = kAmmoStart + kAmmoSlots;
+    constexpr uint16_t kHotbarStart = 0;
+    constexpr uint16_t kBackpackStart = kHotbarStart + kHotbarSlots;
+    constexpr uint16_t kAmmoStart = kBackpackStart + kBackpackSlots;
+    constexpr uint16_t kAmmoEnd = kAmmoStart + kAmmoSlots;
 
-bool IsAmmoItem(const uint16_t itemId) noexcept {
-    if (itemId >= static_cast<uint16_t>(ITEM_COUNT)) {
-        return false;
+    bool IsAmmoItem(const uint16_t itemId) noexcept {
+        if (itemId >= static_cast<uint16_t>(ITEM_COUNT)) {
+            return false;
+        }
+        return Items::ItemDatabase[itemId].type == ItemType::Ammo;
     }
-    return Items::ItemDatabase[itemId].type == ItemType::Ammo;
-}
 } // namespace
 
 Inventory::Inventory() {
@@ -67,7 +67,8 @@ uint16_t Inventory::MaxStackForItem(uint16_t itemId) noexcept {
         return 0;
     }
     return static_cast<uint16_t>(
-        std::min(maxStack, static_cast<int>((std::numeric_limits<uint16_t>::max)())));
+        std::min(maxStack, static_cast<int>((std::numeric_limits<uint16_t>::max)()))
+    );
 }
 
 void Inventory::NormalizeSlot(const uint16_t slotIndex, Slot &slot) noexcept {
@@ -162,8 +163,11 @@ bool Inventory::appendItems(uint16_t itemId, uint16_t quantity, uint16_t *outRem
     return changed;
 }
 
-bool Inventory::applyAction(const InventoryAction &action, InventoryRejectReason &outReject,
-                            std::vector<uint16_t> &outChangedSlots) {
+bool Inventory::applyAction(
+    const InventoryAction &action,
+    InventoryRejectReason &outReject,
+    std::vector<uint16_t> &outChangedSlots
+) {
     outReject = InventoryRejectReason::None;
     outChangedSlots.clear();
 

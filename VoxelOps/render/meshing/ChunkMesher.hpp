@@ -1,8 +1,9 @@
 #pragma once
 
-#include "../world/ChunkManager.hpp"
+#include "../../world/ChunkManager.hpp"
 #include "ChunkMeshBuilder.hpp"
-#include "../misc/ThreadPool.hpp"
+#include "../../graphics/AtlasLayout.hpp"
+#include "../../misc/ThreadPool.hpp"
 
 #include <atomic>
 #include <array>
@@ -17,7 +18,7 @@
 #include <vector>
 
 class ChunkMesher {
-  public:
+public:
     explicit ChunkMesher(ChunkManager &owner);
     ~ChunkMesher();
 
@@ -31,7 +32,7 @@ class ChunkMesher {
         return m_cpuChunkMeshes;
     }
 
-  private:
+private:
     struct ChunkMeshBuildJob {
         glm::ivec3 chunkPos{0};
         uint64_t buildTicket = 0;
@@ -65,5 +66,6 @@ class ChunkMesher {
     std::unordered_map<glm::ivec3, uint64_t, IVec3Hash> m_chunkBuildTickets;
     std::atomic<uint64_t> m_nextChunkBuildTicket{1};
 
+    AtlasLayout m_atlasLayout;
     ThreadPool m_meshPool{std::max(1u, std::thread::hardware_concurrency() - 1)};
 };

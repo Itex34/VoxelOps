@@ -2,7 +2,8 @@
 
 #include "core/Runtime.hpp"
 
-Network::Network() : m_runtime(std::make_unique<Runtime>()) {}
+Network::Network()
+    : m_runtime(std::make_unique<Runtime>()) {}
 
 Network::~Network() = default;
 

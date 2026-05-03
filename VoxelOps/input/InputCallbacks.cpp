@@ -2,7 +2,8 @@
 #include <glad/glad.h>
 #include <imgui.h>
 
-InputCallbacks::InputCallbacks(Player &inPlayer) : player(inPlayer) {}
+InputCallbacks::InputCallbacks(Player &inPlayer)
+    : player(inPlayer) {}
 
 void InputCallbacks::framebuffer_size_callback(SDL_Window *window, int width, int height) {
     (void)window;
@@ -13,8 +14,9 @@ void InputCallbacks::framebuffer_size_callback(SDL_Window *window, int width, in
     }
 }
 
-void InputCallbacks::mouse_motion_callback(SDL_Window *window, float xpos, float ypos, float xrel,
-                                           float yrel, bool dbgCam) {
+void InputCallbacks::mouse_motion_callback(
+    SDL_Window *window, float xpos, float ypos, float xrel, float yrel, bool dbgCam
+) {
     if (ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse)
         return;
     if (GameData::cursorEnabled)

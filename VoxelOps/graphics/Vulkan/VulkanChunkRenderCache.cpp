@@ -16,14 +16,16 @@ void VulkanChunkRenderCache::collectRetiredChunkMeshes(uint64_t frameCounter) {
     }
 }
 
-void VulkanChunkRenderCache::syncFromChunkManager(
-    ChunkManager &chunkManager, const glm::ivec3 &cullingChunk, uint64_t frameCounter,
-    VulkanContext &context, UploadContext &uploadContext,
+void VulkanChunkRenderCache::syncFromCpuChunkMeshes(
+    const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuMeshes,
+    const glm::ivec3 &cullingChunk,
+    uint64_t frameCounter,
+    VulkanContext &context,
+    UploadContext &uploadContext,
     const std::function<void(const glm::ivec3 &)> &onChunkRemoved,
-    const std::function<void(const glm::ivec3 &, const CpuChunkMesh &)> &onChunkUploaded) {
+    const std::function<void(const glm::ivec3 &, const CpuChunkMesh &)> &onChunkUploaded
+) {
     static constexpr size_t kMaxChunkUploadsPerFrame = 8;
-
-    const auto &cpuMeshes = chunkManager.getCpuChunkMeshes();
     std::vector<glm::ivec3> chunksToRemove;
     chunksToRemove.reserve(m_chunkMeshes.size());
     for (const auto &[chunkPos, _cached] : m_chunkMeshes) {
@@ -47,8 +49,10 @@ void VulkanChunkRenderCache::syncFromChunkManager(
 
     auto farthestIt = [&candidates]() {
         return std::max_element(
-            candidates.begin(), candidates.end(),
-            [](const UploadCandidate &a, const UploadCandidate &b) { return a.dist2 < b.dist2; });
+            candidates.begin(),
+            candidates.end(),
+            [](const UploadCandidate &a, const UploadCandidate &b) { return a.dist2 < b.dist2; }
+        );
     };
 
     for (const auto &[chunkPos, cpu] : cpuMeshes) {
@@ -84,8 +88,11 @@ void VulkanChunkRenderCache::syncFromChunkManager(
         m_chunkMeshes.erase(it);
     }
 
-    std::sort(candidates.begin(), candidates.end(),
-              [](const UploadCandidate &a, const UploadCandidate &b) { return a.dist2 < b.dist2; });
+    std::sort(
+        candidates.begin(),
+        candidates.end(),
+        [](const UploadCandidate &a, const UploadCandidate &b) { return a.dist2 < b.dist2; }
+    );
 
     for (const UploadCandidate &candidate : candidates) {
         const glm::ivec3 &chunkPos = candidate.chunkPos;

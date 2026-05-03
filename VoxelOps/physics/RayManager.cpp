@@ -3,8 +3,9 @@
 
 RayManager::RayManager() {}
 
-RayResult RayManager::rayHasBlockIntersectSingle(const Ray &ray, const ChunkManager &chunkManager,
-                                                 float maxDistance) {
+RayResult RayManager::rayHasBlockIntersectSingle(
+    const Ray &ray, const ChunkManager &chunkManager, float maxDistance
+) {
     RayResult result{};
     result.hit = false;
     result.hitBlockWorld = glm::ivec3(0);
@@ -50,7 +51,6 @@ RayResult RayManager::rayHasBlockIntersectSingle(const Ray &ray, const ChunkMana
             glm::ivec3 blockInChunk = currentBlock - chunk.getWorldPosition();
 
             if (chunk.inBounds(blockInChunk.x, blockInChunk.y, blockInChunk.z)) {
-
                 BlockID block =
                     chunk.getBlockUnchecked(blockInChunk.x, blockInChunk.y, blockInChunk.z);
                 if (block != BlockID::Air) {
@@ -90,9 +90,13 @@ RayResult RayManager::rayHasBlockIntersectSingle(const Ray &ray, const ChunkMana
     return result; // no hit found
 }
 
-RayShootHit RayManager::rayShoot(const glm::vec3 &origin, const glm::vec3 &dir,
-                                 const ChunkManager &chunkManager,
-                                 const std::vector<Player *> &players, float maxDistance) {
+RayShootHit RayManager::rayShoot(
+    const glm::vec3 &origin,
+    const glm::vec3 &dir,
+    const ChunkManager &chunkManager,
+    const std::vector<Player *> &players,
+    float maxDistance
+) {
     RayShootHit result{};
     result.hit = false;
     result.type = RayShootHit::Type::None;
@@ -176,7 +180,8 @@ RayShootHit RayManager::rayShoot(const glm::vec3 &origin, const glm::vec3 &dir,
                 BlockID b = chunk.getBlockUnchecked(blockInChunk.x, blockInChunk.y, blockInChunk.z);
                 if (b != BlockID::Air) {
                     float hitDistance = std::min(
-                        {tMax.x, tMax.y, tMax.z}); // distance at which we entered this block
+                        {tMax.x, tMax.y, tMax.z}
+                    ); // distance at which we entered this block
                     if (!result.hit || hitDistance < result.distance) {
                         result.hit = true;
                         result.type = RayShootHit::Type::Block;

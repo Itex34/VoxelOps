@@ -18,7 +18,7 @@ static constexpr int PAD = 1;
 using TopOccluderGetter = std::function<int(int, int)>;
 
 class Lighting {
-  public:
+public:
     Lighting(int chunkSize = CHUNK_SIZE);
 
     static constexpr int kPaddedSize = CHUNK_SIZE + 3;
@@ -29,13 +29,20 @@ class Lighting {
 
     void buildSolidPadded(const Chunk &chunk, const Chunk *neighbors[6], uint8_t *solidPadded);
 
-    void prepareChunkAO(const Chunk &chunk, const glm::ivec3 &chunkPos, const Chunk *neighbors[6],
-                        uint8_t *aoBuffer, const uint8_t *solidPadded = nullptr);
+    void prepareChunkAO(
+        const Chunk &chunk,
+        const glm::ivec3 &chunkPos,
+        const Chunk *neighbors[6],
+        uint8_t *aoBuffer,
+        const uint8_t *solidPadded = nullptr
+    );
 
-
-    void faceCornerIndicesForCell(int sx, int sy, int sz, // sampling cell base (see notes below)
-                                  int face,               // 0..5 (same enum as your mesher)
-                                  int outIdx[4] // returns 4 corner indices in BL, BR, TR, TL order
+    void faceCornerIndicesForCell(
+        int sx,
+        int sy,
+        int sz,       // sampling cell base (see notes below)
+        int face,     // 0..5 (same enum as your mesher)
+        int outIdx[4] // returns 4 corner indices in BL, BR, TR, TL order
     ) const;
 
     inline int cornerIndexPadded(int x, int y, int z) const {
@@ -46,16 +53,16 @@ class Lighting {
         return x + paddedSize * (y + paddedSize * z);
     }
 
-  private:
+private:
     int chunkSize;
     int chunkSizePlus1;
     int paddedSize;
     static constexpr float AO_TABLE[4] = {1.00f, 0.85f, 0.65f, 0.53f};
     static const glm::ivec3 CANONICAL_CORNER_OFF[3];
 
-
-    inline BlockID getBlockWithNeighbors(const glm::ivec3 &pos, const Chunk &chunk,
-                                         const Chunk *neighbors[6]) const noexcept {
+    inline BlockID getBlockWithNeighbors(
+        const glm::ivec3 &pos, const Chunk &chunk, const Chunk *neighbors[6]
+    ) const noexcept {
         int x = pos.x;
         int y = pos.y;
         int z = pos.z;
@@ -94,8 +101,8 @@ class Lighting {
         return BlockID::Air;
     }
 
-    inline bool isSolidSafePadded(int x, int y, int z, const Chunk &center,
-                                  const Chunk *neighbors[6]) {
+    inline bool
+    isSolidSafePadded(int x, int y, int z, const Chunk &center, const Chunk *neighbors[6]) {
         // AO/sun taps may sample beyond one-axis neighborhood (e.g. corners at -2).
         // In those cases, treat as air instead of attempting unchecked access.
         if (y < -1 || y > CHUNK_SIZE) {

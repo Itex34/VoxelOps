@@ -1,6 +1,5 @@
 #include "VulkanGiSceneBuffers.hpp"
 
-#include "../../world/ChunkManager.hpp"
 #include "../../voxels/Voxel.hpp"
 #include "vulkan/VulkanContext.hpp"
 #include "vulkan/VulkanUtils.hpp"
@@ -11,37 +10,37 @@
 #include <vector>
 
 namespace {
-bool isTraceSolid(BlockID id) {
-    if (id == BlockID::Air) {
-        return false;
+    bool isTraceSolid(BlockID id) {
+        if (id == BlockID::Air) {
+            return false;
+        }
+        const auto it = blockTypes.find(id);
+        if (it == blockTypes.end()) {
+            return true;
+        }
+        return it->second.isSolid;
     }
-    const auto it = blockTypes.find(id);
-    if (it == blockTypes.end()) {
-        return true;
-    }
-    return it->second.isSolid;
-}
 
-uint64_t mixGiTraceSignature(uint64_t v) {
-    v ^= v >> 33;
-    v *= 0xff51afd7ed558ccdULL;
-    v ^= v >> 33;
-    v *= 0xc4ceb9fe1a85ec53ULL;
-    v ^= v >> 33;
-    return v;
-}
+    uint64_t mixGiTraceSignature(uint64_t v) {
+        v ^= v >> 33;
+        v *= 0xff51afd7ed558ccdULL;
+        v ^= v >> 33;
+        v *= 0xc4ceb9fe1a85ec53ULL;
+        v ^= v >> 33;
+        return v;
+    }
 } // namespace
 
-bool VulkanGiSceneBuffers::rebuild(const ChunkManager &chunkManager,
-                                   const VulkanChunkRenderCache &chunkRenderCache,
-                                   VulkanContext &context) {
+bool VulkanGiSceneBuffers::rebuild(
+    const std::unordered_map<glm::ivec3, Chunk, IVec3Hash> &chunks,
+    const VulkanChunkRenderCache &chunkRenderCache,
+    VulkanContext &context
+) {
     const auto &chunkMeshes = chunkRenderCache.getChunkMeshes();
     if (chunkMeshes.empty()) {
         cleanup();
         return false;
     }
-
-    const auto &chunks = chunkManager.getChunks();
 
     glm::ivec3 minChunk(std::numeric_limits<int>::max());
     glm::ivec3 maxChunk(std::numeric_limits<int>::lowest());
@@ -69,8 +68,11 @@ bool VulkanGiSceneBuffers::rebuild(const ChunkManager &chunkManager,
         return false;
     }
 
-    const glm::uvec3 dims(static_cast<uint32_t>(dimsI.x), static_cast<uint32_t>(dimsI.y),
-                          static_cast<uint32_t>(dimsI.z));
+    const glm::uvec3 dims(
+        static_cast<uint32_t>(dimsI.x),
+        static_cast<uint32_t>(dimsI.y),
+        static_cast<uint32_t>(dimsI.z)
+    );
     const uint64_t voxelCount64 = static_cast<uint64_t>(dims.x) * static_cast<uint64_t>(dims.y) *
                                   static_cast<uint64_t>(dims.z);
     if (voxelCount64 == 0 ||
@@ -83,11 +85,10 @@ bool VulkanGiSceneBuffers::rebuild(const ChunkManager &chunkManager,
     const vk::DeviceSize occupancyBytes = static_cast<vk::DeviceSize>(wordCount) * sizeof(uint32_t);
     const vk::DeviceSize materialBytes = static_cast<vk::DeviceSize>(voxelCount) * sizeof(uint32_t);
 
-    const bool geometryUnchanged = m_valid && m_signatureXor == signatureXor &&
-                                   m_signatureSum == signatureSum && m_chunkCount == signatureCount &&
-                                   m_minBlocks == minBlocks && m_dims == dims &&
-                                   m_wordCount == wordCount && m_occupancyBuffer != nullptr &&
-                                   m_materialBuffer != nullptr;
+    const bool geometryUnchanged =
+        m_valid && m_signatureXor == signatureXor && m_signatureSum == signatureSum &&
+        m_chunkCount == signatureCount && m_minBlocks == minBlocks && m_dims == dims &&
+        m_wordCount == wordCount && m_occupancyBuffer != nullptr && m_materialBuffer != nullptr;
     if (geometryUnchanged) {
         return true;
     }
@@ -97,13 +98,23 @@ bool VulkanGiSceneBuffers::rebuild(const ChunkManager &chunkManager,
     const vk::raii::Device &device = context.getDevice();
     const vk::raii::PhysicalDevice &physicalDevice = context.getPhysicalDevice();
     VulkanUtils::createBuffer(
-        device, physicalDevice, occupancyBytes, vk::BufferUsageFlagBits::eStorageBuffer,
+        device,
+        physicalDevice,
+        occupancyBytes,
+        vk::BufferUsageFlagBits::eStorageBuffer,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        m_occupancyBuffer, m_occupancyBufferMemory);
+        m_occupancyBuffer,
+        m_occupancyBufferMemory
+    );
     VulkanUtils::createBuffer(
-        device, physicalDevice, materialBytes, vk::BufferUsageFlagBits::eStorageBuffer,
+        device,
+        physicalDevice,
+        materialBytes,
+        vk::BufferUsageFlagBits::eStorageBuffer,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        m_materialBuffer, m_materialBufferMemory);
+        m_materialBuffer,
+        m_materialBufferMemory
+    );
 
     std::vector<uint32_t> occupancyWords(wordCount, 0u);
     std::vector<uint32_t> materialIds(voxelCount, 0u);
@@ -125,10 +136,9 @@ bool VulkanGiSceneBuffers::rebuild(const ChunkManager &chunkManager,
 
                     const glm::ivec3 worldPos = chunkWorldBase + glm::ivec3(x, y, z);
                     const glm::ivec3 local = worldPos - minBlocks;
-                    const uint32_t linear =
-                        static_cast<uint32_t>(local.x) +
-                        dims.x * (static_cast<uint32_t>(local.y) +
-                                  dims.y * static_cast<uint32_t>(local.z));
+                    const uint32_t linear = static_cast<uint32_t>(local.x) +
+                                            dims.x * (static_cast<uint32_t>(local.y) +
+                                                      dims.y * static_cast<uint32_t>(local.z));
                     materialIds[linear] = static_cast<uint32_t>(id);
                     if (isTraceSolid(id)) {
                         occupancyWords[linear >> 5u] |= (1u << (linear & 31u));

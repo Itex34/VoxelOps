@@ -3,11 +3,12 @@
 #include <iostream>
 
 namespace {
-constexpr double kChunkMeshBuildLogThresholdMs = 2.0;
-constexpr double kChunkMeshUploadLogThresholdMs = 2.0;
+    constexpr double kChunkMeshBuildLogThresholdMs = 2.0;
+    constexpr double kChunkMeshUploadLogThresholdMs = 2.0;
 } // namespace
 
-ChunkMesher::ChunkMesher(ChunkManager &owner) : m_owner(owner) {
+ChunkMesher::ChunkMesher(ChunkManager &owner)
+    : m_owner(owner) {
     ChunkMeshBuilder::resetProfileSnapshot();
 }
 
@@ -34,7 +35,8 @@ void ChunkMesher::updateDirtyChunks(size_t maxChunksPerCall, int64_t maxBudgetUs
     const auto outOfBudget = [&]() {
         if (maxBudgetUs > 0) {
             const int64_t elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                                          std::chrono::steady_clock::now() - start)
+                                          std::chrono::steady_clock::now() - start
+            )
                                           .count();
             if (elapsedUs >= maxBudgetUs) {
                 return true;
@@ -83,7 +85,7 @@ void ChunkMesher::updateDirtyChunks(size_t maxChunksPerCall, int64_t maxBudgetUs
                               << " idx=" << ready.indices.size() << " chunk=(" << ready.chunkPos.x
                               << "," << ready.chunkPos.y << "," << ready.chunkPos.z << ")\n";
                 }
-            } else if (m_dirtyChunkPending.insert(ready.chunkPos).second) { 
+            } else if (m_dirtyChunkPending.insert(ready.chunkPos).second) {
                 m_dirtyChunkQueue.push_back(ready.chunkPos);
             }
         }
@@ -154,8 +156,9 @@ bool ChunkMesher::requestChunkRebuild(const glm::ivec3 &pos) {
     job.chunkWorldMinZ = pos.z * CHUNK_SIZE;
     chunk.copyBlocks(job.centerBlocks);
 
-    constexpr glm::ivec3 offsets[6] = {{1, 0, 0},  {-1, 0, 0}, {0, 1, 0},
-                                       {0, -1, 0}, {0, 0, 1},  {0, 0, -1}};
+    constexpr glm::ivec3 offsets[6] = {
+        {1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}
+    };
 
     for (int i = 0; i < 6; ++i) {
         auto neighborIt = m_owner.chunkMap.find(pos + offsets[i]);
@@ -178,8 +181,9 @@ void ChunkMesher::buildChunkMeshWorker(ChunkMeshBuildJob job) {
     Chunk center(job.chunkPos);
     center.overwriteBlocks(job.centerBlocks);
 
-    constexpr glm::ivec3 offsets[6] = {{1, 0, 0},  {-1, 0, 0}, {0, 1, 0},
-                                       {0, -1, 0}, {0, 0, 1},  {0, 0, -1}};
+    constexpr glm::ivec3 offsets[6] = {
+        {1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}
+    };
 
     std::array<std::optional<Chunk>, 6> neighborStorage;
     const Chunk *neighbors[6] = {};
@@ -190,13 +194,13 @@ void ChunkMesher::buildChunkMeshWorker(ChunkMeshBuildJob job) {
 
         neighborStorage[static_cast<size_t>(i)].emplace(job.chunkPos + offsets[i]);
         neighborStorage[static_cast<size_t>(i)]->overwriteBlocks(
-            job.neighborBlocks[static_cast<size_t>(i)]);
+            job.neighborBlocks[static_cast<size_t>(i)]
+        );
         neighbors[i] = &neighborStorage[static_cast<size_t>(i)].value();
     }
 
     const auto buildStart = std::chrono::steady_clock::now();
-    auto built =
-        workerBuilder.buildChunkMesh(center, neighbors, job.chunkPos, m_owner.atlasLayout, job.enableAO);
+    auto built = workerBuilder.buildChunkMesh(center, neighbors, job.chunkPos, m_atlasLayout, job.enableAO);
 
     const auto buildEnd = std::chrono::steady_clock::now();
     const double buildMs = std::chrono::duration<double, std::milli>(buildEnd - buildStart).count();

@@ -7,7 +7,7 @@
 #include <string>
 
 class InventoryUI {
-  public:
+public:
     void setVisible(bool visible) noexcept;
     void toggleVisible() noexcept;
     [[nodiscard]] bool isVisible() const noexcept;
@@ -19,10 +19,15 @@ class InventoryUI {
     [[nodiscard]] const std::array<Slot, kInventorySlotCount> &slots() const noexcept;
     [[nodiscard]] uint32_t revision() const noexcept;
 
-  private:
+private:
     [[nodiscard]] bool hasAuthoritativeSnapshot() const noexcept;
-    bool submitAction(ClientNetwork &clientNet, InventoryActionType type, uint16_t sourceSlot,
-                      uint16_t destinationSlot, uint16_t amount);
+    bool submitAction(
+        ClientNetwork &clientNet,
+        InventoryActionType type,
+        uint16_t sourceSlot,
+        uint16_t destinationSlot,
+        uint16_t amount
+    );
 
     bool m_visible = false;
     bool m_hasSnapshot = false;

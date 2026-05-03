@@ -2,7 +2,8 @@
 
 #include "../Mesh.hpp"
 #include "../../voxels/Chunk.hpp"
-#include "../../world/ChunkManager.hpp"
+#include "../../voxels/VoxelCoordHash.hpp"
+#include "../../render/ChunkMeshData.hpp"
 #include "vulkan/UploadContext.hpp"
 #include "vulkan/VulkanContext.hpp"
 #include "vulkan/VulkanUtils.hpp"
@@ -14,84 +15,89 @@
 #include <vector>
 
 namespace {
-constexpr glm::ivec3 kRtDummyChunkPos{250000, 250000, 250000};
-constexpr uint64_t kRtRetireFrameLag = 24u;
+    constexpr glm::ivec3 kRtDummyChunkPos{250000, 250000, 250000};
+    constexpr uint64_t kRtRetireFrameLag = 24u;
 
-struct DeviceBufferAllocation {
-    vk::raii::Buffer buffer{nullptr};
-    vk::raii::DeviceMemory memory{nullptr};
+    struct DeviceBufferAllocation {
+        vk::raii::Buffer buffer{nullptr};
+        vk::raii::DeviceMemory memory{nullptr};
 
-    void reset() {
-        buffer.clear();
-        memory.clear();
+        void reset() {
+            buffer.clear();
+            memory.clear();
+        }
+    };
+
+    void createBufferWithAddressing(
+        const vk::raii::Device &device,
+        const vk::raii::PhysicalDevice &physicalDevice,
+        vk::DeviceSize size,
+        vk::BufferUsageFlags usage,
+        vk::MemoryPropertyFlags properties,
+        bool enableDeviceAddress,
+        DeviceBufferAllocation &outBuffer
+    ) {
+        outBuffer.reset();
+
+        vk::BufferCreateInfo bufferInfo{};
+        bufferInfo.size = std::max<vk::DeviceSize>(size, 4u);
+        bufferInfo.usage = usage;
+        bufferInfo.sharingMode = vk::SharingMode::eExclusive;
+        outBuffer.buffer = vk::raii::Buffer(device, bufferInfo);
+
+        const vk::MemoryRequirements requirements = outBuffer.buffer.getMemoryRequirements();
+
+        vk::MemoryAllocateInfo allocInfo{};
+        allocInfo.allocationSize = requirements.size;
+        allocInfo.memoryTypeIndex =
+            VulkanUtils::findMemoryType(physicalDevice, requirements.memoryTypeBits, properties);
+
+        vk::MemoryAllocateFlagsInfo allocFlags{};
+        if (enableDeviceAddress) {
+            allocFlags.flags = vk::MemoryAllocateFlagBits::eDeviceAddress;
+            allocInfo.pNext = &allocFlags;
+        }
+
+        outBuffer.memory = vk::raii::DeviceMemory(device, allocInfo);
+        outBuffer.buffer.bindMemory(*outBuffer.memory, 0);
     }
-};
 
-void createBufferWithAddressing(const vk::raii::Device &device,
-                                const vk::raii::PhysicalDevice &physicalDevice, vk::DeviceSize size,
-                                vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties,
-                                bool enableDeviceAddress, DeviceBufferAllocation &outBuffer) {
-    outBuffer.reset();
-
-    vk::BufferCreateInfo bufferInfo{};
-    bufferInfo.size = std::max<vk::DeviceSize>(size, 4u);
-    bufferInfo.usage = usage;
-    bufferInfo.sharingMode = vk::SharingMode::eExclusive;
-    outBuffer.buffer = vk::raii::Buffer(device, bufferInfo);
-
-    const vk::MemoryRequirements requirements = outBuffer.buffer.getMemoryRequirements();
-
-    vk::MemoryAllocateInfo allocInfo{};
-    allocInfo.allocationSize = requirements.size;
-    allocInfo.memoryTypeIndex =
-        VulkanUtils::findMemoryType(physicalDevice, requirements.memoryTypeBits, properties);
-
-    vk::MemoryAllocateFlagsInfo allocFlags{};
-    if (enableDeviceAddress) {
-        allocFlags.flags = vk::MemoryAllocateFlagBits::eDeviceAddress;
-        allocInfo.pNext = &allocFlags;
+    vk::DeviceAddress getBufferDeviceAddress(const vk::raii::Device &device, vk::Buffer buffer) {
+        vk::BufferDeviceAddressInfo addressInfo{};
+        addressInfo.buffer = buffer;
+        return device.getBufferAddress(addressInfo);
     }
 
-    outBuffer.memory = vk::raii::DeviceMemory(device, allocInfo);
-    outBuffer.buffer.bindMemory(*outBuffer.memory, 0);
-}
+    glm::vec3 decodePackedVoxelPosition(const VoxelVertex &packed) {
+        const uint32_t x = (packed.low >> 0u) & 31u;
+        const uint32_t y = (packed.low >> 5u) & 31u;
+        const uint32_t z = (packed.low >> 10u) & 31u;
+        return glm::vec3(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+    }
 
-vk::DeviceAddress getBufferDeviceAddress(const vk::raii::Device &device, vk::Buffer buffer) {
-    vk::BufferDeviceAddressInfo addressInfo{};
-    addressInfo.buffer = buffer;
-    return device.getBufferAddress(addressInfo);
-}
+    VkTransformMatrixKHR makeTranslationTransform(const glm::vec3 &translation) {
+        VkTransformMatrixKHR out{};
+        out.matrix[0][0] = 1.0f;
+        out.matrix[0][1] = 0.0f;
+        out.matrix[0][2] = 0.0f;
+        out.matrix[0][3] = translation.x;
+        out.matrix[1][0] = 0.0f;
+        out.matrix[1][1] = 1.0f;
+        out.matrix[1][2] = 0.0f;
+        out.matrix[1][3] = translation.y;
+        out.matrix[2][0] = 0.0f;
+        out.matrix[2][1] = 0.0f;
+        out.matrix[2][2] = 1.0f;
+        out.matrix[2][3] = translation.z;
+        return out;
+    }
 
-glm::vec3 decodePackedVoxelPosition(const VoxelVertex &packed) {
-    const uint32_t x = (packed.low >> 0u) & 31u;
-    const uint32_t y = (packed.low >> 5u) & 31u;
-    const uint32_t z = (packed.low >> 10u) & 31u;
-    return glm::vec3(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
-}
-
-VkTransformMatrixKHR makeTranslationTransform(const glm::vec3 &translation) {
-    VkTransformMatrixKHR out{};
-    out.matrix[0][0] = 1.0f;
-    out.matrix[0][1] = 0.0f;
-    out.matrix[0][2] = 0.0f;
-    out.matrix[0][3] = translation.x;
-    out.matrix[1][0] = 0.0f;
-    out.matrix[1][1] = 1.0f;
-    out.matrix[1][2] = 0.0f;
-    out.matrix[1][3] = translation.y;
-    out.matrix[2][0] = 0.0f;
-    out.matrix[2][1] = 0.0f;
-    out.matrix[2][2] = 1.0f;
-    out.matrix[2][3] = translation.z;
-    return out;
-}
-
-VoxelVertex makePackedVoxelVertex(uint32_t x, uint32_t y, uint32_t z) {
-    VoxelVertex out{};
-    out.low = ((x & 31u) << 0u) | ((y & 31u) << 5u) | ((z & 31u) << 10u);
-    out.high = 0u;
-    return out;
-}
+    VoxelVertex makePackedVoxelVertex(uint32_t x, uint32_t y, uint32_t z) {
+        VoxelVertex out{};
+        out.low = ((x & 31u) << 0u) | ((y & 31u) << 5u) | ((z & 31u) << 10u);
+        out.high = 0u;
+        return out;
+    }
 
 } // namespace
 
@@ -176,8 +182,9 @@ bool VulkanRayTracingScene::isReady() const noexcept {
     return m_state && m_state->ready;
 }
 
-void VulkanRayTracingScene::initialize(VulkanContext &context, UploadContext &uploadContext,
-                                       uint64_t frameCounter) {
+void VulkanRayTracingScene::initialize(
+    VulkanContext &context, UploadContext &uploadContext, uint64_t frameCounter
+) {
     if (!context.isHardwareRayTracingSupported()) {
         reset();
         return;
@@ -198,11 +205,16 @@ void VulkanRayTracingScene::initialize(VulkanContext &context, UploadContext &up
     rt.ready = true;
     if (rt.chunkBlases.find(kRtDummyChunkPos) == rt.chunkBlases.end()) {
         CpuChunkMesh dummyMesh{};
-        dummyMesh.vertices = {makePackedVoxelVertex(0u, 0u, 0u), makePackedVoxelVertex(1u, 0u, 0u),
-                              makePackedVoxelVertex(0u, 1u, 0u)};
+        dummyMesh.vertices = {
+            makePackedVoxelVertex(0u, 0u, 0u),
+            makePackedVoxelVertex(1u, 0u, 0u),
+            makePackedVoxelVertex(0u, 1u, 0u)
+        };
         dummyMesh.indices = {0u, 1u, 2u};
         dummyMesh.revision = 1u;
-        (void)uploadChunkGeometry(context, uploadContext, frameCounter, kRtDummyChunkPos, dummyMesh);
+        (void)uploadChunkGeometry(
+            context, uploadContext, frameCounter, kRtDummyChunkPos, dummyMesh
+        );
     }
     m_dirty = true;
     (void)rebuild(context, frameCounter);
@@ -242,9 +254,13 @@ void VulkanRayTracingScene::reset() {
     m_state.reset();
 }
 
-bool VulkanRayTracingScene::uploadChunkGeometry(VulkanContext &context, UploadContext &uploadContext,
-                                                uint64_t frameCounter, const glm::ivec3 &chunkPos,
-                                                const CpuChunkMesh &cpuMesh) {
+bool VulkanRayTracingScene::uploadChunkGeometry(
+    VulkanContext &context,
+    UploadContext &uploadContext,
+    uint64_t frameCounter,
+    const glm::ivec3 &chunkPos,
+    const CpuChunkMesh &cpuMesh
+) {
     if (!m_state || !m_state->ready) {
         return false;
     }
@@ -279,29 +295,49 @@ bool VulkanRayTracingScene::uploadChunkGeometry(VulkanContext &context, UploadCo
         const vk::DeviceSize indexBytes =
             static_cast<vk::DeviceSize>(indices.size() * sizeof(uint16_t));
         createBufferWithAddressing(
-            device, physicalDevice, vertexBytes,
+            device,
+            physicalDevice,
+            vertexBytes,
             vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eShaderDeviceAddress |
                 vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR,
-            vk::MemoryPropertyFlagBits::eDeviceLocal, true, built.vertexBuffer);
+            vk::MemoryPropertyFlagBits::eDeviceLocal,
+            true,
+            built.vertexBuffer
+        );
         createBufferWithAddressing(
-            device, physicalDevice, indexBytes,
+            device,
+            physicalDevice,
+            indexBytes,
             vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eShaderDeviceAddress |
                 vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR,
-            vk::MemoryPropertyFlagBits::eDeviceLocal, true, built.indexBuffer);
+            vk::MemoryPropertyFlagBits::eDeviceLocal,
+            true,
+            built.indexBuffer
+        );
 
         std::vector<UploadContext::BufferCopyUpload> uploads;
         uploads.reserve(2);
-        uploads.push_back(UploadContext::BufferCopyUpload{
-            uploadContext.createStagingBuffer(physicalDevice, positions.data(), vertexBytes),
-            *built.vertexBuffer.buffer, vertexBytes});
-        uploads.push_back(UploadContext::BufferCopyUpload{
-            uploadContext.createStagingBuffer(physicalDevice, indices.data(), indexBytes),
-            *built.indexBuffer.buffer, indexBytes});
+        uploads.push_back(
+            UploadContext::BufferCopyUpload{
+                uploadContext.createStagingBuffer(physicalDevice, positions.data(), vertexBytes),
+                *built.vertexBuffer.buffer,
+                vertexBytes
+            }
+        );
+        uploads.push_back(
+            UploadContext::BufferCopyUpload{
+                uploadContext.createStagingBuffer(physicalDevice, indices.data(), indexBytes),
+                *built.indexBuffer.buffer,
+                indexBytes
+            }
+        );
         uploadContext.submitCopyBufferBatch(std::move(uploads));
         uploadContext.waitIdle();
 
-        const vk::DeviceAddress vertexAddress = getBufferDeviceAddress(device, *built.vertexBuffer.buffer);
-        const vk::DeviceAddress indexAddress = getBufferDeviceAddress(device, *built.indexBuffer.buffer);
+        const vk::DeviceAddress vertexAddress =
+            getBufferDeviceAddress(device, *built.vertexBuffer.buffer);
+        const vk::DeviceAddress indexAddress =
+            getBufferDeviceAddress(device, *built.indexBuffer.buffer);
         const uint32_t primitiveCount = static_cast<uint32_t>(indices.size() / 3u);
         if (primitiveCount == 0u) {
             built.reset();
@@ -331,12 +367,19 @@ bool VulkanRayTracingScene::uploadChunkGeometry(VulkanContext &context, UploadCo
         const std::array<uint32_t, 1> primitiveCounts = {primitiveCount};
         const vk::AccelerationStructureBuildSizesInfoKHR sizeInfo =
             device.getAccelerationStructureBuildSizesKHR(
-                vk::AccelerationStructureBuildTypeKHR::eDevice, buildInfo, primitiveCounts);
+                vk::AccelerationStructureBuildTypeKHR::eDevice, buildInfo, primitiveCounts
+            );
 
-        createBufferWithAddressing(device, physicalDevice, sizeInfo.accelerationStructureSize,
-                                   vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
-                                       vk::BufferUsageFlagBits::eShaderDeviceAddress,
-                                   vk::MemoryPropertyFlagBits::eDeviceLocal, true, built.asBuffer);
+        createBufferWithAddressing(
+            device,
+            physicalDevice,
+            sizeInfo.accelerationStructureSize,
+            vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
+                vk::BufferUsageFlagBits::eShaderDeviceAddress,
+            vk::MemoryPropertyFlagBits::eDeviceLocal,
+            true,
+            built.asBuffer
+        );
 
         vk::AccelerationStructureCreateInfoKHR asCreateInfo{};
         asCreateInfo.buffer = *built.asBuffer.buffer;
@@ -345,10 +388,15 @@ bool VulkanRayTracingScene::uploadChunkGeometry(VulkanContext &context, UploadCo
         built.as = vk::raii::AccelerationStructureKHR(device, asCreateInfo);
 
         DeviceBufferAllocation scratchBuffer{};
-        createBufferWithAddressing(device, physicalDevice, sizeInfo.buildScratchSize,
-                                   vk::BufferUsageFlagBits::eStorageBuffer |
-                                       vk::BufferUsageFlagBits::eShaderDeviceAddress,
-                                   vk::MemoryPropertyFlagBits::eDeviceLocal, true, scratchBuffer);
+        createBufferWithAddressing(
+            device,
+            physicalDevice,
+            sizeInfo.buildScratchSize,
+            vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress,
+            vk::MemoryPropertyFlagBits::eDeviceLocal,
+            true,
+            scratchBuffer
+        );
         buildInfo.dstAccelerationStructure = *built.as;
         buildInfo.scratchData.deviceAddress = getBufferDeviceAddress(device, *scratchBuffer.buffer);
 
@@ -360,7 +408,9 @@ bool VulkanRayTracingScene::uploadChunkGeometry(VulkanContext &context, UploadCo
         vk::raii::CommandBuffer commandBuffer =
             VulkanUtils::beginSingleTimeCommands(device, rt.commandPool);
         commandBuffer.buildAccelerationStructuresKHR(buildInfos, rangeInfos);
-        VulkanUtils::endSingleTimeCommands(device, context.getGraphicsQueue(), std::move(commandBuffer));
+        VulkanUtils::endSingleTimeCommands(
+            device, context.getGraphicsQueue(), std::move(commandBuffer)
+        );
         scratchBuffer.reset();
 
         built.revision = cpuMesh.revision;
@@ -424,7 +474,8 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
 
             vk::AccelerationStructureDeviceAddressInfoKHR addrInfo{};
             addrInfo.accelerationStructure = *chunkBlas.as;
-            const vk::DeviceAddress blasAddress = device.getAccelerationStructureAddressKHR(addrInfo);
+            const vk::DeviceAddress blasAddress =
+                device.getAccelerationStructureAddressKHR(addrInfo);
             if (blasAddress == 0) {
                 continue;
             }
@@ -441,18 +492,25 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
 
         DeviceBufferAllocation instanceBuffer{};
         const vk::DeviceSize instanceBytes = static_cast<vk::DeviceSize>(
-            std::max<size_t>(1u, instances.size()) * sizeof(VkAccelerationStructureInstanceKHR));
+            std::max<size_t>(1u, instances.size()) * sizeof(VkAccelerationStructureInstanceKHR)
+        );
         createBufferWithAddressing(
-            device, physicalDevice, instanceBytes,
+            device,
+            physicalDevice,
+            instanceBytes,
             vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
                 vk::BufferUsageFlagBits::eShaderDeviceAddress,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, true,
-            instanceBuffer);
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            true,
+            instanceBuffer
+        );
         if (!instances.empty()) {
             void *mapped = instanceBuffer.memory.mapMemory(0, instanceBytes);
             std::memcpy(
-                mapped, instances.data(),
-                static_cast<size_t>(instances.size() * sizeof(VkAccelerationStructureInstanceKHR)));
+                mapped,
+                instances.data(),
+                static_cast<size_t>(instances.size() * sizeof(VkAccelerationStructureInstanceKHR))
+            );
             instanceBuffer.memory.unmapMemory();
         }
 
@@ -475,13 +533,20 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
         const std::array<uint32_t, 1> primitiveCounts = {primitiveCount};
         const vk::AccelerationStructureBuildSizesInfoKHR sizeInfo =
             device.getAccelerationStructureBuildSizesKHR(
-                vk::AccelerationStructureBuildTypeKHR::eDevice, buildInfo, primitiveCounts);
+                vk::AccelerationStructureBuildTypeKHR::eDevice, buildInfo, primitiveCounts
+            );
 
         DeviceBufferAllocation newTlasBuffer{};
-        createBufferWithAddressing(device, physicalDevice, sizeInfo.accelerationStructureSize,
-                                   vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
-                                       vk::BufferUsageFlagBits::eShaderDeviceAddress,
-                                   vk::MemoryPropertyFlagBits::eDeviceLocal, true, newTlasBuffer);
+        createBufferWithAddressing(
+            device,
+            physicalDevice,
+            sizeInfo.accelerationStructureSize,
+            vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
+                vk::BufferUsageFlagBits::eShaderDeviceAddress,
+            vk::MemoryPropertyFlagBits::eDeviceLocal,
+            true,
+            newTlasBuffer
+        );
 
         vk::AccelerationStructureCreateInfoKHR asCreateInfo{};
         asCreateInfo.buffer = *newTlasBuffer.buffer;
@@ -490,10 +555,15 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
         vk::raii::AccelerationStructureKHR newTlas(device, asCreateInfo);
 
         DeviceBufferAllocation scratchBuffer{};
-        createBufferWithAddressing(device, physicalDevice, sizeInfo.buildScratchSize,
-                                   vk::BufferUsageFlagBits::eStorageBuffer |
-                                       vk::BufferUsageFlagBits::eShaderDeviceAddress,
-                                   vk::MemoryPropertyFlagBits::eDeviceLocal, true, scratchBuffer);
+        createBufferWithAddressing(
+            device,
+            physicalDevice,
+            sizeInfo.buildScratchSize,
+            vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress,
+            vk::MemoryPropertyFlagBits::eDeviceLocal,
+            true,
+            scratchBuffer
+        );
 
         buildInfo.dstAccelerationStructure = *newTlas;
         buildInfo.scratchData.deviceAddress = getBufferDeviceAddress(device, *scratchBuffer.buffer);
@@ -506,7 +576,9 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
         vk::raii::CommandBuffer commandBuffer =
             VulkanUtils::beginSingleTimeCommands(device, rt.commandPool);
         commandBuffer.buildAccelerationStructuresKHR(buildInfos, rangeInfos);
-        VulkanUtils::endSingleTimeCommands(device, context.getGraphicsQueue(), std::move(commandBuffer));
+        VulkanUtils::endSingleTimeCommands(
+            device, context.getGraphicsQueue(), std::move(commandBuffer)
+        );
         scratchBuffer.reset();
         instanceBuffer.reset();
 
@@ -522,7 +594,8 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
         rt.tlasAsBuffer = std::move(newTlasBuffer);
         m_activeTlas = (rt.tlas != nullptr)
                            ? static_cast<VkAccelerationStructureKHR>(
-                                 static_cast<vk::AccelerationStructureKHR>(*rt.tlas))
+                                 static_cast<vk::AccelerationStructureKHR>(*rt.tlas)
+                             )
                            : VK_NULL_HANDLE;
         m_dirty = false;
         return m_activeTlas != VK_NULL_HANDLE;

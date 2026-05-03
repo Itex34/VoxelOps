@@ -2,7 +2,6 @@
 
 #include "vulkan/VulkanContext.hpp"
 #include "../AtlasLayout.hpp"
-#include "../../world/ChunkManager.hpp"
 #include "../../../Shared/runtime/Paths.hpp"
 
 #include <exception>
@@ -28,30 +27,42 @@ void VulkanSceneUploader::collectRetiredChunkMeshes(uint64_t frameCounter) {
     m_chunkRenderCache.collectRetiredChunkMeshes(frameCounter);
 }
 
-void VulkanSceneUploader::syncChunkCache(ChunkManager &chunkManager, const glm::ivec3 &cullingChunk,
-                                         uint64_t frameCounter, VulkanContext &context,
-                                         UploadContext &uploadContext,
-                                         VulkanRayTracingScene &rtScene) {
-    m_chunkRenderCache.syncFromChunkManager(
-        chunkManager, cullingChunk, frameCounter, context, uploadContext,
+void VulkanSceneUploader::syncChunkCache(
+    const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuChunkMeshes,
+    const glm::ivec3 &cullingChunk,
+    uint64_t frameCounter,
+    VulkanContext &context,
+    UploadContext &uploadContext,
+    VulkanRayTracingScene &rtScene
+) {
+    m_chunkRenderCache.syncFromCpuChunkMeshes(
+        cpuChunkMeshes,
+        cullingChunk,
+        frameCounter,
+        context,
+        uploadContext,
         [&rtScene, frameCounter](const glm::ivec3 &chunkPos) {
             rtScene.removeChunkGeometry(frameCounter, chunkPos);
         },
-        [&rtScene, &context, &uploadContext, frameCounter](const glm::ivec3 &chunkPos,
-                                                            const CpuChunkMesh &cpuMesh) {
+        [&rtScene, &context, &uploadContext, frameCounter](
+            const glm::ivec3 &chunkPos, const CpuChunkMesh &cpuMesh
+        ) {
             if (context.isHardwareRayTracingSupported()) {
-                (void)rtScene.uploadChunkGeometry(context, uploadContext, frameCounter, chunkPos,
-                                                  cpuMesh);
+                (void)rtScene.uploadChunkGeometry(
+                    context, uploadContext, frameCounter, chunkPos, cpuMesh
+                );
             }
-        });
+        }
+    );
 }
 
 void VulkanSceneUploader::cleanupChunkMeshes() {
     m_chunkRenderCache.cleanup();
 }
 
-bool VulkanSceneUploader::ensureRemotePlayerAssetsLoaded(VulkanContext &context,
-                                                         UploadContext &uploadContext) {
+bool VulkanSceneUploader::ensureRemotePlayerAssetsLoaded(
+    VulkanContext &context, UploadContext &uploadContext
+) {
     if (m_remotePlayerAssetsLoaded) {
         return true;
     }
@@ -63,17 +74,23 @@ bool VulkanSceneUploader::ensureRemotePlayerAssetsLoaded(VulkanContext &context,
             Shared::RuntimePaths::ResolveModelsPath("MinecraftPlayer/Player.fbx").generic_string();
         m_remotePlayerModel = std::make_unique<VkModel>();
         m_remotePlayerModel->loadModel(modelPath);
-        m_remotePlayerModel->initGpuResources(context.getDevice(), context.getPhysicalDevice(),
-                                              uploadContext);
+        m_remotePlayerModel->initGpuResources(
+            context.getDevice(), context.getPhysicalDevice(), uploadContext
+        );
 
         const auto &meshTexturePaths = m_remotePlayerModel->getMeshTexturePaths();
         m_remotePlayerTextures.clear();
         m_remotePlayerTextures.reserve(meshTexturePaths.size());
         for (const std::string &texturePath : meshTexturePaths) {
             VkTexture texture{};
-            texture.initFromFile(context.getDevice(), context.getPhysicalDevice(), uploadContext,
-                                 texturePath, context.isSamplerAnisotropyEnabled(),
-                                 context.getMaxSamplerAnisotropy());
+            texture.initFromFile(
+                context.getDevice(),
+                context.getPhysicalDevice(),
+                uploadContext,
+                texturePath,
+                context.isSamplerAnisotropyEnabled(),
+                context.getMaxSamplerAnisotropy()
+            );
             m_remotePlayerTextures.emplace_back(std::move(texture));
         }
 
@@ -97,7 +114,9 @@ bool VulkanSceneUploader::ensureRemotePlayerAssetsLoaded(VulkanContext &context,
     }
 }
 
-bool VulkanSceneUploader::ensureAtlasTextureLoaded(VulkanContext &context, UploadContext &uploadContext) {
+bool VulkanSceneUploader::ensureAtlasTextureLoaded(
+    VulkanContext &context, UploadContext &uploadContext
+) {
     if (m_atlasTextureLoaded) {
         return true;
     }
@@ -106,9 +125,14 @@ bool VulkanSceneUploader::ensureAtlasTextureLoaded(VulkanContext &context, Uploa
         Shared::RuntimePaths::ResolveVoxelOpsPath("assets/textures/textureAtlas.png")
             .generic_string();
     m_atlasTexture.initFromAtlasFileAsArray(
-        context.getDevice(), context.getPhysicalDevice(), uploadContext, atlasPath,
-        static_cast<uint32_t>(TEXTURE_ATLAS_SIZE), context.isSamplerAnisotropyEnabled(),
-        context.getMaxSamplerAnisotropy());
+        context.getDevice(),
+        context.getPhysicalDevice(),
+        uploadContext,
+        atlasPath,
+        static_cast<uint32_t>(TEXTURE_ATLAS_SIZE),
+        context.isSamplerAnisotropyEnabled(),
+        context.getMaxSamplerAnisotropy()
+    );
     m_atlasTextureLoaded = true;
     return true;
 }

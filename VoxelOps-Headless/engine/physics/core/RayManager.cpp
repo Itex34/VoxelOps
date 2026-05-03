@@ -5,8 +5,9 @@
 
 RayManager::RayManager() {}
 
-RayResult RayManager::rayHasBlockIntersectSingle(const Ray &ray, const ChunkManager &chunkManager,
-                                                 float maxDistance) {
+RayResult RayManager::rayHasBlockIntersectSingle(
+    const Ray &ray, const ChunkManager &chunkManager, float maxDistance
+) {
     RayResult result{};
     result.hit = false;
     result.distance = maxDistance;
@@ -79,9 +80,9 @@ RayResult RayManager::rayHasBlockIntersectSingle(const Ray &ray, const ChunkMana
     return result; // no hit found
 }
 
-RayResult RayManager::rayHasBlockIntersectSinglePrecise(const Ray &ray,
-                                                        const ChunkManager &chunkManager,
-                                                        float maxDistance) {
+RayResult RayManager::rayHasBlockIntersectSinglePrecise(
+    const Ray &ray, const ChunkManager &chunkManager, float maxDistance
+) {
     return rayHasBlockIntersectSingle(ray, chunkManager, maxDistance);
 }
 

@@ -3,7 +3,6 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_access.hpp>
 #include <vector>
-#include <glad/glad.h>
 #include "../voxels/Chunk.hpp" // For AABB
 
 struct Plane {
@@ -12,7 +11,7 @@ struct Plane {
 };
 
 class Frustum {
-  public:
+public:
     Plane planes[6];
 
     void extractPlanes(const glm::mat4 &viewProj, bool depthZeroToOne = false) {
@@ -47,8 +46,7 @@ class Frustum {
         return true;
     }
 
-
-  private:
+private:
     Plane normalizePlane(const glm::vec4 &p) const {
         float length = glm::length(glm::vec3(p));
         return {glm::vec3(p) / length, p.w / length};

@@ -11,144 +11,152 @@
 #include <sstream>
 
 namespace {
-VKAPI_ATTR vk::Bool32 VKAPI_PTR debugCallback(
-    vk::DebugUtilsMessageSeverityFlagBitsEXT messageSeverity, vk::DebugUtilsMessageTypeFlagsEXT,
-    const vk::DebugUtilsMessengerCallbackDataEXT *pCallbackData, void *) {
-    const char *severity = "INFO";
-    if (messageSeverity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eError)
-        severity = "ERROR";
-    else if (messageSeverity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning)
-        severity = "WARN";
-    else if (messageSeverity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo)
-        severity = "INFO";
-    else if (messageSeverity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose)
-        severity = "VERBOSE";
+    VKAPI_ATTR vk::Bool32 VKAPI_PTR debugCallback(
+        vk::DebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+        vk::DebugUtilsMessageTypeFlagsEXT,
+        const vk::DebugUtilsMessengerCallbackDataEXT *pCallbackData,
+        void *
+    ) {
+        const char *severity = "INFO";
+        if (messageSeverity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eError)
+            severity = "ERROR";
+        else if (messageSeverity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning)
+            severity = "WARN";
+        else if (messageSeverity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo)
+            severity = "INFO";
+        else if (messageSeverity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose)
+            severity = "VERBOSE";
 
-    const char *message = (pCallbackData && pCallbackData->pMessage) ? pCallbackData->pMessage
-                                                                     : "No validation message.";
-    std::cerr << "[Vulkan][" << severity << "] " << message << "\n";
-    return vk::False;
-}
-
-vk::DebugUtilsMessengerCreateInfoEXT makeDebugMessengerCreateInfo() {
-    vk::DebugUtilsMessengerCreateInfoEXT info{};
-    info.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
-                           vk::DebugUtilsMessageSeverityFlagBitsEXT::eError;
-    info.messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
-                       vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
-                       vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance;
-    info.pfnUserCallback = debugCallback;
-    return info;
-}
-
-vk::Extent2D chooseSwapchainExtent(const vk::SurfaceCapabilitiesKHR &capabilities,
-                                   uint32_t windowWidth, uint32_t windowHeight) {
-    vk::Extent2D extent{};
-    if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
-        extent = capabilities.currentExtent;
-    } else {
-        extent.width = std::clamp(windowWidth, capabilities.minImageExtent.width,
-                                  capabilities.maxImageExtent.width);
-        extent.height = std::clamp(windowHeight, capabilities.minImageExtent.height,
-                                   capabilities.maxImageExtent.height);
+        const char *message = (pCallbackData && pCallbackData->pMessage) ? pCallbackData->pMessage
+                                                                         : "No validation message.";
+        std::cerr << "[Vulkan][" << severity << "] " << message << "\n";
+        return vk::False;
     }
-    return extent;
-}
 
-std::string toLowerCopy(std::string value) {
-    std::transform(value.begin(), value.end(), value.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return value;
-}
+    vk::DebugUtilsMessengerCreateInfoEXT makeDebugMessengerCreateInfo() {
+        vk::DebugUtilsMessengerCreateInfoEXT info{};
+        info.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
+                               vk::DebugUtilsMessageSeverityFlagBitsEXT::eError;
+        info.messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
+                           vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
+                           vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance;
+        info.pfnUserCallback = debugCallback;
+        return info;
+    }
 
-bool tryParseBoolEnv(const char *name, bool &outValue) {
-    const char *env = std::getenv(name);
-    if (env == nullptr) {
+    vk::Extent2D chooseSwapchainExtent(
+        const vk::SurfaceCapabilitiesKHR &capabilities, uint32_t windowWidth, uint32_t windowHeight
+    ) {
+        vk::Extent2D extent{};
+        if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
+            extent = capabilities.currentExtent;
+        } else {
+            extent.width = std::clamp(
+                windowWidth, capabilities.minImageExtent.width, capabilities.maxImageExtent.width
+            );
+            extent.height = std::clamp(
+                windowHeight, capabilities.minImageExtent.height, capabilities.maxImageExtent.height
+            );
+        }
+        return extent;
+    }
+
+    std::string toLowerCopy(std::string value) {
+        std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        return value;
+    }
+
+    bool tryParseBoolEnv(const char *name, bool &outValue) {
+        const char *env = std::getenv(name);
+        if (env == nullptr) {
+            return false;
+        }
+
+        const std::string value = toLowerCopy(std::string(env));
+        if (value == "1" || value == "true" || value == "on" || value == "yes") {
+            outValue = true;
+            return true;
+        }
+        if (value == "0" || value == "false" || value == "off" || value == "no") {
+            outValue = false;
+            return true;
+        }
         return false;
     }
 
-    const std::string value = toLowerCopy(std::string(env));
-    if (value == "1" || value == "true" || value == "on" || value == "yes") {
-        outValue = true;
-        return true;
+    bool isBenchmarkModeEnabled() {
+        bool enabled = false;
+        return tryParseBoolEnv("VOXELOPS_BENCHMARK", enabled) && enabled;
     }
-    if (value == "0" || value == "false" || value == "off" || value == "no") {
-        outValue = false;
-        return true;
-    }
-    return false;
-}
 
-bool isBenchmarkModeEnabled() {
-    bool enabled = false;
-    return tryParseBoolEnv("VOXELOPS_BENCHMARK", enabled) && enabled;
-}
-
-const char *presentModeToString(vk::PresentModeKHR mode) {
-    switch (mode) {
-    case vk::PresentModeKHR::eImmediate:
-        return "immediate";
-    case vk::PresentModeKHR::eMailbox:
-        return "mailbox";
-    case vk::PresentModeKHR::eFifo:
-        return "fifo";
-    case vk::PresentModeKHR::eFifoRelaxed:
-        return "fifo_relaxed";
-    default:
-        return "other";
-    }
-}
-
-vk::PresentModeKHR choosePresentMode(const std::vector<vk::PresentModeKHR> &presentModes) {
-    const bool benchmarkMode = isBenchmarkModeEnabled();
-    vk::PresentModeKHR preferredMode =
-        benchmarkMode ? vk::PresentModeKHR::eImmediate : vk::PresentModeKHR::eMailbox;
-
-    if (const char *env = std::getenv("VOXELOPS_VK_PRESENT_MODE")) {
-        std::string mode = toLowerCopy(std::string(env));
-        if (mode == "immediate") {
-            preferredMode = vk::PresentModeKHR::eImmediate;
-        } else if (mode == "fifo") {
-            preferredMode = vk::PresentModeKHR::eFifo;
-        } else if (mode == "mailbox") {
-            preferredMode = vk::PresentModeKHR::eMailbox;
+    const char *presentModeToString(vk::PresentModeKHR mode) {
+        switch (mode) {
+        case vk::PresentModeKHR::eImmediate:
+            return "immediate";
+        case vk::PresentModeKHR::eMailbox:
+            return "mailbox";
+        case vk::PresentModeKHR::eFifo:
+            return "fifo";
+        case vk::PresentModeKHR::eFifoRelaxed:
+            return "fifo_relaxed";
+        default:
+            return "other";
         }
     }
 
-    auto hasMode = [&presentModes](vk::PresentModeKHR target) {
-        return std::find(presentModes.begin(), presentModes.end(), target) != presentModes.end();
-    };
+    vk::PresentModeKHR choosePresentMode(const std::vector<vk::PresentModeKHR> &presentModes) {
+        const bool benchmarkMode = isBenchmarkModeEnabled();
+        vk::PresentModeKHR preferredMode =
+            benchmarkMode ? vk::PresentModeKHR::eImmediate : vk::PresentModeKHR::eMailbox;
 
-    if (hasMode(preferredMode)) {
-        return preferredMode;
-    }
-    if (hasMode(vk::PresentModeKHR::eMailbox)) {
-        return vk::PresentModeKHR::eMailbox;
-    }
-    if (hasMode(vk::PresentModeKHR::eImmediate)) {
-        return vk::PresentModeKHR::eImmediate;
-    }
-    return vk::PresentModeKHR::eFifo;
-}
+        if (const char *env = std::getenv("VOXELOPS_VK_PRESENT_MODE")) {
+            std::string mode = toLowerCopy(std::string(env));
+            if (mode == "immediate") {
+                preferredMode = vk::PresentModeKHR::eImmediate;
+            } else if (mode == "fifo") {
+                preferredMode = vk::PresentModeKHR::eFifo;
+            } else if (mode == "mailbox") {
+                preferredMode = vk::PresentModeKHR::eMailbox;
+            }
+        }
 
-bool shouldEnableValidationLayers() {
+        auto hasMode = [&presentModes](vk::PresentModeKHR target) {
+            return std::find(presentModes.begin(), presentModes.end(), target) !=
+                   presentModes.end();
+        };
+
+        if (hasMode(preferredMode)) {
+            return preferredMode;
+        }
+        if (hasMode(vk::PresentModeKHR::eMailbox)) {
+            return vk::PresentModeKHR::eMailbox;
+        }
+        if (hasMode(vk::PresentModeKHR::eImmediate)) {
+            return vk::PresentModeKHR::eImmediate;
+        }
+        return vk::PresentModeKHR::eFifo;
+    }
+
+    bool shouldEnableValidationLayers() {
 #ifdef NDEBUG
-    bool enabledByDefault = false;
+        bool enabledByDefault = false;
 #else
-    bool enabledByDefault = true;
+        bool enabledByDefault = true;
 #endif
 
-    bool explicitValidation = false;
-    if (tryParseBoolEnv("VOXELOPS_VK_VALIDATION", explicitValidation)) {
-        return explicitValidation;
-    }
+        bool explicitValidation = false;
+        if (tryParseBoolEnv("VOXELOPS_VK_VALIDATION", explicitValidation)) {
+            return explicitValidation;
+        }
 
-    if (isBenchmarkModeEnabled()) {
-        return false;
-    }
+        if (isBenchmarkModeEnabled()) {
+            return false;
+        }
 
-    return enabledByDefault;
-}
+        return enabledByDefault;
+    }
 } // namespace
 
 VulkanContext::~VulkanContext() {
@@ -222,7 +230,8 @@ void VulkanContext::validateInitPreconditions(SDL_Window *window) const {
 
     if ((SDL_WasInit(SDL_INIT_VIDEO) & SDL_INIT_VIDEO) == 0) {
         throw std::runtime_error(
-            "SDL video subsystem is not initialized. Call SDL_Init(SDL_INIT_VIDEO) first.");
+            "SDL video subsystem is not initialized. Call SDL_Init(SDL_INIT_VIDEO) first."
+        );
     }
 }
 
@@ -286,9 +295,14 @@ void VulkanContext::createInstance() {
         }
     }
 
-    vk::InstanceCreateInfo createInfo({}, &appInfo, static_cast<uint32_t>(layers.size()),
-                                      layers.data(), static_cast<uint32_t>(extensions.size()),
-                                      extensions.data());
+    vk::InstanceCreateInfo createInfo(
+        {},
+        &appInfo,
+        static_cast<uint32_t>(layers.size()),
+        layers.data(),
+        static_cast<uint32_t>(extensions.size()),
+        extensions.data()
+    );
 
     vk::DebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
     if (m_validationEnabled) {
@@ -310,10 +324,12 @@ void VulkanContext::createDebugMessenger() {
 
 void VulkanContext::createSurface(SDL_Window *window) {
     VkSurfaceKHR c_surface = VK_NULL_HANDLE;
-    if (!SDL_Vulkan_CreateSurface(window, static_cast<VkInstance>(*instance), nullptr,
-                                  &c_surface)) {
-        throw std::runtime_error(std::string("Failed to create Vulkan surface from SDL window: ") +
-                                 SDL_GetError());
+    if (!SDL_Vulkan_CreateSurface(
+            window, static_cast<VkInstance>(*instance), nullptr, &c_surface
+        )) {
+        throw std::runtime_error(
+            std::string("Failed to create Vulkan surface from SDL window: ") + SDL_GetError()
+        );
     }
 
     surface = vk::raii::SurfaceKHR(instance, c_surface);
@@ -377,15 +393,17 @@ void VulkanContext::pickPhysicalDevice() {
     physicalDevice = bestDevice;
 }
 
-bool VulkanContext::hasAdequateSwapchainSupport(const vk::raii::PhysicalDevice &device,
-                                                const vk::raii::SurfaceKHR &surface) {
+bool VulkanContext::hasAdequateSwapchainSupport(
+    const vk::raii::PhysicalDevice &device, const vk::raii::SurfaceKHR &surface
+) {
     auto formats = device.getSurfaceFormatsKHR(surface);
     auto presentModes = device.getSurfacePresentModesKHR(surface);
     return !formats.empty() && !presentModes.empty();
 }
 
-QueueFamilyIndices VulkanContext::findQueueFamilies(const vk::raii::PhysicalDevice &device,
-                                                    const vk::raii::SurfaceKHR &surface) {
+QueueFamilyIndices VulkanContext::findQueueFamilies(
+    const vk::raii::PhysicalDevice &device, const vk::raii::SurfaceKHR &surface
+) {
     QueueFamilyIndices indices;
     auto families = device.getQueueFamilyProperties();
 
@@ -499,8 +517,9 @@ void VulkanContext::createDevice() {
 #if defined(VK_KHR_compute_shader_derivatives)
     supportedRayQuery.pNext = &supportedComputeDerivatives;
 #endif
-    vkGetPhysicalDeviceFeatures2(static_cast<VkPhysicalDevice>(*physicalDevice),
-                                 &supportedFeatures2);
+    vkGetPhysicalDeviceFeatures2(
+        static_cast<VkPhysicalDevice>(*physicalDevice), &supportedFeatures2
+    );
 
     const bool rtFeatureSupport =
         (supportedVulkan12.bufferDeviceAddress == VK_TRUE) &&
@@ -663,15 +682,23 @@ void VulkanContext::createSwapchainImageViews() {
 
     for (vk::Image image : swapchainImages) {
         swapchainImageViews.emplace_back(
-            createImageView(image, swapchainImageFormat, vk::ImageAspectFlagBits::eColor));
+            createImageView(image, swapchainImageFormat, vk::ImageAspectFlagBits::eColor)
+        );
     }
 }
 
 void VulkanContext::createDepthResources() {
     depthFormat = findDepthFormat();
-    createImage(swapchainExtent.width, swapchainExtent.height, depthFormat,
-                vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment,
-                vk::MemoryPropertyFlagBits::eDeviceLocal, depthImage, depthImageMemory);
+    createImage(
+        swapchainExtent.width,
+        swapchainExtent.height,
+        depthFormat,
+        vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eDepthStencilAttachment,
+        vk::MemoryPropertyFlagBits::eDeviceLocal,
+        depthImage,
+        depthImageMemory
+    );
 
     vk::ImageAspectFlags aspectFlags = vk::ImageAspectFlagBits::eDepth;
     if (hasStencilComponent(depthFormat)) {
@@ -715,8 +742,9 @@ bool VulkanContext::recreateSwapchain(uint32_t windowWidth, uint32_t windowHeigh
     }
 }
 
-vk::raii::ImageView VulkanContext::createImageView(vk::Image image, vk::Format format,
-                                                   vk::ImageAspectFlags aspectFlags) {
+vk::raii::ImageView VulkanContext::createImageView(
+    vk::Image image, vk::Format format, vk::ImageAspectFlags aspectFlags
+) {
     vk::ImageViewCreateInfo viewInfo{};
     viewInfo.image = image;
     viewInfo.viewType = vk::ImageViewType::e2D;
@@ -729,10 +757,16 @@ vk::raii::ImageView VulkanContext::createImageView(vk::Image image, vk::Format f
     return vk::raii::ImageView(device, viewInfo);
 }
 
-void VulkanContext::createImage(uint32_t width, uint32_t height, vk::Format format,
-                                vk::ImageTiling tiling, vk::ImageUsageFlags usage,
-                                vk::MemoryPropertyFlags properties, vk::raii::Image &image,
-                                vk::raii::DeviceMemory &imageMemory) {
+void VulkanContext::createImage(
+    uint32_t width,
+    uint32_t height,
+    vk::Format format,
+    vk::ImageTiling tiling,
+    vk::ImageUsageFlags usage,
+    vk::MemoryPropertyFlags properties,
+    vk::raii::Image &image,
+    vk::raii::DeviceMemory &imageMemory
+) {
     vk::ImageCreateInfo imageInfo{};
     imageInfo.imageType = vk::ImageType::e2D;
     imageInfo.extent = vk::Extent3D(width, height, 1);
@@ -756,8 +790,8 @@ void VulkanContext::createImage(uint32_t width, uint32_t height, vk::Format form
     image.bindMemory(*imageMemory, 0);
 }
 
-uint32_t VulkanContext::findMemoryType(uint32_t typeFilter,
-                                       vk::MemoryPropertyFlags properties) const {
+uint32_t
+VulkanContext::findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const {
     vk::PhysicalDeviceMemoryProperties memoryProperties = physicalDevice.getMemoryProperties();
 
     for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; ++i) {
@@ -772,9 +806,11 @@ uint32_t VulkanContext::findMemoryType(uint32_t typeFilter,
     throw std::runtime_error("Failed to find suitable memory type for image allocation.");
 }
 
-vk::Format VulkanContext::findSupportedFormat(const std::vector<vk::Format> &candidates,
-                                              vk::ImageTiling tiling,
-                                              vk::FormatFeatureFlags features) const {
+vk::Format VulkanContext::findSupportedFormat(
+    const std::vector<vk::Format> &candidates,
+    vk::ImageTiling tiling,
+    vk::FormatFeatureFlags features
+) const {
     for (vk::Format format : candidates) {
         vk::FormatProperties props = physicalDevice.getFormatProperties(format);
         if (tiling == vk::ImageTiling::eLinear &&
@@ -793,7 +829,9 @@ vk::Format VulkanContext::findSupportedFormat(const std::vector<vk::Format> &can
 vk::Format VulkanContext::findDepthFormat() const {
     return findSupportedFormat(
         {vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint},
-        vk::ImageTiling::eOptimal, vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+        vk::ImageTiling::eOptimal,
+        vk::FormatFeatureFlagBits::eDepthStencilAttachment
+    );
 }
 
 bool VulkanContext::hasStencilComponent(vk::Format format) {

@@ -29,35 +29,35 @@
 #endif
 
 namespace {
-constexpr uint32_t kNrdDenoiserId = 0x564F5855u; // "VOXU" as a stable ID.
+    constexpr uint32_t kNrdDenoiserId = 0x564F5855u; // "VOXU" as a stable ID.
 
-inline uint16_t clampDimToU16(uint32_t v) {
-    return static_cast<uint16_t>(std::min<uint32_t>(v, std::numeric_limits<uint16_t>::max()));
-}
+    inline uint16_t clampDimToU16(uint32_t v) {
+        return static_cast<uint16_t>(std::min<uint32_t>(v, std::numeric_limits<uint16_t>::max()));
+    }
 
-inline void copyMat4(const glm::mat4 &src, float *dst16) {
-    std::memcpy(dst16, glm::value_ptr(src), sizeof(float) * 16u);
-}
+    inline void copyMat4(const glm::mat4 &src, float *dst16) {
+        std::memcpy(dst16, glm::value_ptr(src), sizeof(float) * 16u);
+    }
 
-inline glm::mat4 makeIdentity() {
-    return glm::mat4(1.0f);
-}
+    inline glm::mat4 makeIdentity() {
+        return glm::mat4(1.0f);
+    }
 } // namespace
 
 struct NrdBootstrap::Impl {
 #if defined(_WIN32) && VOXELOPS_NRD_HEADERS
-    using PfnCreateInstance = nrd::Result(NRD_CALL *)(const nrd::InstanceCreationDesc &,
-                                                      nrd::Instance *&);
+    using PfnCreateInstance =
+        nrd::Result(NRD_CALL *)(const nrd::InstanceCreationDesc &, nrd::Instance *&);
     using PfnDestroyInstance = void(NRD_CALL *)(nrd::Instance &);
     using PfnGetLibraryDesc = const nrd::LibraryDesc *(NRD_CALL *)();
     using PfnGetInstanceDesc = const nrd::InstanceDesc *(NRD_CALL *)(const nrd::Instance &);
-    using PfnSetCommonSettings = nrd::Result(NRD_CALL *)(nrd::Instance &,
-                                                         const nrd::CommonSettings &);
-    using PfnSetDenoiserSettings = nrd::Result(NRD_CALL *)(nrd::Instance &, nrd::Identifier,
-                                                           const void *);
-    using PfnGetComputeDispatches = nrd::Result(NRD_CALL *)(nrd::Instance &,
-                                                            const nrd::Identifier *, uint32_t,
-                                                            const nrd::DispatchDesc *&, uint32_t &);
+    using PfnSetCommonSettings =
+        nrd::Result(NRD_CALL *)(nrd::Instance &, const nrd::CommonSettings &);
+    using PfnSetDenoiserSettings =
+        nrd::Result(NRD_CALL *)(nrd::Instance &, nrd::Identifier, const void *);
+    using PfnGetComputeDispatches = nrd::Result(NRD_CALL *)(
+        nrd::Instance &, const nrd::Identifier *, uint32_t, const nrd::DispatchDesc *&, uint32_t &
+    );
 
     HMODULE module = nullptr;
     nrd::Instance *instance = nullptr;
@@ -76,7 +76,8 @@ struct NrdBootstrap::Impl {
 #endif
 };
 
-NrdBootstrap::NrdBootstrap() : m_impl(std::make_unique<Impl>()) {}
+NrdBootstrap::NrdBootstrap()
+    : m_impl(std::make_unique<Impl>()) {}
 
 NrdBootstrap::~NrdBootstrap() noexcept {
     shutdown();
@@ -226,11 +227,16 @@ void NrdBootstrap::shutdown() {
     m_dispatchDescData = nullptr;
 }
 
-void NrdBootstrap::updateFrame(const glm::mat4 &viewMatrix, const glm::mat4 &projectionMatrix,
-                               const glm::mat4 &prevViewMatrix,
-                               const glm::mat4 &prevProjectionMatrix, bool hasPrevMatrices,
-                               const FrameRenderData &frameData, uint32_t renderWidth,
-                               uint32_t renderHeight) {
+void NrdBootstrap::updateFrame(
+    const glm::mat4 &viewMatrix,
+    const glm::mat4 &projectionMatrix,
+    const glm::mat4 &prevViewMatrix,
+    const glm::mat4 &prevProjectionMatrix,
+    bool hasPrevMatrices,
+    const FrameRenderData &frameData,
+    uint32_t renderWidth,
+    uint32_t renderHeight
+) {
     m_dispatchDescData = nullptr;
     m_lastDispatchCount = 0;
 
@@ -258,8 +264,10 @@ void NrdBootstrap::updateFrame(const glm::mat4 &viewMatrix, const glm::mat4 &pro
 
     nrd::CommonSettings commonSettings{};
     copyMat4(projectionMatrix, commonSettings.viewToClipMatrix);
-    copyMat4(hasPrevMatrices ? prevProjectionMatrix : projectionMatrix,
-             commonSettings.viewToClipMatrixPrev);
+    copyMat4(
+        hasPrevMatrices ? prevProjectionMatrix : projectionMatrix,
+        commonSettings.viewToClipMatrixPrev
+    );
     copyMat4(viewMatrix, commonSettings.worldToViewMatrix);
     copyMat4(hasPrevMatrices ? prevViewMatrix : viewMatrix, commonSettings.worldToViewMatrixPrev);
     commonSettings.resourceSize[0] = clampDimToU16(renderWidth);
@@ -312,7 +320,8 @@ void NrdBootstrap::updateFrame(const glm::mat4 &viewMatrix, const glm::mat4 &pro
     const nrd::DispatchDesc *dispatchDescs = nullptr;
     uint32_t dispatchCount = 0;
     const nrd::Result dispatchResult = m_impl->getComputeDispatches(
-        *m_impl->instance, denoiserIds, 1u, dispatchDescs, dispatchCount);
+        *m_impl->instance, denoiserIds, 1u, dispatchDescs, dispatchCount
+    );
     if (dispatchResult != nrd::Result::SUCCESS) {
         std::cerr << "[NRD] GetComputeDispatches failed with code "
                   << static_cast<uint32_t>(dispatchResult) << "\n";

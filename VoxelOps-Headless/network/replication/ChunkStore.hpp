@@ -3,7 +3,7 @@
 #include <functional>
 #include <shared_mutex>
 class ChunkStore {
-  public:
+public:
     ChunkStore(std::string worldDir, uint64_t seed);
 
     std::shared_ptr<ServerChunk> getOrLoad(glm::ivec3 chunkPos);
@@ -14,7 +14,7 @@ class ChunkStore {
 
     void forEachChunk(std::function<void(std::shared_ptr<ServerChunk> &)> fn);
 
-  private:
+private:
     std::unordered_map<int64_t, std::shared_ptr<ServerChunk>> m_chunks;
     mutable std::shared_mutex m_mutex;
     std::string m_worldDir;

@@ -1,7 +1,11 @@
 #include "../Runtime.hpp"
 
-void Runtime::TeardownClientSession(HSteamNetConnection conn, const ClientSession &session,
-                                          const char *closeReason, bool closeConnection) {
+void Runtime::TeardownClientSession(
+    HSteamNetConnection conn,
+    const ClientSession &session,
+    const char *closeReason,
+    bool closeConnection
+) {
     ClearChunkPipelineForConnection(conn);
 
     if (session.playerId != 0) {

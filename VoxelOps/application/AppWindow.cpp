@@ -1,10 +1,8 @@
-#include <glad/glad.h>
 #include <SDL3/SDL.h>
 
 #include "App.hpp"
 #include "AppHelpers.hpp"
 
-#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -14,50 +12,50 @@
 using namespace AppHelpers;
 
 namespace {
-std::string toLowerCopy(std::string value) {
-    for (char &c : value) {
-        if (c >= 'A' && c <= 'Z') {
-            c = static_cast<char>(c - 'A' + 'a');
+    std::string toLowerCopy(std::string value) {
+        for (char &c : value) {
+            if (c >= 'A' && c <= 'Z') {
+                c = static_cast<char>(c - 'A' + 'a');
+            }
         }
+        return value;
     }
-    return value;
-}
 
-bool tryParseBoolEnv(const char *name, bool &outValue) {
-    const char *raw = std::getenv(name);
-    if (raw == nullptr) {
+    bool tryParseBoolEnv(const char *name, bool &outValue) {
+        const char *raw = std::getenv(name);
+        if (raw == nullptr) {
+            return false;
+        }
+
+        const std::string value = toLowerCopy(TrimAscii(std::string_view(raw)));
+        if (value == "1" || value == "true" || value == "on" || value == "yes") {
+            outValue = true;
+            return true;
+        }
+        if (value == "0" || value == "false" || value == "off" || value == "no") {
+            outValue = false;
+            return true;
+        }
         return false;
     }
 
-    const std::string value = toLowerCopy(TrimAscii(std::string_view(raw)));
-    if (value == "1" || value == "true" || value == "on" || value == "yes") {
-        outValue = true;
-        return true;
-    }
-    if (value == "0" || value == "false" || value == "off" || value == "no") {
-        outValue = false;
-        return true;
-    }
-    return false;
-}
-
-bool isBenchmarkModeEnabled() {
-    bool enabled = false;
-    return tryParseBoolEnv("VOXELOPS_BENCHMARK", enabled) && enabled;
-}
-
-std::optional<int> getSwapIntervalOverrideFromEnv() {
-    const char *raw = std::getenv("VOXELOPS_GL_SWAP_INTERVAL");
-    if (raw == nullptr) {
-        return std::nullopt;
+    bool isBenchmarkModeEnabled() {
+        bool enabled = false;
+        return tryParseBoolEnv("VOXELOPS_BENCHMARK", enabled) && enabled;
     }
 
-    try {
-        return std::stoi(TrimAscii(std::string_view(raw)));
-    } catch (...) {
-        return std::nullopt;
+    std::optional<int> getSwapIntervalOverrideFromEnv() {
+        const char *raw = std::getenv("VOXELOPS_GL_SWAP_INTERVAL");
+        if (raw == nullptr) {
+            return std::nullopt;
+        }
+
+        try {
+            return std::stoi(TrimAscii(std::string_view(raw)));
+        } catch (...) {
+            return std::nullopt;
+        }
     }
-}
 } // namespace
 
 void App::updateFPSCounter() {
@@ -102,64 +100,6 @@ bool App::initWindowAndContext() {
         return false;
     }
 
-    if (RenderApiUsesVulkanWindow(m_RenderApi)) {
-        m_Window = SDL_CreateWindow("Voxel Ops", GameData::screenWidth, GameData::screenHeight,
-                                    SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
-        if (!m_Window) {
-            std::cerr << "SDL_CreateWindow (Vulkan) failed: " << SDL_GetError() << "\n";
-            SDL_Quit();
-            return false;
-        }
-
-        m_GlContext = nullptr;
-        return true;
-    }
-
-    if (!RenderApiRequiresOpenGlContext(m_RenderApi)) {
-        return true;
-    }
-
-    const auto createWindowForVersion = [&](int major, int minor) -> SDL_Window * {
-        SDL_GL_ResetAttributes();
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, major);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, minor);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-        SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-        return SDL_CreateWindow("Voxel Ops", GameData::screenWidth, GameData::screenHeight,
-                                SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
-    };
-
-    m_Window = createWindowForVersion(4, 3);
-    if (!m_Window) {
-        std::cerr << "OpenGL 4.3 context creation failed, retrying with OpenGL 3.3.\n";
-        m_Window = createWindowForVersion(3, 3);
-    }
-    if (!m_Window) {
-        std::cerr << "SDL_CreateWindow failed: " << SDL_GetError() << "\n";
-        SDL_Quit();
-        return false;
-    }
-
-    m_GlContext = SDL_GL_CreateContext(m_Window);
-    if (!m_GlContext) {
-        std::cerr << "SDL_GL_CreateContext failed: " << SDL_GetError() << "\n";
-        SDL_DestroyWindow(m_Window);
-        m_Window = nullptr;
-        SDL_Quit();
-        return false;
-    }
-    if (!SDL_GL_MakeCurrent(m_Window, m_GlContext)) {
-        std::cerr << "SDL_GL_MakeCurrent failed: " << SDL_GetError() << "\n";
-        SDL_GL_DestroyContext(m_GlContext);
-        m_GlContext = nullptr;
-        SDL_DestroyWindow(m_Window);
-        m_Window = nullptr;
-        SDL_Quit();
-        return false;
-    }
-
     int swapInterval = 0;
     if (const std::optional<int> envSwapInterval = getSwapIntervalOverrideFromEnv()) {
         swapInterval = *envSwapInterval;
@@ -167,25 +107,17 @@ bool App::initWindowAndContext() {
         swapInterval = 0;
     }
 
-    if (!SDL_GL_SetSwapInterval(swapInterval)) {
-        std::cerr << "SDL_GL_SetSwapInterval(" << swapInterval << ") failed: " << SDL_GetError()
-                  << "\n";
-    } else {
-        std::cout << "[App] OpenGL swap interval: " << swapInterval << "\n";
-    }
-
-    if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(SDL_GL_GetProcAddress))) {
-        std::cerr << "Failed to initialize GLAD.\n";
-        SDL_GL_DestroyContext(m_GlContext);
-        m_GlContext = nullptr;
-        SDL_DestroyWindow(m_Window);
-        m_Window = nullptr;
+    RenderBackendWindowContext backendWindow{};
+    if (!CreateRenderBackendWindowContext(
+            m_RenderApi, "Voxel Ops", GameData::screenWidth, GameData::screenHeight, swapInterval,
+            backendWindow
+        )) {
         SDL_Quit();
         return false;
     }
 
-    printf("OpenGL version: %s\n", glGetString(GL_VERSION));
-    printf("GLSL version: %s\n", glGetString(GL_SHADING_LANGUAGE_VERSION));
+    m_Window = backendWindow.window;
+    m_GlContext = backendWindow.glContext;
     return true;
 }
 

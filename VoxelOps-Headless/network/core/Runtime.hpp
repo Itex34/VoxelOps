@@ -31,7 +31,7 @@
 #include "../../engine/physics/simulation/WorldItemPhysics.hpp"
 
 class Runtime {
-  public:
+public:
     Runtime();
     ~Runtime();
 
@@ -64,76 +64,107 @@ class Runtime {
     // static pointer to the currently running instance for the callback bridge
     static Runtime *s_instance;
 
-    void BroadcastRaw(const void *data, uint32_t len,
-                      HSteamNetConnection except = k_HSteamNetConnection_Invalid);
+    void BroadcastRaw(
+        const void *data, uint32_t len, HSteamNetConnection except = k_HSteamNetConnection_Invalid
+    );
 
-  private:
+private:
     struct ClientSession;
 
     // Internal helpers
     void MainLoop();
     void ShutdownNetworking();
     static std::string ReadStringFromPacket(const void *data, uint32_t size, size_t offset = 1);
-    bool IsInboundRateLimitExceeded(HSteamNetConnection incoming, PacketType packetType,
-                                    uint32_t bytes);
+    bool
+    IsInboundRateLimitExceeded(HSteamNetConnection incoming, PacketType packetType, uint32_t bytes);
     void HandleConnectRequest(HSteamNetConnection incoming, const void *data, uint32_t size);
     void HandleMessagePacket(HSteamNetConnection incoming, const void *data, uint32_t size);
-    void HandlePlayerInputPacket(HSteamNetConnection incoming, const void *data, uint32_t size,
-                                 uint64_t &playerInputPacketsThisLoop);
-    void HandleChunkRequestPacket(HSteamNetConnection incoming, const void *data, uint32_t size,
-                                  uint64_t &chunkRequestPacketsThisLoop);
-    void HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, const void *data,
-                                       uint32_t size);
-    void HandleBlockBreakRequestPacket(HSteamNetConnection incoming, const void *data,
-                                       uint32_t size);
+    void HandlePlayerInputPacket(
+        HSteamNetConnection incoming,
+        const void *data,
+        uint32_t size,
+        uint64_t &playerInputPacketsThisLoop
+    );
+    void HandleChunkRequestPacket(
+        HSteamNetConnection incoming,
+        const void *data,
+        uint32_t size,
+        uint64_t &chunkRequestPacketsThisLoop
+    );
+    void
+    HandleBlockPlaceRequestPacket(HSteamNetConnection incoming, const void *data, uint32_t size);
+    void
+    HandleBlockBreakRequestPacket(HSteamNetConnection incoming, const void *data, uint32_t size);
     void HandleShootRequestPacket(HSteamNetConnection incoming, const void *data, uint32_t size);
     ShootResult ExecuteShootRequest(HSteamNetConnection incoming, const ShootRequest &req);
-    void HandleInventoryActionRequestPacket(HSteamNetConnection incoming, const void *data,
-                                            uint32_t size);
+    void HandleInventoryActionRequestPacket(
+        HSteamNetConnection incoming, const void *data, uint32_t size
+    );
     void SpawnDroppedItem(PlayerID dropperId, uint16_t itemId, uint16_t quantity);
     void UpdateWorldItems(double deltaSeconds);
-    void
-    SendWorldItemSnapshots(const std::vector<std::pair<HSteamNetConnection, PlayerID>> &recipients,
-                           uint32_t serverTick);
+    void SendWorldItemSnapshots(
+        const std::vector<std::pair<HSteamNetConnection, PlayerID>> &recipients, uint32_t serverTick
+    );
     void SendInventorySnapshotToPlayer(PlayerID playerId);
     void RecordLagCompFrame(uint32_t serverTick);
     void InvalidateCombatSnapshotCache();
     const std::vector<ServerPlayerCombatSnapshot> &GetCombatSnapshotsForTick(uint32_t serverTick);
-    void DispatchInboundPacket(HSteamNetConnection incoming, PacketType packetType,
-                               const void *data, uint32_t size,
-                               uint64_t &playerInputPacketsThisLoop,
-                               uint64_t &chunkRequestPacketsThisLoop);
-    void RunInboundMessagePhase(uint64_t &msgPacketsThisLoop, uint64_t &playerInputPacketsThisLoop,
-                                uint64_t &chunkRequestPacketsThisLoop, double &messageDrainUs);
+    void DispatchInboundPacket(
+        HSteamNetConnection incoming,
+        PacketType packetType,
+        const void *data,
+        uint32_t size,
+        uint64_t &playerInputPacketsThisLoop,
+        uint64_t &chunkRequestPacketsThisLoop
+    );
+    void RunInboundMessagePhase(
+        uint64_t &msgPacketsThisLoop,
+        uint64_t &playerInputPacketsThisLoop,
+        uint64_t &chunkRequestPacketsThisLoop,
+        double &messageDrainUs
+    );
     void RunConnectionCleanupPhase();
-    uint64_t RunSimulationPhase(double &simAccumulator, uint32_t &serverTick, double &simUs,
-                                bool &simBacklog);
+    uint64_t RunSimulationPhase(
+        double &simAccumulator, uint32_t &serverTick, double &simUs, bool &simBacklog
+    );
     void RunRespawnDiagnosticsPhase(uint64_t simTicksThisLoop, uint32_t serverTick);
-    double RunSnapshotPhase(uint32_t serverTick,
-                            std::chrono::steady_clock::time_point &lastSnapshotTime,
-                            const std::chrono::duration<double> &snapshotInterval);
+    double RunSnapshotPhase(
+        uint32_t serverTick,
+        std::chrono::steady_clock::time_point &lastSnapshotTime,
+        const std::chrono::duration<double> &snapshotInterval
+    );
     bool RunScoreboardPhase(std::chrono::steady_clock::time_point &nextScoreboardBroadcastAt);
     size_t RunChunkInterestPhase(bool simBacklog, double &chunkInterestUs);
-    size_t RunChunkSendPhase(bool simBacklog,
-                             std::chrono::steady_clock::time_point &nextChunkSendFlushAt,
-                             double &chunkSendUs);
-    size_t RunCollisionPrewarmPhase(bool simBacklog,
-                                    std::chrono::steady_clock::time_point &nextCollisionPrewarmAt,
-                                    double &collisionPrewarmUs);
+    size_t RunChunkSendPhase(
+        bool simBacklog,
+        std::chrono::steady_clock::time_point &nextChunkSendFlushAt,
+        double &chunkSendUs
+    );
+    size_t RunCollisionPrewarmPhase(
+        bool simBacklog,
+        std::chrono::steady_clock::time_point &nextCollisionPrewarmAt,
+        double &collisionPrewarmUs
+    );
     void ApplyLoopPacingPhase(bool simBacklog);
     bool TryGetRegisteredPlayerId(HSteamNetConnection incoming, PlayerID &outPlayerId);
-    BlockPlaceResult ExecuteBlockPlaceRequest(PlayerID requesterId,
-                                              const BlockPlaceRequest &request);
-    BlockBreakResult ExecuteBlockBreakRequest(PlayerID requesterId,
-                                              const BlockBreakRequest &request);
-    bool IsAnyAlivePlayerOccupyingBlock(const std::vector<ServerPlayer> &players,
-                                        const glm::ivec3 &worldPos) const;
+    BlockPlaceResult
+    ExecuteBlockPlaceRequest(PlayerID requesterId, const BlockPlaceRequest &request);
+    BlockBreakResult
+    ExecuteBlockBreakRequest(PlayerID requesterId, const BlockBreakRequest &request);
+    bool IsAnyAlivePlayerOccupyingBlock(
+        const std::vector<ServerPlayer> &players, const glm::ivec3 &worldPos
+    ) const;
     bool ApplyBlockEditsAndBuildDeltas(
         const std::unordered_map<glm::ivec3, BlockID, IVec3Hash, IVec3Eq> &normalizedEdits,
-        std::vector<ChunkDelta> &outboundDeltas);
+        std::vector<ChunkDelta> &outboundDeltas
+    );
     void BroadcastChunkDeltas(const std::vector<ChunkDelta> &outboundDeltas);
-    void TeardownClientSession(HSteamNetConnection conn, const ClientSession &session,
-                               const char *closeReason, bool closeConnection);
+    void TeardownClientSession(
+        HSteamNetConnection conn,
+        const ClientSession &session,
+        const char *closeReason,
+        bool closeConnection
+    );
 
     // Callback bridge: Steam expects a free function pointer; we implement a static
     // bridge function that calls the instance method.
@@ -141,7 +172,7 @@ class Runtime {
     SteamNetConnectionStatusChangedCallback(SteamNetConnectionStatusChangedCallback_t *pInfo);
     void OnConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_t *pInfo);
 
-  private:
+private:
     struct ChunkCoord {
         int32_t x = 0;
         int32_t y = 0;
@@ -196,11 +227,12 @@ class Runtime {
 
     static uint16_t ClampViewDistance(uint16_t requested);
     std::string AllocateAutoUsernameLocked(HSteamNetConnection incomingConn);
-    std::string BuildDisplayNameForIdentityLocked(std::string_view identity,
-                                                  std::string_view requestedName,
-                                                  HSteamNetConnection incomingConn);
-    void UpdateChunkStreamingForClient(HSteamNetConnection conn, const glm::ivec3 &centerChunk,
-                                       uint16_t viewDistance);
+    std::string BuildDisplayNameForIdentityLocked(
+        std::string_view identity, std::string_view requestedName, HSteamNetConnection incomingConn
+    );
+    void UpdateChunkStreamingForClient(
+        HSteamNetConnection conn, const glm::ivec3 &centerChunk, uint16_t viewDistance
+    );
     bool SendChunkData(HSteamNetConnection conn, const ChunkCoord &coord);
     bool SendChunkUnload(HSteamNetConnection conn, const ChunkCoord &coord);
     bool PrepareChunkForStreaming(const ChunkCoord &coord);
@@ -208,8 +240,9 @@ class Runtime {
     size_t FlushChunkSendQueueForClient(HSteamNetConnection conn, size_t maxSends);
     size_t FlushChunkSendQueues(size_t globalBudget, size_t perClientBudget);
     size_t GetChunkSendQueueDepthForClient(HSteamNetConnection conn);
-    void PruneChunkPipelineForClient(HSteamNetConnection conn,
-                                     const std::unordered_set<ChunkCoord, ChunkCoordHash> &desired);
+    void PruneChunkPipelineForClient(
+        HSteamNetConnection conn, const std::unordered_set<ChunkCoord, ChunkCoordHash> &desired
+    );
     void ClearChunkPipelineForConnection(HSteamNetConnection conn);
     void StartChunkPipeline();
     void StopChunkPipeline();
@@ -274,8 +307,8 @@ class Runtime {
     const char *ADMINS_FILE = "admins.txt";
 
     // switch to constexpr string_view
-    //inline static constexpr std::string_view HISTORY_FILE = "chat_history.txt";
-    //inline static constexpr std::string_view ADMINS_FILE = "admins.txt";
+    // inline static constexpr std::string_view HISTORY_FILE = "chat_history.txt";
+    // inline static constexpr std::string_view ADMINS_FILE = "admins.txt";
 
     HSteamNetPollGroup m_pollGroup;
     HSteamListenSocket m_listenSock;

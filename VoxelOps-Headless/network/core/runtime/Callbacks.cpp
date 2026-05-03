@@ -11,8 +11,9 @@ void Runtime::BroadcastRaw(const void *data, uint32_t len, HSteamNetConnection e
     for (auto c : copy) {
         if (c == except)
             continue;
-        SteamNetworkingSockets()->SendMessageToConnection(c, data, len,
-                                                          k_nSteamNetworkingSend_Reliable, nullptr);
+        SteamNetworkingSockets()->SendMessageToConnection(
+            c, data, len, k_nSteamNetworkingSend_Reliable, nullptr
+        );
     }
 }
 
@@ -27,7 +28,8 @@ std::string Runtime::ReadStringFromPacket(const void *data, uint32_t size, size_
 // Static bridge called by Steam networking when connection state changes.
 // Delegates to the instance method if available.
 void Runtime::SteamNetConnectionStatusChangedCallback(
-    SteamNetConnectionStatusChangedCallback_t *pInfo) {
+    SteamNetConnectionStatusChangedCallback_t *pInfo
+) {
     if (s_instance)
         s_instance->OnConnectionStatusChanged(pInfo);
 }
@@ -57,8 +59,9 @@ void Runtime::OnConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_
 
         {
             std::lock_guard<std::mutex> lk(m_mutex);
-            m_clients.emplace(hConn,
-                              ClientSession{}); // username empty until client sends ConnectRequest
+            m_clients.emplace(
+                hConn, ClientSession{}
+            ); // username empty until client sends ConnectRequest
         }
         std::cout << "[callback] accepted conn=" << hConn << "\n";
         return;

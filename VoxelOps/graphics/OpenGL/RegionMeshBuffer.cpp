@@ -27,8 +27,9 @@ static bool allocFromList(std::vector<BufferRange> &list, size_t count, BufferRa
 static void freeAndMerge(std::vector<BufferRange> &list, BufferRange range) {
     list.push_back(range);
 
-    std::sort(list.begin(), list.end(),
-              [](const BufferRange &a, const BufferRange &b) { return a.offset < b.offset; });
+    std::sort(list.begin(), list.end(), [](const BufferRange &a, const BufferRange &b) {
+        return a.offset < b.offset;
+    });
 
     for (size_t i = 0; i + 1 < list.size();) {
         auto &a = list[i];
@@ -59,12 +60,14 @@ RegionMeshBuffer::RegionMeshBuffer(size_t maxVertexBytes, size_t maxIndexBytes) 
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, maxIndexBytes, nullptr, GL_DYNAMIC_DRAW);
 
     glEnableVertexAttribArray(0);
-    glVertexAttribIPointer(0, 1, GL_UNSIGNED_INT, sizeof(VoxelVertex),
-                           (void *)offsetof(VoxelVertex, low));
+    glVertexAttribIPointer(
+        0, 1, GL_UNSIGNED_INT, sizeof(VoxelVertex), (void *)offsetof(VoxelVertex, low)
+    );
 
     glEnableVertexAttribArray(1);
-    glVertexAttribIPointer(1, 1, GL_UNSIGNED_INT, sizeof(VoxelVertex),
-                           (void *)offsetof(VoxelVertex, high));
+    glVertexAttribIPointer(
+        1, 1, GL_UNSIGNED_INT, sizeof(VoxelVertex), (void *)offsetof(VoxelVertex, high)
+    );
 
     glBindVertexArray(0);
 
@@ -94,8 +97,9 @@ void RegionMeshBuffer::freeIndices(BufferRange range) {
     freeAndMerge(freeIndexRanges, range);
 }
 
-ChunkMesh RegionMeshBuffer::createChunkMesh(const std::vector<VoxelVertex> &vertices,
-                                            const std::vector<uint16_t> &indices) {
+ChunkMesh RegionMeshBuffer::createChunkMesh(
+    const std::vector<VoxelVertex> &vertices, const std::vector<uint16_t> &indices
+) {
     ChunkMesh mesh;
 
     if (!allocVertices(vertices.size(), mesh.vertexRange)) {
@@ -244,17 +248,30 @@ void RegionMeshBuffer::drawChunkMesh(const ChunkMesh &mesh) const {
             const size_t vertexByteBase = mesh.vertexRange.offset * sizeof(VoxelVertex);
             glBindBuffer(GL_ARRAY_BUFFER, vbo);
             glVertexAttribIPointer(
-                0, 1, GL_UNSIGNED_INT, sizeof(VoxelVertex),
-                reinterpret_cast<const void *>(vertexByteBase + offsetof(VoxelVertex, low)));
+                0,
+                1,
+                GL_UNSIGNED_INT,
+                sizeof(VoxelVertex),
+                reinterpret_cast<const void *>(vertexByteBase + offsetof(VoxelVertex, low))
+            );
             glVertexAttribIPointer(
-                1, 1, GL_UNSIGNED_INT, sizeof(VoxelVertex),
-                reinterpret_cast<const void *>(vertexByteBase + offsetof(VoxelVertex, high)));
+                1,
+                1,
+                GL_UNSIGNED_INT,
+                sizeof(VoxelVertex),
+                reinterpret_cast<const void *>(vertexByteBase + offsetof(VoxelVertex, high))
+            );
             glDrawElements(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_SHORT, indexOffsetPtr);
             return;
         }
 
-        glDrawElementsBaseVertex(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_SHORT, indexOffsetPtr,
-                                 static_cast<GLint>(mesh.vertexRange.offset));
+        glDrawElementsBaseVertex(
+            GL_TRIANGLES,
+            mesh.indexCount,
+            GL_UNSIGNED_SHORT,
+            indexOffsetPtr,
+            static_cast<GLint>(mesh.vertexRange.offset)
+        );
     };
 
     const auto drainDrawErrors = [&]() {
@@ -306,18 +323,28 @@ void RegionMeshBuffer::drawChunkMesh(const ChunkMesh &mesh) const {
     glBindVertexArray(0);
 }
 
-void RegionMeshBuffer::uploadSubData(const ChunkMesh &mesh,
-                                     const std::vector<VoxelVertex> &vertices,
-                                     const std::vector<uint16_t> &indices) {
+void RegionMeshBuffer::uploadSubData(
+    const ChunkMesh &mesh,
+    const std::vector<VoxelVertex> &vertices,
+    const std::vector<uint16_t> &indices
+) {
     glBindVertexArray(vao);
 
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferSubData(GL_ARRAY_BUFFER, mesh.vertexRange.offset * sizeof(VoxelVertex),
-                    vertices.size() * sizeof(VoxelVertex), vertices.data());
+    glBufferSubData(
+        GL_ARRAY_BUFFER,
+        mesh.vertexRange.offset * sizeof(VoxelVertex),
+        vertices.size() * sizeof(VoxelVertex),
+        vertices.data()
+    );
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, mesh.indexRange.offset * sizeof(uint16_t),
-                    indices.size() * sizeof(uint16_t), indices.data());
+    glBufferSubData(
+        GL_ELEMENT_ARRAY_BUFFER,
+        mesh.indexRange.offset * sizeof(uint16_t),
+        indices.size() * sizeof(uint16_t),
+        indices.data()
+    );
 }
 
 void RegionMeshBuffer::orphanBuffers() {
@@ -325,6 +352,7 @@ void RegionMeshBuffer::orphanBuffers() {
     glBufferData(GL_ARRAY_BUFFER, vertexCapacity * sizeof(VoxelVertex), nullptr, GL_DYNAMIC_DRAW);
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indexCapacity * sizeof(uint16_t), nullptr,
-                 GL_DYNAMIC_DRAW);
+    glBufferData(
+        GL_ELEMENT_ARRAY_BUFFER, indexCapacity * sizeof(uint16_t), nullptr, GL_DYNAMIC_DRAW
+    );
 }

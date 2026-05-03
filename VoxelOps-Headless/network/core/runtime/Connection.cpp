@@ -7,16 +7,17 @@
 
 namespace {
 
-constexpr auto kInboundRateWindow = std::chrono::seconds(1);
-constexpr uint32_t kMaxInboundPacketsPerWindow = 900u;
-constexpr uint32_t kMaxInboundBytesPerWindow = 256u * 1024u;
-constexpr uint32_t kMaxPlayerInputsPerWindow = 360u;
-constexpr uint32_t kMaxChunkRequestsPerWindow = 120u;
+    constexpr auto kInboundRateWindow = std::chrono::seconds(1);
+    constexpr uint32_t kMaxInboundPacketsPerWindow = 900u;
+    constexpr uint32_t kMaxInboundBytesPerWindow = 256u * 1024u;
+    constexpr uint32_t kMaxPlayerInputsPerWindow = 360u;
+    constexpr uint32_t kMaxChunkRequestsPerWindow = 120u;
 
 } // namespace
 
-bool Runtime::IsInboundRateLimitExceeded(HSteamNetConnection incoming, PacketType packetType,
-                                               uint32_t bytes) {
+bool Runtime::IsInboundRateLimitExceeded(
+    HSteamNetConnection incoming, PacketType packetType, uint32_t bytes
+) {
     bool exceededRateLimit = false;
     {
         std::lock_guard<std::mutex> lk(m_mutex);
@@ -57,17 +58,21 @@ bool Runtime::IsInboundRateLimitExceeded(HSteamNetConnection incoming, PacketTyp
     return false;
 }
 
-void Runtime::HandleConnectRequest(HSteamNetConnection incoming, const void *data,
-                                         uint32_t size) {
+void Runtime::HandleConnectRequest(HSteamNetConnection incoming, const void *data, uint32_t size) {
     auto sendResponse = [&](const ConnectResponse &response) {
         const std::vector<uint8_t> payload = response.serialize();
         (void)SteamNetworkingSockets()->SendMessageToConnection(
-            incoming, payload.data(), static_cast<uint32_t>(payload.size()),
-            k_nSteamNetworkingSend_Reliable, nullptr);
+            incoming,
+            payload.data(),
+            static_cast<uint32_t>(payload.size()),
+            k_nSteamNetworkingSend_Reliable,
+            nullptr
+        );
     };
 
-    std::vector<uint8_t> connectBytes(reinterpret_cast<const uint8_t *>(data),
-                                      reinterpret_cast<const uint8_t *>(data) + size);
+    std::vector<uint8_t> connectBytes(
+        reinterpret_cast<const uint8_t *>(data), reinterpret_cast<const uint8_t *>(data) + size
+    );
     auto reqOpt = ConnectRequest::deserialize(connectBytes);
     if (!reqOpt.has_value()) {
         ConnectResponse response;
@@ -244,8 +249,12 @@ void Runtime::HandleConnectRequest(HSteamNetConnection incoming, const void *dat
     if (m_playerManager.getInventorySnapshot(playerId, inventorySnapshot)) {
         const std::vector<uint8_t> snapshotBytes = inventorySnapshot.serialize();
         (void)SteamNetworkingSockets()->SendMessageToConnection(
-            incoming, snapshotBytes.data(), static_cast<uint32_t>(snapshotBytes.size()),
-            k_nSteamNetworkingSend_Reliable, nullptr);
+            incoming,
+            snapshotBytes.data(),
+            static_cast<uint32_t>(snapshotBytes.size()),
+            k_nSteamNetworkingSend_Reliable,
+            nullptr
+        );
     }
 
     std::string out;
@@ -257,8 +266,7 @@ void Runtime::HandleConnectRequest(HSteamNetConnection incoming, const void *dat
               << " identity=" << identity << " requested=" << requestedUsername << "\n";
 }
 
-void Runtime::HandleMessagePacket(HSteamNetConnection incoming, const void *data,
-                                        uint32_t size) {
+void Runtime::HandleMessagePacket(HSteamNetConnection incoming, const void *data, uint32_t size) {
     std::string msg = ReadStringFromPacket(data, size, 1);
     std::string username;
     PlayerID playerId = 0;
@@ -284,10 +292,12 @@ void Runtime::HandleMessagePacket(HSteamNetConnection incoming, const void *data
 
         constexpr std::string_view kChunkResyncPrefix = "CHUNK_RESYNC|";
         if (msg.size() > kChunkResyncPrefix.size() &&
-            msg.compare(0, kChunkResyncPrefix.size(), kChunkResyncPrefix.data(),
-                        kChunkResyncPrefix.size()) == 0) {
-            const std::string_view payload(msg.data() + kChunkResyncPrefix.size(),
-                                           msg.size() - kChunkResyncPrefix.size());
+            msg.compare(
+                0, kChunkResyncPrefix.size(), kChunkResyncPrefix.data(), kChunkResyncPrefix.size()
+            ) == 0) {
+            const std::string_view payload(
+                msg.data() + kChunkResyncPrefix.size(), msg.size() - kChunkResyncPrefix.size()
+            );
             const size_t firstSep = payload.find('|');
             const size_t secondSep = (firstSep == std::string_view::npos)
                                          ? std::string_view::npos

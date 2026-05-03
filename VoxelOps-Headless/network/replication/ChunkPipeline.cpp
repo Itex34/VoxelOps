@@ -44,9 +44,9 @@ std::string Runtime::AllocateAutoUsernameLocked(HSteamNetConnection incomingConn
     return {};
 }
 
-std::string Runtime::BuildDisplayNameForIdentityLocked(std::string_view identity,
-                                                             std::string_view requestedName,
-                                                             HSteamNetConnection incomingConn) {
+std::string Runtime::BuildDisplayNameForIdentityLocked(
+    std::string_view identity, std::string_view requestedName, HSteamNetConnection incomingConn
+) {
     std::string base;
     if (!requestedName.empty()) {
         base.assign(requestedName.begin(), requestedName.end());
@@ -289,7 +289,8 @@ size_t Runtime::FlushChunkSendQueues(size_t globalBudget, size_t perClientBudget
 }
 
 void Runtime::PruneChunkPipelineForClient(
-    HSteamNetConnection conn, const std::unordered_set<ChunkCoord, ChunkCoordHash> &desired) {
+    HSteamNetConnection conn, const std::unordered_set<ChunkCoord, ChunkCoordHash> &desired
+) {
     std::lock_guard<std::mutex> lk(m_chunkPipelineMutex);
 
     for (auto it = m_chunkPrepQueue.begin(); it != m_chunkPrepQueue.end();) {
@@ -378,8 +379,12 @@ bool Runtime::SendChunkData(HSteamNetConnection conn, const ChunkCoord &coord) {
 
     const std::vector<uint8_t> bytes = packet.serialize();
     const EResult result = SteamNetworkingSockets()->SendMessageToConnection(
-        conn, bytes.data(), static_cast<uint32_t>(bytes.size()), k_nSteamNetworkingSend_Reliable,
-        nullptr);
+        conn,
+        bytes.data(),
+        static_cast<uint32_t>(bytes.size()),
+        k_nSteamNetworkingSend_Reliable,
+        nullptr
+    );
     if (result != k_EResultOK) {
         SteamNetConnectionInfo_t info{};
         const bool haveInfo = SteamNetworkingSockets()->GetConnectionInfo(conn, &info);
@@ -403,7 +408,11 @@ bool Runtime::SendChunkUnload(HSteamNetConnection conn, const ChunkCoord &coord)
 
     const std::vector<uint8_t> bytes = packet.serialize();
     const EResult result = SteamNetworkingSockets()->SendMessageToConnection(
-        conn, bytes.data(), static_cast<uint32_t>(bytes.size()), k_nSteamNetworkingSend_Reliable,
-        nullptr);
+        conn,
+        bytes.data(),
+        static_cast<uint32_t>(bytes.size()),
+        k_nSteamNetworkingSend_Reliable,
+        nullptr
+    );
     return result == k_EResultOK;
 }

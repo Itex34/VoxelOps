@@ -1,6 +1,38 @@
 BasedOnStyle: LLVM
+
 IndentWidth: 4
+TabWidth: 4
+UseTab: Never
 ColumnLimit: 100
+
 BreakBeforeBraces: Attach
-AllowShortFunctionsOnASingleLine: Empty
 SortIncludes: false
+
+PointerAlignment: Right
+
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+
+# --- Function arguments: readable vertical style when long ---
+BinPackParameters: false
+BinPackArguments: false
+AllowAllParametersOfDeclarationOnNextLine: true
+AlignAfterOpenBracket: BlockIndent
+PenaltyBreakBeforeFirstCallParameter: 0
+
+# --- Constructor initializer lists (modern option for v21) ---
+PackConstructorInitializers: Never
+BreakConstructorInitializers: BeforeComma
+
+# --- General readability ---
+NamespaceIndentation: All
+AccessModifierOffset: -4
+
+Cpp11BracedListStyle: true
+SpaceBeforeParens: ControlStatements
+
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1

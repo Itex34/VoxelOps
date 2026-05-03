@@ -16,7 +16,6 @@
 using PlayerID = uint64_t;
 
 class ChunkManager;
-struct SDL_Window; // forward-declare to avoid including SDL in header
 
 struct PlayerState {
     glm::vec3 position;
@@ -34,15 +33,8 @@ struct NetworkInputState {
     bool flyMode = false;
 };
 
-enum class BlockMode : uint8_t {
-    Block = 0,
-    Wall,
-    Stair,
-    Floor,
-};
-
 class Player {
-  public:
+public:
     struct SimulationState {
         glm::vec3 position{0.0f};
         glm::vec3 velocity{0.0f};
@@ -54,22 +46,23 @@ class Player {
         bool jumpPressedLastTick = false;
         float timeSinceGrounded = 0.0f;
         float jumpBufferTimer = 0.0f;
+    };
+
+    struct PresentationState {
         float currentFov = 80.0f;
         float stepUpVisualOffset = 0.0f;
     };
 
     // explicit to avoid accidental conversions
-    explicit Player(const glm::vec3 &startPos, ChunkManager &chunkManager,
-                    const std::string &playerModelPath);
+    explicit Player(
+        const glm::vec3 &startPos, ChunkManager &chunkManager, const std::string &playerModelPath
+    );
 
     ~Player() = default;
 
     // non-copyable: players reference ChunkManager; enable/make copy semantics explicit if needed
     Player(const Player &) = delete;
     Player &operator=(const Player &) = delete;
-
-    // Update movement, physics, and camera (window pointer is opaque here)
-    void update(SDL_Window *window, double deltaTime);
 
     // Mouse look (dbgCam toggles debug camera mode)
     void processMouse(bool dbgCam, double xpos, double ypos) noexcept;
@@ -101,6 +94,8 @@ class Player {
     }
     [[nodiscard]] SimulationState captureSimulationState() const noexcept;
     void restoreSimulationState(const SimulationState &state) noexcept;
+    [[nodiscard]] PresentationState capturePresentationState() const noexcept;
+    void restorePresentationState(const PresentationState &state) noexcept;
 
     [[nodiscard]] glm::vec3 getFront() const noexcept {
         return front;
@@ -108,11 +103,20 @@ class Player {
     [[nodiscard]] const NetworkInputState &getNetworkInputState() const noexcept {
         return m_networkInput;
     }
-    [[nodiscard]] NetworkInputState captureCurrentInput(
-        SDL_Window *window) const noexcept; // Capture fresh input directly (no 1-frame delay)
-    void simulateFromNetworkInput(const NetworkInputState &input, double deltaTime,
-                                  bool updateFov = false);
+    void setNetworkInputState(const NetworkInputState &input) noexcept {
+        m_networkInput = input;
+    }
+    void simulateFromNetworkInput(
+        const NetworkInputState &input, double deltaTime, bool updateFov = false
+    );
+    [[nodiscard]] float getYawDegrees() const noexcept {
+        return static_cast<float>(yaw);
+    }
+    [[nodiscard]] float getPitchDegrees() const noexcept {
+        return pitch;
+    }
     void setFlyModeAllowed(bool allowed) noexcept;
+    void setFlyModeEnabled(bool enabled) noexcept;
     [[nodiscard]] bool isFlyModeAllowed() const noexcept {
         return m_flyModeAllowed;
     }
@@ -132,7 +136,6 @@ class Player {
         return m_stepUpVisualOffset;
     }
 
-    void placeBlock(BlockMode blockMode);
     void breakBlock();
 
     float currentFov;
@@ -149,7 +152,7 @@ class Player {
     void clearConnectedPlayers();
     void updateRemotePlayers(float deltaTime);
 
-  private:
+private:
     RayManager rayManager;
     // Reference to the world
     ChunkManager &chunkManager;

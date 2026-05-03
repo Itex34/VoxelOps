@@ -22,9 +22,12 @@ struct OpenGLModelTexture {
 };
 
 class OpenGLMesh {
-  public:
-    OpenGLMesh(std::vector<OpenGLModelVertex> vertices, std::vector<unsigned int> indices,
-               std::vector<OpenGLModelTexture> textures);
+public:
+    OpenGLMesh(
+        std::vector<OpenGLModelVertex> vertices,
+        std::vector<unsigned int> indices,
+        std::vector<OpenGLModelTexture> textures
+    );
     ~OpenGLMesh();
 
     OpenGLMesh(const OpenGLMesh &) = delete;
@@ -42,7 +45,7 @@ class OpenGLMesh {
         return static_cast<size_t>(static_cast<long long>(m_indexCount));
     }
 
-  private:
+private:
     unsigned int m_vao = 0;
     unsigned int m_vbo = 0;
     unsigned int m_ebo = 0;

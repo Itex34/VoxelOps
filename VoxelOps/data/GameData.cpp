@@ -5,30 +5,30 @@
 
 namespace GameData {
 
-int screenWidth = 800, screenHeight = 600;
-extern int windowedX = 400, windowedY = 300;
+    int screenWidth = 800, screenHeight = 600;
+    extern int windowedX = 400, windowedY = 300;
 
-double deltaTime = 0.0f;
-double lastFrame = 0.0f;
-double fpsTime = 0.0f;
-int frameCount = 0;
+    double deltaTime = 0.0f;
+    double lastFrame = 0.0f;
+    double fpsTime = 0.0f;
+    int frameCount = 0;
 
-float lastX = 400, lastY = 300;
-float farPlane = 1000.0f;
-float nearPlane = 0.1f;
-float FOV = 80.0f;
+    float lastX = 400, lastY = 300;
+    float farPlane = 1000.0f;
+    float nearPlane = 0.1f;
+    float FOV = 80.0f;
 
-glm::vec3 startPos = glm::vec3(0.0f, 20.0f, 0.0f);
+    glm::vec3 startPos = glm::vec3(0.0f, 20.0f, 0.0f);
 
-bool firstMouse = true;
-bool cursorEnabled = false;
-bool gameplayInputEnabled = true;
-int giTracingBackendPreference = 0;
-int giNrdDebugView = 0;
+    bool firstMouse = true;
+    bool cursorEnabled = false;
+    bool gameplayInputEnabled = true;
+    int giTracingBackendPreference = 0;
+    int giNrdDebugView = 0;
 
-float xPos = 0.0f;
-float yPos = 0.0f;
-float zPos = 0.0f;
+    float xPos = 0.0f;
+    float yPos = 0.0f;
+    float zPos = 0.0f;
 
-glm::vec3 pistolPos = glm::vec3(xPos, yPos, zPos);
+    glm::vec3 pistolPos = glm::vec3(xPos, yPos, zPos);
 } // namespace GameData

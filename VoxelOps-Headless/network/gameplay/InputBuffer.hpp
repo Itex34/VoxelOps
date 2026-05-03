@@ -6,13 +6,19 @@
 
 class InputBuffer {
 public:
-    bool enqueue(const PlayerInput& input);
-    bool consumeNext(PlayerInput& outInput);
+    bool enqueue(const PlayerInput &input);
+    bool consumeNext(PlayerInput &outInput);
     void reset();
 
-    uint32_t lastProcessedInputTick() const { return lastProcessedInputTick_; }
-    std::size_t pendingInputCount() const { return pendingInputs_.size(); }
-    bool hasReceivedInput() const { return hasReceivedInput_; }
+    uint32_t lastProcessedInputTick() const {
+        return lastProcessedInputTick_;
+    }
+    std::size_t pendingInputCount() const {
+        return pendingInputs_.size();
+    }
+    bool hasReceivedInput() const {
+        return hasReceivedInput_;
+    }
 
 private:
     std::map<uint32_t, PlayerInput> pendingInputs_;

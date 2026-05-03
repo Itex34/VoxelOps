@@ -5,7 +5,7 @@
 #include <stdexcept>
 
 class Window {
-  public:
+public:
     Window() = default;
     ~Window();
 
@@ -44,7 +44,7 @@ class Window {
         return static_cast<uint32_t>(h);
     }
 
-  private:
+private:
     SDL_Window *handle = nullptr;
     bool framebufferResized = false;
     bool minimized = false;

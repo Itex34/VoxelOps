@@ -5,15 +5,19 @@
 #include <iostream>
 
 namespace {
-constexpr bool kEnablePathTracedGi = true;
-constexpr uint32_t kPathTraceRaysPerPixel = 1u;
-constexpr uint32_t kPathTraceMaxBounces = 2u;
-constexpr float kPathTraceSkyIntensity = 1.0f;
-}
+    constexpr bool kEnablePathTracedGi = true;
+    constexpr uint32_t kPathTraceRaysPerPixel = 1u;
+    constexpr uint32_t kPathTraceMaxBounces = 2u;
+    constexpr float kPathTraceSkyIntensity = 1.0f;
+} // namespace
 
 VulkanGiSettings::FrameDecision VulkanGiSettings::beginFrame(
-    const glm::vec3 &cameraPosition, const glm::vec3 &sunDirection, bool hardwareRtSupported,
-    VkAccelerationStructureKHR sceneTlas, int tracingBackendPreference) {
+    const glm::vec3 &cameraPosition,
+    const glm::vec3 &sunDirection,
+    bool hardwareRtSupported,
+    VkAccelerationStructureKHR sceneTlas,
+    int tracingBackendPreference
+) {
     FrameDecision out{};
     out.hardwareRtSupported = hardwareRtSupported;
     out.rtSceneReady = hardwareRtSupported && (sceneTlas != VK_NULL_HANDLE);
@@ -27,7 +31,8 @@ VulkanGiSettings::FrameDecision VulkanGiSettings::beginFrame(
 
     if (m_historyAnchorValid) {
         const float cameraDelta = glm::length(cameraPosition - m_historyAnchor);
-        const float sunDelta = 1.0f - glm::clamp(glm::dot(out.sunDirection, m_prevSunDir), -1.0f, 1.0f);
+        const float sunDelta =
+            1.0f - glm::clamp(glm::dot(out.sunDirection, m_prevSunDir), -1.0f, 1.0f);
         out.resetHistory = (cameraDelta > 6.0f) || (sunDelta > 0.08f);
     }
     m_historyAnchor = cameraPosition;
@@ -62,8 +67,7 @@ VulkanGiSettings::FrameDecision VulkanGiSettings::beginFrame(
                   << ((out.backend == GiTracingBackend::HardwareRt) ? "HardwareRt" : "SoftwareDda")
                   << " hwRtSupported=" << (hardwareRtSupported ? "true" : "false")
                   << " sceneTlas=" << ((sceneTlas != VK_NULL_HANDLE) ? "ready" : "none")
-                  << " preference=" << clampedPreference
-                  << "\n";
+                  << " preference=" << clampedPreference << "\n";
         m_loggedTracingBackend = true;
         m_lastTracingBackend = out.backend;
     }
@@ -74,8 +78,9 @@ VulkanGiSettings::FrameDecision VulkanGiSettings::beginFrame(
     return out;
 }
 
-void VulkanGiSettings::fillLightingData(GiLightingData &lighting, const FrameDecision &decision,
-                                        uint32_t nrdDebugView) const {
+void VulkanGiSettings::fillLightingData(
+    GiLightingData &lighting, const FrameDecision &decision, uint32_t nrdDebugView
+) const {
     lighting.hardwareRayTracingSupported = decision.hardwareRtSupported;
     lighting.tracingBackend = decision.backend;
     lighting.pathTracingEnabled = kEnablePathTracedGi;

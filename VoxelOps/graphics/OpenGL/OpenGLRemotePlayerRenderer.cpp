@@ -1,6 +1,5 @@
 #include "OpenGLRemotePlayerRenderer.hpp"
 
-#include "../../player/Player.hpp"
 #include "OpenGLModel.hpp"
 #include "Shader.hpp"
 #include "../../../Shared/player/PlayerData.hpp"
@@ -48,11 +47,17 @@ void OpenGLRemotePlayerRenderer::shutdown() {
     m_playerShader.reset();
 }
 
-void OpenGLRemotePlayerRenderer::render(const Player &player, const glm::mat4 &viewMat,
-                                        const glm::mat4 &projMat, const glm::vec3 &lightDir,
-                                        const glm::vec3 &lightColor,
-                                        const glm::vec3 &ambientColor) {
-    if (!ensureResources() || !m_playerShader || !m_playerModel || player.connectedPlayers.empty()) {
+void OpenGLRemotePlayerRenderer::render(
+    const glm::vec3 &localPlayerPosition,
+    std::span<const RenderRemotePlayerState> remotePlayers,
+    const glm::mat4 &viewMat,
+    const glm::mat4 &projMat,
+    const glm::vec3 &lightDir,
+    const glm::vec3 &lightColor,
+    const glm::vec3 &ambientColor
+) {
+    if (!ensureResources() || !m_playerShader || !m_playerModel ||
+        remotePlayers.empty()) {
         return;
     }
 
@@ -75,9 +80,8 @@ void OpenGLRemotePlayerRenderer::render(const Player &player, const glm::mat4 &v
     const float uniformFitToCollision =
         std::max(collisionHeight, 0.01f) / std::max(modelSize.y, 1e-4f);
 
-    for (const auto &[id, state] : player.connectedPlayers) {
-        (void)id;
-        const glm::vec3 toLocal = state.position - player.getPosition();
+    for (const RenderRemotePlayerState &state : remotePlayers) {
+        const glm::vec3 toLocal = state.position - localPlayerPosition;
         const float localDistSq = glm::dot(toLocal, toLocal);
         if (!std::isfinite(localDistSq) || localDistSq < localGhostRejectDistanceSq) {
             continue;

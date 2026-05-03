@@ -8,21 +8,31 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <unordered_map>
 
-class ChunkManager;
+#include "../../voxels/Chunk.hpp"
+#include "../../voxels/VoxelCoordHash.hpp"
+
 class VulkanContext;
 
 class VulkanGiSceneBuffers {
-  public:
-    bool rebuild(const ChunkManager &chunkManager, const VulkanChunkRenderCache &chunkRenderCache,
-                 VulkanContext &context);
+public:
+    bool rebuild(
+        const std::unordered_map<glm::ivec3, Chunk, IVec3Hash> &chunks,
+        const VulkanChunkRenderCache &chunkRenderCache,
+        VulkanContext &context
+    );
     void applyToLighting(GiLightingData &lighting) const;
     void cleanup();
 
-    [[nodiscard]] bool valid() const noexcept { return m_valid; }
-    [[nodiscard]] size_t chunkCount() const noexcept { return m_chunkCount; }
+    [[nodiscard]] bool valid() const noexcept {
+        return m_valid;
+    }
+    [[nodiscard]] size_t chunkCount() const noexcept {
+        return m_chunkCount;
+    }
 
-  private:
+private:
     vk::raii::Buffer m_occupancyBuffer{nullptr};
     vk::raii::DeviceMemory m_occupancyBufferMemory{nullptr};
     vk::raii::Buffer m_materialBuffer{nullptr};

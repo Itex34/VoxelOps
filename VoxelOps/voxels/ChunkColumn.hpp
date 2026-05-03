@@ -4,7 +4,6 @@
 #include <map>
 
 struct ChunkColumn {
-
     int8_t sunLitBlocksYvalue[16][16]; // [+x -> -x][+z -> -z]
 
     int chunkX, chunkZ; // world position in chunks
@@ -13,7 +12,6 @@ struct ChunkColumn {
 
     ChunkColumn() {
         for (int x = 0; x < 16; ++x) {
-
             for (int z = 0; z < 16; ++z) {
                 sunLitBlocksYvalue[x][z] = -17;
             }

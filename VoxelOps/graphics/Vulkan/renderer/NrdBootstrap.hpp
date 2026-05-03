@@ -8,7 +8,7 @@
 #include "graphics/Vulkan/renderer/RenderFrameData.hpp"
 
 class NrdBootstrap final {
-  public:
+public:
     NrdBootstrap();
     ~NrdBootstrap() noexcept;
 
@@ -19,10 +19,16 @@ class NrdBootstrap final {
 
     void init();
     void shutdown();
-    void updateFrame(const glm::mat4 &viewMatrix, const glm::mat4 &projectionMatrix,
-                     const glm::mat4 &prevViewMatrix, const glm::mat4 &prevProjectionMatrix,
-                     bool hasPrevMatrices, const FrameRenderData &frameData, uint32_t renderWidth,
-                     uint32_t renderHeight);
+    void updateFrame(
+        const glm::mat4 &viewMatrix,
+        const glm::mat4 &projectionMatrix,
+        const glm::mat4 &prevViewMatrix,
+        const glm::mat4 &prevProjectionMatrix,
+        bool hasPrevMatrices,
+        const FrameRenderData &frameData,
+        uint32_t renderWidth,
+        uint32_t renderHeight
+    );
 
     bool isActive() const noexcept {
         return m_active;
@@ -40,7 +46,7 @@ class NrdBootstrap final {
         return m_dispatchDescData;
     }
 
-  private:
+private:
     struct Impl;
 
     std::unique_ptr<Impl> m_impl;

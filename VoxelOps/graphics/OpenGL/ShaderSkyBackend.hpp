@@ -6,7 +6,7 @@
 #include <string>
 
 class ShaderSkyBackend final : public ISkyBackend {
-  public:
+public:
     ShaderSkyBackend(std::string vertexShaderPath, std::string fragmentShaderPath);
 
     void initialize() override;
@@ -22,18 +22,19 @@ class ShaderSkyBackend final : public ISkyBackend {
     float getExposure() const noexcept override;
     bool encodesOutputToSrgb() const noexcept override;
     bool requiresExternalSceneTextures() const noexcept override;
-    void setExternalSceneTextures(unsigned int sceneColorTex,
-                                  unsigned int sceneLinearDepthTex) override;
+    void
+    setExternalSceneTextures(unsigned int sceneColorTex, unsigned int sceneLinearDepthTex) override;
     void clearExternalSceneTextures() override;
     bool supportsExternalShadowMap() const noexcept override;
-    void setExternalShadowMap(unsigned int shadowDepthCompareTex,
-                              const glm::mat4 &shadowViewProj) override;
+    void setExternalShadowMap(
+        unsigned int shadowDepthCompareTex, const glm::mat4 &shadowViewProj
+    ) override;
     void clearExternalShadowMap() override;
     bool supportsAtmospherePresets() const noexcept override;
     void setAtmospherePreset(SkyAtmospherePreset preset) override;
     SkyAtmospherePreset getAtmospherePreset() const noexcept override;
 
-  private:
+private:
     std::string m_VertexShaderPath;
     std::string m_FragmentShaderPath;
     Sky m_Sky;

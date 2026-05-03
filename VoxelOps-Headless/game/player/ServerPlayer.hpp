@@ -65,4 +65,3 @@ struct ServerPlayerCombatSnapshot {
     float radius = 0.3f;
     bool isAlive = false;
 };
-

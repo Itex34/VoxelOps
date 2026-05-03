@@ -21,7 +21,7 @@ struct AABB {
 };
 
 class Chunk {
-  public:
+public:
     explicit Chunk(glm::ivec3 pos = glm::ivec3(0));
 
     // Safe accessor: returns Air for out-of-bounds
@@ -58,7 +58,7 @@ class Chunk {
     int8_t lowestPotentialOccludersYvalue[16][16]; // [+x -> -x][+z -> -z]
 
     int8_t sunLitBlocksYvalue[16][16]; // [+x -> -x][+z -> -z]
-  private:
+private:
     std::array<BlockID, CHUNK_VOLUME> blocks;
     uint16_t nonAirCount = 0; // max 4096 (16^3) -> fits uint16_t
 
