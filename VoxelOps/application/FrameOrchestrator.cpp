@@ -142,7 +142,7 @@ FrameOrchestrator::SimulationStageResult FrameOrchestrator::runSimulationStage()
     if (m_runtime.combat.localPlayerAlive) {
         while (m_runtime.prediction.localSimAccumulator >= RuntimePredictionState::LocalPredictionStep &&
                localPredictionSteps < RuntimePredictionState::MaxLocalPredictionStepsPerFrame) {
-            m_inputSystem.updatePrediction(
+            m_clientPrediction.update(
                 m_runtime, inputIntent, RuntimePredictionState::LocalPredictionStep
             );
             m_runtime.prediction.localSimAccumulator -= RuntimePredictionState::LocalPredictionStep;
@@ -154,7 +154,7 @@ FrameOrchestrator::SimulationStageResult FrameOrchestrator::runSimulationStage()
         }
         if (localPredictionSteps == 0) {
             // Keep player's network-input state synchronized even if no fixed-step sim ran.
-            m_inputSystem.updatePrediction(m_runtime, inputIntent, 0.0);
+            m_clientPrediction.update(m_runtime, inputIntent, 0.0);
         }
         if (localPredictionSteps == RuntimePredictionState::MaxLocalPredictionStepsPerFrame &&
             m_runtime.prediction.localSimAccumulator >= RuntimePredictionState::LocalPredictionStep) {
@@ -189,7 +189,7 @@ FrameOrchestrator::SimulationStageResult FrameOrchestrator::runSimulationStage()
 
     SimulationStageResult result;
     result.localPredictionSteps = localPredictionSteps;
-    result.renderCaps = m_runtime.render.renderer->getCapabilities();
+    result.renderCapabilities = m_runtime.render.renderer->getCapabilities();
     return result;
 }
 
@@ -222,8 +222,8 @@ FrameOrchestrator::runUiStage(const SimulationStageResult &simulation) {
         frameData.chunkDataQueueDepth = queueDepths.chunkData;
         frameData.chunkDeltaQueueDepth = queueDepths.chunkDelta;
         frameData.chunkUnloadQueueDepth = queueDepths.chunkUnload;
-        frameData.backendName = simulation.renderCaps.backendName;
-        frameData.mdiUsable = simulation.renderCaps.mdiUsable;
+        frameData.backendName = simulation.renderCapabilities.backendName;
+        frameData.mdiUsable = simulation.renderCapabilities.mdiUsable;
         frameData.perfFrameCpuMs = m_runtime.app.perf.frameCpuMs;
         frameData.perfInputMs = m_runtime.app.perf.inputMs;
         frameData.perfNetworkMs = m_runtime.app.perf.networkMs;
@@ -253,11 +253,15 @@ FrameOrchestrator::runUiStage(const SimulationStageResult &simulation) {
         mutableState.sunShadowFrontFaceCullGrazingThreshold =
             m_context.render.sunShadowFrontFaceCullGrazingThreshold;
         mutableState.skyExposure = m_context.render.skyExposure;
-        mutableState.giTracingBackendPreference = simulation.renderCaps.supportsGiRuntimeControls
+        mutableState.giTracingBackendPreference = simulation.renderCapabilities.supportsGiRuntimeControls
                                                       ? &GameData::giTracingBackendPreference
                                                       : nullptr;
         mutableState.giNrdDebugView =
-            simulation.renderCaps.supportsGiRuntimeControls ? &GameData::giNrdDebugView : nullptr;
+            simulation.renderCapabilities.supportsGiRuntimeControls ? &GameData::giNrdDebugView : nullptr;
+        mutableState.giNrdGuideOverride =
+            simulation.renderCapabilities.supportsGiRuntimeControls
+                ? &GameData::giNrdGuideOverride
+                : nullptr;
 
         m_runtime.ui.debugUi->drawMainWindow(frameData, mutableState);
     }
@@ -285,7 +289,7 @@ FrameOrchestrator::runUiStage(const SimulationStageResult &simulation) {
         m_context.host.applyMouseInputModes();
     }
 
-    ClientHudSystemContext hudCtx{};
+    HudContext hudCtx{};
     hudCtx.window = m_context.host.window;
     hudCtx.serverIp = m_context.ui.serverIp;
     hudCtx.serverPort = m_context.ui.serverPort;
@@ -334,13 +338,13 @@ void FrameOrchestrator::runRenderStage(
     m_runtime.render.renderer->renderFrame(frameScene);
     *m_context.render.sunDirection = frameScene.sunDirection;
 
-    if (simulation.renderCaps.supportsFirstPersonViewmodel && !useDebugCamera &&
+    if (simulation.renderCapabilities.supportsFirstPersonViewmodel && !useDebugCamera &&
         m_runtime.combat.localPlayerAlive && m_runtime.render.gunSceneRenderer) {
         m_runtime.render.gunSceneRenderer->renderHeldGun(
             m_runtime, m_runtime.render.interpolatedPlayerCamera, frameScene.sunDirection
         );
     }
-    if (m_runtime.ui.debugUi && !simulation.renderCaps.compositesUiInRenderFrame) {
+    if (m_runtime.ui.debugUi && !simulation.renderCapabilities.compositesUiInRenderFrame) {
         m_runtime.ui.debugUi->renderDrawData(ui.drawData);
     }
 }
@@ -377,7 +381,7 @@ void FrameOrchestrator::runPresentStage(size_t localPredictionSteps) {
     const bool prioritizeMovement =
         (localPredictionSteps > 1) || frameUnderPressure || chunkBacklog;
     const auto perfChunkStart = Clock::now();
-    m_chunkStreamingSystem.update(m_runtime, prioritizeMovement);
+    m_chunkStreaming.update(m_runtime, prioritizeMovement);
     const auto perfChunkEnd = Clock::now();
     m_runtime.app.perf.chunkStreamingMs = MeasureMs(perfChunkStart, perfChunkEnd);
 }

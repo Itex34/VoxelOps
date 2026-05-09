@@ -81,8 +81,10 @@ struct UiMutableState {
     float *skyExposure = nullptr;
     // 0 = Auto, 1 = Software DDA, 2 = Hardware RT
     int *giTracingBackendPreference = nullptr;
-    // 0 = Off, 1 = Diff Radiance, 2 = Hit Distance, 3 = Normal, 4 = Motion, 5 = ViewZ
+    // 0 = Off, 1 = Diff Radiance, 2 = Hit Distance, 3 = Normal, 4 = Motion, 5 = ViewZ, 6 = Raw Noisy
     int *giNrdDebugView = nullptr;
+    // 0 = Off, 1 = Flat Normal+Roughness, 2 = Flat Normal+Roughness + Zero Motion
+    int *giNrdGuideOverride = nullptr;
 };
 
 struct UiVulkanInitInfo {
@@ -122,4 +124,5 @@ private:
     bool m_showDemoWindow = false;
     bool m_crosshairEnabled = true;
     BackendType m_backendType = BackendType::None;
+    VkDevice m_vulkanDevice = VK_NULL_HANDLE;
 };

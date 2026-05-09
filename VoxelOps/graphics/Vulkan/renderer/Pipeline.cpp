@@ -2,6 +2,7 @@
 
 #include "graphics/Vulkan/graphics/Mesh.hpp"
 
+#include <algorithm>
 #include <array>
 #include <fstream>
 #include <stdexcept>
@@ -44,7 +45,8 @@ void Pipeline::create(
     const vk::raii::DescriptorSetLayout &giDescriptorSetLayout,
     PipelineVertexLayout vertexLayout,
     const char *vertexShaderFile,
-    const char *fragmentShaderFile
+    const char *fragmentShaderFile,
+    uint32_t colorAttachmentCount
 ) {
     std::string shaderDir;
 #ifdef SHADER_DIR
@@ -122,11 +124,14 @@ void Pipeline::create(
     colorBlendAttachment.colorWriteMask =
         vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
         vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+    std::vector<vk::PipelineColorBlendAttachmentState> colorBlendAttachments(
+        std::max(1u, colorAttachmentCount), colorBlendAttachment
+    );
 
     vk::PipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
+    colorBlending.attachmentCount = static_cast<uint32_t>(colorBlendAttachments.size());
+    colorBlending.pAttachments = colorBlendAttachments.data();
 
     vk::PushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eVertex;

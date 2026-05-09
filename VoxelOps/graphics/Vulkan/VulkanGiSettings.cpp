@@ -7,7 +7,7 @@
 namespace {
     constexpr bool kEnablePathTracedGi = true;
     constexpr uint32_t kPathTraceRaysPerPixel = 1u;
-    constexpr uint32_t kPathTraceMaxBounces = 2u;
+    constexpr uint32_t kPathTraceMaxBounces = 5u;
     constexpr float kPathTraceSkyIntensity = 1.0f;
 } // namespace
 
@@ -50,11 +50,11 @@ VulkanGiSettings::FrameDecision VulkanGiSettings::beginFrame(
             out.rtSceneReady ? GiTracingBackend::HardwareRt : GiTracingBackend::SoftwareDda;
     }
 
-    if (!out.rtSceneReady && !m_warnedHardwareRtUnavailable) {
-        std::cerr << "[Vulkan][GI] Hardware RT scene unavailable (support="
+    if (!out.rtSceneReady && clampedPreference == 2 && !m_warnedHardwareRtUnavailable) {
+        std::cerr << "[Vulkan][GI] Hardware RT requested but unavailable (support="
                   << (hardwareRtSupported ? "yes" : "no")
                   << ", scene=" << ((sceneTlas != VK_NULL_HANDLE) ? "ready" : "not-ready")
-                  << "). GI path tracing disabled for this frame.\n";
+                  << "). Falling back to Software DDA.\n";
         m_warnedHardwareRtUnavailable = true;
     }
     const bool backendChanged = m_loggedTracingBackend && (out.backend != m_lastTracingBackend);
@@ -72,14 +72,17 @@ VulkanGiSettings::FrameDecision VulkanGiSettings::beginFrame(
         m_lastTracingBackend = out.backend;
     }
 
-    if (!out.rtSceneReady) {
+    if (out.backend == GiTracingBackend::HardwareRt && !out.rtSceneReady) {
         out.resetHistory = true;
     }
     return out;
 }
 
 void VulkanGiSettings::fillLightingData(
-    GiLightingData &lighting, const FrameDecision &decision, uint32_t nrdDebugView
+    GiLightingData &lighting,
+    const FrameDecision &decision,
+    uint32_t nrdDebugView,
+    uint32_t nrdGuideOverride
 ) const {
     lighting.hardwareRayTracingSupported = decision.hardwareRtSupported;
     lighting.tracingBackend = decision.backend;
@@ -87,21 +90,21 @@ void VulkanGiSettings::fillLightingData(
     lighting.pathTraceRaysPerPixel = kPathTraceRaysPerPixel;
     lighting.pathTraceMaxBounces = kPathTraceMaxBounces;
     lighting.pathTraceSkyIntensity = kPathTraceSkyIntensity;
-    lighting.baseDiffuse = kEnablePathTracedGi ? 0.12f : 0.50f;
+    lighting.baseDiffuse = kEnablePathTracedGi ? 0.0f : 0.50f;
     lighting.giIntensity = 1.00f;
     lighting.sunIntensity = 1.35f;
-    lighting.restirTemporalBlend = 0.86f;
-    lighting.restirSpatialReuse = 0.18f;
     lighting.denoiseTemporalBlend = 0.92f;
     lighting.denoiseSpatialWeight = 0.26f;
     lighting.denoiseLumaPhi = 2.0f;
     lighting.denoiseMomentBlend = 0.08f;
+    lighting.nrdHitDistanceParams = glm::vec3(3.0f, 0.1f, 20.0f);
     lighting.sunShadowMinVisibility = 0.00f;
     lighting.sunShadowMaxDistance = 256.0f;
     lighting.sunDirection = decision.sunDirection;
     lighting.sunShadowsEnabled = false;
     lighting.resetHistory = decision.resetHistory;
     lighting.nrdDebugView = nrdDebugView;
+    lighting.nrdGuideOverride = nrdGuideOverride;
     lighting.traceMaterialBuffer = VK_NULL_HANDLE;
     lighting.shadowOccupancyBuffer = VK_NULL_HANDLE;
     lighting.shadowOccupancyMinBlocks = glm::ivec3(0);

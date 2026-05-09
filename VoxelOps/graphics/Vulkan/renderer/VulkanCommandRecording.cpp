@@ -1,7 +1,7 @@
 #include "graphics/Vulkan/renderer/VulkanRenderer.hpp"
 #include "graphics/Vulkan/vulkan/VulkanContext.hpp"
 #include "graphics/Vulkan/graphics/Model.hpp"
-
+#include "graphics/Vulkan/renderer/NrdBootstrap.hpp"
 #include <imgui.h>
 #if __has_include(<imgui_impl_vulkan.h>)
 #define VOXELOPS_IMGUI_VULKAN_BACKEND_AVAILABLE 1
@@ -24,6 +24,18 @@ void VulkanRenderer::recordCommandBuffer(
     const auto measureMs = [](auto start, auto end) -> float {
         return static_cast<float>(std::chrono::duration<double, std::milli>(end - start).count());
     };
+    const uint32_t nrdDebugView = frameData.giLighting.nrdDebugView;
+    const bool compositeDebugView =
+        ((nrdDebugView >= 10u) && (nrdDebugView <= 18u)) ||
+        (nrdDebugView == 24u) || (nrdDebugView == 25u) ||
+        (nrdDebugView == 26u) || (nrdDebugView == 27u) ||
+        ((nrdDebugView >= 30u) && (nrdDebugView <= 34u));
+    const bool useNrdComposite = frameData.giLighting.pathTracingEnabled &&
+                                 (nrdDebugView == 0u || compositeDebugView) &&
+                                 m_nrdBootstrap != nullptr && m_nrdBootstrap->isActive() &&
+                                 m_nrdCompositePipeline != nullptr &&
+                                 imageIndex < m_compositeFramebuffers.size() &&
+                                 imageIndex < m_giDescriptorSets.size();
     outChunkCpuMs = 0.0f;
     outModelCpuMs = 0.0f;
     outUiCpuMs = 0.0f;
@@ -39,11 +51,27 @@ void VulkanRenderer::recordCommandBuffer(
         );
     }
     clearTemporalGiWriteTargets(imageIndex);
-    recordRestirPrePassBarriers(imageIndex);
 
-    std::array<vk::ClearValue, 2> clearValues{};
+    auto nrdNormalRoughnessClear = [&](uint32_t normalEncoding) -> vk::ClearColorValue {
+        if (normalEncoding == 2u) {
+            return vk::ClearColorValue(std::array<float, 4>{0.5f, 0.5f, 1.0f, 0.0f});
+        }
+        if (normalEncoding == 1u || normalEncoding == 4u) {
+            return vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 1.0f, 1.0f});
+        }
+        return vk::ClearColorValue(std::array<float, 4>{0.5f, 0.5f, 1.0f, 1.0f});
+    };
+    const uint32_t normalEncoding =
+        (m_nrdBootstrap != nullptr) ? m_nrdBootstrap->normalEncoding() : 2u;
+    std::array<vk::ClearValue, 8> clearValues{};
     clearValues[0].color = vk::ClearColorValue(std::array<float, 4>{0.05f, 0.07f, 0.10f, 1.0f});
-    clearValues[1].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
+    clearValues[1].color = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f});
+    clearValues[2].color = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f});
+    clearValues[3].color = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f});
+    clearValues[4].color = nrdNormalRoughnessClear(normalEncoding);
+    clearValues[5].color = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f});
+    clearValues[6].color = vk::ClearColorValue(std::array<float, 4>{-1.0f, 0.0f, 0.0f, 0.0f});
+    clearValues[7].depthStencil = vk::ClearDepthStencilValue(1.0f, 0);
 
     vk::RenderPassBeginInfo renderPassInfo{};
     renderPassInfo.renderPass = *m_renderPass.get();
@@ -257,16 +285,6 @@ void VulkanRenderer::recordCommandBuffer(
     }
 
     const auto uiCpuStart = std::chrono::steady_clock::now();
-#if VOXELOPS_IMGUI_VULKAN_BACKEND_AVAILABLE
-    ImDrawData *drawData = frameData.uiDrawData;
-    if (drawData != nullptr && drawData->CmdListsCount > 0 &&
-        ImGui::GetCurrentContext() != nullptr) {
-        ImGuiIO &io = ImGui::GetIO();
-        if (io.BackendRendererUserData != nullptr) {
-            ImGui_ImplVulkan_RenderDrawData(drawData, *m_commandBuffers[imageIndex]);
-        }
-    }
-#endif
     const auto uiCpuEnd = std::chrono::steady_clock::now();
     outUiCpuMs = measureMs(uiCpuStart, uiCpuEnd);
     if (m_timestampQueriesEnabled && imageIndex < m_timestampQueryPools.size()) {
@@ -280,11 +298,84 @@ void VulkanRenderer::recordCommandBuffer(
 #if VOXELOPS_NRD_HEADERS
     dispatchNrdPass(imageIndex, frameData);
 #endif
-    dispatchRestirGiSpatialPass(imageIndex, frameData);
+    if (useNrdComposite) {
+        barrierNrdSignalsForComposite(imageIndex);
+    }
+    recordNrdCompositePass(imageIndex, frameData, useNrdComposite);
     if (m_timestampQueriesEnabled && imageIndex < m_timestampQueryPools.size()) {
         m_commandBuffers[imageIndex].writeTimestamp(
             vk::PipelineStageFlagBits::eBottomOfPipe, *m_timestampQueryPools[imageIndex], 4
         );
     }
     m_commandBuffers[imageIndex].end();
+}
+
+void VulkanRenderer::recordNrdCompositePass(
+    uint32_t imageIndex, const FrameRenderData &frameData, bool applyNrdComposite
+) {
+    if (imageIndex >= m_compositeFramebuffers.size() || imageIndex >= m_giDescriptorSets.size() ||
+        m_compositeRenderPass.get() == nullptr) {
+        return;
+    }
+
+    const vk::Extent2D extent = m_context.getSwapchainExtent();
+    vk::MemoryBarrier colorBarrier{};
+    colorBarrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+    colorBarrier.dstAccessMask =
+        vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite;
+    m_commandBuffers[imageIndex].pipelineBarrier(
+        vk::PipelineStageFlagBits::eColorAttachmentOutput,
+        vk::PipelineStageFlagBits::eColorAttachmentOutput,
+        {},
+        colorBarrier,
+        {},
+        {}
+    );
+
+    vk::RenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.renderPass = *m_compositeRenderPass.get();
+    renderPassInfo.framebuffer = *m_compositeFramebuffers[imageIndex];
+    renderPassInfo.renderArea.offset = vk::Offset2D{0, 0};
+    renderPassInfo.renderArea.extent = extent;
+
+    m_commandBuffers[imageIndex].beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+
+    vk::Viewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(extent.width);
+    viewport.height = static_cast<float>(extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    m_commandBuffers[imageIndex].setViewport(0, viewport);
+
+    vk::Rect2D scissor{};
+    scissor.offset = vk::Offset2D{0, 0};
+    scissor.extent = extent;
+    m_commandBuffers[imageIndex].setScissor(0, scissor);
+
+    if (applyNrdComposite && m_nrdCompositePipeline != nullptr &&
+        m_nrdCompositePipelineLayout != nullptr) {
+        m_commandBuffers[imageIndex].bindPipeline(
+            vk::PipelineBindPoint::eGraphics, *m_nrdCompositePipeline
+        );
+        const vk::DescriptorSet giSet = *m_giDescriptorSets[imageIndex];
+        m_commandBuffers[imageIndex].bindDescriptorSets(
+            vk::PipelineBindPoint::eGraphics, *m_nrdCompositePipelineLayout, 0, giSet, {}
+        );
+        m_commandBuffers[imageIndex].draw(3, 1, 0, 0);
+    }
+
+#if VOXELOPS_IMGUI_VULKAN_BACKEND_AVAILABLE
+    ImDrawData *drawData = frameData.uiDrawData;
+    if (drawData != nullptr && drawData->CmdListsCount > 0 &&
+        ImGui::GetCurrentContext() != nullptr) {
+        ImGuiIO &io = ImGui::GetIO();
+        if (io.BackendRendererUserData != nullptr) {
+            ImGui_ImplVulkan_RenderDrawData(drawData, *m_commandBuffers[imageIndex]);
+        }
+    }
+#endif
+
+    m_commandBuffers[imageIndex].endRenderPass();
 }

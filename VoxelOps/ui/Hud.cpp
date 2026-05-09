@@ -1,6 +1,6 @@
-#include "ClientHudSystem.hpp"
+#include "Hud.hpp"
 
-#include "AppHelpers.hpp"
+#include "../application/AppHelpers.hpp"
 
 #include "../../Shared/items/Items.hpp"
 #include "../../Shared/player/Inventory.hpp"
@@ -25,7 +25,7 @@ namespace {
     }
 } // namespace
 
-void ClientHudSystem::draw(Runtime &runtime, const ClientHudSystemContext &ctx) {
+void Hud::draw(Runtime &runtime, const HudContext &ctx) {
     drawConnectionPrompt(runtime, ctx);
     drawScoreboard(runtime);
     drawPingCounter(runtime);
@@ -34,7 +34,7 @@ void ClientHudSystem::draw(Runtime &runtime, const ClientHudSystemContext &ctx) 
     drawDeathOverlay(runtime);
 }
 
-void ClientHudSystem::drawConnectionPrompt(Runtime &runtime, const ClientHudSystemContext &ctx) {
+void Hud::drawConnectionPrompt(Runtime &runtime, const HudContext &ctx) {
     if (!runtime.ui.debugUi || runtime.network.clientNet.IsConnected()) {
         return;
     }
@@ -263,7 +263,7 @@ void ClientHudSystem::drawConnectionPrompt(Runtime &runtime, const ClientHudSyst
     }
 }
 
-void ClientHudSystem::drawKillFeed(Runtime &runtime) {
+void Hud::drawKillFeed(Runtime &runtime) {
     if (ImGui::GetCurrentContext() == nullptr || runtime.ui.killFeedEntries.empty()) {
         return;
     }
@@ -303,7 +303,7 @@ void ClientHudSystem::drawKillFeed(Runtime &runtime) {
     }
 }
 
-void ClientHudSystem::drawScoreboard(Runtime &runtime) {
+void Hud::drawScoreboard(Runtime &runtime) {
     if (ImGui::GetCurrentContext() == nullptr) {
         return;
     }
@@ -417,7 +417,7 @@ void ClientHudSystem::drawScoreboard(Runtime &runtime) {
     }
 }
 
-void ClientHudSystem::drawPingCounter(Runtime &runtime) {
+void Hud::drawPingCounter(Runtime &runtime) {
     if (ImGui::GetCurrentContext() == nullptr) {
         return;
     }
@@ -444,7 +444,7 @@ void ClientHudSystem::drawPingCounter(Runtime &runtime) {
     drawList->AddText(ImVec2(x, y), textColor, line.c_str());
 }
 
-void ClientHudSystem::drawPlayerHud(Runtime &runtime) {
+void Hud::drawPlayerHud(Runtime &runtime) {
     if (ImGui::GetCurrentContext() == nullptr || !runtime.network.clientNet.IsConnected()) {
         return;
     }
@@ -560,7 +560,7 @@ void ClientHudSystem::drawPlayerHud(Runtime &runtime) {
     }
 }
 
-void ClientHudSystem::drawDeathOverlay(Runtime &runtime) {
+void Hud::drawDeathOverlay(Runtime &runtime) {
     if (ImGui::GetCurrentContext() == nullptr || runtime.combat.localPlayerAlive) {
         return;
     }

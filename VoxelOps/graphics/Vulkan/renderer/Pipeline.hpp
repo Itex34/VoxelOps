@@ -21,7 +21,8 @@ public:
         const vk::raii::DescriptorSetLayout &giDescriptorSetLayout,
         PipelineVertexLayout vertexLayout,
         const char *vertexShaderFile,
-        const char *fragmentShaderFile
+        const char *fragmentShaderFile,
+        uint32_t colorAttachmentCount = 3
     );
 
     void cleanup();

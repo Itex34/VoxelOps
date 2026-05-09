@@ -226,6 +226,7 @@ void VulkanRenderDevice::renderFrame(RenderScene &scene) {
     ++m_frameCounter;
     m_sceneUploader.collectRetiredChunkMeshes(m_frameCounter);
     m_rtScene.collectRetiredResources(m_frameCounter);
+    m_giSceneBuffers.collectRetiredBuffers(m_frameCounter);
 
     const glm::ivec3 cullingBlockPos(
         static_cast<int>(std::floor(cullingCamera.position.x)),
@@ -285,7 +286,8 @@ void VulkanRenderDevice::renderFrame(RenderScene &scene) {
     m_giSettings.fillLightingData(
         m_frameData.giLighting,
         giDecision,
-        static_cast<uint32_t>(std::clamp(GameData::giNrdDebugView, 0, 5))
+        static_cast<uint32_t>(std::clamp(GameData::giNrdDebugView, 0, 34)),
+        static_cast<uint32_t>(std::clamp(GameData::giNrdGuideOverride, 0, 2))
     );
     m_lastTimingSnapshot.giHardwareRtSupported = giDecision.hardwareRtSupported;
     m_lastTimingSnapshot.giRtSceneReady = giDecision.rtSceneReady;
@@ -293,7 +295,7 @@ void VulkanRenderDevice::renderFrame(RenderScene &scene) {
 
     const auto giIntegrateStart = std::chrono::steady_clock::now();
     const bool giTraceReady = m_giSceneBuffers.rebuild(
-        *scene.chunkWorld.chunks, m_sceneUploader.chunkRenderCache(), *m_context
+        *scene.chunkWorld.chunks, m_sceneUploader.chunkRenderCache(), *m_context, m_frameCounter
     );
     const auto giIntegrateEnd = std::chrono::steady_clock::now();
     m_lastTimingSnapshot.cpuGiIntegrateMs = measureMs(giIntegrateStart, giIntegrateEnd);
@@ -304,7 +306,6 @@ void VulkanRenderDevice::renderFrame(RenderScene &scene) {
     } else {
         m_lastTimingSnapshot.giTraceGridsUpdated = 0;
     }
-
     (void)m_sceneUploader.ensureRemotePlayerAssetsLoaded(*m_context, m_uploadContext);
     const VulkanFrameBuildResult frameBuild = VulkanFrameBuilder::buildFrameData(
         m_frameData,
@@ -360,6 +361,10 @@ void VulkanRenderDevice::shutdown() {
         return;
     }
 
+    if (m_renderer) {
+        m_renderer->cleanup();
+    }
+
     try {
         if (m_context) {
             m_context->getDevice().waitIdle();
@@ -371,11 +376,9 @@ void VulkanRenderDevice::shutdown() {
     m_rtScene.reset();
     m_giSettings.reset();
     m_giSceneBuffers.cleanup();
-
     m_uploadContext.cleanup();
 
     if (m_renderer) {
-        m_renderer->cleanup();
         m_renderer.reset();
     }
     if (m_context) {

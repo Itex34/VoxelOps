@@ -1,11 +1,12 @@
 #pragma once
 
-#include "ClientHudSystem.hpp"
+#include "../ui/Hud.hpp"
 #include "ClientInputSystem.hpp"
 #include "ClientNetworkSystem.hpp"
+#include "../runtime/ClientPrediction.hpp"
 #include "../render/RenderSceneBuilder.hpp"
 #include "../systems/CombatShootSystem.hpp"
-#include "../systems/ChunkStreamingClientSystem.hpp"
+#include "../world/ChunkStreamingClient.hpp"
 #include "../systems/WorldInteractionSystem.hpp"
 #include "../runtime/Runtime.hpp"
 
@@ -76,7 +77,7 @@ public:
 private:
     struct SimulationStageResult {
         size_t localPredictionSteps = 0;
-        RenderDeviceCapabilities renderCaps{};
+        RenderDeviceCapabilities renderCapabilities{};
     };
 
     struct UiStageResult {
@@ -93,11 +94,13 @@ private:
     Runtime &m_runtime;
     FrameOrchestratorContext m_context;
     ClientInputSystem m_inputSystem;
+    ClientPrediction m_clientPrediction;
+
     ClientNetworkSystem m_networkSystem;
-    ClientHudSystem m_hudSystem;
+    Hud m_hudSystem;
     WorldInteractionSystem m_worldInteractionSystem;
     CombatShootSystem m_combatShootSystem;
-    ChunkStreamingClientSystem m_chunkStreamingSystem;
+    ChunkStreamingClient m_chunkStreaming;
     RenderSceneBuilder m_renderSceneBuilder;
     double m_frameNow = 0.0;
 };

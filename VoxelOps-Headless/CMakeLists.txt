@@ -64,7 +64,8 @@ add_executable(VoxelOps-Headless
     "game/player/ServerPlayer.cpp"
     "game/player/ServerMovementSimulation.cpp"
     "game/world/BlockEdits.cpp"
-    "game/spawn/Respawning.cpp" "engine/world/WorldCollision.cpp")
+    "game/spawn/Respawning.cpp" 
+    "engine/world/WorldCollision.cpp")
 
 find_package(glm CONFIG REQUIRED)
 find_package(GameNetworkingSockets CONFIG REQUIRED)

@@ -1,0 +1,24 @@
+{
+  "name": "voxelops",
+  "version-string": "0.1.0",
+  "builtin-baseline": "HEAD",
+  "dependencies": [
+    "sdl3",
+    "glm",
+    "assimp",
+    "glad",
+    "gamenetworkingsockets",
+    "lz4",
+    {
+      "name": "imgui",
+      "features": [
+        "sdl3-binding",
+        "opengl3-binding",
+        "vulkan-binding"
+      ]
+    },
+    "vulkan",
+    "rapidjson",
+    "rmlui"
+  ]
+}

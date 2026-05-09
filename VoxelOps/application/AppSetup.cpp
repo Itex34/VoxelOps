@@ -1,5 +1,6 @@
 #include "App.hpp"
 #include "AppHelpers.hpp"
+#include "../graphics/RenderDeviceFactory.hpp"
 #include "../../Shared/runtime/Paths.hpp"
 
 #include <algorithm>

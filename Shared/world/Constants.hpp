@@ -9,7 +9,7 @@ constexpr int WORLD_MAX_Z = 20;
 
 //--IN BLOCKS--
 constexpr int WORLD_MIN_Y = -16; // bedrock layer
-constexpr int WORLD_MAX_Y = 32;
+constexpr int WORLD_MAX_Y = 64;
 
 //--IN CHUNKS--
 constexpr int WORLD_SIZE_X = WORLD_MAX_X - WORLD_MIN_X + 1;

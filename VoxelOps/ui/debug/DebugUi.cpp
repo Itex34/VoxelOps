@@ -58,6 +58,7 @@ bool DebugUi::initialize(SDL_Window *window, SDL_GLContext glContext, const char
 
     m_initialized = true;
     m_backendType = BackendType::OpenGL;
+    m_vulkanDevice = VK_NULL_HANDLE;
     return true;
 #endif
 }
@@ -120,6 +121,7 @@ bool DebugUi::initializeForVulkan(SDL_Window *window, const UiVulkanInitInfo &in
 
     m_initialized = true;
     m_backendType = BackendType::Vulkan;
+    m_vulkanDevice = initInfo.device;
     return true;
 #endif
 }
@@ -135,6 +137,9 @@ void DebugUi::shutdown() {
 #endif
 #if VOXELOPS_IMGUI_VULKAN_BACKEND_AVAILABLE
     if (m_backendType == BackendType::Vulkan) {
+        if (m_vulkanDevice != VK_NULL_HANDLE) {
+            (void)vkDeviceWaitIdle(m_vulkanDevice);
+        }
         ImGui_ImplVulkan_Shutdown();
     }
 #endif
@@ -144,6 +149,7 @@ void DebugUi::shutdown() {
     ImGui::DestroyContext();
     m_initialized = false;
     m_backendType = BackendType::None;
+    m_vulkanDevice = VK_NULL_HANDLE;
 }
 
 void DebugUi::processEvent(const SDL_Event &event) {
@@ -475,12 +481,59 @@ void DebugUi::drawMainWindow(const UiFrameData &data, UiMutableState &state) {
         }
     }
     if (state.giNrdDebugView != nullptr) {
-        int viewMode = std::clamp(*state.giNrdDebugView, 0, 5);
+        int viewMode = std::clamp(*state.giNrdDebugView, 0, 34);
         const char *labels[] = {
-            "Off", "Diff Radiance", "Hit Distance", "Normal", "Motion", "ViewZ"
+            "Off",
+            "Diff Radiance",
+            "Hit Distance",
+            "Normal",
+            "Motion",
+            "ViewZ",
+            "Raw Noisy",
+            "NRD Material ID (norm)",
+            "Packed NormalRough XYZ",
+            "Voxel Material ID",
+            "PostNRD: Denoised Indirect",
+            "PostNRD: Compose Base",
+            "PostNRD: Compose Indirect Tint",
+            "PostNRD: Indirect Term",
+            "PostNRD: Final Lit",
+            "PostNRD: Denoised HitDist",
+            "PostNRD: Indirect Luma Heat",
+            "PostNRD: Base Alpha",
+            "PostNRD: |Tinted-NRD|",
+            "Tile Index Hash",
+            "Albedo: texture()",
+            "Albedo: textureGrad()",
+            "Albedo: texelFetch()",
+            "UV fract XY",
+            "PostNRD: Direct Only",
+            "PostNRD: Indirect Only",
+            "PostNRD: Compose Writer Tag",
+            "PostNRD: Compose Writer Hash",
+            "NRD Invalid Input Mask",
+            "NRD Invalid Breakdown RGB",
+            "PostNRD: Input Diff (Stored)",
+            "PostNRD: Input HitDist (Stored)",
+            "PostNRD: Input Motion (Stored)",
+            "PostNRD: Input ViewZ (Stored)",
+            "PostNRD: Input NormalRough (Stored)"
         };
         if (ImGui::Combo("NRD Input Debug", &viewMode, labels, IM_ARRAYSIZE(labels))) {
             *state.giNrdDebugView = viewMode;
+        }
+    }
+    if (state.giNrdGuideOverride != nullptr) {
+        int guideMode = std::clamp(*state.giNrdGuideOverride, 0, 2);
+        const char *guideLabels[] = {
+            "Off",
+            "Flat Normal+Roughness",
+            "Flat Normal+Roughness + Zero Motion"
+        };
+        if (ImGui::Combo(
+                "NRD Guide Override", &guideMode, guideLabels, IM_ARRAYSIZE(guideLabels)
+            )) {
+            *state.giNrdGuideOverride = guideMode;
         }
     }
 

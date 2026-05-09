@@ -1,19 +1,44 @@
 #include "graphics/Vulkan/renderer/RenderPass.hpp"
 
 #include <array>
+#include <vector>
 
 void RenderPass::create(
-    const vk::raii::Device &device, vk::Format colorFormat, vk::Format depthFormat
+    const vk::raii::Device &device,
+    vk::Format colorFormat,
+    vk::Format depthFormat,
+    bool withDepth,
+    vk::AttachmentLoadOp colorLoadOp,
+    vk::ImageLayout colorInitialLayout,
+    vk::ImageLayout colorFinalLayout,
+    const std::vector<vk::Format> &extraColorFormats
 ) {
+    std::vector<vk::AttachmentDescription> attachments;
+    attachments.reserve(1u + extraColorFormats.size() + (withDepth ? 1u : 0u));
+
     vk::AttachmentDescription colorAttachment{};
     colorAttachment.format = colorFormat;
     colorAttachment.samples = vk::SampleCountFlagBits::e1;
-    colorAttachment.loadOp = vk::AttachmentLoadOp::eClear;
+    colorAttachment.loadOp = colorLoadOp;
     colorAttachment.storeOp = vk::AttachmentStoreOp::eStore;
     colorAttachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
     colorAttachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
-    colorAttachment.initialLayout = vk::ImageLayout::eUndefined;
-    colorAttachment.finalLayout = vk::ImageLayout::ePresentSrcKHR;
+    colorAttachment.initialLayout = colorInitialLayout;
+    colorAttachment.finalLayout = colorFinalLayout;
+    attachments.push_back(colorAttachment);
+
+    for (vk::Format format : extraColorFormats) {
+        vk::AttachmentDescription extra{};
+        extra.format = format;
+        extra.samples = vk::SampleCountFlagBits::e1;
+        extra.loadOp = vk::AttachmentLoadOp::eClear;
+        extra.storeOp = vk::AttachmentStoreOp::eStore;
+        extra.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
+        extra.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
+        extra.initialLayout = vk::ImageLayout::eUndefined;
+        extra.finalLayout = vk::ImageLayout::eGeneral;
+        attachments.push_back(extra);
+    }
 
     vk::AttachmentDescription depthAttachment{};
     depthAttachment.format = depthFormat;
@@ -25,32 +50,47 @@ void RenderPass::create(
     depthAttachment.initialLayout = vk::ImageLayout::eUndefined;
     depthAttachment.finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
 
-    vk::AttachmentReference colorAttachmentRef{};
-    colorAttachmentRef.attachment = 0;
-    colorAttachmentRef.layout = vk::ImageLayout::eColorAttachmentOptimal;
+    std::vector<vk::AttachmentReference> colorAttachmentRefs;
+    colorAttachmentRefs.reserve(1u + extraColorFormats.size());
+    colorAttachmentRefs.push_back(vk::AttachmentReference{0u, vk::ImageLayout::eColorAttachmentOptimal});
+    for (uint32_t i = 0; i < static_cast<uint32_t>(extraColorFormats.size()); ++i) {
+        colorAttachmentRefs.push_back(
+            vk::AttachmentReference{1u + i, vk::ImageLayout::eColorAttachmentOptimal}
+        );
+    }
 
     vk::AttachmentReference depthAttachmentRef{};
-    depthAttachmentRef.attachment = 1;
+    depthAttachmentRef.attachment = static_cast<uint32_t>(1u + extraColorFormats.size());
     depthAttachmentRef.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
 
     vk::SubpassDescription subpass{};
     subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorAttachmentRef;
-    subpass.pDepthStencilAttachment = &depthAttachmentRef;
+    subpass.colorAttachmentCount = static_cast<uint32_t>(colorAttachmentRefs.size());
+    subpass.pColorAttachments = colorAttachmentRefs.data();
+    subpass.pDepthStencilAttachment = withDepth ? &depthAttachmentRef : nullptr;
 
     vk::SubpassDependency dependency{};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass = 0;
-    dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput |
-                              vk::PipelineStageFlagBits::eEarlyFragmentTests;
-    dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput |
-                              vk::PipelineStageFlagBits::eEarlyFragmentTests;
-    dependency.srcAccessMask = {};
-    dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite |
-                               vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+    dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependency.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+    dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead |
+                               vk::AccessFlagBits::eColorAttachmentWrite;
+    if (colorInitialLayout == vk::ImageLayout::eUndefined ||
+        colorLoadOp == vk::AttachmentLoadOp::eClear) {
+        dependency.srcStageMask = vk::PipelineStageFlagBits::eTopOfPipe;
+        dependency.srcAccessMask = {};
+    }
+    if (withDepth) {
+        dependency.srcStageMask |= vk::PipelineStageFlagBits::eEarlyFragmentTests;
+        dependency.dstStageMask |= vk::PipelineStageFlagBits::eEarlyFragmentTests;
+        dependency.dstAccessMask |= vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+    }
 
-    std::array<vk::AttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
+    if (withDepth) {
+        attachments.push_back(depthAttachment);
+    }
 
     vk::RenderPassCreateInfo renderPassInfo{};
     renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());

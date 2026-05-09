@@ -23,8 +23,10 @@ namespace GameData {
     extern bool gameplayInputEnabled;
     // 0 = Auto, 1 = Software DDA, 2 = Hardware RT
     extern int giTracingBackendPreference;
-    // 0 = Off, 1 = Diff Radiance, 2 = Hit Distance, 3 = Normal, 4 = Motion, 5 = ViewZ
+    // NRD debug mode index from Debug UI combo (0..29)
     extern int giNrdDebugView;
+    // 0 = Off, 1 = Flat Normal+Roughness, 2 = Flat Normal+Roughness + Zero Motion
+    extern int giNrdGuideOverride;
 
     extern float xPos;
     extern float yPos;

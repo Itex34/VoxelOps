@@ -140,12 +140,41 @@ namespace {
         return (x + static_cast<uint32_t>(y) - 1u) / static_cast<uint32_t>(y);
     }
 #endif
+
+    vk::Format chooseNrdNormalRoughnessFormat(uint32_t normalEncoding) {
+        switch (normalEncoding) {
+        case 0u: // nrd::NormalEncoding::RGBA8_UNORM
+            return vk::Format::eR8G8B8A8Unorm;
+        case 1u: // nrd::NormalEncoding::RGBA8_SNORM
+            return vk::Format::eR8G8B8A8Snorm;
+        case 2u: // nrd::NormalEncoding::R10_G10_B10_A2_UNORM
+            return vk::Format::eA2B10G10R10UnormPack32;
+        case 3u: // nrd::NormalEncoding::RGBA16_UNORM
+            return vk::Format::eR16G16B16A16Unorm;
+        case 4u: // nrd::NormalEncoding::RGBA16_SNORM
+            return vk::Format::eR16G16B16A16Snorm;
+        default:
+            break;
+        }
+        return vk::Format::eR16G16B16A16Sfloat;
+    }
+
+    vk::ClearColorValue nrdNormalRoughnessClearValue(uint32_t normalEncoding) {
+        if (normalEncoding == 2u) {
+            // Packed oct normal for +Z and roughness=1, materialId=0.
+            return vk::ClearColorValue(std::array<float, 4>{0.5f, 0.5f, 1.0f, 0.0f});
+        }
+        if (normalEncoding == 1u || normalEncoding == 4u) {
+            return vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 1.0f, 1.0f});
+        }
+        return vk::ClearColorValue(std::array<float, 4>{0.5f, 0.5f, 1.0f, 1.0f});
+    }
 } // namespace
 
 void VulkanRenderer::createNrdSignalResources() {
     cleanupNrdSignalResources();
 
-    if (m_framebuffers.empty() || m_commandPool == nullptr) {
+    if (m_commandPool == nullptr) {
         return;
     }
 
@@ -156,17 +185,24 @@ void VulkanRenderer::createNrdSignalResources() {
         return;
     }
 
-    const size_t imageCount = m_framebuffers.size();
-    m_nrdPerImage.resize(1);
+    const size_t imageCount = m_context.getSwapchainImageViews().size();
+    if (imageCount == 0) {
+        return;
+    }
+    m_nrdPerImage.resize(imageCount);
     m_nrdValidPerImage.assign(imageCount, false);
 
     constexpr vk::ImageUsageFlags kUsage = vk::ImageUsageFlagBits::eSampled |
                                            vk::ImageUsageFlagBits::eStorage |
-                                           vk::ImageUsageFlagBits::eTransferDst;
+                                           vk::ImageUsageFlagBits::eTransferDst |
+                                           vk::ImageUsageFlagBits::eColorAttachment;
     constexpr vk::Format kDiffFormat = vk::Format::eR16G16B16A16Sfloat;
-    constexpr vk::Format kNormalRoughnessFormat = vk::Format::eR16G16B16A16Sfloat;
+    const uint32_t normalEncoding =
+        (m_nrdBootstrap != nullptr) ? m_nrdBootstrap->normalEncoding() : 2u;
+    const vk::Format kNormalRoughnessFormat = chooseNrdNormalRoughnessFormat(normalEncoding);
     constexpr vk::Format kMotionFormat = vk::Format::eR16G16B16A16Sfloat;
     constexpr vk::Format kViewZFormat = vk::Format::eR32Sfloat;
+    constexpr vk::Format kComposeFormat = vk::Format::eR16G16B16A16Sfloat;
     m_loggedMissingNrdResources = false;
 
     if (m_nrdOutputSampler == nullptr) {
@@ -196,13 +232,14 @@ void VulkanRenderer::createNrdSignalResources() {
         );
     };
     if (!supportsStorage(kDiffFormat) || !supportsStorage(kNormalRoughnessFormat) ||
-        !supportsStorage(kMotionFormat) || !supportsStorage(kViewZFormat)) {
+        !supportsStorage(kMotionFormat) || !supportsStorage(kViewZFormat) ||
+        !supportsStorage(kComposeFormat)) {
         throw std::runtime_error(
             "NRD signal formats are not supported as storage images by this Vulkan device."
         );
     }
 
-    const auto createSignal = [&](RestirDiReservoirResources &dst,
+    const auto createSignal = [&](SignalImageResources &dst,
                                   vk::Format format,
                                   uint32_t w,
                                   uint32_t h) {
@@ -245,14 +282,19 @@ void VulkanRenderer::createNrdSignalResources() {
     createSignal(m_nrdFallback.motionIn, kMotionFormat, 1u, 1u);
     createSignal(m_nrdFallback.viewZIn, kViewZFormat, 1u, 1u);
     createSignal(m_nrdFallback.diffOut, kDiffFormat, 1u, 1u);
+    createSignal(m_nrdFallback.composeBase, kComposeFormat, 1u, 1u);
+    createSignal(m_nrdFallback.composeIndirect, kComposeFormat, 1u, 1u);
     m_nrdFallbackReady = true;
 
-    NrdPerImageResources &resources = m_nrdPerImage[0];
-    createSignal(resources.diffIn, kDiffFormat, extent.width, extent.height);
-    createSignal(resources.normalRoughnessIn, kNormalRoughnessFormat, extent.width, extent.height);
-    createSignal(resources.motionIn, kMotionFormat, extent.width, extent.height);
-    createSignal(resources.viewZIn, kViewZFormat, extent.width, extent.height);
-    createSignal(resources.diffOut, kDiffFormat, extent.width, extent.height);
+    for (NrdPerImageResources &resources : m_nrdPerImage) {
+        createSignal(resources.diffIn, kDiffFormat, extent.width, extent.height);
+        createSignal(resources.normalRoughnessIn, kNormalRoughnessFormat, extent.width, extent.height);
+        createSignal(resources.motionIn, kMotionFormat, extent.width, extent.height);
+        createSignal(resources.viewZIn, kViewZFormat, extent.width, extent.height);
+        createSignal(resources.diffOut, kDiffFormat, extent.width, extent.height);
+        createSignal(resources.composeBase, kComposeFormat, extent.width, extent.height);
+        createSignal(resources.composeIndirect, kComposeFormat, extent.width, extent.height);
+    }
 
     vk::raii::CommandBuffer commandBuffer =
         VulkanUtils::beginSingleTimeCommands(device, m_commandPool);
@@ -282,18 +324,24 @@ void VulkanRenderer::createNrdSignalResources() {
     };
 
     const vk::ClearColorValue clearZero(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f});
-    const vk::ClearColorValue clearNormalRoughness(std::array<float, 4>{0.5f, 1.0f, 0.5f, 1.0f});
+    const vk::ClearColorValue clearNormalRoughness = nrdNormalRoughnessClearValue(normalEncoding);
     const vk::ClearColorValue clearViewZ(std::array<float, 4>{-1.0f, 0.0f, 0.0f, 0.0f});
     transitionAndClear(*m_nrdFallback.diffIn.image, clearZero);
     transitionAndClear(*m_nrdFallback.normalRoughnessIn.image, clearNormalRoughness);
     transitionAndClear(*m_nrdFallback.motionIn.image, clearZero);
     transitionAndClear(*m_nrdFallback.viewZIn.image, clearViewZ);
     transitionAndClear(*m_nrdFallback.diffOut.image, clearZero);
-    transitionAndClear(*resources.diffIn.image, clearZero);
-    transitionAndClear(*resources.normalRoughnessIn.image, clearNormalRoughness);
-    transitionAndClear(*resources.motionIn.image, clearZero);
-    transitionAndClear(*resources.viewZIn.image, clearViewZ);
-    transitionAndClear(*resources.diffOut.image, clearZero);
+    transitionAndClear(*m_nrdFallback.composeBase.image, clearZero);
+    transitionAndClear(*m_nrdFallback.composeIndirect.image, clearZero);
+    for (const NrdPerImageResources &resources : m_nrdPerImage) {
+        transitionAndClear(*resources.diffIn.image, clearZero);
+        transitionAndClear(*resources.normalRoughnessIn.image, clearNormalRoughness);
+        transitionAndClear(*resources.motionIn.image, clearZero);
+        transitionAndClear(*resources.viewZIn.image, clearViewZ);
+        transitionAndClear(*resources.diffOut.image, clearZero);
+        transitionAndClear(*resources.composeBase.image, clearZero);
+        transitionAndClear(*resources.composeIndirect.image, clearZero);
+    }
 
     VulkanUtils::endSingleTimeCommands(
         device, m_context.getGraphicsQueue(), std::move(commandBuffer)
@@ -318,6 +366,12 @@ void VulkanRenderer::cleanupNrdSignalResources() {
     m_nrdFallback.diffOut.view.clear();
     m_nrdFallback.diffOut.image.clear();
     m_nrdFallback.diffOut.memory.clear();
+    m_nrdFallback.composeBase.view.clear();
+    m_nrdFallback.composeBase.image.clear();
+    m_nrdFallback.composeBase.memory.clear();
+    m_nrdFallback.composeIndirect.view.clear();
+    m_nrdFallback.composeIndirect.image.clear();
+    m_nrdFallback.composeIndirect.memory.clear();
     m_nrdOutputSampler.clear();
     m_nrdFallbackReady = false;
     m_loggedMissingNrdResources = false;
@@ -597,17 +651,10 @@ bool VulkanRenderer::createNrdRuntimeResources() {
             dst.image.view = vk::raii::ImageView(device, viewInfo);
         };
 
+        // NRD history must persist in frame order, not swapchain-image order.
+        // Keep a single shared history pool and per-frame descriptor resources.
         m_nrdRuntimePerImage.resize(1);
-        NrdRuntimePerImage &runtime = m_nrdRuntimePerImage[0];
-        runtime.permanentPool.resize(instanceDesc->permanentPoolSize);
-        runtime.transientPool.resize(instanceDesc->transientPoolSize);
-        for (uint32_t i = 0; i < instanceDesc->permanentPoolSize; ++i) {
-            createRuntimeTexture(runtime.permanentPool[i], instanceDesc->permanentPool[i]);
-        }
-        for (uint32_t i = 0; i < instanceDesc->transientPoolSize; ++i) {
-            createRuntimeTexture(runtime.transientPool[i], instanceDesc->transientPool[i]);
-        }
-
+        m_nrdRuntimePerFrame.resize(MAX_FRAMES_IN_FLIGHT);
         const uint32_t maxDispatchSets = std::max(
             64u, std::max(instanceDesc->descriptorPoolDesc.setsMaxNum, instanceDesc->pipelinesNum)
         );
@@ -615,86 +662,11 @@ bool VulkanRenderer::createNrdRuntimeResources() {
         const vk::DeviceSize constantBufferBytes =
             static_cast<vk::DeviceSize>(m_nrdConstantBufferStride) *
             static_cast<vk::DeviceSize>(maxConstantsSets);
-        VulkanUtils::createBuffer(
-            device,
-            physicalDevice,
-            constantBufferBytes,
-            vk::BufferUsageFlagBits::eUniformBuffer,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            runtime.constantBuffer,
-            runtime.constantMemory
-        );
-        runtime.constantMapped = runtime.constantMemory.mapMemory(0, constantBufferBytes);
-
-        std::array<vk::DescriptorPoolSize, 4> poolSizes{};
-        poolSizes[0].type = vk::DescriptorType::eSampledImage;
-        poolSizes[0].descriptorCount = m_nrdTextureCapacity * maxDispatchSets;
-        poolSizes[1].type = vk::DescriptorType::eStorageImage;
-        poolSizes[1].descriptorCount = m_nrdStorageCapacity * maxDispatchSets;
-        poolSizes[2].type = vk::DescriptorType::eUniformBufferDynamic;
-        poolSizes[2].descriptorCount = 1;
-        poolSizes[3].type = vk::DescriptorType::eSampler;
-        poolSizes[3].descriptorCount = instanceDesc->samplersNum;
-
-        vk::DescriptorPoolCreateInfo poolInfo{};
-        poolInfo.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
-        poolInfo.maxSets = maxDispatchSets + 1u;
-        poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-        poolInfo.pPoolSizes = poolSizes.data();
-        runtime.descriptorPool = vk::raii::DescriptorPool(device, poolInfo);
-
-        std::vector<vk::DescriptorSetLayout> layouts(
-            maxDispatchSets + 1u, *m_nrdResourcesSetLayout
-        );
-        layouts[maxDispatchSets] = *m_nrdConstantsSetLayout;
-        vk::DescriptorSetAllocateInfo allocInfo{};
-        allocInfo.descriptorPool = *runtime.descriptorPool;
-        allocInfo.descriptorSetCount = static_cast<uint32_t>(layouts.size());
-        allocInfo.pSetLayouts = layouts.data();
-        std::vector<vk::raii::DescriptorSet> sets = device.allocateDescriptorSets(allocInfo);
-        runtime.resourcesSets.clear();
-        runtime.resourcesSets.reserve(maxDispatchSets);
-        for (uint32_t setIndex = 0; setIndex < maxDispatchSets; ++setIndex) {
-            runtime.resourcesSets.push_back(std::move(sets[setIndex]));
-        }
-        runtime.constantsSet = std::move(sets[maxDispatchSets]);
-
-        vk::DescriptorBufferInfo constantInfo{};
-        constantInfo.buffer = *runtime.constantBuffer;
-        constantInfo.offset = 0;
-        constantInfo.range = m_nrdConstantBufferSize;
-        vk::WriteDescriptorSet constantWrite{};
-        constantWrite.dstSet = *runtime.constantsSet;
-        constantWrite.dstBinding = m_nrdConstantBinding;
-        constantWrite.descriptorType = vk::DescriptorType::eUniformBufferDynamic;
-        constantWrite.descriptorCount = 1;
-        constantWrite.pBufferInfo = &constantInfo;
-
-        std::vector<vk::DescriptorImageInfo> samplerInfos(instanceDesc->samplersNum);
-        std::vector<vk::WriteDescriptorSet> samplerWrites(instanceDesc->samplersNum);
-        for (uint32_t i = 0; i < instanceDesc->samplersNum; ++i) {
-            const bool linear = instanceDesc->samplers[i] == nrd::Sampler::LINEAR_CLAMP;
-            samplerInfos[i].sampler = linear ? *m_nrdLinearSampler : *m_nrdNearestSampler;
-            samplerInfos[i].imageView = VK_NULL_HANDLE;
-            samplerInfos[i].imageLayout = vk::ImageLayout::eUndefined;
-
-            samplerWrites[i].dstSet = *runtime.constantsSet;
-            samplerWrites[i].dstBinding = libraryDesc->spirvBindingOffsets.samplerOffset +
-                                          instanceDesc->samplersBaseRegisterIndex + i;
-            samplerWrites[i].descriptorType = vk::DescriptorType::eSampler;
-            samplerWrites[i].descriptorCount = 1;
-            samplerWrites[i].pImageInfo = &samplerInfos[i];
-        }
-
-        std::vector<vk::WriteDescriptorSet> writes;
-        writes.reserve(1u + samplerWrites.size());
-        writes.push_back(constantWrite);
-        writes.insert(writes.end(), samplerWrites.begin(), samplerWrites.end());
-        device.updateDescriptorSets(writes, {});
 
         vk::raii::CommandBuffer commandBuffer =
             VulkanUtils::beginSingleTimeCommands(device, m_commandPool);
         const vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+
         auto transitionPool = [&](std::vector<NrdRuntimeTexture> &pool) {
             for (NrdRuntimeTexture &tex : pool) {
                 vk::ImageMemoryBarrier barrier{};
@@ -717,8 +689,98 @@ bool VulkanRenderer::createNrdRuntimeResources() {
                 );
             }
         };
-        transitionPool(runtime.permanentPool);
-        transitionPool(runtime.transientPool);
+
+        NrdRuntimePerImage &sharedRuntime = m_nrdRuntimePerImage[0];
+        sharedRuntime.permanentPool.resize(instanceDesc->permanentPoolSize);
+        sharedRuntime.transientPool.resize(instanceDesc->transientPoolSize);
+        for (uint32_t i = 0; i < instanceDesc->permanentPoolSize; ++i) {
+            createRuntimeTexture(sharedRuntime.permanentPool[i], instanceDesc->permanentPool[i]);
+        }
+        for (uint32_t i = 0; i < instanceDesc->transientPoolSize; ++i) {
+            createRuntimeTexture(sharedRuntime.transientPool[i], instanceDesc->transientPool[i]);
+        }
+        transitionPool(sharedRuntime.permanentPool);
+        transitionPool(sharedRuntime.transientPool);
+
+        for (NrdRuntimePerFrame &runtimeFrame : m_nrdRuntimePerFrame) {
+            VulkanUtils::createBuffer(
+                device,
+                physicalDevice,
+                constantBufferBytes,
+                vk::BufferUsageFlagBits::eUniformBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+                runtimeFrame.constantBuffer,
+                runtimeFrame.constantMemory
+            );
+            runtimeFrame.constantMapped = runtimeFrame.constantMemory.mapMemory(0, constantBufferBytes);
+
+            std::array<vk::DescriptorPoolSize, 4> poolSizes{};
+            poolSizes[0].type = vk::DescriptorType::eSampledImage;
+            poolSizes[0].descriptorCount = m_nrdTextureCapacity * maxDispatchSets;
+            poolSizes[1].type = vk::DescriptorType::eStorageImage;
+            poolSizes[1].descriptorCount = m_nrdStorageCapacity * maxDispatchSets;
+            poolSizes[2].type = vk::DescriptorType::eUniformBufferDynamic;
+            poolSizes[2].descriptorCount = 1;
+            poolSizes[3].type = vk::DescriptorType::eSampler;
+            poolSizes[3].descriptorCount = instanceDesc->samplersNum;
+
+            vk::DescriptorPoolCreateInfo poolInfo{};
+            poolInfo.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
+            poolInfo.maxSets = maxDispatchSets + 1u;
+            poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+            poolInfo.pPoolSizes = poolSizes.data();
+            runtimeFrame.descriptorPool = vk::raii::DescriptorPool(device, poolInfo);
+
+            std::vector<vk::DescriptorSetLayout> layouts(
+                maxDispatchSets + 1u, *m_nrdResourcesSetLayout
+            );
+            layouts[maxDispatchSets] = *m_nrdConstantsSetLayout;
+            vk::DescriptorSetAllocateInfo allocInfo{};
+            allocInfo.descriptorPool = *runtimeFrame.descriptorPool;
+            allocInfo.descriptorSetCount = static_cast<uint32_t>(layouts.size());
+            allocInfo.pSetLayouts = layouts.data();
+            std::vector<vk::raii::DescriptorSet> sets = device.allocateDescriptorSets(allocInfo);
+            runtimeFrame.resourcesSets.clear();
+            runtimeFrame.resourcesSets.reserve(maxDispatchSets);
+            for (uint32_t setIndex = 0; setIndex < maxDispatchSets; ++setIndex) {
+                runtimeFrame.resourcesSets.push_back(std::move(sets[setIndex]));
+            }
+            runtimeFrame.constantsSet = std::move(sets[maxDispatchSets]);
+
+            vk::DescriptorBufferInfo constantInfo{};
+            constantInfo.buffer = *runtimeFrame.constantBuffer;
+            constantInfo.offset = 0;
+            constantInfo.range = m_nrdConstantBufferSize;
+            vk::WriteDescriptorSet constantWrite{};
+            constantWrite.dstSet = *runtimeFrame.constantsSet;
+            constantWrite.dstBinding = m_nrdConstantBinding;
+            constantWrite.descriptorType = vk::DescriptorType::eUniformBufferDynamic;
+            constantWrite.descriptorCount = 1;
+            constantWrite.pBufferInfo = &constantInfo;
+
+            std::vector<vk::DescriptorImageInfo> samplerInfos(instanceDesc->samplersNum);
+            std::vector<vk::WriteDescriptorSet> samplerWrites(instanceDesc->samplersNum);
+            for (uint32_t i = 0; i < instanceDesc->samplersNum; ++i) {
+                const bool linear = instanceDesc->samplers[i] == nrd::Sampler::LINEAR_CLAMP;
+                samplerInfos[i].sampler = linear ? *m_nrdLinearSampler : *m_nrdNearestSampler;
+                samplerInfos[i].imageView = VK_NULL_HANDLE;
+                samplerInfos[i].imageLayout = vk::ImageLayout::eUndefined;
+
+                samplerWrites[i].dstSet = *runtimeFrame.constantsSet;
+                samplerWrites[i].dstBinding = libraryDesc->spirvBindingOffsets.samplerOffset +
+                                              instanceDesc->samplersBaseRegisterIndex + i;
+                samplerWrites[i].descriptorType = vk::DescriptorType::eSampler;
+                samplerWrites[i].descriptorCount = 1;
+                samplerWrites[i].pImageInfo = &samplerInfos[i];
+            }
+
+            std::vector<vk::WriteDescriptorSet> writes;
+            writes.reserve(1u + samplerWrites.size());
+            writes.push_back(constantWrite);
+            writes.insert(writes.end(), samplerWrites.begin(), samplerWrites.end());
+            device.updateDescriptorSets(writes, {});
+        }
+
         VulkanUtils::endSingleTimeCommands(
             device, m_context.getGraphicsQueue(), std::move(commandBuffer)
         );
@@ -737,19 +799,22 @@ bool VulkanRenderer::createNrdRuntimeResources() {
 
 void VulkanRenderer::cleanupNrdRuntimeResources() {
     for (NrdRuntimePerImage &runtime : m_nrdRuntimePerImage) {
-        if (runtime.constantMapped != nullptr) {
-            runtime.constantMemory.unmapMemory();
-            runtime.constantMapped = nullptr;
-        }
-        runtime.resourcesSets.clear();
-        runtime.constantsSet.clear();
-        runtime.descriptorPool.clear();
-        runtime.constantBuffer.clear();
-        runtime.constantMemory.clear();
         runtime.permanentPool.clear();
         runtime.transientPool.clear();
     }
     m_nrdRuntimePerImage.clear();
+    for (NrdRuntimePerFrame &runtimeFrame : m_nrdRuntimePerFrame) {
+        if (runtimeFrame.constantMapped != nullptr) {
+            runtimeFrame.constantMemory.unmapMemory();
+            runtimeFrame.constantMapped = nullptr;
+        }
+        runtimeFrame.resourcesSets.clear();
+        runtimeFrame.constantsSet.clear();
+        runtimeFrame.descriptorPool.clear();
+        runtimeFrame.constantBuffer.clear();
+        runtimeFrame.constantMemory.clear();
+    }
+    m_nrdRuntimePerFrame.clear();
     m_nrdPipelines.clear();
     m_nrdPipelineLayout.clear();
     m_nrdResourcesSetLayout.clear();
@@ -772,9 +837,13 @@ void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData 
     const auto setNrdValidForAllImages = [&](bool valid) {
         std::fill(m_nrdValidPerImage.begin(), m_nrdValidPerImage.end(), valid);
     };
+    const auto setNrdValidForImage = [&](bool valid) {
+        // NRD runtime history is shared across all swapchain images, so validity is global.
+        setNrdValidForAllImages(valid);
+    };
 
     if (!m_nrdRuntimeReady || m_nrdBootstrap == nullptr || !m_nrdBootstrap->isActive() ||
-        m_nrdRuntimePerImage.empty() || m_nrdPerImage.empty()) {
+        m_nrdRuntimePerImage.empty() || m_nrdRuntimePerFrame.empty() || m_nrdPerImage.empty()) {
         setNrdValidForAllImages(false);
         return;
     }
@@ -791,15 +860,20 @@ void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData 
         static_cast<const nrd::DispatchDesc *>(m_nrdBootstrap->dispatchDescData());
     const uint32_t dispatchCount = m_nrdBootstrap->lastDispatchCount();
     if (instanceDesc == nullptr || dispatches == nullptr || dispatchCount == 0) {
-        setNrdValidForAllImages(false);
+        setNrdValidForImage(false);
         return;
     }
 
-    NrdRuntimePerImage &runtime = m_nrdRuntimePerImage[0];
-    const NrdPerImageResources &external = m_nrdPerImage[0];
-    if (runtime.constantMapped == nullptr || runtime.constantsSet == nullptr ||
-        runtime.resourcesSets.empty()) {
-        setNrdValidForAllImages(false);
+    const size_t runtimeIndex = 0u;
+    const size_t frameRuntimeIndex =
+        std::min<size_t>(m_frameSync.getCurrentFrame(), m_nrdRuntimePerFrame.size() - 1u);
+    const size_t externalIndex = std::min<size_t>(imageIndex, m_nrdPerImage.size() - 1u);
+    NrdRuntimePerImage &runtime = m_nrdRuntimePerImage[runtimeIndex];
+    NrdRuntimePerFrame &runtimeFrame = m_nrdRuntimePerFrame[frameRuntimeIndex];
+    const NrdPerImageResources &external = m_nrdPerImage[externalIndex];
+    if (runtimeFrame.constantMapped == nullptr || runtimeFrame.constantsSet == nullptr ||
+        runtimeFrame.resourcesSets.empty()) {
+        setNrdValidForImage(false);
         return;
     }
 
@@ -841,15 +915,15 @@ void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData 
         info.imageLayout = vk::ImageLayout::eGeneral;
     }
 
-    const uint32_t maxConstantsSets = static_cast<uint32_t>(runtime.resourcesSets.size());
+    const uint32_t maxConstantsSets = static_cast<uint32_t>(runtimeFrame.resourcesSets.size());
     uint32_t constantSetIndex = 0;
     bool loggedResourceSetOverflow = false;
     bool dispatchedAll = true;
     for (uint32_t i = 0; i < dispatchCount; ++i) {
-        if (i >= runtime.resourcesSets.size()) {
+        if (i >= runtimeFrame.resourcesSets.size()) {
             if (!loggedResourceSetOverflow) {
                 std::cerr << "[Vulkan][NRD] Insufficient per-dispatch descriptor sets: required="
-                          << dispatchCount << ", allocated=" << runtime.resourcesSets.size()
+                          << dispatchCount << ", allocated=" << runtimeFrame.resourcesSets.size()
                           << ". Skipping remaining dispatches.\n";
                 loggedResourceSetOverflow = true;
             }
@@ -908,7 +982,7 @@ void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData 
 
         std::vector<vk::WriteDescriptorSet> descriptorWrites;
         descriptorWrites.reserve(sampledInfos.size() + storageInfos.size());
-        const vk::DescriptorSet resourceSetForDispatch = *runtime.resourcesSets[i];
+        const vk::DescriptorSet resourceSetForDispatch = *runtimeFrame.resourcesSets[i];
         for (uint32_t slot = 0; slot < static_cast<uint32_t>(sampledInfos.size()); ++slot) {
             vk::WriteDescriptorSet sampledWrite{};
             sampledWrite.dstSet = resourceSetForDispatch;
@@ -934,7 +1008,7 @@ void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData 
             const uint32_t maxSize = m_nrdConstantBufferSize;
             const uint32_t copySize = std::min(dispatch.constantBufferDataSize, maxSize);
             uint8_t *dst =
-                static_cast<uint8_t *>(runtime.constantMapped) +
+                static_cast<uint8_t *>(runtimeFrame.constantMapped) +
                 static_cast<size_t>(writeIndex) * static_cast<size_t>(m_nrdConstantBufferStride);
             std::memcpy(dst, dispatch.constantBufferData, copySize);
             if (copySize < maxSize) {
@@ -959,7 +1033,7 @@ void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData 
             resourcesSet,
             {}
         );
-        const vk::DescriptorSet constantsSet = *runtime.constantsSet;
+        const vk::DescriptorSet constantsSet = *runtimeFrame.constantsSet;
         m_commandBuffers[imageIndex].bindDescriptorSets(
             vk::PipelineBindPoint::eCompute,
             *m_nrdPipelineLayout,
@@ -982,7 +1056,7 @@ void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData 
         );
     }
 
-    setNrdValidForAllImages(dispatchedAll);
+    setNrdValidForImage(dispatchedAll);
 }
 #endif
 
@@ -991,10 +1065,23 @@ void VulkanRenderer::barrierNrdSignalsForCompute(uint32_t imageIndex) {
         return;
     }
 
-    const NrdPerImageResources &nrd = m_nrdPerImage[0];
+    const size_t resourceIndex = std::min<size_t>(imageIndex, m_nrdPerImage.size() - 1u);
+    const NrdPerImageResources &nrd = m_nrdPerImage[resourceIndex];
     const vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
 
-    auto makeBarrier = [&](vk::Image image) {
+    auto makeInputBarrier = [&](vk::Image image) {
+        vk::ImageMemoryBarrier barrier{};
+        barrier.oldLayout = vk::ImageLayout::eGeneral;
+        barrier.newLayout = vk::ImageLayout::eGeneral;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = image;
+        barrier.subresourceRange = range;
+        barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+        barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
+        return barrier;
+    };
+    auto makeHistoryBarrier = [&](vk::Image image) {
         vk::ImageMemoryBarrier barrier{};
         barrier.oldLayout = vk::ImageLayout::eGeneral;
         barrier.newLayout = vk::ImageLayout::eGeneral;
@@ -1008,15 +1095,67 @@ void VulkanRenderer::barrierNrdSignalsForCompute(uint32_t imageIndex) {
     };
 
     std::array<vk::ImageMemoryBarrier, 5> barriers = {
-        makeBarrier(*nrd.diffIn.image),
-        makeBarrier(*nrd.normalRoughnessIn.image),
-        makeBarrier(*nrd.motionIn.image),
-        makeBarrier(*nrd.viewZIn.image),
-        makeBarrier(*nrd.diffOut.image),
+        makeInputBarrier(*nrd.diffIn.image),
+        makeInputBarrier(*nrd.normalRoughnessIn.image),
+        makeInputBarrier(*nrd.motionIn.image),
+        makeInputBarrier(*nrd.viewZIn.image),
+        makeHistoryBarrier(*nrd.diffOut.image),
     };
     m_commandBuffers[imageIndex].pipelineBarrier(
-        vk::PipelineStageFlagBits::eFragmentShader,
+        vk::PipelineStageFlagBits::eColorAttachmentOutput |
+            vk::PipelineStageFlagBits::eComputeShader |
+            vk::PipelineStageFlagBits::eFragmentShader,
         vk::PipelineStageFlagBits::eComputeShader,
+        {},
+        {},
+        {},
+        barriers
+    );
+}
+
+void VulkanRenderer::barrierNrdSignalsForComposite(uint32_t imageIndex) {
+    if (m_nrdPerImage.empty()) {
+        return;
+    }
+
+    const size_t resourceIndex = std::min<size_t>(imageIndex, m_nrdPerImage.size() - 1u);
+    const NrdPerImageResources &nrd = m_nrdPerImage[resourceIndex];
+    const vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+
+    auto makeShaderBarrier = [&](vk::Image image) {
+        vk::ImageMemoryBarrier barrier{};
+        barrier.oldLayout = vk::ImageLayout::eGeneral;
+        barrier.newLayout = vk::ImageLayout::eGeneral;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = image;
+        barrier.subresourceRange = range;
+        barrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead;
+        barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+        return barrier;
+    };
+    auto makeColorBarrier = [&](vk::Image image) {
+        vk::ImageMemoryBarrier barrier{};
+        barrier.oldLayout = vk::ImageLayout::eGeneral;
+        barrier.newLayout = vk::ImageLayout::eGeneral;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = image;
+        barrier.subresourceRange = range;
+        barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+        barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+        return barrier;
+    };
+
+    std::array<vk::ImageMemoryBarrier, 3> barriers = {
+        makeShaderBarrier(*nrd.diffOut.image),
+        makeColorBarrier(*nrd.composeBase.image),
+        makeColorBarrier(*nrd.composeIndirect.image),
+    };
+    m_commandBuffers[imageIndex].pipelineBarrier(
+        vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader |
+            vk::PipelineStageFlagBits::eColorAttachmentOutput,
+        vk::PipelineStageFlagBits::eFragmentShader,
         {},
         {},
         {},

@@ -2,7 +2,7 @@
 
 #include "App.hpp"
 #include "AppHelpers.hpp"
-
+#include "../graphics/RenderDeviceFactory.hpp"
 #include <cstdlib>
 #include <iostream>
 #include <optional>

@@ -76,28 +76,20 @@ private:
     static constexpr vk::DeviceSize MIN_MODEL_BUFFER_BYTES = sizeof(glm::mat4);
     static constexpr vk::DeviceSize MIN_INDIRECT_BUFFER_BYTES = sizeof(IndexedIndirectCommand);
     static constexpr uint32_t TIMESTAMP_QUERY_COUNT = 5;
-    static constexpr uint32_t GI_RESERVED_STORAGE_BINDINGS = 3;
-    static constexpr uint32_t GI_PARAM_BINDING = GI_RESERVED_STORAGE_BINDINGS;
-    static constexpr uint32_t GI_SHADOW_OCCUPANCY_BINDING = GI_RESERVED_STORAGE_BINDINGS + 1;
-    static constexpr uint32_t GI_MATERIAL_BINDING = GI_RESERVED_STORAGE_BINDINGS + 2;
-    static constexpr uint32_t GI_RESTIR_DI_PREV_BINDING = GI_RESERVED_STORAGE_BINDINGS + 3;
-    static constexpr uint32_t GI_RESTIR_DI_CURR_BINDING = GI_RESERVED_STORAGE_BINDINGS + 4;
-    static constexpr uint32_t GI_RESTIR_VALIDATION_PREV_BINDING = GI_RESERVED_STORAGE_BINDINGS + 5;
-    static constexpr uint32_t GI_RESTIR_VALIDATION_CURR_BINDING = GI_RESERVED_STORAGE_BINDINGS + 6;
-    static constexpr uint32_t GI_RESTIR_META_PREV_BINDING = GI_RESERVED_STORAGE_BINDINGS + 7;
-    static constexpr uint32_t GI_RESTIR_META_CURR_BINDING = GI_RESERVED_STORAGE_BINDINGS + 8;
-    static constexpr uint32_t GI_RESTIR_GI_PREV_BINDING = GI_RESERVED_STORAGE_BINDINGS + 9;
-    static constexpr uint32_t GI_RESTIR_GI_CURR_BINDING = GI_RESERVED_STORAGE_BINDINGS + 10;
-    static constexpr uint32_t GI_RESTIR_GI_META_PREV_BINDING = GI_RESERVED_STORAGE_BINDINGS + 11;
-    static constexpr uint32_t GI_RESTIR_GI_META_CURR_BINDING = GI_RESERVED_STORAGE_BINDINGS + 12;
-    static constexpr uint32_t GI_NRD_DIFF_IN_BINDING = GI_RESERVED_STORAGE_BINDINGS + 13;
-    static constexpr uint32_t GI_NRD_NORMAL_ROUGHNESS_IN_BINDING =
-        GI_RESERVED_STORAGE_BINDINGS + 14;
-    static constexpr uint32_t GI_NRD_MV_IN_BINDING = GI_RESERVED_STORAGE_BINDINGS + 15;
-    static constexpr uint32_t GI_NRD_VIEWZ_IN_BINDING = GI_RESERVED_STORAGE_BINDINGS + 16;
-    static constexpr uint32_t GI_NRD_DIFF_OUT_BINDING = GI_RESERVED_STORAGE_BINDINGS + 17;
-    static constexpr uint32_t GI_RT_SCENE_BINDING = GI_RESERVED_STORAGE_BINDINGS + 18;
-    static constexpr uint32_t GI_BINDING_COUNT = GI_RESERVED_STORAGE_BINDINGS + 19;
+    static constexpr uint32_t GI_PARAM_BINDING = 0;
+    static constexpr uint32_t GI_SHADOW_OCCUPANCY_BINDING = 1;
+    static constexpr uint32_t GI_MATERIAL_BINDING = 2;
+    static constexpr uint32_t GI_NRD_DIFF_IN_BINDING = 3;
+    static constexpr uint32_t GI_NRD_NORMAL_ROUGHNESS_IN_BINDING = 4;
+    static constexpr uint32_t GI_NRD_MV_IN_BINDING = 5;
+    static constexpr uint32_t GI_NRD_VIEWZ_IN_BINDING = 6;
+    static constexpr uint32_t GI_NRD_DIFF_OUT_BINDING = 7;
+    static constexpr uint32_t GI_NRD_COMPOSE_BASE_STORAGE_BINDING = 8;
+    static constexpr uint32_t GI_NRD_COMPOSE_INDIRECT_STORAGE_BINDING = 9;
+    static constexpr uint32_t GI_NRD_COMPOSE_BASE_SAMPLED_BINDING = 10;
+    static constexpr uint32_t GI_NRD_COMPOSE_INDIRECT_SAMPLED_BINDING = 11;
+    static constexpr uint32_t GI_RT_SCENE_BINDING = 12;
+    static constexpr uint32_t GI_BINDING_COUNT = 13;
 
     VulkanContext &m_context;
     std::unique_ptr<NrdBootstrap> m_nrdBootstrap;
@@ -106,8 +98,10 @@ private:
     vk::raii::CommandPool m_commandPool{nullptr};
     std::vector<vk::raii::CommandBuffer> m_commandBuffers;
     std::vector<vk::raii::Framebuffer> m_framebuffers;
+    std::vector<vk::raii::Framebuffer> m_compositeFramebuffers;
 
     RenderPass m_renderPass;
+    RenderPass m_compositeRenderPass;
     Pipeline m_chunkPipeline;
     Pipeline m_modelPipeline;
     FrameSync m_frameSync;
@@ -139,55 +133,27 @@ private:
     vk::raii::DescriptorPool m_giDescriptorPool{nullptr};
     std::vector<vk::raii::DescriptorSet> m_giDescriptorSets;
     bool m_giRtDescriptorEnabled = false;
-    std::vector<vk::raii::Buffer> m_giFallbackReservedStorageBuffers;
-    std::vector<vk::raii::DeviceMemory> m_giFallbackReservedStorageBufferMemory;
     vk::raii::Buffer m_giFallbackShadowOccupancyBuffer{nullptr};
     vk::raii::DeviceMemory m_giFallbackShadowOccupancyBufferMemory{nullptr};
     vk::raii::Buffer m_giFallbackMaterialBuffer{nullptr};
     vk::raii::DeviceMemory m_giFallbackMaterialBufferMemory{nullptr};
-    struct RestirDiReservoirResources {
+    struct SignalImageResources {
         vk::raii::Image image{nullptr};
         vk::raii::DeviceMemory memory{nullptr};
         vk::raii::ImageView view{nullptr};
     };
-    std::vector<std::array<RestirDiReservoirResources, 2>> m_restirDiPerImage;
-    std::vector<uint32_t> m_restirDiWriteParityPerImage;
-    std::vector<bool> m_restirDiValidPerImage;
-    std::vector<glm::mat4> m_restirDiPrevViewProjectionPerImage;
-    std::vector<glm::mat4> m_restirDiPrevViewPerImage;
-    std::vector<glm::mat4> m_restirDiPrevProjectionPerImage;
-    std::vector<bool> m_prevViewProjectionValidPerImage;
     glm::mat4 m_nrdPrevViewProjection{1.0f};
     glm::mat4 m_nrdPrevView{1.0f};
     glm::mat4 m_nrdPrevProjection{1.0f};
     bool m_nrdPrevMatricesValid = false;
-    vk::raii::Sampler m_restirDiSampler{nullptr};
-    struct RestirValidationResources {
-        vk::raii::Image image{nullptr};
-        vk::raii::DeviceMemory memory{nullptr};
-        vk::raii::ImageView view{nullptr};
-    };
-    std::vector<std::array<RestirValidationResources, 2>> m_restirValidationPerImage;
-    vk::raii::Sampler m_restirValidationSampler{nullptr};
-    struct RestirMetaResources {
-        vk::raii::Image image{nullptr};
-        vk::raii::DeviceMemory memory{nullptr};
-        vk::raii::ImageView view{nullptr};
-    };
-    std::vector<std::array<RestirMetaResources, 2>> m_restirMetaPerImage;
-    vk::raii::Sampler m_restirMetaSampler{nullptr};
-    std::vector<std::array<RestirDiReservoirResources, 2>> m_restirGiPerImage;
-    vk::raii::Sampler m_restirGiSampler{nullptr};
-    std::vector<std::array<RestirMetaResources, 2>> m_restirGiMetaPerImage;
-    vk::raii::Sampler m_restirGiMetaSampler{nullptr};
-    std::vector<std::array<RestirDiReservoirResources, 2>> m_restirGiSpatialPerImage;
-    std::vector<std::array<RestirMetaResources, 2>> m_restirGiSpatialMetaPerImage;
     struct NrdPerImageResources {
-        RestirDiReservoirResources diffIn;
-        RestirDiReservoirResources normalRoughnessIn;
-        RestirDiReservoirResources motionIn;
-        RestirDiReservoirResources viewZIn;
-        RestirDiReservoirResources diffOut;
+        SignalImageResources diffIn;
+        SignalImageResources normalRoughnessIn;
+        SignalImageResources motionIn;
+        SignalImageResources viewZIn;
+        SignalImageResources diffOut;
+        SignalImageResources composeBase;
+        SignalImageResources composeIndirect;
     };
     std::vector<NrdPerImageResources> m_nrdPerImage;
     NrdPerImageResources m_nrdFallback{};
@@ -197,16 +163,20 @@ private:
     vk::raii::Sampler m_nrdOutputSampler{nullptr};
     vk::raii::Sampler m_nrdNearestSampler{nullptr};
     vk::raii::Sampler m_nrdLinearSampler{nullptr};
+    vk::raii::PipelineLayout m_nrdCompositePipelineLayout{nullptr};
+    vk::raii::Pipeline m_nrdCompositePipeline{nullptr};
 #if VOXELOPS_NRD_HEADERS
     struct NrdRuntimeTexture {
         vk::Format format = vk::Format::eUndefined;
         uint32_t width = 0;
         uint32_t height = 0;
-        RestirDiReservoirResources image;
+        SignalImageResources image;
     };
     struct NrdRuntimePerImage {
         std::vector<NrdRuntimeTexture> permanentPool;
         std::vector<NrdRuntimeTexture> transientPool;
+    };
+    struct NrdRuntimePerFrame {
         vk::raii::Buffer constantBuffer{nullptr};
         vk::raii::DeviceMemory constantMemory{nullptr};
         void *constantMapped = nullptr;
@@ -215,6 +185,7 @@ private:
         vk::raii::DescriptorSet constantsSet{nullptr};
     };
     std::vector<NrdRuntimePerImage> m_nrdRuntimePerImage;
+    std::vector<NrdRuntimePerFrame> m_nrdRuntimePerFrame;
     std::vector<vk::raii::Pipeline> m_nrdPipelines;
     vk::raii::DescriptorSetLayout m_nrdResourcesSetLayout{nullptr};
     vk::raii::DescriptorSetLayout m_nrdConstantsSetLayout{nullptr};
@@ -230,41 +201,27 @@ private:
     uint32_t m_nrdConstantBufferSize = 0;
     bool m_nrdRuntimeReady = false;
 #endif
-    vk::raii::DescriptorSetLayout m_restirGiSpatialDescriptorSetLayout{nullptr};
-    vk::raii::DescriptorPool m_restirGiSpatialDescriptorPool{nullptr};
-    std::vector<vk::raii::DescriptorSet> m_restirGiSpatialDescriptorSets;
-    vk::raii::PipelineLayout m_restirGiSpatialPipelineLayout{nullptr};
-    vk::raii::Pipeline m_restirGiSpatialPipeline{nullptr};
     uint32_t m_frameCounterLow = 0;
     std::vector<vk::raii::QueryPool> m_timestampQueryPools;
     bool m_timestampQueriesEnabled = false;
     float m_timestampPeriodNanoseconds = 0.0f;
     FrameTimingStats m_lastFrameTimingStats{};
-    vk::Fence m_restirSharedHistoryFence = VK_NULL_HANDLE;
-
-    vk::raii::Sampler createSharedRestirSampler();
 
     void createCommandPool();
     void createCommandBuffers();
     void createFramebuffers();
+    void createCompositeFramebuffers();
+    void createNrdCompositePipeline();
+    void cleanupNrdCompositePipeline();
     void createModelDescriptorResources();
     void createGiDescriptorResources();
-    void createRestirDiResources();
-    void cleanupRestirDiResources();
-    void createRestirValidationResources();
-    void cleanupRestirValidationResources();
-    void createRestirMetaResources();
-    void cleanupRestirMetaResources();
-    void createRestirGiResources();
-    void cleanupRestirGiResources();
-    void updateRestirHistoryAfterSubmit(
+    void updateGiHistoryAfterSubmit(
         const FrameRenderData &frameData,
         const glm::mat4 &viewMatrix,
         const glm::mat4 &projectionMatrix,
         const glm::mat4 &viewProjection,
         vk::Fence currentFrameFence
     );
-    void recordRestirPrePassBarriers(uint32_t imageIndex);
     void createNrdSignalResources();
     void cleanupNrdSignalResources();
 
@@ -284,12 +241,12 @@ private:
     void dispatchNrdPass(uint32_t imageIndex, const FrameRenderData &frameData);
 #endif
 
-    void createRestirGiSpatialResources();
-    void cleanupRestirGiSpatialResources();
-    void updateRestirGiSpatialDescriptorSet(uint32_t imageIndex, uint32_t writeParity);
-    void dispatchRestirGiSpatialPass(uint32_t imageIndex, const FrameRenderData &frameData);
     void clearTemporalGiWriteTargets(uint32_t imageIndex);
     void barrierNrdSignalsForCompute(uint32_t imageIndex);
+    void barrierNrdSignalsForComposite(uint32_t imageIndex);
+    void recordNrdCompositePass(
+        uint32_t imageIndex, const FrameRenderData &frameData, bool applyNrdComposite
+    );
     void createTimestampResources();
     void cleanupTimestampResources();
     void updateGpuTimingStatsForImage(uint32_t imageIndex);

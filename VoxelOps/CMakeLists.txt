@@ -39,11 +39,10 @@ add_executable(VoxelOps
     "graphics/Vulkan/renderer/RenderPass.cpp"
     "graphics/Vulkan/renderer/VulkanRenderer.cpp"
     "graphics/Vulkan/renderer/VulkanRendererFrame.cpp"
+    "graphics/Vulkan/renderer/VulkanGiHistory.cpp"
     "graphics/Vulkan/renderer/VulkanCommandRecording.cpp"
+    "graphics/Vulkan/renderer/VulkanGiSignalClear.cpp"
     "graphics/Vulkan/renderer/VulkanGiResources.cpp"
-    "graphics/Vulkan/renderer/VulkanRestirResources.cpp"
-    "graphics/Vulkan/renderer/VulkanRestirPass.cpp"
-    "graphics/Vulkan/renderer/VulkanRestirRuntime.cpp"
     "graphics/Vulkan/renderer/VulkanSwapchainResources.cpp"
     "graphics/Vulkan/graphics/Mesh.cpp"
     "graphics/Vulkan/graphics/Model.cpp"
@@ -61,7 +60,6 @@ add_executable(VoxelOps
     "graphics/Vulkan/renderer/VulkanRendererTiming.cpp"
     "graphics/Vulkan/renderer/VulkanDrawResources.cpp"
     "graphics/Vulkan/renderer/VulkanNrdResources.cpp"
-    "graphics/Vulkan/renderer/VulkanRestirSpatial.cpp"
 
     "player/Player.cpp"
     "player/PlayerMovement.cpp"
@@ -78,7 +76,7 @@ add_executable(VoxelOps
     "application/AppWindow.cpp"
     "application/AppSetup.cpp"
     "application/AppUi.cpp"
-    "application/ClientHudSystem.cpp"
+    "ui/Hud.cpp"
     "graphics/OpenGL/WorldItemRenderer.cpp"
     "application/AppSimulation.cpp"
     "application/AppInputEvents.cpp"
@@ -90,7 +88,7 @@ add_executable(VoxelOps
     "render/RenderSceneBuilder.cpp"
     "systems/WorldInteractionSystem.cpp"
     "systems/CombatShootSystem.cpp"
-    "systems/ChunkStreamingClientSystem.cpp"
+    
     "graphics/Lighting.cpp"
     "network/ClientNetwork.cpp"
     "network/ClientConnection.cpp"
@@ -119,7 +117,7 @@ add_executable(VoxelOps
     "commands/CommandParser.cpp"
     "ui/player/SettingsUI.cpp"
     "ui/player/MainMenu.cpp"
-)
+ "runtime/ClientPrediction.cpp")
 
 find_package(SDL3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
@@ -131,6 +129,7 @@ find_package(imgui CONFIG REQUIRED)
 find_package(Vulkan REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
+
 target_link_libraries(VoxelOps PRIVATE SDL3::SDL3)
 target_link_libraries(VoxelOps PRIVATE glm::glm)
 target_link_libraries(VoxelOps PRIVATE assimp::assimp)
@@ -141,7 +140,7 @@ target_link_libraries(VoxelOps PRIVATE lz4::lz4)
 target_link_libraries(VoxelOps PRIVATE imgui::imgui)
 target_link_libraries(VoxelOps PRIVATE Vulkan::Vulkan)
 target_link_libraries(VoxelOps PRIVATE nlohmann_json::nlohmann_json)
-target_compile_definitions(VoxelOps PRIVATE GLM_ENABLE_EXPERIMENTAL)
+target_compile_definitions(VoxelOps PRIVATE GLM_ENABLE_EXPERIMENTAL) 
 if(MSVC)
     set_property(TARGET VoxelOps PROPERTY VS_DEBUGGER_ENVIRONMENT "VOXELOPS_RENDER_API=vulkan")
 endif()
@@ -170,11 +169,12 @@ endif()
 find_program(GLSLC_EXECUTABLE glslc REQUIRED)
 
 set(VKSHADERS
-    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/triangle.vert
-    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/triangle.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/VoxelTerrainGI.vert
+    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/VoxelTerrainGI.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/model.vert
     ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/model.frag
-    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/restir_gi_spatial.comp
+    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/nrd_composite.vert
+    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/nrd_composite.frag
 )
 
 set(SPIRV_OUTPUTS)
@@ -198,7 +198,7 @@ foreach(VKSHADER ${VKSHADERS})
 endforeach()
 
 set(VKSHADERS_RT
-    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/triangle.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/VoxelTerrainGI.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/model.frag
 )
 

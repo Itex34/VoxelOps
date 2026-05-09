@@ -182,6 +182,8 @@ void NrdBootstrap::init() {
 
     if (const nrd::LibraryDesc *libraryDesc = m_impl->getLibraryDesc(); libraryDesc != nullptr) {
         m_libraryDescData = libraryDesc;
+        m_normalEncoding = static_cast<uint32_t>(libraryDesc->normalEncoding);
+        m_roughnessEncoding = static_cast<uint32_t>(libraryDesc->roughnessEncoding);
         std::cout << "[NRD] API ready. Version " << static_cast<uint32_t>(libraryDesc->versionMajor)
                   << "." << static_cast<uint32_t>(libraryDesc->versionMinor) << "."
                   << static_cast<uint32_t>(libraryDesc->versionBuild)
@@ -222,6 +224,10 @@ void NrdBootstrap::shutdown() {
     m_initialized = false;
     m_lastDispatchCount = 0;
     m_frameIndex = 0;
+    m_normalEncoding = 2;
+    m_roughnessEncoding = 1;
+    m_prevRenderWidth = 0;
+    m_prevRenderHeight = 0;
     m_instanceDescData = nullptr;
     m_libraryDescData = nullptr;
     m_dispatchDescData = nullptr;
@@ -262,6 +268,10 @@ void NrdBootstrap::updateFrame(
         return;
     }
 
+    const uint32_t prevWidth = (m_prevRenderWidth > 0) ? m_prevRenderWidth : renderWidth;
+    const uint32_t prevHeight = (m_prevRenderHeight > 0) ? m_prevRenderHeight : renderHeight;
+    const bool validPrevResourceSize = hasPrevMatrices && (prevWidth > 0) && (prevHeight > 0);
+
     nrd::CommonSettings commonSettings{};
     copyMat4(projectionMatrix, commonSettings.viewToClipMatrix);
     copyMat4(
@@ -272,22 +282,31 @@ void NrdBootstrap::updateFrame(
     copyMat4(hasPrevMatrices ? prevViewMatrix : viewMatrix, commonSettings.worldToViewMatrixPrev);
     commonSettings.resourceSize[0] = clampDimToU16(renderWidth);
     commonSettings.resourceSize[1] = clampDimToU16(renderHeight);
-    commonSettings.resourceSizePrev[0] = commonSettings.resourceSize[0];
-    commonSettings.resourceSizePrev[1] = commonSettings.resourceSize[1];
+    commonSettings.resourceSizePrev[0] =
+        validPrevResourceSize ? clampDimToU16(prevWidth) : commonSettings.resourceSize[0];
+    commonSettings.resourceSizePrev[1] =
+        validPrevResourceSize ? clampDimToU16(prevHeight) : commonSettings.resourceSize[1];
     commonSettings.rectSize[0] = commonSettings.resourceSize[0];
     commonSettings.rectSize[1] = commonSettings.resourceSize[1];
-    commonSettings.rectSizePrev[0] = commonSettings.resourceSize[0];
-    commonSettings.rectSizePrev[1] = commonSettings.resourceSize[1];
-    commonSettings.motionVectorScale[0] = 1.0f / static_cast<float>(std::max(1u, renderWidth));
-    commonSettings.motionVectorScale[1] = 1.0f / static_cast<float>(std::max(1u, renderHeight));
-    commonSettings.motionVectorScale[2] = 1.0f;
+    commonSettings.rectSizePrev[0] = commonSettings.resourceSizePrev[0];
+    commonSettings.rectSizePrev[1] = commonSettings.resourceSizePrev[1];
+    commonSettings.motionVectorScale[0] = 1.0f / static_cast<float>(renderWidth);
+    commonSettings.motionVectorScale[1] = 1.0f / static_cast<float>(renderHeight);
+    // Use 2D motion vectors for stability in rasterized voxel geometry guides.
+    commonSettings.motionVectorScale[2] = 0.0f;
+    commonSettings.cameraJitter[0] = 0.0f;
+    commonSettings.cameraJitter[1] = 0.0f;
+    commonSettings.cameraJitterPrev[0] = 0.0f;
+    commonSettings.cameraJitterPrev[1] = 0.0f;
     commonSettings.viewZScale = 1.0f;
-    commonSettings.disocclusionThreshold = 0.01f;
-    commonSettings.disocclusionThresholdAlternate = 0.10f;
+    commonSettings.denoisingRange = std::max(500000.0f, frameData.giLighting.sunShadowMaxDistance);
+    commonSettings.disocclusionThreshold = 0.03f;
+    commonSettings.disocclusionThresholdAlternate = 0.12f;
     commonSettings.frameIndex = m_frameIndex++;
     commonSettings.accumulationMode = frameData.giLighting.resetHistory
                                           ? nrd::AccumulationMode::RESTART
                                           : nrd::AccumulationMode::CONTINUE;
+    commonSettings.isMotionVectorInWorldSpace = false;
 
     const nrd::Result commonResult = m_impl->setCommonSettings(*m_impl->instance, commonSettings);
     if (commonResult != nrd::Result::SUCCESS) {
@@ -298,15 +317,19 @@ void NrdBootstrap::updateFrame(
 
     nrd::ReblurSettings reblurSettings{};
     const float temporalBlend = glm::clamp(frameData.giLighting.denoiseTemporalBlend, 0.0f, 1.0f);
-    const float accumulationTimeSec = 0.10f + (temporalBlend * 0.90f);
-    const uint32_t maxFrames = nrd::GetMaxAccumulatedFrameNum(accumulationTimeSec, 60.0f);
+    const uint32_t maxFrames = static_cast<uint32_t>(8.0f + (temporalBlend * 16.0f));
     reblurSettings.maxAccumulatedFrameNum =
-        std::clamp(maxFrames, 1u, nrd::REBLUR_MAX_HISTORY_FRAME_NUM);
+        std::clamp(maxFrames, 8u, std::min<uint32_t>(24u, nrd::REBLUR_MAX_HISTORY_FRAME_NUM));
     reblurSettings.maxFastAccumulatedFrameNum =
-        std::max(1u, reblurSettings.maxAccumulatedFrameNum / 5u);
+        std::max(2u, reblurSettings.maxAccumulatedFrameNum / 4u);
     reblurSettings.maxStabilizedFrameNum = reblurSettings.maxAccumulatedFrameNum;
     reblurSettings.enableAntiFirefly = true;
-    reblurSettings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::AREA_3X3;
+    reblurSettings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::OFF;
+    reblurSettings.hitDistanceParameters.A = frameData.giLighting.nrdHitDistanceParams.x;
+    reblurSettings.hitDistanceParameters.B = frameData.giLighting.nrdHitDistanceParams.y;
+    reblurSettings.hitDistanceParameters.C = frameData.giLighting.nrdHitDistanceParams.z;
+    reblurSettings.minMaterialForDiffuse = 0.0f;
+    reblurSettings.minMaterialForSpecular = 0.0f;
 
     const nrd::Result settingsResult =
         m_impl->setDenoiserSettings(*m_impl->instance, kNrdDenoiserId, &reblurSettings);
@@ -338,5 +361,7 @@ void NrdBootstrap::updateFrame(
     m_impl->prevWorldToView = viewMatrix;
     m_impl->prevViewToClip = projectionMatrix;
     m_impl->hasPrevMatrices = true;
+    m_prevRenderWidth = renderWidth;
+    m_prevRenderHeight = renderHeight;
 #endif
 }

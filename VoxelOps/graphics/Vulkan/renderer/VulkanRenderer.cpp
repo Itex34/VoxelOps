@@ -3,7 +3,6 @@
 #include "graphics/Vulkan/renderer/NrdBootstrap.hpp"
 #include "graphics/Vulkan/vulkan/VulkanContext.hpp"
 #include "graphics/Vulkan/vulkan/VulkanUtils.hpp"
-#include "RestirConfig.hpp"
 
 #include <imgui.h>
 #if __has_include(<imgui_impl_vulkan.h>)
@@ -27,8 +26,6 @@
 #include <stdexcept>
 #include <string>
 
-using namespace Vulkan::Restir;
-
 namespace {
     static_assert(sizeof(IndexedIndirectCommand) == sizeof(vk::DrawIndexedIndirectCommand));
     static_assert(alignof(IndexedIndirectCommand) == alignof(vk::DrawIndexedIndirectCommand));
@@ -49,10 +46,10 @@ VulkanRenderer::~VulkanRenderer() noexcept {
 }
 
 vk::RenderPass VulkanRenderer::getRenderPassHandle() const noexcept {
-    if (m_renderPass.get() == nullptr) {
+    if (m_compositeRenderPass.get() == nullptr) {
         return VK_NULL_HANDLE;
     }
-    return *m_renderPass.get();
+    return *m_compositeRenderPass.get();
 }
 
 uint32_t VulkanRenderer::getSwapchainImageCount() const noexcept {
@@ -133,7 +130,6 @@ void VulkanRenderer::cleanup() {
     m_uploadContext.cleanup();
 
     m_commandPool.clear();
-    m_restirSharedHistoryFence = VK_NULL_HANDLE;
     m_initialized = false;
 }
 

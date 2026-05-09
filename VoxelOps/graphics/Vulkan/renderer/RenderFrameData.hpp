@@ -49,14 +49,16 @@ struct GiLightingData {
     float pathTraceSkyIntensity = 1.0f;
     float sunShadowMinVisibility = 0.00f;
     float sunShadowMaxDistance = 64.0f;
-    float restirTemporalBlend = 0.78f;
-    float restirSpatialReuse = 0.18f;
     float denoiseTemporalBlend = 0.86f;
     float denoiseSpatialWeight = 0.22f;
     float denoiseLumaPhi = 1.6f;
     float denoiseMomentBlend = 0.12f;
-    // 0=off, 1=diff radiance, 2=hit distance, 3=normal, 4=motion, 5=viewZ
+    // Matches NRD ReblurHitDistanceParameters { A, B, C }.
+    glm::vec3 nrdHitDistanceParams{3.0f, 0.1f, 20.0f};
+    // 0=off, 1=diff radiance, 2=hit distance, 3=normal, 4=motion, 5=viewZ, 6=raw noisy signal
     uint32_t nrdDebugView = 0;
+    // 0=off, 1=flat normal+roughness, 2=flat normal+roughness + zero motion
+    uint32_t nrdGuideOverride = 0;
     glm::vec3 sunDirection{0.25f, 0.85f, 0.42f};
     bool sunShadowsEnabled = false;
     glm::ivec3 shadowOccupancyMinBlocks{0};

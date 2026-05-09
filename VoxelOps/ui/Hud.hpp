@@ -8,7 +8,7 @@
 #include <functional>
 #include <string>
 
-struct ClientHudSystemContext {
+struct HudContext {
     SDL_Window *window = nullptr;
     std::string *serverIp = nullptr;
     uint16_t *serverPort = nullptr;
@@ -17,12 +17,12 @@ struct ClientHudSystemContext {
     std::function<void()> applyMouseInputModes;
 };
 
-class ClientHudSystem {
+class Hud {
 public:
-    void draw(Runtime &runtime, const ClientHudSystemContext &ctx);
+    void draw(Runtime &runtime, const HudContext &ctx);
 
 private:
-    void drawConnectionPrompt(Runtime &runtime, const ClientHudSystemContext &ctx);
+    void drawConnectionPrompt(Runtime &runtime, const HudContext &ctx);
     void drawKillFeed(Runtime &runtime);
     void drawScoreboard(Runtime &runtime);
     void drawPingCounter(Runtime &runtime);

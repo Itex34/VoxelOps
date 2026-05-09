@@ -38,8 +38,7 @@ glm::ivec3 OpenGLChunkRenderCache::chunkToRegionPos(const glm::ivec3 &chunkPos) 
     );
 }
 
-OpenGLChunkRenderCache::Region &
-OpenGLChunkRenderCache::getOrCreateRegion(const glm::ivec3 &chunkPos) {
+OpenGLChunkRenderCache::Region &OpenGLChunkRenderCache::getOrCreateRegion(const glm::ivec3 &chunkPos) {
     const glm::ivec3 regionPos = chunkToRegionPos(chunkPos);
     auto it = m_regions.find(regionPos);
     if (it != m_regions.end()) {

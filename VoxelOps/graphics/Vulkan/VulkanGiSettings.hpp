@@ -24,7 +24,10 @@ public:
     );
 
     void fillLightingData(
-        GiLightingData &lighting, const FrameDecision &decision, uint32_t nrdDebugView
+        GiLightingData &lighting,
+        const FrameDecision &decision,
+        uint32_t nrdDebugView,
+        uint32_t nrdGuideOverride
     ) const;
 
     void reset();

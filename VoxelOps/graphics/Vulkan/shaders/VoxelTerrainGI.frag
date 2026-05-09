@@ -4,7 +4,7 @@ layout(early_fragment_tests) in;
 #extension GL_EXT_ray_query : require
 #endif
 
-layout(set = 0, binding = 0) uniform sampler2D texSampler;
+layout(set = 0, binding = 0) uniform sampler2DArray texSampler;
 
 layout(set = 2, binding = 0, std140) uniform GiLightingParams {
     uvec4 header;     // x = reserved, y = sun shadow enabled, z = path trace enabled, w = NRD debug view
@@ -35,8 +35,10 @@ layout(set = 2, binding = 2, std430) readonly buffer TraceMaterialIds {
 layout(set = 2, binding = 12) uniform accelerationStructureEXT sceneTlas;
 #endif
 
-layout(location = 0) in vec2 outUv;
-layout(location = 1) in vec3 inWorldPos;
+layout(location = 0) in vec2 inTexCoordBlocks;
+layout(location = 1) flat in uint inTileIndex;
+layout(location = 2) in vec3 inWorldPos;
+layout(location = 3) in vec3 inWorldNormal;
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outComposeBase;
 layout(location = 2) out vec4 outComposeIndirect;
@@ -66,6 +68,39 @@ struct PathTraceResult {
     float candidatePdf;
     float candidateHitDistance;
 };
+
+vec4 sampleTerrainAlbedoSmooth() {
+    vec2 uvLayer = fract(inTexCoordBlocks);
+    return texture(texSampler, vec3(uvLayer, float(inTileIndex)));
+}
+
+vec4 sampleTerrainAlbedoGrad() {
+    vec2 uvLayer = fract(inTexCoordBlocks);
+    vec2 dx = dFdx(inTexCoordBlocks);
+    vec2 dy = dFdy(inTexCoordBlocks);
+    return textureGrad(texSampler, vec3(uvLayer, float(inTileIndex)), dx, dy);
+}
+
+vec4 sampleTerrainAlbedoNearest() {
+    ivec3 dims = textureSize(texSampler, 0);
+    vec2 uvLayer = fract(inTexCoordBlocks);
+    ivec2 texel = ivec2(floor(uvLayer * vec2(dims.xy)));
+    texel = ivec2(
+        int(mod(float(texel.x), float(max(dims.x, 1)))),
+        int(mod(float(texel.y), float(max(dims.y, 1))))
+    );
+    texel = clamp(texel, ivec2(0), max(ivec2(dims.xy) - ivec2(1), ivec2(0)));
+    int layer = clamp(int(inTileIndex), 0, max(dims.z - 1, 0));
+    return texelFetch(texSampler, ivec3(texel, layer), 0);
+}
+
+vec3 hashColorFromUint(uint v) {
+    uint x = v * 1664525u + 1013904223u;
+    float r = float((x >> 0u) & 255u) / 255.0;
+    float g = float((x >> 8u) & 255u) / 255.0;
+    float b = float((x >> 16u) & 255u) / 255.0;
+    return vec3(r, g, b);
+}
 
 vec3 safeNormalize(vec3 v) {
     float len2 = dot(v, v);
@@ -185,10 +220,41 @@ vec3 materialEmission(uint materialId) {
     case 15u: return vec3(2.30, 1.15, 0.22); // OrangeBerry
     case 16u: return vec3(0.22, 0.95, 2.40); // SapphireGem
     case 17u: return vec3(2.20, 0.30, 0.45); // RubyGem
-    case 21u: return vec3(1.20, 0.10, 0.16); // RubyBlock
-    case 22u: return vec3(0.10, 0.38, 1.25); // SapphireBlock
+    case 21u: return vec3(1000.20, 0.10, 0.16); // RubyBlock
+    case 22u: return vec3(0.10, 0.38, 1000.25); // SapphireBlock
     default: return vec3(0.0);
     }
+}
+
+float nrdMaterialClassFromVoxelId(uint materialId) {
+    // REBLUR material IDs are 2-bit classes (0..3).
+    // Keep foliage and emissive materials separated to reduce cross-material bleeding.
+    switch (materialId) {
+    case 1u:  // Grass
+    case 10u: // Leaves
+    case 20u: // Cactus
+        return 1.0;
+    case 14u: // RedBerry
+    case 15u: // OrangeBerry
+    case 16u: // SapphireGem
+    case 17u: // RubyGem
+    case 21u: // RubyBlock
+    case 22u: // SapphireBlock
+        return 2.0;
+    default:
+        return 0.0;
+    }
+}
+
+vec3 sampleSurfaceEmission(vec3 worldPos, vec3 normal) {
+    vec3 n = safeNormalize(normal);
+    ivec3 insideVoxel = ivec3(floor(worldPos - (n * 0.03)));
+    uint materialId = sampleVoxelMaterialId(insideVoxel);
+    if (materialId == 0u) {
+        ivec3 fallbackVoxel = ivec3(floor(worldPos + (n * 0.03)));
+        materialId = sampleVoxelMaterialId(fallbackVoxel);
+    }
+    return materialEmission(materialId);
 }
 
 vec3 skyRadiance(vec3 direction) {
@@ -559,7 +625,6 @@ PathTraceResult tracePathTracedIndirect(vec3 worldPos, vec3 normal) {
             rayDir = sampleCosineHemisphere(hitNormal, rng);
         }
 
-        sampleRadiance = min(sampleRadiance, vec3(24.0));
         hitDistanceAccum += firstHitDistance;
         radianceAccum += sampleRadiance;
         float sampleLuma = max(dot(sampleRadiance, vec3(0.2126, 0.7152, 0.0722)), 1.0e-4);
@@ -854,6 +919,7 @@ vec3 visualizeNrdInput(
     vec3 normal,
     vec3 motion,
     float materialClass,
+    float rawVoxelMaterialId,
     float viewZ,
     float maxDistance
 ) {
@@ -887,8 +953,23 @@ vec3 visualizeNrdInput(
         return clamp(packed.xyz, 0.0, 1.0);
     }
     if (debugView == 9u) {
-        vec4 packed = packNrdNormalRoughness(normal, 1.0, materialClass);
-        return vec3(clamp(packed.w, 0.0, 1.0));
+        float normalized = clamp(rawVoxelMaterialId / 22.0, 0.0, 1.0);
+        return vec3(normalized);
+    }
+    if (debugView == 19u) {
+        return hashColorFromUint(inTileIndex);
+    }
+    if (debugView == 20u) {
+        return clamp(sampleTerrainAlbedoSmooth().rgb, 0.0, 1.0);
+    }
+    if (debugView == 21u) {
+        return clamp(sampleTerrainAlbedoGrad().rgb, 0.0, 1.0);
+    }
+    if (debugView == 22u) {
+        return clamp(sampleTerrainAlbedoNearest().rgb, 0.0, 1.0);
+    }
+    if (debugView == 23u) {
+        return vec3(fract(inTexCoordBlocks), 0.0);
     }
     if (debugView == 28u) {
         bool invalid = nrdIsInvalidVec3(diffuseRadiance) ||
@@ -919,35 +1000,31 @@ void main() {
     outNrdNormalRoughnessIn = packNrdNormalRoughness(vec3(0.0, 0.0, 1.0), 1.0, 0.0);
     outNrdMotionIn = vec4(0.0);
     outNrdViewZIn = vec4(-1.0, 0.0, 0.0, 0.0);
-    vec4 texel = texture(texSampler, outUv);
-    if (texel.a < 0.05) {
-        discard;
-    }
+    vec4 texel = sampleTerrainAlbedoGrad();
 
-    vec3 geomNormal = safeNormalize(cross(dFdx(inWorldPos), dFdy(inWorldPos)));
-    if (!gl_FrontFacing) {
-        geomNormal = -geomNormal;
-    }
-
+    vec3 normalWs = safeNormalize(inWorldNormal);
     vec3 sunDir = safeNormalize(giParams.sunDirection.xyz);
     bool pathTracingEnabled = (giParams.header.z != 0u);
     uint nrdDebugView = giParams.header.w;
     float nrdMaxDistance = max(1.0, giParams.shadowParams.x);
-    // Keep model geometry in its own class to avoid bleeding from voxel foliage/terrain.
-    const float nrdMaterialClass = 3.0;
+    ivec3 primaryVoxel = ivec3(floor(inWorldPos - (normalWs * 0.01)));
+    uint rawVoxelMaterialId = sampleVoxelMaterialId(primaryVoxel);
+    float nrdMaterialClass = nrdMaterialClassFromVoxelId(rawVoxelMaterialId);
 
     if (pathTracingEnabled) {
-        PathTraceResult giTrace = tracePathTracedIndirect(inWorldPos, geomNormal);
+        PathTraceResult giTrace = tracePathTracedIndirect(inWorldPos, normalWs);
         vec3 indirectCurrent = giTrace.indirect;
-        float direct = computePathTracedDirectSun(inWorldPos, geomNormal, sunDir);
+        vec3 surfaceEmission = sampleSurfaceEmission(inWorldPos, normalWs);
+        float direct = computePathTracedDirectSun(inWorldPos, normalWs, sunDir);
         vec3 directBaseLinear = texel.rgb * vec3(giParams.tuning.x + direct);
+        directBaseLinear += surfaceEmission;
         vec3 indirectTintLinear = texel.rgb * giParams.tuning.y;
         vec3 noisyLitLinear = directBaseLinear + (indirectCurrent * indirectTintLinear);
         vec3 nrdInputRadiance = max(indirectCurrent, vec3(0.0));
         float nrdInputHitDistance = giTrace.candidateHitDistance;
         writeNrdInputs(
             inWorldPos,
-            geomNormal,
+            normalWs,
             nrdInputRadiance,
             nrdInputHitDistance,
             1.0,
@@ -955,8 +1032,9 @@ void main() {
             getNrdViewZ(),
             nrdMaxDistance
         );
+        float writerTag = clamp(float(rawVoxelMaterialId) / 255.0, 0.0, 1.0);
         outComposeBase = buildComposeBase(directBaseLinear, texel.a);
-        outComposeIndirect = buildComposeIndirect(indirectTintLinear, 1.0);
+        outComposeIndirect = buildComposeIndirect(indirectTintLinear, writerTag);
         if (nrdDebugView != 0u) {
             if (nrdDebugView == 6u) {
                 outColor = vec4(toneMapAces(noisyLitLinear), texel.a);
@@ -967,9 +1045,10 @@ void main() {
                 nrdDebugView,
                 nrdInputRadiance,
                 nrdInputHitDistance,
-                geomNormal,
+                normalWs,
                 nrdMotion,
                 nrdMaterialClass,
+                float(rawVoxelMaterialId),
                 getNrdViewZ(),
                 nrdMaxDistance
             );
@@ -980,17 +1059,19 @@ void main() {
         return;
     }
 
-    GiLightingSample giSample = sampleGiLighting(inWorldPos, geomNormal);
+    GiLightingSample giSample = sampleGiLighting(inWorldPos, normalWs);
     vec3 gi = giSample.irradiance;
     float giNrdHitDistance = estimateNrdHitDistanceFromDepthMean(giSample.depthMean, nrdMaxDistance);
-    float ndl = max(dot(safeNormalize(geomNormal), sunDir), 0.0);
-    float sunShadow = computeSunShadow(inWorldPos, geomNormal, sunDir);
+    vec3 surfaceEmission = sampleSurfaceEmission(inWorldPos, normalWs);
+    float ndl = max(dot(normalWs, sunDir), 0.0);
+    float sunShadow = computeSunShadow(inWorldPos, normalWs, sunDir);
     float direct = ndl * giParams.tuning.z * sunShadow;
     vec3 litLinear = texel.rgb * (vec3(giParams.tuning.x + direct) + (gi * giParams.tuning.y));
+    litLinear += surfaceEmission;
     vec3 lit = toneMapAces(litLinear);
     writeNrdInputs(
         inWorldPos,
-        geomNormal,
+        normalWs,
         gi,
         giNrdHitDistance,
         1.0,
@@ -1004,9 +1085,10 @@ void main() {
             nrdDebugView,
             gi,
             giNrdHitDistance,
-            geomNormal,
+            normalWs,
             nrdMotion,
             nrdMaterialClass,
+            float(rawVoxelMaterialId),
             getNrdViewZ(),
             nrdMaxDistance
         );

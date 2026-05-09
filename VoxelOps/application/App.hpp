@@ -7,7 +7,7 @@
 #include <glm/vec3.hpp>
 #include "../runtime/Runtime.hpp"
 #include "../graphics/IWorldItemRenderer.hpp"
-#include "../graphics/RenderDeviceFactory.hpp"
+
 class Camera;
 enum class GunType : uint16_t;
 

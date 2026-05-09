@@ -45,6 +45,12 @@ public:
     const void *dispatchDescData() const noexcept {
         return m_dispatchDescData;
     }
+    uint32_t normalEncoding() const noexcept {
+        return m_normalEncoding;
+    }
+    uint32_t roughnessEncoding() const noexcept {
+        return m_roughnessEncoding;
+    }
 
 private:
     struct Impl;
@@ -55,6 +61,10 @@ private:
     bool m_loggedUnavailable = false;
     uint32_t m_lastDispatchCount = 0;
     uint32_t m_frameIndex = 0;
+    uint32_t m_normalEncoding = 2;   // nrd::NormalEncoding::R10_G10_B10_A2_UNORM
+    uint32_t m_roughnessEncoding = 1; // nrd::RoughnessEncoding::LINEAR
+    uint32_t m_prevRenderWidth = 0;
+    uint32_t m_prevRenderHeight = 0;
     const void *m_instanceDescData = nullptr;
     const void *m_libraryDescData = nullptr;
     const void *m_dispatchDescData = nullptr;

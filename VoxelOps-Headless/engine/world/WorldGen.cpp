@@ -6,6 +6,8 @@
 
 #include <cmath>
 #include <random>
+#include <vector>
+#include <algorithm>
 
 void WorldGen::applyClientDecorationPass(
     ChunkManager &cm, ServerChunk &chunk, const glm::ivec3 &chunkPos
@@ -27,7 +29,7 @@ void WorldGen::applyClientDecorationPass(
                 }
             }
 
-            if (topY != -1 && chance(gen) < 0.02) {
+            if (topY != -1 && chance(gen) < 0.0025) {
                 placeTree(cm, chunk, glm::ivec3(x, topY + 1, z), gen);
                 anyDecoration = true;
             }
@@ -233,74 +235,164 @@ void WorldGen::decorateChunkAt(ChunkManager &cm, const glm::ivec3 &pos) {
 void WorldGen::placeTree(
     ChunkManager &cm, ServerChunk &chunk, const glm::ivec3 &basePos, std::mt19937 &gen
 ) {
-    std::uniform_int_distribution<> trunkH(10, 14);
-    int trunkHeight = trunkH(gen);
+    std::uniform_real_distribution<float> rand01(0.0f, 1.0f);
+    std::uniform_int_distribution<> driftDist(-1, 1);
+    std::uniform_int_distribution<> dirDist(0, 7);
 
-    glm::ivec3 trunkOffsets[4] = {
-        glm::ivec3(0, 0, 0), glm::ivec3(1, 0, 0), glm::ivec3(0, 0, 1), glm::ivec3(1, 0, 1)
+    int baseRadius = std::uniform_int_distribution<>(1, 3)(gen);
+
+    int trunkHeight =
+        std::uniform_int_distribution<>(12 + baseRadius * 3, 16 + baseRadius * 5)(gen);
+
+    float taperStrength = std::uniform_real_distribution<float>(0.75f, 1.35f)(gen);
+
+    int branchCount = std::uniform_int_distribution<>(3 + baseRadius, 5 + baseRadius)(gen);
+
+    auto placeLog = [&](const glm::ivec3 &p) { cm.setBlockSafe(chunk, p, BlockID::Log); };
+
+    auto placeLeaf = [&](const glm::ivec3 &p) {
+        if (cm.getBlockSafe(chunk, p) == BlockID::Air) {
+            cm.setBlockSafe(chunk, p, BlockID::Leaves);
+        }
     };
 
-    for (int i = 0; i < trunkHeight; ++i) {
-        int y = basePos.y + i;
-        for (int t = 0; t < 4; ++t) {
-            glm::ivec3 p(basePos.x + trunkOffsets[t].x, y, basePos.z + trunkOffsets[t].z);
-            cm.setBlockSafe(chunk, p, BlockID::Log);
+    auto trunkRadiusAt = [&](int y) {
+        float t = float(y) / float(glm::max(1, trunkHeight - 1));
+
+        float r = float(baseRadius) * std::pow(1.0f - t, taperStrength);
+
+        if (t < 0.78f)
+            r = glm::max(r, 1.0f);
+
+        if (t > 0.88f)
+            r *= 0.65f;
+
+        return glm::max(0, int(std::round(r)));
+    };
+
+    auto placeTrunkSection = [&](const glm::ivec3 &center, int radius, bool extraIrregularity) {
+        if (radius <= 0) {
+            placeLog(center);
+            return;
         }
-    }
 
-    int topY = basePos.y + trunkHeight - 1;
-    int crownBaseYOffset = 0;
-    int crownThickness = 2;
-    int crownRadius = 4;
-    int topCapYOffset = crownBaseYOffset + crownThickness;
-
-    std::uniform_real_distribution<float> holeChance(0.0f, 1.0f);
-
-    for (int dy = crownBaseYOffset; dy < crownBaseYOffset + crownThickness; ++dy) {
-        int layerY = topY + dy;
-        for (int dx = -crownRadius; dx <= crownRadius; ++dx) {
-            for (int dz = -crownRadius; dz <= crownRadius; ++dz) {
+        for (int dx = -radius; dx <= radius; ++dx) {
+            for (int dz = -radius; dz <= radius; ++dz) {
                 float dist = std::sqrt(float(dx * dx + dz * dz));
-                if (dist <= crownRadius + 0.25f) {
-                    float edgeFactor = (dist / float(crownRadius));
-                    float skipProb = glm::smoothstep(0.7f, 1.0f, edgeFactor) * 0.65f;
-                    if (dy == crownBaseYOffset)
-                        skipProb *= 0.55f;
-                    if (holeChance(gen) < skipProb)
-                        continue;
 
-                    glm::ivec3 leafPos(basePos.x + dx, layerY, basePos.z + dz);
-                    if (cm.getBlockSafe(chunk, leafPos) == BlockID::Air) {
-                        cm.setBlockSafe(chunk, leafPos, BlockID::Leaves);
+                float edgeNoise = rand01(gen) * 0.45f;
+
+                if (extraIrregularity && rand01(gen) < 0.18f)
+                    edgeNoise += 0.45f;
+
+                if (dist <= float(radius) + edgeNoise) {
+                    placeLog(center + glm::ivec3(dx, 0, dz));
+                }
+            }
+        }
+    };
+
+    auto placeLeafBlob = [&](const glm::ivec3 &center, int radius) {
+        for (int dx = -radius; dx <= radius; ++dx) {
+            for (int dy = -radius; dy <= radius; ++dy) {
+                for (int dz = -radius; dz <= radius; ++dz) {
+                    float dist = std::sqrt(float(dx * dx + dy * dy + dz * dz));
+
+                    if (dist <= radius + 0.35f) {
+                        float edge = dist / float(radius);
+                        float skipChance = glm::smoothstep(0.65f, 1.0f, edge) * 0.55f;
+
+                        if (rand01(gen) < skipChance)
+                            continue;
+
+                        placeLeaf(center + glm::ivec3(dx, dy, dz));
                     }
                 }
             }
         }
-    }
+    };
 
-    int taperRadius = glm::max(1, crownRadius - 2);
-    int taperY = topY + topCapYOffset;
-    for (int dx = -taperRadius; dx <= taperRadius; ++dx) {
-        for (int dz = -taperRadius; dz <= taperRadius; ++dz) {
-            float dist = std::sqrt(float(dx * dx + dz * dz));
-            if (dist <= taperRadius + 0.25f) {
-                glm::ivec3 leafPos(basePos.x + dx, taperY, basePos.z + dz);
-                if (cm.getBlockSafe(chunk, leafPos) == BlockID::Air) {
-                    if (dist > (taperRadius - 0.5f) && holeChance(gen) < 0.25f)
-                        continue;
-                    cm.setBlockSafe(chunk, leafPos, BlockID::Leaves);
-                }
-            }
+    glm::ivec3 dirs[8] = {
+        {1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}, {1, 0, 1}, {-1, 0, 1}, {1, 0, -1}, {-1, 0, -1}
+    };
+
+    std::vector<glm::ivec3> trunkCenters;
+    trunkCenters.reserve(trunkHeight + 4);
+
+    int trunkOffsetX = 0;
+    int trunkOffsetZ = 0;
+
+    for (int y = 0; y < trunkHeight; ++y) {
+        if (y > trunkHeight / 3 && rand01(gen) < 0.10f) {
+            trunkOffsetX += driftDist(gen);
+            trunkOffsetX = glm::clamp(trunkOffsetX, -2, 2);
         }
+
+        if (y > trunkHeight / 3 && rand01(gen) < 0.10f) {
+            trunkOffsetZ += driftDist(gen);
+            trunkOffsetZ = glm::clamp(trunkOffsetZ, -2, 2);
+        }
+
+        glm::ivec3 trunkPos = basePos + glm::ivec3(trunkOffsetX, y, trunkOffsetZ);
+        trunkCenters.push_back(trunkPos);
+
+        int radius = trunkRadiusAt(y);
+        bool irregular = y < trunkHeight * 0.25f || rand01(gen) < 0.25f;
+
+        placeTrunkSection(trunkPos, radius, irregular);
     }
 
-    for (int i = 0; i < trunkHeight; ++i) {
-        int y = basePos.y + i;
-        for (int t = 0; t < 4; ++t) {
-            glm::ivec3 p(basePos.x + trunkOffsets[t].x, y, basePos.z + trunkOffsets[t].z);
-            if (cm.getBlockSafe(chunk, p) != BlockID::Log) {
-                cm.setBlockSafe(chunk, p, BlockID::Log);
+    for (int b = 0; b < branchCount; ++b) {
+        int branchY = std::uniform_int_distribution<>(trunkHeight / 2, trunkHeight - 5)(gen);
+        int branchLength = std::uniform_int_distribution<>(4 + baseRadius, 7 + baseRadius * 2)(gen);
+
+        glm::ivec3 dir = dirs[dirDist(gen)];
+        glm::ivec3 start = trunkCenters[branchY];
+
+        glm::ivec3 branchEnd = start;
+
+        for (int i = 1; i <= branchLength; ++i) {
+            float progress = float(i) / float(branchLength);
+
+            int bx = int(std::round(dir.x * i));
+            int bz = int(std::round(dir.z * i));
+            int by = int(progress * progress * float(3 + baseRadius));
+
+            glm::ivec3 p = start + glm::ivec3(bx, by, bz);
+
+            placeLog(p);
+
+            if (i <= baseRadius + 1) {
+                placeLog(p + glm::ivec3(0, -1, 0));
             }
+
+            if (baseRadius >= 2 && i < branchLength / 2 && rand01(gen) < 0.45f) {
+                if (dir.x != 0)
+                    placeLog(p + glm::ivec3(0, 0, 1));
+                if (dir.z != 0)
+                    placeLog(p + glm::ivec3(1, 0, 0));
+            }
+
+            branchEnd = p;
+        }
+
+        int leafRadius = std::uniform_int_distribution<>(2 + baseRadius, 3 + baseRadius)(gen);
+
+        placeLeafBlob(branchEnd, leafRadius);
+        placeLeafBlob(branchEnd + glm::ivec3(0, 1, 0), glm::max(2, leafRadius - 1));
+    }
+
+    glm::ivec3 top = trunkCenters.back();
+
+    int crownRadius = 3 + baseRadius;
+
+    placeLeafBlob(top + glm::ivec3(0, -3, 0), crownRadius);
+    placeLeafBlob(top + glm::ivec3(0, 0, 0), crownRadius + 1);
+    placeLeafBlob(top + glm::ivec3(0, 3, 0), glm::max(2, crownRadius - 1));
+
+    for (int y = trunkHeight - 5; y < trunkHeight; ++y) {
+        if (y >= 0 && y < int(trunkCenters.size())) {
+            placeTrunkSection(trunkCenters[y], glm::max(0, trunkRadiusAt(y)), false);
         }
     }
 }

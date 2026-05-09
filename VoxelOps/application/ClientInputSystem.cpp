@@ -99,15 +99,3 @@ ClientInputIntent ClientInputSystem::captureIntent(Runtime &runtime, SDL_Window 
     return intent;
 }
 
-void ClientInputSystem::updatePrediction(
-    Runtime &runtime, const ClientInputIntent &intent, double deltaTime
-) {
-    if (!runtime.gameplay.player) {
-        return;
-    }
-
-    runtime.gameplay.player->setNetworkInputState(intent.networkInput);
-    if (deltaTime > 0.0) {
-        runtime.gameplay.player->simulateFromNetworkInput(intent.networkInput, deltaTime, true);
-    }
-}

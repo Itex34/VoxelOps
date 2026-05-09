@@ -37,14 +37,6 @@ void VulkanRenderer::renderFrame(
     (void)device.waitForFences(
         currentFrameFenceArray, vk::True, std::numeric_limits<uint64_t>::max()
     );
-    if (frameData.giLighting.pathTracingEnabled && m_restirSharedHistoryFence != VK_NULL_HANDLE &&
-        m_restirSharedHistoryFence != currentFrameFence) {
-        std::array<vk::Fence, 1> historyFenceArray = {m_restirSharedHistoryFence};
-        (void)device.waitForFences(
-            historyFenceArray, vk::True, std::numeric_limits<uint64_t>::max()
-        );
-    }
-
     uint32_t imageIndex = 0;
     vk::Result acquireResult = vk::Result::eSuccess;
     try {
@@ -77,9 +69,6 @@ void VulkanRenderer::renderFrame(
     } else {
         m_lastFrameTimingStats.gpuValid = false;
     }
-
-    m_frameSync.setImageInFlightFence(imageIndex, currentFrameFence);
-    (void)device.resetFences(currentFrameFenceArray);
 
     std::vector<glm::mat4> combinedModelMatrices = frameData.modelMatrices;
     combinedModelMatrices.reserve(frameData.modelMatrices.size() + frameData.objects.size());
@@ -157,8 +146,16 @@ void VulkanRenderer::renderFrame(
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &signalSemaphore;
 
-    m_context.getGraphicsQueue().submit(submitInfo, currentFrameFence);
-    updateRestirHistoryAfterSubmit(
+    (void)device.resetFences(currentFrameFenceArray);
+    try {
+        m_context.getGraphicsQueue().submit(submitInfo, currentFrameFence);
+        m_frameSync.setImageInFlightFence(imageIndex, currentFrameFence);
+    } catch (...) {
+        m_frameSync.setImageInFlightFence(imageIndex, imageFence);
+        m_frameSync.recreateCurrentFrameFenceSignaled(device);
+        throw;
+    }
+    updateGiHistoryAfterSubmit(
         frameData, viewMatrix, projectionMatrix, viewProjection, currentFrameFence
     );
 

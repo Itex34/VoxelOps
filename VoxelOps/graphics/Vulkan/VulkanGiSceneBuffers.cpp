@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -34,11 +35,18 @@ namespace {
 bool VulkanGiSceneBuffers::rebuild(
     const std::unordered_map<glm::ivec3, Chunk, IVec3Hash> &chunks,
     const VulkanChunkRenderCache &chunkRenderCache,
-    VulkanContext &context
+    VulkanContext &context,
+    uint64_t frameCounter
 ) {
+    const bool hadActiveState = m_valid || m_occupancyBuffer != nullptr || m_materialBuffer != nullptr ||
+                                m_chunkCount != 0 || m_wordCount != 0;
     const auto &chunkMeshes = chunkRenderCache.getChunkMeshes();
     if (chunkMeshes.empty()) {
-        cleanup();
+        retireActiveBuffers(frameCounter);
+        resetActiveState();
+        if (hadActiveState) {
+            ++m_contentVersion;
+        }
         return false;
     }
 
@@ -64,7 +72,11 @@ bool VulkanGiSceneBuffers::rebuild(
     const glm::ivec3 maxBlocksExclusive = (maxChunk + glm::ivec3(1)) * CHUNK_SIZE;
     const glm::ivec3 dimsI = maxBlocksExclusive - minBlocks;
     if (dimsI.x <= 0 || dimsI.y <= 0 || dimsI.z <= 0) {
-        cleanup();
+        retireActiveBuffers(frameCounter);
+        resetActiveState();
+        if (hadActiveState) {
+            ++m_contentVersion;
+        }
         return false;
     }
 
@@ -77,7 +89,11 @@ bool VulkanGiSceneBuffers::rebuild(
                                   static_cast<uint64_t>(dims.z);
     if (voxelCount64 == 0 ||
         voxelCount64 > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())) {
-        cleanup();
+        retireActiveBuffers(frameCounter);
+        resetActiveState();
+        if (hadActiveState) {
+            ++m_contentVersion;
+        }
         return false;
     }
     const uint32_t voxelCount = static_cast<uint32_t>(voxelCount64);
@@ -93,7 +109,8 @@ bool VulkanGiSceneBuffers::rebuild(
         return true;
     }
 
-    cleanup();
+    retireActiveBuffers(frameCounter);
+    resetActiveState();
 
     const vk::raii::Device &device = context.getDevice();
     const vk::raii::PhysicalDevice &physicalDevice = context.getPhysicalDevice();
@@ -169,6 +186,7 @@ bool VulkanGiSceneBuffers::rebuild(
     m_signatureSum = signatureSum;
     m_chunkCount = signatureCount;
     m_valid = true;
+    ++m_contentVersion;
     return true;
 }
 
@@ -186,7 +204,36 @@ void VulkanGiSceneBuffers::applyToLighting(GiLightingData &lighting) const {
     lighting.shadowWorldBoundsZ = m_worldBoundsZ;
 }
 
-void VulkanGiSceneBuffers::cleanup() {
+void VulkanGiSceneBuffers::collectRetiredBuffers(uint64_t frameCounter) {
+    for (auto it = m_retiredBuffers.begin(); it != m_retiredBuffers.end();) {
+        if (it->retireFrame > frameCounter) {
+            ++it;
+            continue;
+        }
+        it->occupancyBuffer.clear();
+        it->occupancyBufferMemory.clear();
+        it->materialBuffer.clear();
+        it->materialBufferMemory.clear();
+        it = m_retiredBuffers.erase(it);
+    }
+}
+
+void VulkanGiSceneBuffers::retireActiveBuffers(uint64_t frameCounter) {
+    if (m_occupancyBuffer == nullptr && m_materialBuffer == nullptr) {
+        return;
+    }
+
+    static constexpr uint64_t kRetireDelayFrames = 24;
+    RetiredBuffers retired{};
+    retired.occupancyBuffer = std::move(m_occupancyBuffer);
+    retired.occupancyBufferMemory = std::move(m_occupancyBufferMemory);
+    retired.materialBuffer = std::move(m_materialBuffer);
+    retired.materialBufferMemory = std::move(m_materialBufferMemory);
+    retired.retireFrame = frameCounter + kRetireDelayFrames;
+    m_retiredBuffers.push_back(std::move(retired));
+}
+
+void VulkanGiSceneBuffers::resetActiveState() {
     m_occupancyBuffer.clear();
     m_occupancyBufferMemory.clear();
     m_materialBuffer.clear();
@@ -200,4 +247,15 @@ void VulkanGiSceneBuffers::cleanup() {
     m_signatureSum = 0;
     m_chunkCount = 0;
     m_valid = false;
+}
+
+void VulkanGiSceneBuffers::cleanup() {
+    resetActiveState();
+    for (RetiredBuffers &retired : m_retiredBuffers) {
+        retired.occupancyBuffer.clear();
+        retired.occupancyBufferMemory.clear();
+        retired.materialBuffer.clear();
+        retired.materialBufferMemory.clear();
+    }
+    m_retiredBuffers.clear();
 }

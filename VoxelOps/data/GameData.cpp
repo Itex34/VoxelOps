@@ -25,6 +25,7 @@ namespace GameData {
     bool gameplayInputEnabled = true;
     int giTracingBackendPreference = 0;
     int giNrdDebugView = 0;
+    int giNrdGuideOverride = 0;
 
     float xPos = 0.0f;
     float yPos = 0.0f;

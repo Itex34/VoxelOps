@@ -35,7 +35,7 @@ struct NetworkInputState {
 
 class Player {
 public:
-    struct SimulationState {
+    struct SimulationState { 
         glm::vec3 position{0.0f};
         glm::vec3 velocity{0.0f};
         glm::vec3 front{0.0f, 0.0f, -1.0f};

@@ -205,8 +205,7 @@ private:
             std::chrono::steady_clock::time_point::min();
         std::unordered_set<ChunkCoord, ChunkCoordHash> streamedChunks;
         // ChunkData packets queued/sent but not yet marked as streamed.
-        std::unordered_map<ChunkCoord, std::chrono::steady_clock::time_point, ChunkCoordHash>
-            pendingChunkData;
+        std::unordered_map<ChunkCoord, std::chrono::steady_clock::time_point, ChunkCoordHash> pendingChunkData;
         bool isAdmin = false;
         std::chrono::steady_clock::time_point inboundRateWindowStart =
             std::chrono::steady_clock::time_point::min();
@@ -214,8 +213,7 @@ private:
         uint32_t inboundBytesInWindow = 0;
         uint32_t inboundPlayerInputsInWindow = 0;
         uint32_t inboundChunkRequestsInWindow = 0;
-        std::chrono::steady_clock::time_point lastAcceptedShootTime =
-            std::chrono::steady_clock::time_point::min();
+        std::chrono::steady_clock::time_point lastAcceptedShootTime = std::chrono::steady_clock::time_point::min();
         uint32_t lastShootClientShotId = 0;
         bool hasLastShootClientShotId = false;
     };

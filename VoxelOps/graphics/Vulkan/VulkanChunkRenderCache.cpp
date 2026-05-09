@@ -57,6 +57,14 @@ void VulkanChunkRenderCache::syncFromCpuChunkMeshes(
 
     for (const auto &[chunkPos, cpu] : cpuMeshes) {
         if (cpu.vertices.empty() || cpu.indices.empty()) {
+            // A chunk can remain present in the world map while its mesh becomes empty after edits.
+            // In that case, retire any previously uploaded mesh/BLAS source immediately.
+            const auto cachedIt = m_chunkMeshes.find(chunkPos);
+            if (cachedIt != m_chunkMeshes.end()) {
+                onChunkRemoved(chunkPos);
+                retireChunkMesh(std::move(cachedIt->second.mesh), frameCounter);
+                m_chunkMeshes.erase(cachedIt);
+            }
             continue;
         }
 

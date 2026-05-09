@@ -21,6 +21,10 @@ public:
     vk::Fence getCurrentFrameFence() const {
         return *m_inFlightFences[m_currentFrame];
     }
+    void recreateCurrentFrameFenceSignaled(const vk::raii::Device &device) {
+        vk::FenceCreateInfo fenceInfo{vk::FenceCreateFlagBits::eSignaled};
+        m_inFlightFences[m_currentFrame] = vk::raii::Fence(device, fenceInfo);
+    }
     vk::Semaphore getCurrentImageAvailableSemaphore() const {
         return *m_imageAvailableSemaphores[m_currentFrame];
     }
