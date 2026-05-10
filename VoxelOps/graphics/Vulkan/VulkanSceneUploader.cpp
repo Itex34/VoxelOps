@@ -30,6 +30,7 @@ void VulkanSceneUploader::collectRetiredChunkMeshes(uint64_t frameCounter) {
 void VulkanSceneUploader::syncChunkCache(
     const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuChunkMeshes,
     const glm::ivec3 &cullingChunk,
+    size_t maxChunkUploadsPerFrame,
     uint64_t frameCounter,
     VulkanContext &context,
     UploadContext &uploadContext,
@@ -38,6 +39,7 @@ void VulkanSceneUploader::syncChunkCache(
     m_chunkRenderCache.syncFromCpuChunkMeshes(
         cpuChunkMeshes,
         cullingChunk,
+        maxChunkUploadsPerFrame,
         frameCounter,
         context,
         uploadContext,
@@ -49,7 +51,12 @@ void VulkanSceneUploader::syncChunkCache(
         ) {
             if (context.isHardwareRayTracingSupported()) {
                 (void)rtScene.uploadChunkGeometry(
-                    context, uploadContext, frameCounter, chunkPos, cpuMesh
+                    context,
+                    uploadContext,
+                    frameCounter,
+                    chunkPos,
+                    cpuMesh,
+                    cpuMesh.highPriorityRtBuild
                 );
             }
         }

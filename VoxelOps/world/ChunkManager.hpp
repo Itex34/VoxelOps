@@ -53,6 +53,7 @@ public:
     void updateDirtyChunks(size_t maxChunksPerCall = 0, int64_t maxBudgetUs = 0);
     void updateDirtyChunkAt(const glm::ivec3 &chunkPos);
     void markChunkDirty(const glm::ivec3 &pos);
+    void markChunkDirtyHighPriority(const glm::ivec3 &pos);
 
     void playerPlaceBlockAt(glm::ivec3 blockCoords, int faceNormal, BlockID blockType);
     void playerBreakBlockAt(const glm::ivec3 &blockCoords);

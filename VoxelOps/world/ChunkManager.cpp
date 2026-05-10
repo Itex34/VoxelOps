@@ -56,6 +56,10 @@ void ChunkManager::markChunkDirty(const glm::ivec3 &pos) {
     m_chunkMesher->markChunkDirty(pos);
 }
 
+void ChunkManager::markChunkDirtyHighPriority(const glm::ivec3 &pos) {
+    m_chunkMesher->markChunkDirtyHighPriority(pos);
+}
+
 void ChunkManager::updateDirtyChunks(size_t maxChunksPerCall, int64_t maxBudgetUs) {
     m_chunkMesher->updateDirtyChunks(maxChunksPerCall, maxBudgetUs);
 }
@@ -227,7 +231,7 @@ NetworkChunkDeltaApplyResult ChunkManager::applyNetworkChunkDelta(const ChunkDel
 
     for (const glm::ivec3 &pos : rebuildSet) {
         if (chunkMap.find(pos) != chunkMap.end()) {
-            markChunkDirty(pos);
+            markChunkDirtyHighPriority(pos);
         }
     }
 
@@ -436,7 +440,7 @@ void ChunkManager::playerBreakBlockAt(const glm::ivec3 &blockCoords) {
     if (!changed)
         return;
 
-    markChunkDirty(chunkPos);
+    markChunkDirtyHighPriority(chunkPos);
 
     // order matches isEdgeBlock: { x==0, x==15, y==0, y==15, z==0, z==15 }
     const std::array<glm::ivec3, 6> neighborOffsets = {
@@ -455,7 +459,7 @@ void ChunkManager::playerBreakBlockAt(const glm::ivec3 &blockCoords) {
         glm::ivec3 neighborChunk = chunkPos + neighborOffsets[i];
 
         if (chunkMap.find(neighborChunk) != chunkMap.end()) {
-            markChunkDirty(neighborChunk);
+            markChunkDirtyHighPriority(neighborChunk);
         }
     }
 }
@@ -496,7 +500,7 @@ void ChunkManager::playerPlaceBlockAt(glm::ivec3 blockCoords, int faceNormal, Bl
     }
 
     for (const auto &pos : chunksToRebuild) {
-        markChunkDirty(pos);
+        markChunkDirtyHighPriority(pos);
     }
 }
 

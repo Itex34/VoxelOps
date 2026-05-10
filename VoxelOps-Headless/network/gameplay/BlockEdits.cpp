@@ -69,6 +69,9 @@ void Runtime::HandleBlockPlaceRequestPacket(
 
     const BlockPlaceResult result = ExecuteBlockPlaceRequest(requesterId, request);
     SendBlockPlaceResult(incoming, result);
+    if (result.accepted != 0) {
+        SendInventorySnapshotToPlayer(requesterId);
+    }
 }
 
 void Runtime::HandleBlockBreakRequestPacket(

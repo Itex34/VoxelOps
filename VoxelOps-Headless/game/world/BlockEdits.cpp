@@ -1,4 +1,5 @@
 #include "../../network/core/Runtime.hpp"
+#include "../../../Shared/items/PlaceableBlockMapping.hpp"
 
 #include <algorithm>
 
@@ -152,12 +153,12 @@ void Runtime::BroadcastChunkDeltas(const std::vector<ChunkDelta> &outboundDeltas
 
 BlockPlaceResult
 Runtime::ExecuteBlockPlaceRequest(PlayerID requesterId, const BlockPlaceRequest &request) {
-    (void)requesterId;
-
     std::unordered_map<glm::ivec3, BlockID, IVec3Hash, IVec3Eq> normalizedEdits;
     normalizedEdits.reserve(request.edits.size());
     std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> touchedChunks;
     touchedChunks.reserve(request.edits.size());
+    std::unordered_map<uint16_t, uint16_t> requiredItemsById;
+    requiredItemsById.reserve(request.edits.size());
     for (const BlockPlaceEdit &edit : request.edits) {
         if (edit.blockId == static_cast<uint8_t>(BlockID::Air) ||
             edit.blockId >= static_cast<uint8_t>(BlockID::COUNT)) {
@@ -180,8 +181,25 @@ Runtime::ExecuteBlockPlaceRequest(PlayerID requesterId, const BlockPlaceRequest 
             );
         }
 
+        const std::optional<uint16_t> requiredItemId =
+            PlaceableBlockMapping::itemIdFromBlockId(edit.blockId);
+        if (!requiredItemId.has_value()) {
+            return MakeRejectedEditResult<
+                BlockPlaceResult,
+                BlockPlaceRejectReason,
+                BlockPlaceChunkCoord>(
+                request.requestId, BlockPlaceRejectReason::InvalidPacket, touchedChunks, true
+            );
+        }
+
         normalizedEdits[worldPos] = static_cast<BlockID>(edit.blockId);
         touchedChunks.insert(chunkPos);
+        const auto requiredIt = requiredItemsById.find(*requiredItemId);
+        if (requiredIt == requiredItemsById.end()) {
+            requiredItemsById.emplace(*requiredItemId, 1u);
+        } else {
+            requiredIt->second = static_cast<uint16_t>(requiredIt->second + 1u);
+        }
     }
 
     if (normalizedEdits.empty()) {
@@ -206,8 +224,28 @@ Runtime::ExecuteBlockPlaceRequest(PlayerID requesterId, const BlockPlaceRequest 
         }
     }
 
+    std::vector<std::pair<uint16_t, uint16_t>> requiredItems;
+    requiredItems.reserve(requiredItemsById.size());
+    for (const auto &[itemId, count] : requiredItemsById) {
+        requiredItems.emplace_back(itemId, count);
+    }
+    if (!m_playerManager.consumeItemsFromInventory(requesterId, requiredItems, nullptr)) {
+        return MakeRejectedEditResult<
+            BlockPlaceResult,
+            BlockPlaceRejectReason,
+            BlockPlaceChunkCoord>(
+            request.requestId, BlockPlaceRejectReason::InvalidPacket, touchedChunks, true
+        );
+    }
+
     std::vector<ChunkDelta> outboundDeltas;
     if (!ApplyBlockEditsAndBuildDeltas(normalizedEdits, outboundDeltas)) {
+        for (const auto &[itemId, count] : requiredItems) {
+            uint16_t acceptedQuantity = 0;
+            (void)m_playerManager.appendItemsToInventory(
+                requesterId, itemId, count, acceptedQuantity, nullptr
+            );
+        }
         return MakeRejectedEditResult<
             BlockPlaceResult,
             BlockPlaceRejectReason,

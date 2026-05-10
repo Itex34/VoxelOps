@@ -62,6 +62,7 @@ private:
     uint64_t m_signatureXor = 0;
     uint64_t m_signatureSum = 0;
     uint64_t m_contentVersion = 0;
+    uint64_t m_lastRebuildFrame = 0;
     size_t m_chunkCount = 0;
     bool m_valid = false;
     std::vector<RetiredBuffers> m_retiredBuffers;

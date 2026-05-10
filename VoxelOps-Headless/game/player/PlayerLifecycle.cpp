@@ -46,6 +46,8 @@ namespace PlayerLifecycle {
             static_cast<uint16_t>(ITEM_SAPPHIRE_BLOCK), kMaxBlockStack
         );
         (void)player.inventory.appendItems(static_cast<uint16_t>(ITEM_RUBY_BLOCK), kMaxBlockStack);
+        (void)player.inventory.appendItems(static_cast<uint16_t>(ITEM_IRON_BLOCK), kMaxBlockStack);
+
 
         playersOrder.push_back(id);
         player.orderIt = std::prev(playersOrder.end());

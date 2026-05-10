@@ -157,4 +157,53 @@ namespace PlayerInventory {
         return changed;
     }
 
+    bool consumeItemsFromInventory(
+        std::unordered_map<PlayerID, ServerPlayer> &playersById,
+        PlayerID id,
+        const std::vector<std::pair<uint16_t, uint16_t>> &itemQuantities,
+        InventorySnapshot *outSnapshot
+    ) {
+        if (itemQuantities.empty()) {
+            return false;
+        }
+
+        const auto it = playersById.find(id);
+        if (it == playersById.end()) {
+            return false;
+        }
+
+        Inventory &inventory = it->second.inventory;
+
+        // Preflight: enforce full availability before mutating inventory.
+        for (const auto &[itemId, quantity] : itemQuantities) {
+            if (!Inventory::IsValidItemId(itemId) || quantity == 0) {
+                return false;
+            }
+
+            uint32_t available = 0;
+            for (const Slot &slot : inventory.slots()) {
+                if (slot.itemId == itemId && slot.quantity > 0) {
+                    available += slot.quantity;
+                }
+            }
+            if (available < quantity) {
+                return false;
+            }
+        }
+
+        bool consumedAny = false;
+        for (const auto &[itemId, quantity] : itemQuantities) {
+            uint16_t removed = 0;
+            if (!inventory.consumeItems(itemId, quantity, &removed) || removed != quantity) {
+                return false;
+            }
+            consumedAny = true;
+        }
+
+        if (consumedAny && outSnapshot != nullptr) {
+            fillSnapshotFromInventory(inventory, *outSnapshot);
+        }
+        return consumedAny;
+    }
+
 } // namespace PlayerInventory

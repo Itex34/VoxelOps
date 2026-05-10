@@ -6,6 +6,7 @@
 #include <atomic>
 #include <vector>
 #include <optional>
+#include <utility>
 
 // Forward declaration for serialization helpers
 struct PlayerSnapshot;
@@ -61,6 +62,11 @@ public:
         uint16_t itemId,
         uint16_t quantity,
         uint16_t &outAcceptedQuantity,
+        InventorySnapshot *outSnapshot = nullptr
+    );
+    bool consumeItemsFromInventory(
+        PlayerID id,
+        const std::vector<std::pair<uint16_t, uint16_t>> &itemQuantities,
         InventorySnapshot *outSnapshot = nullptr
     );
 

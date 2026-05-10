@@ -15,6 +15,14 @@ ChunkMesher::ChunkMesher(ChunkManager &owner)
 ChunkMesher::~ChunkMesher() = default;
 
 void ChunkMesher::markChunkDirty(const glm::ivec3 &pos) {
+    enqueueDirtyChunk(pos, false);
+}
+
+void ChunkMesher::markChunkDirtyHighPriority(const glm::ivec3 &pos) {
+    enqueueDirtyChunk(pos, true);
+}
+
+void ChunkMesher::enqueueDirtyChunk(const glm::ivec3 &pos, bool highPriority) {
     if (!m_owner.inBounds(pos)) {
         return;
     }
@@ -25,8 +33,47 @@ void ChunkMesher::markChunkDirty(const glm::ivec3 &pos) {
 
     it->second.dirty = true;
     if (m_dirtyChunkPending.insert(pos).second) {
-        m_dirtyChunkQueue.push_back(pos);
+        if (highPriority) {
+            m_highPriorityDirtyChunkPending.insert(pos);
+            m_highPriorityDirtyChunkQueue.push_back(pos);
+        } else {
+            m_dirtyChunkQueue.push_back(pos);
+        }
+        return;
     }
+
+    if (highPriority && m_highPriorityDirtyChunkPending.insert(pos).second) {
+        // Promote an already-pending chunk to the front-running queue.
+        m_highPriorityDirtyChunkQueue.push_back(pos);
+    }
+}
+
+std::optional<ChunkMesher::DirtyChunkWorkItem> ChunkMesher::dequeueDirtyChunk() {
+    while (!m_highPriorityDirtyChunkQueue.empty()) {
+        const glm::ivec3 pos = m_highPriorityDirtyChunkQueue.front();
+        m_highPriorityDirtyChunkQueue.pop_front();
+        if (m_highPriorityDirtyChunkPending.erase(pos) == 0) {
+            continue;
+        }
+        if (m_dirtyChunkPending.erase(pos) == 0) {
+            continue;
+        }
+        return DirtyChunkWorkItem{pos, true};
+    }
+
+    while (!m_dirtyChunkQueue.empty()) {
+        const glm::ivec3 pos = m_dirtyChunkQueue.front();
+        m_dirtyChunkQueue.pop_front();
+        if (m_highPriorityDirtyChunkPending.find(pos) != m_highPriorityDirtyChunkPending.end()) {
+            continue;
+        }
+        if (m_dirtyChunkPending.erase(pos) == 0) {
+            continue;
+        }
+        return DirtyChunkWorkItem{pos, false};
+    }
+
+    return std::nullopt;
 }
 
 void ChunkMesher::updateDirtyChunks(size_t maxChunksPerCall, int64_t maxBudgetUs) {
@@ -75,6 +122,7 @@ void ChunkMesher::updateDirtyChunks(size_t maxChunksPerCall, int64_t maxBudgetUs
                     cpuMesh.vertices = std::move(ready.vertices);
                     cpuMesh.indices = std::move(ready.indices);
                     cpuMesh.revision = m_nextCpuChunkMeshRevision++;
+                    cpuMesh.highPriorityRtBuild = ready.highPriority;
                 }
                 const auto uploadEnd = std::chrono::steady_clock::now();
                 const double uploadMs =
@@ -85,20 +133,23 @@ void ChunkMesher::updateDirtyChunks(size_t maxChunksPerCall, int64_t maxBudgetUs
                               << " idx=" << ready.indices.size() << " chunk=(" << ready.chunkPos.x
                               << "," << ready.chunkPos.y << "," << ready.chunkPos.z << ")\n";
                 }
-            } else if (m_dirtyChunkPending.insert(ready.chunkPos).second) {
-                m_dirtyChunkQueue.push_back(ready.chunkPos);
+            } else {
+                enqueueDirtyChunk(ready.chunkPos, true);
             }
         }
     }
 
-    while (!m_dirtyChunkQueue.empty() && !outOfBudget()) {
+    while (!outOfBudget()) {
         if (maxChunksPerCall > 0 && scheduled >= maxChunksPerCall) {
             break;
         }
 
-        const glm::ivec3 pos = m_dirtyChunkQueue.front();
-        m_dirtyChunkQueue.pop_front();
-        m_dirtyChunkPending.erase(pos);
+        const std::optional<DirtyChunkWorkItem> item = dequeueDirtyChunk();
+        if (!item.has_value()) {
+            break;
+        }
+
+        const glm::ivec3 &pos = item->chunkPos;
 
         auto it = m_owner.chunkMap.find(pos);
         if (it == m_owner.chunkMap.end()) {
@@ -108,12 +159,11 @@ void ChunkMesher::updateDirtyChunks(size_t maxChunksPerCall, int64_t maxBudgetUs
             continue;
         }
 
-        if (!requestChunkRebuild(pos)) {
+        if (!requestChunkRebuild(pos, item->highPriority)) {
             auto chunkIt = m_owner.chunkMap.find(pos);
             if (chunkIt != m_owner.chunkMap.end() &&
-                chunkIt->second.dirty.load(std::memory_order_acquire) &&
-                m_dirtyChunkPending.insert(pos).second) {
-                m_dirtyChunkQueue.push_back(pos);
+                chunkIt->second.dirty.load(std::memory_order_acquire)) {
+                enqueueDirtyChunk(pos, item->highPriority);
             }
         }
         ++scheduled;
@@ -122,16 +172,17 @@ void ChunkMesher::updateDirtyChunks(size_t maxChunksPerCall, int64_t maxBudgetUs
 
 void ChunkMesher::updateDirtyChunkAt(const glm::ivec3 &chunkPos) {
     markChunkDirty(chunkPos);
-    (void)requestChunkRebuild(chunkPos);
+    (void)requestChunkRebuild(chunkPos, false);
 }
 
 void ChunkMesher::onChunkRemoved(const glm::ivec3 &chunkPos) {
     m_chunkBuildTickets.erase(chunkPos);
     m_cpuChunkMeshes.erase(chunkPos);
     m_dirtyChunkPending.erase(chunkPos);
+    m_highPriorityDirtyChunkPending.erase(chunkPos);
 }
 
-bool ChunkMesher::requestChunkRebuild(const glm::ivec3 &pos) {
+bool ChunkMesher::requestChunkRebuild(const glm::ivec3 &pos, bool highPriority) {
     auto it = m_owner.chunkMap.find(pos);
     if (it == m_owner.chunkMap.end()) {
         return false;
@@ -148,6 +199,7 @@ bool ChunkMesher::requestChunkRebuild(const glm::ivec3 &pos) {
     ChunkMeshBuildJob job;
     job.chunkPos = pos;
     job.buildTicket = m_nextChunkBuildTicket.fetch_add(1, std::memory_order_relaxed);
+    job.highPriority = highPriority;
     m_chunkBuildTickets[pos] = job.buildTicket;
     // Vulkan path uses shader-side GI/lighting, so keep chunk meshing to pure greedy geometry.
     const bool meshBakedLightingEnabled = m_owner.m_meshBakedLightingEnabled;
@@ -214,6 +266,7 @@ void ChunkMesher::buildChunkMeshWorker(ChunkMeshBuildJob job) {
     ChunkMeshBuildResult ready;
     ready.chunkPos = job.chunkPos;
     ready.buildTicket = job.buildTicket;
+    ready.highPriority = job.highPriority;
     ready.vertices = std::move(built.vertices);
     ready.indices = std::move(built.indices);
     {

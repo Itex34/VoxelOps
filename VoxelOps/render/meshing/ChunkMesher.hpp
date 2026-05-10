@@ -23,6 +23,7 @@ public:
     ~ChunkMesher();
 
     void markChunkDirty(const glm::ivec3 &pos);
+    void markChunkDirtyHighPriority(const glm::ivec3 &pos);
     void updateDirtyChunks(size_t maxChunksPerCall = 0, int64_t maxBudgetUs = 0);
     void updateDirtyChunkAt(const glm::ivec3 &chunkPos);
     void onChunkRemoved(const glm::ivec3 &chunkPos);
@@ -36,6 +37,7 @@ private:
     struct ChunkMeshBuildJob {
         glm::ivec3 chunkPos{0};
         uint64_t buildTicket = 0;
+        bool highPriority = false;
         bool enableAO = false;
         int chunkWorldMinX = 0;
         int chunkWorldMinZ = 0;
@@ -47,11 +49,19 @@ private:
     struct ChunkMeshBuildResult {
         glm::ivec3 chunkPos{0};
         uint64_t buildTicket = 0;
+        bool highPriority = false;
         std::vector<VoxelVertex> vertices;
         std::vector<uint16_t> indices;
     };
 
-    bool requestChunkRebuild(const glm::ivec3 &pos);
+    struct DirtyChunkWorkItem {
+        glm::ivec3 chunkPos{0};
+        bool highPriority = false;
+    };
+
+    bool requestChunkRebuild(const glm::ivec3 &pos, bool highPriority);
+    void enqueueDirtyChunk(const glm::ivec3 &pos, bool highPriority);
+    std::optional<DirtyChunkWorkItem> dequeueDirtyChunk();
     void buildChunkMeshWorker(ChunkMeshBuildJob job);
 
     ChunkManager &m_owner;
@@ -59,8 +69,10 @@ private:
     std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> m_cpuChunkMeshes;
     uint64_t m_nextCpuChunkMeshRevision = 1;
 
+    std::deque<glm::ivec3> m_highPriorityDirtyChunkQueue;
     std::deque<glm::ivec3> m_dirtyChunkQueue;
     std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> m_dirtyChunkPending;
+    std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> m_highPriorityDirtyChunkPending;
     std::deque<ChunkMeshBuildResult> m_readyChunkMeshes;
     std::mutex m_readyChunkMeshesMutex;
     std::unordered_map<glm::ivec3, uint64_t, IVec3Hash> m_chunkBuildTickets;

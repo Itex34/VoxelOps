@@ -178,6 +178,7 @@ void VulkanContext::init(SDL_Window *window) {
         createSurface(window);
         pickPhysicalDevice();
         createDevice();
+        createVmaAllocator();
         createSwapchain(w, h);
         createSwapchainImageViews();
         createDepthResources();
@@ -196,6 +197,10 @@ void VulkanContext::cleanup() {
     }
 
     cleanupSwapchainResources();
+    if (m_vmaAllocator != VK_NULL_HANDLE) {
+        vmaDestroyAllocator(m_vmaAllocator);
+        m_vmaAllocator = VK_NULL_HANDLE;
+    }
     device.clear();
     surface.clear();
     physicalDevice.clear();
@@ -205,7 +210,7 @@ void VulkanContext::cleanup() {
     presentQueue = vk::raii::Queue(nullptr);
     graphicsQueueFamily = 0;
     presentQueueFamily = 0;
-    m_samplerAnisotropyEnabled = false;
+    m_samplerAnisotropyEnabled = true;
     m_maxSamplerAnisotropy = 1.0f;
     m_timestampQueriesSupported = false;
     m_timestampPeriodNanoseconds = 0.0f;
@@ -333,6 +338,30 @@ void VulkanContext::createSurface(SDL_Window *window) {
     }
 
     surface = vk::raii::SurfaceKHR(instance, c_surface);
+}
+
+void VulkanContext::createVmaAllocator() {
+    if (m_vmaAllocator != VK_NULL_HANDLE) {
+        vmaDestroyAllocator(m_vmaAllocator);
+        m_vmaAllocator = VK_NULL_HANDLE;
+    }
+
+    VmaVulkanFunctions functions{};
+    functions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
+    functions.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
+
+    VmaAllocatorCreateInfo createInfo{};
+    createInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+    createInfo.physicalDevice = static_cast<VkPhysicalDevice>(*physicalDevice);
+    createInfo.device = static_cast<VkDevice>(*device);
+    createInfo.instance = static_cast<VkInstance>(*instance);
+    createInfo.vulkanApiVersion = VK_API_VERSION_1_3;
+    createInfo.pVulkanFunctions = &functions;
+
+    const VkResult result = vmaCreateAllocator(&createInfo, &m_vmaAllocator);
+    if (result != VK_SUCCESS || m_vmaAllocator == VK_NULL_HANDLE) {
+        throw std::runtime_error("Failed to create VMA allocator.");
+    }
 }
 
 void VulkanContext::pickPhysicalDevice() {

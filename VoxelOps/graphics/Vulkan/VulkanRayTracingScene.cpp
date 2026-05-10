@@ -8,10 +8,16 @@
 #include "vulkan/VulkanContext.hpp"
 #include "vulkan/VulkanUtils.hpp"
 
+#include <vk_mem_alloc.h>
+
+
 #include <algorithm>
 #include <array>
 #include <cstring>
 #include <iostream>
+#include <limits>
+#include <optional>
+#include <stdexcept>
 #include <vector>
 
 namespace {
@@ -19,47 +25,83 @@ namespace {
     constexpr uint64_t kRtRetireFrameLag = 24u;
 
     struct DeviceBufferAllocation {
-        vk::raii::Buffer buffer{nullptr};
-        vk::raii::DeviceMemory memory{nullptr};
+        VmaAllocator allocator = VK_NULL_HANDLE;
+        VkBuffer buffer = VK_NULL_HANDLE;
+        VmaAllocation allocation = VK_NULL_HANDLE;
+
+        DeviceBufferAllocation() = default;
+        ~DeviceBufferAllocation() {
+            reset();
+        }
+        DeviceBufferAllocation(const DeviceBufferAllocation &) = delete;
+        DeviceBufferAllocation &operator=(const DeviceBufferAllocation &) = delete;
+        DeviceBufferAllocation(DeviceBufferAllocation &&other) noexcept {
+            allocator = other.allocator;
+            buffer = other.buffer;
+            allocation = other.allocation;
+            other.allocator = VK_NULL_HANDLE;
+            other.buffer = VK_NULL_HANDLE;
+            other.allocation = VK_NULL_HANDLE;
+        }
+        DeviceBufferAllocation &operator=(DeviceBufferAllocation &&other) noexcept {
+            if (this == &other) {
+                return *this;
+            }
+            reset();
+            allocator = other.allocator;
+            buffer = other.buffer;
+            allocation = other.allocation;
+            other.allocator = VK_NULL_HANDLE;
+            other.buffer = VK_NULL_HANDLE;
+            other.allocation = VK_NULL_HANDLE;
+            return *this;
+        }
 
         void reset() {
-            buffer.clear();
-            memory.clear();
+            if (allocator != VK_NULL_HANDLE && buffer != VK_NULL_HANDLE &&
+                allocation != VK_NULL_HANDLE) {
+                vmaDestroyBuffer(allocator, buffer, allocation);
+            }
+            allocator = VK_NULL_HANDLE;
+            buffer = VK_NULL_HANDLE;
+            allocation = VK_NULL_HANDLE;
         }
     };
 
     void createBufferWithAddressing(
-        const vk::raii::Device &device,
-        const vk::raii::PhysicalDevice &physicalDevice,
+        VmaAllocator allocator,
         vk::DeviceSize size,
         vk::BufferUsageFlags usage,
         vk::MemoryPropertyFlags properties,
-        bool enableDeviceAddress,
+        bool hostAccessSequentialWrite,
         DeviceBufferAllocation &outBuffer
     ) {
         outBuffer.reset();
-
-        vk::BufferCreateInfo bufferInfo{};
-        bufferInfo.size = std::max<vk::DeviceSize>(size, 4u);
-        bufferInfo.usage = usage;
-        bufferInfo.sharingMode = vk::SharingMode::eExclusive;
-        outBuffer.buffer = vk::raii::Buffer(device, bufferInfo);
-
-        const vk::MemoryRequirements requirements = outBuffer.buffer.getMemoryRequirements();
-
-        vk::MemoryAllocateInfo allocInfo{};
-        allocInfo.allocationSize = requirements.size;
-        allocInfo.memoryTypeIndex =
-            VulkanUtils::findMemoryType(physicalDevice, requirements.memoryTypeBits, properties);
-
-        vk::MemoryAllocateFlagsInfo allocFlags{};
-        if (enableDeviceAddress) {
-            allocFlags.flags = vk::MemoryAllocateFlagBits::eDeviceAddress;
-            allocInfo.pNext = &allocFlags;
+        if (allocator == VK_NULL_HANDLE) {
+            throw std::runtime_error("VMA allocator is not initialized.");
         }
 
-        outBuffer.memory = vk::raii::DeviceMemory(device, allocInfo);
-        outBuffer.buffer.bindMemory(*outBuffer.memory, 0);
+        VkBufferCreateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = std::max<vk::DeviceSize>(size, 4u);
+        bufferInfo.usage = static_cast<VkBufferUsageFlags>(usage);
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        VmaAllocationCreateInfo allocInfo{};
+        allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+        allocInfo.requiredFlags = static_cast<VkMemoryPropertyFlags>(properties);
+        if (hostAccessSequentialWrite) {
+            allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                              VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        }
+
+        outBuffer.allocator = allocator;
+        const VkResult result =
+            vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &outBuffer.buffer, &outBuffer.allocation, nullptr);
+        if (result != VK_SUCCESS) {
+            outBuffer.reset();
+            throw std::runtime_error("Failed to create VMA buffer allocation.");
+        }
     }
 
     vk::DeviceAddress getBufferDeviceAddress(const vk::raii::Device &device, vk::Buffer buffer) {
@@ -137,20 +179,63 @@ struct VulkanRayTracingScene::RtSceneState {
         }
     };
 
+    struct PendingGpuChunkBlas {
+        glm::ivec3 chunkPos{0};
+        uint64_t revision = 0;
+        bool highPriority = false;
+        ChunkBlas built{};
+    };
+
+    struct PendingGpuBuildBatch {
+        vk::raii::Fence fence{nullptr};
+        vk::raii::CommandBuffer commandBuffer{nullptr};
+        std::vector<PendingGpuChunkBlas> chunks;
+        std::vector<DeviceBufferAllocation> stagingBuffers;
+        uint64_t submitFrame = 0;
+    };
+
+    struct PendingGpuTlasBuild {
+        vk::raii::Fence fence{nullptr};
+        vk::raii::CommandBuffer commandBuffer{nullptr};
+        DeviceBufferAllocation instanceBuffer{};
+        DeviceBufferAllocation scratchBuffer{};
+        DeviceBufferAllocation asBuffer{};
+        vk::raii::AccelerationStructureKHR as{nullptr};
+        uint64_t submitFrame = 0;
+
+        void reset() {
+            as.clear();
+            asBuffer.reset();
+            scratchBuffer.reset();
+            instanceBuffer.reset();
+            commandBuffer.clear();
+            fence.clear();
+            submitFrame = 0;
+        }
+    };
+
     vk::raii::CommandPool commandPool{nullptr};
     ChunkBlas dummyBlas{};
     std::unordered_map<glm::ivec3, ChunkBlas, IVec3Hash> chunkBlases;
     std::vector<RetiredChunkBlas> retiredChunkBlases;
+    DeviceBufferAllocation blasScratchBuffer{};
+    vk::DeviceSize blasScratchBufferSize = 0;
+    std::vector<PendingGpuBuildBatch> pendingGpuBuildBatches;
 
     DeviceBufferAllocation tlasAsBuffer{};
     vk::raii::AccelerationStructureKHR tlas{nullptr};
     std::vector<RetiredTlas> retiredTlases;
+    std::optional<PendingGpuTlasBuild> pendingTlasBuild;
 
     bool ready = false;
 
     void reset() {
         tlas.clear();
         tlasAsBuffer.reset();
+        if (pendingTlasBuild.has_value()) {
+            pendingTlasBuild->reset();
+            pendingTlasBuild.reset();
+        }
         for (RetiredTlas &retired : retiredTlases) {
             retired.reset();
         }
@@ -166,6 +251,9 @@ struct VulkanRayTracingScene::RtSceneState {
         }
         chunkBlases.clear();
         dummyBlas.reset();
+        blasScratchBuffer.reset();
+        blasScratchBufferSize = 0;
+        pendingGpuBuildBatches.clear();
 
         commandPool.clear();
         ready = false;
@@ -215,9 +303,29 @@ void VulkanRayTracingScene::initialize(
         (void)uploadChunkGeometry(
             context, uploadContext, frameCounter, kRtDummyChunkPos, dummyMesh
         );
+        const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> bootstrapCpuMeshes = {
+            {kRtDummyChunkPos, dummyMesh}
+        };
+        (void)processPendingUploads(context, uploadContext, frameCounter, 1u, bootstrapCpuMeshes);
+        while (!rt.pendingGpuBuildBatches.empty()) {
+            const std::array<vk::Fence, 1> fences = {*rt.pendingGpuBuildBatches.front().fence};
+            (void)context.getDevice().waitForFences(
+                fences, vk::True, std::numeric_limits<uint64_t>::max()
+            );
+            pollFinishedBlasBuilds(context, frameCounter);
+        }
     }
-    m_dirty = true;
-    (void)rebuild(context, frameCounter);
+    if (!rt.chunkBlases.empty()) {
+        m_dirty = true;
+        (void)rebuild(context, frameCounter);
+        if (rt.pendingTlasBuild.has_value()) {
+            const std::array<vk::Fence, 1> fences = {*rt.pendingTlasBuild->fence};
+            (void)context.getDevice().waitForFences(
+                fences, vk::True, std::numeric_limits<uint64_t>::max()
+            );
+            pollFinishedTlasBuild(context, frameCounter);
+        }
+    }
 }
 
 void VulkanRayTracingScene::collectRetiredResources(uint64_t frameCounter) {
@@ -247,6 +355,13 @@ void VulkanRayTracingScene::collectRetiredResources(uint64_t frameCounter) {
 void VulkanRayTracingScene::reset() {
     m_activeTlas = VK_NULL_HANDLE;
     m_dirty = false;
+    m_highPriorityTlasRefreshRequested = false;
+    m_highPriorityChunkUploadQueue.clear();
+    m_pendingChunkUploadQueue.clear();
+    m_pendingChunkUploadSet.clear();
+    m_highPriorityChunkUploadPending.clear();
+    m_cancelledChunkBuilds.clear();
+    m_pendingChunkUploads.clear();
     if (!m_state) {
         return;
     }
@@ -259,8 +374,12 @@ bool VulkanRayTracingScene::uploadChunkGeometry(
     UploadContext &uploadContext,
     uint64_t frameCounter,
     const glm::ivec3 &chunkPos,
-    const CpuChunkMesh &cpuMesh
+    const CpuChunkMesh &cpuMesh,
+    bool highPriority
 ) {
+    (void)context;
+    (void)uploadContext;
+    (void)frameCounter;
     if (!m_state || !m_state->ready) {
         return false;
     }
@@ -268,169 +387,478 @@ bool VulkanRayTracingScene::uploadChunkGeometry(
         return false;
     }
 
-    try {
-        RtSceneState &rt = *m_state;
-        auto existingIt = rt.chunkBlases.find(chunkPos);
-        if (existingIt != rt.chunkBlases.end() && existingIt->second.revision == cpuMesh.revision) {
-            return true;
+    RtSceneState &rt = *m_state;
+    auto existingIt = rt.chunkBlases.find(chunkPos);
+    if (existingIt != rt.chunkBlases.end() && existingIt->second.revision == cpuMesh.revision) {
+        return true;
+    }
+
+    auto pendingIt = m_pendingChunkUploads.find(chunkPos);
+    if (pendingIt != m_pendingChunkUploads.end() &&
+        pendingIt->second.revision == cpuMesh.revision) {
+        if (highPriority && !pendingIt->second.highPriority) {
+            pendingIt->second.highPriority = true;
+            if (m_highPriorityChunkUploadPending.insert(chunkPos).second) {
+                m_highPriorityChunkUploadQueue.push_back(chunkPos);
+            }
+        }
+        return true;
+    }
+
+    m_cancelledChunkBuilds.erase(chunkPos);
+    m_pendingChunkUploads[chunkPos] = PendingChunkUpload{cpuMesh.revision, highPriority};
+    if (m_pendingChunkUploadSet.insert(chunkPos).second) {
+        if (highPriority) {
+            m_highPriorityChunkUploadPending.insert(chunkPos);
+            m_highPriorityChunkUploadQueue.push_back(chunkPos);
+        } else {
+            m_pendingChunkUploadQueue.push_back(chunkPos);
+        }
+    } else if (highPriority && m_highPriorityChunkUploadPending.insert(chunkPos).second) {
+        // Promote an already queued chunk so it is processed ahead of background uploads.
+        m_highPriorityChunkUploadQueue.push_back(chunkPos);
+    }
+    return true;
+}
+
+size_t VulkanRayTracingScene::processPendingUploads(
+    VulkanContext &context,
+    UploadContext &uploadContext,
+    uint64_t frameCounter,
+    size_t maxUploadsPerCall,
+    const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuChunkMeshes
+) {
+    (void)uploadContext;
+    if (!m_state || !m_state->ready || maxUploadsPerCall == 0) {
+        return 0;
+    }
+    RtSceneState &rt = *m_state;
+    if (!rt.pendingGpuBuildBatches.empty()) {
+        return 0;
+    }
+
+    struct PendingBuild {
+        RtSceneState::PendingGpuChunkBlas pending{};
+        vk::AccelerationStructureGeometryTrianglesDataKHR triangles{};
+        vk::AccelerationStructureGeometryKHR geometry{};
+        vk::AccelerationStructureBuildGeometryInfoKHR buildInfo{};
+        vk::AccelerationStructureBuildRangeInfoKHR rangeInfo{};
+        std::vector<glm::vec3> positions;
+        std::vector<uint16_t> indices;
+        vk::DeviceSize vertexBytes = 0;
+        vk::DeviceSize indexBytes = 0;
+        vk::DeviceSize vertexOffset = 0;
+        vk::DeviceSize indexOffset = 0;
+    };
+
+    const vk::raii::Device &device = context.getDevice();
+    const VmaAllocator vmaAllocator = context.getVmaAllocator();
+
+    std::vector<PendingBuild> pendingBuilds;
+    pendingBuilds.reserve(maxUploadsPerCall);
+    size_t processed = 0;
+    vk::DeviceSize maxScratchSize = 0;
+
+    while (processed < maxUploadsPerCall &&
+           (!m_highPriorityChunkUploadQueue.empty() || !m_pendingChunkUploadQueue.empty())) {
+        std::optional<glm::ivec3> nextChunkPos;
+        bool dequeuedHighPriority = false;
+        while (!m_highPriorityChunkUploadQueue.empty()) {
+            const glm::ivec3 chunkPos = m_highPriorityChunkUploadQueue.front();
+            m_highPriorityChunkUploadQueue.pop_front();
+            if (m_highPriorityChunkUploadPending.erase(chunkPos) == 0) {
+                continue;
+            }
+            if (m_pendingChunkUploadSet.erase(chunkPos) == 0) {
+                continue;
+            }
+            nextChunkPos = chunkPos;
+            dequeuedHighPriority = true;
+            break;
+        }
+        if (!nextChunkPos.has_value()) {
+            while (!m_pendingChunkUploadQueue.empty()) {
+                const glm::ivec3 chunkPos = m_pendingChunkUploadQueue.front();
+                m_pendingChunkUploadQueue.pop_front();
+                if (m_highPriorityChunkUploadPending.find(chunkPos) !=
+                    m_highPriorityChunkUploadPending.end()) {
+                    continue;
+                }
+                if (m_pendingChunkUploadSet.erase(chunkPos) == 0) {
+                    continue;
+                }
+                nextChunkPos = chunkPos;
+                break;
+            }
+        }
+        if (!nextChunkPos.has_value()) {
+            break;
+        }
+        const glm::ivec3 chunkPos = nextChunkPos.value();
+
+        auto pendingIt = m_pendingChunkUploads.find(chunkPos);
+        if (pendingIt == m_pendingChunkUploads.end()) {
+            continue;
+        }
+        PendingChunkUpload pendingUpload = std::move(pendingIt->second);
+        m_pendingChunkUploads.erase(pendingIt);
+        const bool highPriorityUpload = dequeuedHighPriority || pendingUpload.highPriority;
+
+        auto cpuMeshIt = cpuChunkMeshes.find(chunkPos);
+        if (cpuMeshIt == cpuChunkMeshes.end()) {
+            ++processed;
+            continue;
+        }
+        const CpuChunkMesh &cpuMesh = cpuMeshIt->second;
+        if (cpuMesh.revision != pendingUpload.revision) {
+            ++processed;
+            continue;
         }
 
-        const vk::raii::Device &device = context.getDevice();
-        const vk::raii::PhysicalDevice &physicalDevice = context.getPhysicalDevice();
+        auto existingIt = rt.chunkBlases.find(chunkPos);
+        if (existingIt != rt.chunkBlases.end() && existingIt->second.revision == cpuMesh.revision) {
+            ++processed;
+            continue;
+        }
+        if (cpuMesh.vertices.empty() || cpuMesh.indices.empty()) {
+            ++processed;
+            continue;
+        }
 
         std::vector<glm::vec3> positions;
         positions.reserve(cpuMesh.vertices.size());
         for (const VoxelVertex &packed : cpuMesh.vertices) {
             positions.push_back(decodePackedVoxelPosition(packed));
         }
-
-        std::vector<uint16_t> indices = cpuMesh.indices;
-        if (positions.empty() || indices.empty()) {
-            return false;
+        if (positions.empty() || cpuMesh.indices.empty()) {
+            ++processed;
+            continue;
         }
 
-        RtSceneState::ChunkBlas built{};
-        const vk::DeviceSize vertexBytes =
-            static_cast<vk::DeviceSize>(positions.size() * sizeof(glm::vec3));
-        const vk::DeviceSize indexBytes =
-            static_cast<vk::DeviceSize>(indices.size() * sizeof(uint16_t));
-        createBufferWithAddressing(
-            device,
-            physicalDevice,
-            vertexBytes,
-            vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eShaderDeviceAddress |
-                vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR,
-            vk::MemoryPropertyFlagBits::eDeviceLocal,
-            true,
-            built.vertexBuffer
-        );
-        createBufferWithAddressing(
-            device,
-            physicalDevice,
-            indexBytes,
-            vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eShaderDeviceAddress |
-                vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR,
-            vk::MemoryPropertyFlagBits::eDeviceLocal,
-            true,
-            built.indexBuffer
-        );
+        PendingBuild build{};
+        build.pending.chunkPos = chunkPos;
+        build.pending.revision = cpuMesh.revision;
+        build.pending.highPriority = highPriorityUpload;
+        build.positions = std::move(positions);
+        build.indices = cpuMesh.indices;
+        build.vertexBytes =
+            static_cast<vk::DeviceSize>(build.positions.size() * sizeof(glm::vec3));
+        build.indexBytes =
+            static_cast<vk::DeviceSize>(build.indices.size() * sizeof(uint16_t));
 
-        std::vector<UploadContext::BufferCopyUpload> uploads;
-        uploads.reserve(2);
-        uploads.push_back(
-            UploadContext::BufferCopyUpload{
-                uploadContext.createStagingBuffer(physicalDevice, positions.data(), vertexBytes),
-                *built.vertexBuffer.buffer,
-                vertexBytes
-            }
+        createBufferWithAddressing(
+            vmaAllocator,
+            build.vertexBytes,
+            vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR,
+            vk::MemoryPropertyFlagBits::eDeviceLocal,
+            false,
+            build.pending.built.vertexBuffer
         );
-        uploads.push_back(
-            UploadContext::BufferCopyUpload{
-                uploadContext.createStagingBuffer(physicalDevice, indices.data(), indexBytes),
-                *built.indexBuffer.buffer,
-                indexBytes
-            }
+        createBufferWithAddressing(
+            vmaAllocator,
+            build.indexBytes,
+            vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eShaderDeviceAddress |
+                vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR,
+            vk::MemoryPropertyFlagBits::eDeviceLocal,
+            false,
+            build.pending.built.indexBuffer
         );
-        uploadContext.submitCopyBufferBatch(std::move(uploads));
-        uploadContext.waitIdle();
 
         const vk::DeviceAddress vertexAddress =
-            getBufferDeviceAddress(device, *built.vertexBuffer.buffer);
+            getBufferDeviceAddress(device, static_cast<vk::Buffer>(build.pending.built.vertexBuffer.buffer));
         const vk::DeviceAddress indexAddress =
-            getBufferDeviceAddress(device, *built.indexBuffer.buffer);
-        const uint32_t primitiveCount = static_cast<uint32_t>(indices.size() / 3u);
+            getBufferDeviceAddress(device, static_cast<vk::Buffer>(build.pending.built.indexBuffer.buffer));
+        const uint32_t primitiveCount = static_cast<uint32_t>(build.indices.size() / 3u);
         if (primitiveCount == 0u) {
-            built.reset();
-            return false;
+            ++processed;
+            continue;
         }
 
-        vk::AccelerationStructureGeometryTrianglesDataKHR triangles{};
-        triangles.vertexFormat = vk::Format::eR32G32B32Sfloat;
-        triangles.vertexData.deviceAddress = vertexAddress;
-        triangles.vertexStride = sizeof(glm::vec3);
-        triangles.maxVertex = static_cast<uint32_t>(positions.size() - 1u);
-        triangles.indexType = vk::IndexType::eUint16;
-        triangles.indexData.deviceAddress = indexAddress;
+        build.triangles.vertexFormat = vk::Format::eR32G32B32Sfloat;
+        build.triangles.vertexData.deviceAddress = vertexAddress;
+        build.triangles.vertexStride = sizeof(glm::vec3);
+        build.triangles.maxVertex = static_cast<uint32_t>(positions.size() - 1u);
+        build.triangles.indexType = vk::IndexType::eUint16;
+        build.triangles.indexData.deviceAddress = indexAddress;
 
-        vk::AccelerationStructureGeometryKHR geometry{};
-        geometry.geometryType = vk::GeometryTypeKHR::eTriangles;
-        geometry.flags = vk::GeometryFlagBitsKHR::eOpaque;
-        geometry.geometry.triangles = triangles;
+        build.geometry.geometryType = vk::GeometryTypeKHR::eTriangles;
+        build.geometry.flags = vk::GeometryFlagBitsKHR::eOpaque;
+        build.geometry.geometry.triangles = build.triangles;
 
-        vk::AccelerationStructureBuildGeometryInfoKHR buildInfo{};
-        buildInfo.type = vk::AccelerationStructureTypeKHR::eBottomLevel;
-        buildInfo.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
-        buildInfo.mode = vk::BuildAccelerationStructureModeKHR::eBuild;
-        buildInfo.geometryCount = 1;
-        buildInfo.pGeometries = &geometry;
+        build.buildInfo.type = vk::AccelerationStructureTypeKHR::eBottomLevel;
+        build.buildInfo.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild;
+        build.buildInfo.mode = vk::BuildAccelerationStructureModeKHR::eBuild;
+        build.buildInfo.geometryCount = 1;
+        build.buildInfo.pGeometries = &build.geometry;
 
         const std::array<uint32_t, 1> primitiveCounts = {primitiveCount};
         const vk::AccelerationStructureBuildSizesInfoKHR sizeInfo =
             device.getAccelerationStructureBuildSizesKHR(
-                vk::AccelerationStructureBuildTypeKHR::eDevice, buildInfo, primitiveCounts
+                vk::AccelerationStructureBuildTypeKHR::eDevice, build.buildInfo, primitiveCounts
             );
+        maxScratchSize = std::max(maxScratchSize, sizeInfo.buildScratchSize);
 
         createBufferWithAddressing(
-            device,
-            physicalDevice,
+            vmaAllocator,
             sizeInfo.accelerationStructureSize,
             vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
                 vk::BufferUsageFlagBits::eShaderDeviceAddress,
             vk::MemoryPropertyFlagBits::eDeviceLocal,
-            true,
-            built.asBuffer
+            false,
+            build.pending.built.asBuffer
         );
-
         vk::AccelerationStructureCreateInfoKHR asCreateInfo{};
-        asCreateInfo.buffer = *built.asBuffer.buffer;
+        asCreateInfo.buffer = static_cast<vk::Buffer>(build.pending.built.asBuffer.buffer);
         asCreateInfo.size = sizeInfo.accelerationStructureSize;
         asCreateInfo.type = vk::AccelerationStructureTypeKHR::eBottomLevel;
-        built.as = vk::raii::AccelerationStructureKHR(device, asCreateInfo);
+        build.pending.built.as = vk::raii::AccelerationStructureKHR(device, asCreateInfo);
+        build.pending.built.revision = build.pending.revision;
+        build.pending.built.primitiveCount = primitiveCount;
+        build.rangeInfo.primitiveCount = primitiveCount;
 
-        DeviceBufferAllocation scratchBuffer{};
+        pendingBuilds.push_back(std::move(build));
+        pendingBuilds.back().buildInfo.pGeometries = &pendingBuilds.back().geometry;
+        ++processed;
+    }
+
+    if (pendingBuilds.empty()) {
+        return processed;
+    }
+
+    DeviceBufferAllocation batchVertexStaging{};
+    DeviceBufferAllocation batchIndexStaging{};
+    vk::DeviceSize totalVertexBytes = 0;
+    vk::DeviceSize totalIndexBytes = 0;
+    for (PendingBuild &build : pendingBuilds) {
+        build.vertexOffset = totalVertexBytes;
+        build.indexOffset = totalIndexBytes;
+        totalVertexBytes += build.vertexBytes;
+        totalIndexBytes += build.indexBytes;
+    }
+    if (totalVertexBytes > 0) {
         createBufferWithAddressing(
-            device,
-            physicalDevice,
-            sizeInfo.buildScratchSize,
+            vmaAllocator,
+            totalVertexBytes,
+            vk::BufferUsageFlagBits::eTransferSrc,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            true,
+            batchVertexStaging
+        );
+        void *mapped = nullptr;
+        const VkResult mapResult =
+            vmaMapMemory(vmaAllocator, batchVertexStaging.allocation, &mapped);
+        if (mapResult != VK_SUCCESS || mapped == nullptr) {
+            throw std::runtime_error("Failed to map batched vertex staging buffer.");
+        }
+        uint8_t *cursor = static_cast<uint8_t *>(mapped);
+        for (const PendingBuild &build : pendingBuilds) {
+            if (build.vertexBytes == 0) {
+                continue;
+            }
+            std::memcpy(cursor + static_cast<size_t>(build.vertexOffset), build.positions.data(), static_cast<size_t>(build.vertexBytes));
+        }
+        vmaUnmapMemory(vmaAllocator, batchVertexStaging.allocation);
+    }
+    if (totalIndexBytes > 0) {
+        createBufferWithAddressing(
+            vmaAllocator,
+            totalIndexBytes,
+            vk::BufferUsageFlagBits::eTransferSrc,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            true,
+            batchIndexStaging
+        );
+        void *mapped = nullptr;
+        const VkResult mapResult =
+            vmaMapMemory(vmaAllocator, batchIndexStaging.allocation, &mapped);
+        if (mapResult != VK_SUCCESS || mapped == nullptr) {
+            throw std::runtime_error("Failed to map batched index staging buffer.");
+        }
+        uint8_t *cursor = static_cast<uint8_t *>(mapped);
+        for (const PendingBuild &build : pendingBuilds) {
+            if (build.indexBytes == 0) {
+                continue;
+            }
+            std::memcpy(cursor + static_cast<size_t>(build.indexOffset), build.indices.data(), static_cast<size_t>(build.indexBytes));
+        }
+        vmaUnmapMemory(vmaAllocator, batchIndexStaging.allocation);
+    }
+
+    if (maxScratchSize > rt.blasScratchBufferSize || rt.blasScratchBuffer.buffer == VK_NULL_HANDLE) {
+        rt.blasScratchBuffer.reset();
+        createBufferWithAddressing(
+            vmaAllocator,
+            std::max<vk::DeviceSize>(maxScratchSize, 4u),
             vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress,
             vk::MemoryPropertyFlagBits::eDeviceLocal,
-            true,
-            scratchBuffer
+            false,
+            rt.blasScratchBuffer
         );
-        buildInfo.dstAccelerationStructure = *built.as;
-        buildInfo.scratchData.deviceAddress = getBufferDeviceAddress(device, *scratchBuffer.buffer);
+        rt.blasScratchBufferSize = std::max<vk::DeviceSize>(maxScratchSize, 4u);
+    }
 
-        vk::AccelerationStructureBuildRangeInfoKHR rangeInfo{};
-        rangeInfo.primitiveCount = primitiveCount;
-        const std::array<vk::AccelerationStructureBuildRangeInfoKHR *, 1> rangeInfos = {&rangeInfo};
-        const std::array<vk::AccelerationStructureBuildGeometryInfoKHR, 1> buildInfos = {buildInfo};
-
+    try {
+        const vk::DeviceAddress scratchAddress =
+            getBufferDeviceAddress(device, static_cast<vk::Buffer>(rt.blasScratchBuffer.buffer));
         vk::raii::CommandBuffer commandBuffer =
             VulkanUtils::beginSingleTimeCommands(device, rt.commandPool);
-        commandBuffer.buildAccelerationStructuresKHR(buildInfos, rangeInfos);
-        VulkanUtils::endSingleTimeCommands(
-            device, context.getGraphicsQueue(), std::move(commandBuffer)
-        );
-        scratchBuffer.reset();
+        for (size_t i = 0; i < pendingBuilds.size(); ++i) {
+            PendingBuild &build = pendingBuilds[i];
+            if (build.vertexBytes == 0 || build.indexBytes == 0) {
+                throw std::runtime_error("BLAS upload payload unexpectedly empty.");
+            }
 
-        built.revision = cpuMesh.revision;
-        built.primitiveCount = primitiveCount;
+            vk::BufferCopy vertexCopy{};
+            vertexCopy.srcOffset = build.vertexOffset;
+            vertexCopy.size = build.vertexBytes;
+            const std::array<vk::BufferCopy, 1> vertexRegions = {vertexCopy};
+            commandBuffer.copyBuffer(
+                static_cast<vk::Buffer>(batchVertexStaging.buffer),
+                static_cast<vk::Buffer>(build.pending.built.vertexBuffer.buffer),
+                vertexRegions
+            );
 
-        if (existingIt != rt.chunkBlases.end()) {
-            RtSceneState::RetiredChunkBlas retired{};
-            retired.blas = std::move(existingIt->second);
-            retired.retireFrame = frameCounter + kRtRetireFrameLag;
-            rt.retiredChunkBlases.push_back(std::move(retired));
-            rt.chunkBlases.erase(existingIt);
+            vk::BufferCopy indexCopy{};
+            indexCopy.srcOffset = build.indexOffset;
+            indexCopy.size = build.indexBytes;
+            const std::array<vk::BufferCopy, 1> indexRegions = {indexCopy};
+            commandBuffer.copyBuffer(
+                static_cast<vk::Buffer>(batchIndexStaging.buffer),
+                static_cast<vk::Buffer>(build.pending.built.indexBuffer.buffer),
+                indexRegions
+            );
+
+            vk::BufferMemoryBarrier vertexBarrier{};
+            vertexBarrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+            vertexBarrier.dstAccessMask = vk::AccessFlagBits::eAccelerationStructureReadKHR;
+            vertexBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            vertexBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            vertexBarrier.buffer = static_cast<vk::Buffer>(build.pending.built.vertexBuffer.buffer);
+            vertexBarrier.offset = 0;
+            vertexBarrier.size = VK_WHOLE_SIZE;
+            vk::BufferMemoryBarrier indexBarrier{};
+            indexBarrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+            indexBarrier.dstAccessMask = vk::AccessFlagBits::eAccelerationStructureReadKHR;
+            indexBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            indexBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            indexBarrier.buffer = static_cast<vk::Buffer>(build.pending.built.indexBuffer.buffer);
+            indexBarrier.offset = 0;
+            indexBarrier.size = VK_WHOLE_SIZE;
+            const std::array<vk::BufferMemoryBarrier, 2> copyBarriers = {vertexBarrier, indexBarrier};
+            commandBuffer.pipelineBarrier(
+                vk::PipelineStageFlagBits::eTransfer,
+                vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
+                {},
+                {},
+                copyBarriers,
+                {}
+            );
+
+            build.buildInfo.dstAccelerationStructure = *build.pending.built.as;
+            build.buildInfo.scratchData.deviceAddress = scratchAddress;
+            const std::array<vk::AccelerationStructureBuildRangeInfoKHR *, 1> rangeInfos = {
+                &build.rangeInfo
+            };
+            const std::array<vk::AccelerationStructureBuildGeometryInfoKHR, 1> buildInfos = {
+                build.buildInfo
+            };
+            commandBuffer.buildAccelerationStructuresKHR(buildInfos, rangeInfos);
+            if (i + 1 < pendingBuilds.size()) {
+                vk::MemoryBarrier buildBarrier{};
+                buildBarrier.srcAccessMask = vk::AccessFlagBits::eAccelerationStructureWriteKHR;
+                buildBarrier.dstAccessMask = vk::AccessFlagBits::eAccelerationStructureReadKHR |
+                                             vk::AccessFlagBits::eAccelerationStructureWriteKHR;
+                const std::array<vk::MemoryBarrier, 1> memoryBarriers = {buildBarrier};
+                commandBuffer.pipelineBarrier(
+                    vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
+                    vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
+                    {},
+                    memoryBarriers,
+                    {},
+                    {}
+                );
+            }
+        }
+        commandBuffer.end();
+        RtSceneState::PendingGpuBuildBatch batch{};
+        batch.fence = vk::raii::Fence(device, vk::FenceCreateInfo{});
+        batch.commandBuffer = std::move(commandBuffer);
+        batch.submitFrame = frameCounter;
+        batch.chunks.reserve(pendingBuilds.size());
+        batch.stagingBuffers.reserve(2u);
+        for (PendingBuild &build : pendingBuilds) {
+            batch.chunks.push_back(std::move(build.pending));
+        }
+        batch.stagingBuffers.push_back(std::move(batchVertexStaging));
+        batch.stagingBuffers.push_back(std::move(batchIndexStaging));
+
+        const vk::CommandBuffer rawCommandBuffer = *batch.commandBuffer;
+        vk::SubmitInfo submitInfo{};
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &rawCommandBuffer;
+        context.getGraphicsQueue().submit(submitInfo, *batch.fence);
+        rt.pendingGpuBuildBatches.push_back(std::move(batch));
+    } catch (const std::exception &e) {
+        std::cerr << "[Vulkan][RT] Failed to build BLAS batch: " << e.what() << "\n";
+        return processed;
+    }
+    return processed;
+}
+
+void VulkanRayTracingScene::pollFinishedBlasBuilds(VulkanContext &context, uint64_t frameCounter) {
+    if (!m_state || !m_state->ready) {
+        return;
+    }
+
+    RtSceneState &rt = *m_state;
+    const vk::raii::Device &device = context.getDevice();
+    for (auto it = rt.pendingGpuBuildBatches.begin(); it != rt.pendingGpuBuildBatches.end();) {
+        const std::array<vk::Fence, 1> fences = {*it->fence};
+        const vk::Result status = device.waitForFences(fences, vk::True, 0);
+        if (status == vk::Result::eTimeout) {
+            ++it;
+            continue;
+        }
+        if (status != vk::Result::eSuccess) {
+            std::cerr << "[Vulkan][RT] BLAS batch fence failed status="
+                      << static_cast<int>(status) << "\n";
+            it = rt.pendingGpuBuildBatches.erase(it);
+            continue;
         }
 
-        rt.chunkBlases.insert_or_assign(chunkPos, std::move(built));
-        m_dirty = true;
-        return true;
-    } catch (const std::exception &e) {
-        std::cerr << "[Vulkan][RT] Failed to upload BLAS for chunk (" << chunkPos.x << ", "
-                  << chunkPos.y << ", " << chunkPos.z << "): " << e.what() << "\n";
-        return false;
+        bool sceneChanged = false;
+        bool highPrioritySceneChanged = false;
+        for (auto &chunkBuild : it->chunks) {
+            if (m_cancelledChunkBuilds.find(chunkBuild.chunkPos) != m_cancelledChunkBuilds.end()) {
+                m_cancelledChunkBuilds.erase(chunkBuild.chunkPos);
+                continue;
+            }
+            const auto pendingIt = m_pendingChunkUploads.find(chunkBuild.chunkPos);
+            if (pendingIt != m_pendingChunkUploads.end() &&
+                pendingIt->second.revision > chunkBuild.revision) {
+                continue;
+            }
+
+            auto existingIt = rt.chunkBlases.find(chunkBuild.chunkPos);
+            if (existingIt != rt.chunkBlases.end()) {
+                RtSceneState::RetiredChunkBlas retired{};
+                retired.blas = std::move(existingIt->second);
+                retired.retireFrame = frameCounter + kRtRetireFrameLag;
+                rt.retiredChunkBlases.push_back(std::move(retired));
+                rt.chunkBlases.erase(existingIt);
+            }
+            rt.chunkBlases.insert_or_assign(chunkBuild.chunkPos, std::move(chunkBuild.built));
+            sceneChanged = true;
+            highPrioritySceneChanged = highPrioritySceneChanged || chunkBuild.highPriority;
+        }
+        if (sceneChanged) {
+            m_dirty = true;
+            if (highPrioritySceneChanged) {
+                m_highPriorityTlasRefreshRequested = true;
+            }
+        }
+        it = rt.pendingGpuBuildBatches.erase(it);
     }
 }
 
@@ -438,6 +866,11 @@ void VulkanRayTracingScene::removeChunkGeometry(uint64_t frameCounter, const glm
     if (!m_state) {
         return;
     }
+
+    m_pendingChunkUploads.erase(chunkPos);
+    m_pendingChunkUploadSet.erase(chunkPos);
+    m_highPriorityChunkUploadPending.erase(chunkPos);
+    m_cancelledChunkBuilds.insert(chunkPos);
 
     RtSceneState &rt = *m_state;
     auto it = rt.chunkBlases.find(chunkPos);
@@ -453,6 +886,39 @@ void VulkanRayTracingScene::removeChunkGeometry(uint64_t frameCounter, const glm
     m_dirty = true;
 }
 
+bool VulkanRayTracingScene::hasPendingBuildWork() const noexcept {
+    if (!m_state || !m_state->ready) {
+        return !m_highPriorityChunkUploadQueue.empty() || !m_pendingChunkUploadQueue.empty() ||
+               !m_pendingChunkUploads.empty();
+    }
+    return !m_highPriorityChunkUploadQueue.empty() || !m_pendingChunkUploadQueue.empty() ||
+           !m_pendingChunkUploads.empty() ||
+           !m_state->pendingGpuBuildBatches.empty() || m_state->pendingTlasBuild.has_value();
+}
+
+bool VulkanRayTracingScene::hasHighPriorityBuildWork() const noexcept {
+    if (!m_highPriorityChunkUploadQueue.empty() || !m_highPriorityChunkUploadPending.empty()) {
+        return true;
+    }
+    if (!m_state || !m_state->ready) {
+        return false;
+    }
+    bool hasHighPriorityInFlight = false;
+    for (const RtSceneState::PendingGpuBuildBatch &batch : m_state->pendingGpuBuildBatches) {
+        for (const RtSceneState::PendingGpuChunkBlas &chunk : batch.chunks) {
+            if (chunk.highPriority) {
+                hasHighPriorityInFlight = true;
+                break;
+            }
+        }
+        if (hasHighPriorityInFlight) {
+            break;
+        }
+    }
+    const bool highPriorityTlasRequested = m_highPriorityTlasRefreshRequested && m_dirty;
+    return hasHighPriorityInFlight || highPriorityTlasRequested;
+}
+
 bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounter) {
     if (!m_state || !m_state->ready) {
         m_activeTlas = VK_NULL_HANDLE;
@@ -463,7 +929,11 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
     try {
         RtSceneState &rt = *m_state;
         const vk::raii::Device &device = context.getDevice();
-        const vk::raii::PhysicalDevice &physicalDevice = context.getPhysicalDevice();
+        const VmaAllocator vmaAllocator = context.getVmaAllocator();
+
+        if (rt.pendingTlasBuild.has_value()) {
+            return false;
+        }
 
         std::vector<VkAccelerationStructureInstanceKHR> instances;
         instances.reserve(rt.chunkBlases.size());
@@ -490,33 +960,43 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
             instances.push_back(instance);
         }
 
-        DeviceBufferAllocation instanceBuffer{};
+        if (instances.empty()) {
+            m_dirty = false;
+            return false;
+        }
+
+        RtSceneState::PendingGpuTlasBuild pending{};
         const vk::DeviceSize instanceBytes = static_cast<vk::DeviceSize>(
             std::max<size_t>(1u, instances.size()) * sizeof(VkAccelerationStructureInstanceKHR)
         );
         createBufferWithAddressing(
-            device,
-            physicalDevice,
+            vmaAllocator,
             instanceBytes,
             vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR |
                 vk::BufferUsageFlagBits::eShaderDeviceAddress,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
             true,
-            instanceBuffer
+            pending.instanceBuffer
         );
         if (!instances.empty()) {
-            void *mapped = instanceBuffer.memory.mapMemory(0, instanceBytes);
+            void *mapped = nullptr;
+            const VkResult mapResult =
+                vmaMapMemory(vmaAllocator, pending.instanceBuffer.allocation, &mapped);
+            if (mapResult != VK_SUCCESS || mapped == nullptr) {
+                throw std::runtime_error("Failed to map TLAS instance buffer.");
+            }
             std::memcpy(
                 mapped,
                 instances.data(),
                 static_cast<size_t>(instances.size() * sizeof(VkAccelerationStructureInstanceKHR))
             );
-            instanceBuffer.memory.unmapMemory();
+            vmaUnmapMemory(vmaAllocator, pending.instanceBuffer.allocation);
         }
 
         vk::AccelerationStructureGeometryInstancesDataKHR instancesData{};
         instancesData.arrayOfPointers = VK_FALSE;
-        instancesData.data.deviceAddress = getBufferDeviceAddress(device, *instanceBuffer.buffer);
+        instancesData.data.deviceAddress =
+            getBufferDeviceAddress(device, static_cast<vk::Buffer>(pending.instanceBuffer.buffer));
 
         vk::AccelerationStructureGeometryKHR geometry{};
         geometry.geometryType = vk::GeometryTypeKHR::eInstances;
@@ -536,71 +1016,98 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
                 vk::AccelerationStructureBuildTypeKHR::eDevice, buildInfo, primitiveCounts
             );
 
-        DeviceBufferAllocation newTlasBuffer{};
         createBufferWithAddressing(
-            device,
-            physicalDevice,
+            vmaAllocator,
             sizeInfo.accelerationStructureSize,
             vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR |
                 vk::BufferUsageFlagBits::eShaderDeviceAddress,
             vk::MemoryPropertyFlagBits::eDeviceLocal,
-            true,
-            newTlasBuffer
+            false,
+            pending.asBuffer
         );
 
         vk::AccelerationStructureCreateInfoKHR asCreateInfo{};
-        asCreateInfo.buffer = *newTlasBuffer.buffer;
+        asCreateInfo.buffer = static_cast<vk::Buffer>(pending.asBuffer.buffer);
         asCreateInfo.size = sizeInfo.accelerationStructureSize;
         asCreateInfo.type = vk::AccelerationStructureTypeKHR::eTopLevel;
-        vk::raii::AccelerationStructureKHR newTlas(device, asCreateInfo);
+        pending.as = vk::raii::AccelerationStructureKHR(device, asCreateInfo);
 
-        DeviceBufferAllocation scratchBuffer{};
         createBufferWithAddressing(
-            device,
-            physicalDevice,
+            vmaAllocator,
             sizeInfo.buildScratchSize,
             vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress,
             vk::MemoryPropertyFlagBits::eDeviceLocal,
-            true,
-            scratchBuffer
+            false,
+            pending.scratchBuffer
         );
 
-        buildInfo.dstAccelerationStructure = *newTlas;
-        buildInfo.scratchData.deviceAddress = getBufferDeviceAddress(device, *scratchBuffer.buffer);
+        buildInfo.dstAccelerationStructure = *pending.as;
+        buildInfo.scratchData.deviceAddress =
+            getBufferDeviceAddress(device, static_cast<vk::Buffer>(pending.scratchBuffer.buffer));
 
         vk::AccelerationStructureBuildRangeInfoKHR rangeInfo{};
         rangeInfo.primitiveCount = primitiveCount;
         const std::array<vk::AccelerationStructureBuildRangeInfoKHR *, 1> rangeInfos = {&rangeInfo};
         const std::array<vk::AccelerationStructureBuildGeometryInfoKHR, 1> buildInfos = {buildInfo};
 
-        vk::raii::CommandBuffer commandBuffer =
-            VulkanUtils::beginSingleTimeCommands(device, rt.commandPool);
-        commandBuffer.buildAccelerationStructuresKHR(buildInfos, rangeInfos);
-        VulkanUtils::endSingleTimeCommands(
-            device, context.getGraphicsQueue(), std::move(commandBuffer)
-        );
-        scratchBuffer.reset();
-        instanceBuffer.reset();
-
-        if (rt.tlas != nullptr) {
-            RtSceneState::RetiredTlas retired{};
-            retired.as = std::move(rt.tlas);
-            retired.asBuffer = std::move(rt.tlasAsBuffer);
-            retired.retireFrame = frameCounter + kRtRetireFrameLag;
-            rt.retiredTlases.push_back(std::move(retired));
-        }
-
-        rt.tlas = std::move(newTlas);
-        rt.tlasAsBuffer = std::move(newTlasBuffer);
-        m_activeTlas = (rt.tlas != nullptr)
-                           ? static_cast<VkAccelerationStructureKHR>(
-                                 static_cast<vk::AccelerationStructureKHR>(*rt.tlas)
-                             )
-                           : VK_NULL_HANDLE;
+        pending.commandBuffer = VulkanUtils::beginSingleTimeCommands(device, rt.commandPool);
+        pending.commandBuffer.buildAccelerationStructuresKHR(buildInfos, rangeInfos);
+        pending.commandBuffer.end();
+        pending.fence = vk::raii::Fence(device, vk::FenceCreateInfo{});
+        const vk::CommandBuffer rawCommandBuffer = *pending.commandBuffer;
+        vk::SubmitInfo submitInfo{};
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &rawCommandBuffer;
+        context.getGraphicsQueue().submit(submitInfo, *pending.fence);
+        pending.submitFrame = frameCounter;
+        rt.pendingTlasBuild = std::move(pending);
+        m_highPriorityTlasRefreshRequested = false;
         m_dirty = false;
-        return m_activeTlas != VK_NULL_HANDLE;
+        return true;
     } catch (const std::exception &e) {
         std::cerr << "[Vulkan][RT] Failed to rebuild TLAS: " << e.what() << "\n";
         return false;
     }
+}
+
+void VulkanRayTracingScene::pollFinishedTlasBuild(VulkanContext &context, uint64_t frameCounter) {
+    if (!m_state || !m_state->ready) {
+        return;
+    }
+
+    RtSceneState &rt = *m_state;
+    if (!rt.pendingTlasBuild.has_value()) {
+        return;
+    }
+
+    const std::array<vk::Fence, 1> fences = {*rt.pendingTlasBuild->fence};
+    const vk::Result status = context.getDevice().waitForFences(fences, vk::True, 0);
+    if (status == vk::Result::eTimeout) {
+        return;
+    }
+    if (status != vk::Result::eSuccess) {
+        std::cerr << "[Vulkan][RT] TLAS build fence failed status=" << static_cast<int>(status)
+                  << "\n";
+        rt.pendingTlasBuild->reset();
+        rt.pendingTlasBuild.reset();
+        return;
+    }
+
+    if (rt.tlas != nullptr) {
+        RtSceneState::RetiredTlas retired{};
+        retired.as = std::move(rt.tlas);
+        retired.asBuffer = std::move(rt.tlasAsBuffer);
+        retired.retireFrame = frameCounter + kRtRetireFrameLag;
+        rt.retiredTlases.push_back(std::move(retired));
+    }
+
+    rt.tlas = std::move(rt.pendingTlasBuild->as);
+    rt.tlasAsBuffer = std::move(rt.pendingTlasBuild->asBuffer);
+    m_activeTlas = (rt.tlas != nullptr)
+                       ? static_cast<VkAccelerationStructureKHR>(
+                             static_cast<vk::AccelerationStructureKHR>(*rt.tlas)
+                         )
+                       : VK_NULL_HANDLE;
+    rt.pendingTlasBuild->reset();
+    rt.pendingTlasBuild.reset();
 }

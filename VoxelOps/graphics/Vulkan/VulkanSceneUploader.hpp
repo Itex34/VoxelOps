@@ -25,6 +25,7 @@ public:
     void syncChunkCache(
         const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuChunkMeshes,
         const glm::ivec3 &cullingChunk,
+        size_t maxChunkUploadsPerFrame,
         uint64_t frameCounter,
         VulkanContext &context,
         UploadContext &uploadContext,

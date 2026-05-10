@@ -58,6 +58,7 @@ bool VulkanRenderDevice::initialize(SDL_Window *window) {
 
         m_uploadContext.waitIdle();
         m_rtScene.initialize(*m_context, m_uploadContext, m_frameCounter);
+        m_lastRtTlasBuildFrame = 0;
         m_initialized = true;
         m_warnedUninitializedRender = false;
         return true;
@@ -241,18 +242,56 @@ void VulkanRenderDevice::renderFrame(RenderScene &scene) {
 
     const auto meshSyncStart = std::chrono::steady_clock::now();
     m_uploadContext.poll();
+    const float frameMsBudget = static_cast<float>(GameData::deltaTime * 1000.0);
     if (m_context) {
+        m_rtScene.pollFinishedBlasBuilds(*m_context, m_frameCounter);
+        m_rtScene.pollFinishedTlasBuild(*m_context, m_frameCounter);
+        size_t maxChunkUploadsPerFrame = 1u;
+        if (frameMsBudget < 13.0f) {
+            maxChunkUploadsPerFrame = 8u;
+        } else if (frameMsBudget < 16.0f) {
+            maxChunkUploadsPerFrame = 4u;
+        } else if (frameMsBudget < 20.0f) {
+            maxChunkUploadsPerFrame = 2u;
+        }
         m_sceneUploader.syncChunkCache(
             *scene.chunkWorld.cpuChunkMeshes,
             cullingChunk,
+            maxChunkUploadsPerFrame,
             m_frameCounter,
             *m_context,
             m_uploadContext,
             m_rtScene
         );
+        size_t kRtBlasUploadsPerFrame = 0u;
+        const bool highPriorityRtWork = m_rtScene.hasHighPriorityBuildWork();
+        if (frameMsBudget < 13.0f) {
+            kRtBlasUploadsPerFrame = 2u;
+        } else if (frameMsBudget < 16.0f) {
+            kRtBlasUploadsPerFrame = 1u;
+        }
+        if (highPriorityRtWork) {
+            // Push urgent edits through quickly even in a slow frame.
+            kRtBlasUploadsPerFrame = std::max<size_t>(kRtBlasUploadsPerFrame, 2u);
+        }
+        (void)m_rtScene.processPendingUploads(
+            *m_context,
+            m_uploadContext,
+            m_frameCounter,
+            kRtBlasUploadsPerFrame,
+            *scene.chunkWorld.cpuChunkMeshes
+        );
     }
     if (m_context && m_rtScene.isDirty()) {
-        (void)m_rtScene.rebuild(*m_context, m_frameCounter);
+        const bool highPriorityRtWork = m_rtScene.hasHighPriorityBuildWork();
+        const bool streamingRtWork = m_rtScene.hasPendingBuildWork();
+        const uint64_t minTlasIntervalFrames =
+            highPriorityRtWork ? 1u : (streamingRtWork ? 3u : 1u);
+        if (m_frameCounter >= (m_lastRtTlasBuildFrame + minTlasIntervalFrames)) {
+            if (m_rtScene.rebuild(*m_context, m_frameCounter)) {
+                m_lastRtTlasBuildFrame = m_frameCounter;
+            }
+        }
     }
     const auto meshSyncEnd = std::chrono::steady_clock::now();
     m_lastTimingSnapshot.cpuMeshSyncMs = measureMs(meshSyncStart, meshSyncEnd);
@@ -388,6 +427,7 @@ void VulkanRenderDevice::shutdown() {
 
     m_window = nullptr;
     m_initialized = false;
+    m_lastRtTlasBuildFrame = 0;
 }
 
 bool VulkanRenderDevice::ensureInitialized() {

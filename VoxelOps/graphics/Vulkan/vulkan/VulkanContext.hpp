@@ -3,6 +3,7 @@
 #include <SDL3/SDL_vulkan.h>
 
 #include <vulkan/vulkan_raii.hpp>
+#include <vk_mem_alloc.h>
 #include <optional>
 #include <vector>
 #include <cstdint>
@@ -93,6 +94,9 @@ public:
     bool isComputeShaderDerivativesEnabled() const {
         return m_computeShaderDerivativesEnabled;
     }
+    VmaAllocator getVmaAllocator() const noexcept {
+        return m_vmaAllocator;
+    }
 
 private:
     vk::raii::Context context{};
@@ -127,6 +131,7 @@ private:
     bool m_drawIndirectFirstInstanceEnabled = false;
     bool m_hardwareRayTracingSupported = false;
     bool m_computeShaderDerivativesEnabled = false;
+    VmaAllocator m_vmaAllocator = VK_NULL_HANDLE;
 
     const std::vector<const char *> m_deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
@@ -134,6 +139,7 @@ private:
     void createDebugMessenger();
     void pickPhysicalDevice();
     void createDevice();
+    void createVmaAllocator();
     void createSurface(SDL_Window *window);
     void createSwapchain(uint32_t windowWidth, uint32_t windowHeight);
     void createSwapchainImageViews();

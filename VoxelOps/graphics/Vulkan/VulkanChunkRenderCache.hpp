@@ -3,9 +3,12 @@
 #include "graphics/Mesh.hpp"
 #include "../../render/ChunkMeshData.hpp"
 #include "../../voxels/VoxelCoordHash.hpp"
+#include "../../misc/ThreadPool.hpp"
 #include "vulkan/UploadContext.hpp"
 
+#include <deque>
 #include <functional>
+#include <mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -22,6 +25,7 @@ public:
     void syncFromCpuChunkMeshes(
         const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuMeshes,
         const glm::ivec3 &cullingChunk,
+        size_t maxChunkUploadsPerFrame,
         uint64_t frameCounter,
         VulkanContext &context,
         UploadContext &uploadContext,
@@ -42,13 +46,45 @@ public:
     }
 
 private:
+    struct PendingChunkUploadJob {
+        glm::ivec3 chunkPos{};
+        uint64_t revision = 0;
+        bool highPriority = false;
+        std::vector<VoxelVertex> vertices;
+        std::vector<uint16_t> indices;
+    };
+
+    struct CompletedChunkUploadJob {
+        glm::ivec3 chunkPos{};
+        uint64_t revision = 0;
+        bool highPriority = false;
+        std::vector<VkMesh::PackedVoxelVertex> packedVertices;
+        std::vector<uint16_t> indices;
+    };
+
     struct RetiredChunkMesh {
         VkMesh mesh;
         uint64_t retireFrame = 0;
     };
 
+    void enqueueBackgroundUploadJob(
+        const glm::ivec3 &chunkPos, const CpuChunkMesh &cpuMesh
+    );
+    void consumeCompletedUploadJobs(
+        const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuMeshes,
+        uint64_t frameCounter,
+        VulkanContext &context,
+        UploadContext &uploadContext,
+        const std::function<void(const glm::ivec3 &, const CpuChunkMesh &)> &onChunkUploaded
+    );
     void retireChunkMesh(VkMesh &&mesh, uint64_t frameCounter);
+
+    std::mutex m_chunkUploadStateMutex;
+    std::unordered_map<glm::ivec3, uint64_t, IVec3Hash> m_pendingChunkUploadRevisions;
+    std::deque<CompletedChunkUploadJob> m_completedChunkUploadJobs;
+    bool m_acceptBackgroundJobs = true;
 
     std::unordered_map<glm::ivec3, CachedChunkMesh, IVec3Hash> m_chunkMeshes;
     std::vector<RetiredChunkMesh> m_retiredChunkMeshes;
+    ThreadPool m_chunkUploadWorkerPool{1};
 };

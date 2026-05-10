@@ -227,3 +227,12 @@ bool PlayerManager::appendItemsToInventory(
         playersById, id, itemId, quantity, outAcceptedQuantity, outSnapshot
     );
 }
+
+bool PlayerManager::consumeItemsFromInventory(
+    PlayerID id,
+    const std::vector<std::pair<uint16_t, uint16_t>> &itemQuantities,
+    InventorySnapshot *outSnapshot
+) {
+    std::lock_guard<std::mutex> lock(mtx);
+    return PlayerInventory::consumeItemsFromInventory(playersById, id, itemQuantities, outSnapshot);
+}

@@ -11,6 +11,8 @@
 #include <vector>
 
 namespace {
+    constexpr uint64_t kMinGiRebuildIntervalFrames = 3u;
+
     bool isTraceSolid(BlockID id) {
         if (id == BlockID::Air) {
             return false;
@@ -108,6 +110,10 @@ bool VulkanGiSceneBuffers::rebuild(
     if (geometryUnchanged) {
         return true;
     }
+    if (m_valid && frameCounter > m_lastRebuildFrame &&
+        (frameCounter - m_lastRebuildFrame) < kMinGiRebuildIntervalFrames) {
+        return true;
+    }
 
     retireActiveBuffers(frameCounter);
     resetActiveState();
@@ -185,6 +191,7 @@ bool VulkanGiSceneBuffers::rebuild(
     m_signatureXor = signatureXor;
     m_signatureSum = signatureSum;
     m_chunkCount = signatureCount;
+    m_lastRebuildFrame = frameCounter;
     m_valid = true;
     ++m_contentVersion;
     return true;
@@ -245,6 +252,7 @@ void VulkanGiSceneBuffers::resetActiveState() {
     m_wordCount = 0;
     m_signatureXor = 0;
     m_signatureSum = 0;
+    m_lastRebuildFrame = 0;
     m_chunkCount = 0;
     m_valid = false;
 }

@@ -82,6 +82,7 @@ private:
     bool m_warnedUninitializedRender = false;
     bool m_warnedNoCpuChunkMeshes = false;
     uint64_t m_frameCounter = 0;
+    uint64_t m_lastRtTlasBuildFrame = 0;
 
     VulkanSceneUploader m_sceneUploader;
     FrameRenderData m_frameData;

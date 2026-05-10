@@ -163,6 +163,45 @@ bool Inventory::appendItems(uint16_t itemId, uint16_t quantity, uint16_t *outRem
     return changed;
 }
 
+bool Inventory::consumeItems(uint16_t itemId, uint16_t quantity, uint16_t *outRemoved) {
+    if (outRemoved != nullptr) {
+        *outRemoved = 0;
+    }
+    if (!IsValidItemId(itemId) || quantity == 0) {
+        return false;
+    }
+
+    uint32_t available = 0;
+    for (uint16_t i = 0; i < kInventorySlotCount; ++i) {
+        Slot &slot = m_slots[i];
+        NormalizeSlot(i, slot);
+        if (slot.itemId == itemId && slot.quantity > 0) {
+            available += slot.quantity;
+        }
+    }
+    if (available < quantity) {
+        return false;
+    }
+
+    uint16_t remaining = quantity;
+    for (uint16_t i = 0; i < kInventorySlotCount && remaining > 0; ++i) {
+        Slot &slot = m_slots[i];
+        if (slot.itemId != itemId || slot.quantity == 0) {
+            continue;
+        }
+        const uint16_t take = std::min<uint16_t>(slot.quantity, remaining);
+        slot.quantity = static_cast<uint16_t>(slot.quantity - take);
+        remaining = static_cast<uint16_t>(remaining - take);
+        NormalizeSlot(i, slot);
+    }
+
+    TouchRevision();
+    if (outRemoved != nullptr) {
+        *outRemoved = quantity;
+    }
+    return true;
+}
+
 bool Inventory::applyAction(
     const InventoryAction &action,
     InventoryRejectReason &outReject,

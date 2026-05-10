@@ -47,6 +47,7 @@ public:
     [[nodiscard]] uint32_t revision() const noexcept;
 
     bool appendItems(uint16_t itemId, uint16_t quantity, uint16_t *outRemaining = nullptr);
+    bool consumeItems(uint16_t itemId, uint16_t quantity, uint16_t *outRemoved = nullptr);
     bool applyAction(
         const InventoryAction &action,
         InventoryRejectReason &outReject,

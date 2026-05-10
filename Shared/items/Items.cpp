@@ -10,6 +10,8 @@ namespace Items {
         ItemData{"Dirt Block", ItemType::Block, kMaxBlockStack, 1.0f},
         ItemData{"Sapphire Block", ItemType::Block, kMaxBlockStack, 1.0f},
         ItemData{"Ruby Block", ItemType::Block, kMaxBlockStack, 1.0f},
+        ItemData{"Iron Block", ItemType::Block, kMaxBlockStack, 1.0f},
+
     };
 
 }

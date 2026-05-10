@@ -13,7 +13,8 @@ using namespace AppHelpers;
 void App::configureBackendPolicy(Runtime &runtime) {
     const RenderDeviceCapabilities caps = runtime.render.renderer->getCapabilities();
 
-    runtime.gameplay.chunkManager->enableAO = true;
+    // PTGI backends use runtime lighting; baked mesh AO should stay disabled there.
+    runtime.gameplay.chunkManager->enableAO = caps.supportsBakedChunkLighting;
     runtime.gameplay.chunkManager->setMeshBakedLightingEnabled(caps.supportsBakedChunkLighting);
 
     std::cout << "[App] Render API: " << caps.apiName << " | Backend tier: " << caps.backendName

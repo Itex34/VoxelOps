@@ -4,6 +4,7 @@
 #include "../data/GameData.hpp"
 
 #include "../../Shared/items/Items.hpp"
+#include "../../Shared/items/PlaceableBlockMapping.hpp"
 #include "../../Shared/player/Inventory.hpp"
 
 #include <SDL3/SDL.h>
@@ -19,32 +20,32 @@ namespace {
     }
 
     std::optional<BlockID> BlockTypeFromInventoryItemId(uint16_t itemId) {
-        switch (itemId) {
-        case static_cast<uint16_t>(ITEM_DIRT_BLOCK):
-            return BlockID::Dirt;
-        case static_cast<uint16_t>(ITEM_SAPPHIRE_BLOCK):
-            return BlockID::SapphireBlock;
-        default:
+        const std::optional<uint8_t> mappedBlockId = PlaceableBlockMapping::blockIdFromItemId(itemId);
+        if (!mappedBlockId.has_value()) {
             return std::nullopt;
         }
+        if (*mappedBlockId >= static_cast<uint8_t>(BlockID::COUNT)) {
+            return std::nullopt;
+        }
+        return static_cast<BlockID>(*mappedBlockId);
     }
 
     void MarkChunkAndEdgeNeighborsDirty(ChunkManager &chunkManager, const glm::ivec3 &worldPos) {
         const glm::ivec3 chunkPos = chunkManager.worldToChunkPos(worldPos);
         const glm::ivec3 localPos = chunkManager.worldToLocalPos(worldPos);
-        chunkManager.markChunkDirty(chunkPos);
+        chunkManager.markChunkDirtyHighPriority(chunkPos);
         if (localPos.x == 0)
-            chunkManager.markChunkDirty(chunkPos + glm::ivec3(-1, 0, 0));
+            chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(-1, 0, 0));
         if (localPos.x == CHUNK_SIZE - 1)
-            chunkManager.markChunkDirty(chunkPos + glm::ivec3(1, 0, 0));
+            chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(1, 0, 0));
         if (localPos.y == 0)
-            chunkManager.markChunkDirty(chunkPos + glm::ivec3(0, -1, 0));
+            chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(0, -1, 0));
         if (localPos.y == CHUNK_SIZE - 1)
-            chunkManager.markChunkDirty(chunkPos + glm::ivec3(0, 1, 0));
+            chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(0, 1, 0));
         if (localPos.z == 0)
-            chunkManager.markChunkDirty(chunkPos + glm::ivec3(0, 0, -1));
+            chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(0, 0, -1));
         if (localPos.z == CHUNK_SIZE - 1)
-            chunkManager.markChunkDirty(chunkPos + glm::ivec3(0, 0, 1));
+            chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(0, 0, 1));
     }
 
     std::vector<glm::ivec3>

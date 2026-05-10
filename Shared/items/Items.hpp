@@ -22,6 +22,7 @@ enum ItemID : uint16_t {
     ITEM_DIRT_BLOCK,
     ITEM_SAPPHIRE_BLOCK,
     ITEM_RUBY_BLOCK,
+    ITEM_IRON_BLOCK,
 
     ITEM_COUNT
 };

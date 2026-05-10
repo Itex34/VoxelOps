@@ -216,12 +216,13 @@ vec3 materialAlbedo(uint materialId) {
 
 vec3 materialEmission(uint materialId) {
     switch (materialId) {
+    case 12u: return vec3(0.2, 100.0, 0.2); // IronBlock
     case 14u: return vec3(2.80, 0.25, 0.25); // RedBerry
     case 15u: return vec3(2.30, 1.15, 0.22); // OrangeBerry
     case 16u: return vec3(0.22, 0.95, 2.40); // SapphireGem
     case 17u: return vec3(2.20, 0.30, 0.45); // RubyGem
-    case 21u: return vec3(1000.20, 0.10, 0.16); // RubyBlock
-    case 22u: return vec3(0.10, 0.38, 1000.25); // SapphireBlock
+    case 21u: return vec3(100.20, 0.10, 0.16); // RubyBlock
+    case 22u: return vec3(0.10, 0.38, 100.0); // SapphireBlock
     default: return vec3(0.0);
     }
 }
@@ -234,6 +235,7 @@ float nrdMaterialClassFromVoxelId(uint materialId) {
     case 10u: // Leaves
     case 20u: // Cactus
         return 1.0;
+    case 12u: // IronBlock
     case 14u: // RedBerry
     case 15u: // OrangeBerry
     case 16u: // SapphireGem

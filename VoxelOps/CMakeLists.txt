@@ -56,6 +56,7 @@ add_executable(VoxelOps
     "graphics/Vulkan/VulkanChunkRenderCache.cpp"
     "graphics/Vulkan/vulkan/UploadContext.cpp"
     "graphics/Vulkan/vulkan/VulkanContext.cpp"
+    
     "graphics/Vulkan/vulkan/VulkanUtils.cpp"
     "graphics/Vulkan/renderer/VulkanRendererTiming.cpp"
     "graphics/Vulkan/renderer/VulkanDrawResources.cpp"
@@ -117,7 +118,8 @@ add_executable(VoxelOps
     "commands/CommandParser.cpp"
     "ui/player/SettingsUI.cpp"
     "ui/player/MainMenu.cpp"
- "runtime/ClientPrediction.cpp")
+    "runtime/ClientPrediction.cpp" 
+    "graphics/Vulkan/vulkan/VmaImpl.cpp")
 
 find_package(SDL3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
@@ -127,6 +129,7 @@ find_package(GameNetworkingSockets CONFIG REQUIRED)
 find_package(lz4 CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(Vulkan REQUIRED)
+find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
 
@@ -140,6 +143,8 @@ target_link_libraries(VoxelOps PRIVATE lz4::lz4)
 target_link_libraries(VoxelOps PRIVATE imgui::imgui)
 target_link_libraries(VoxelOps PRIVATE Vulkan::Vulkan)
 target_link_libraries(VoxelOps PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(VoxelOps PRIVATE GPUOpen::VulkanMemoryAllocator)
+
 target_compile_definitions(VoxelOps PRIVATE GLM_ENABLE_EXPERIMENTAL) 
 if(MSVC)
     set_property(TARGET VoxelOps PROPERTY VS_DEBUGGER_ENVIRONMENT "VOXELOPS_RENDER_API=vulkan")

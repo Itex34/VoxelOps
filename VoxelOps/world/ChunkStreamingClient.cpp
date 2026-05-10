@@ -16,24 +16,24 @@ namespace {
 void MarkChunkAndEdgeNeighborsDirty(ChunkManager &chunkManager, const glm::ivec3 &worldPos) {
     const glm::ivec3 chunkPos = chunkManager.worldToChunkPos(worldPos);
     const glm::ivec3 localPos = chunkManager.worldToLocalPos(worldPos);
-    chunkManager.markChunkDirty(chunkPos);
+    chunkManager.markChunkDirtyHighPriority(chunkPos);
     if (localPos.x == 0) {
-        chunkManager.markChunkDirty(chunkPos + glm::ivec3(-1, 0, 0));
+        chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(-1, 0, 0));
     }
     if (localPos.x == CHUNK_SIZE - 1) {
-        chunkManager.markChunkDirty(chunkPos + glm::ivec3(1, 0, 0));
+        chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(1, 0, 0));
     }
     if (localPos.y == 0) {
-        chunkManager.markChunkDirty(chunkPos + glm::ivec3(0, -1, 0));
+        chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(0, -1, 0));
     }
     if (localPos.y == CHUNK_SIZE - 1) {
-        chunkManager.markChunkDirty(chunkPos + glm::ivec3(0, 1, 0));
+        chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(0, 1, 0));
     }
     if (localPos.z == 0) {
-        chunkManager.markChunkDirty(chunkPos + glm::ivec3(0, 0, -1));
+        chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(0, 0, -1));
     }
     if (localPos.z == CHUNK_SIZE - 1) {
-        chunkManager.markChunkDirty(chunkPos + glm::ivec3(0, 0, 1));
+        chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(0, 0, 1));
     }
 }
 
