@@ -60,6 +60,21 @@ void ChunkManager::markChunkDirtyHighPriority(const glm::ivec3 &pos) {
     m_chunkMesher->markChunkDirtyHighPriority(pos);
 }
 
+void ChunkManager::rebuildAllChunkMeshes(bool highPriority) {
+    size_t queued = 0;
+    for (const auto &entry : chunkMap) {
+        const glm::ivec3 &chunkPos = entry.first;
+        if (highPriority) {
+            markChunkDirtyHighPriority(chunkPos);
+        } else {
+            markChunkDirty(chunkPos);
+        }
+        ++queued;
+    }
+    std::cout << "[chunk] queued full mesh rebuild for " << queued
+              << " chunks (" << (highPriority ? "high-priority" : "normal") << ").\n";
+}
+
 void ChunkManager::updateDirtyChunks(size_t maxChunksPerCall, int64_t maxBudgetUs) {
     m_chunkMesher->updateDirtyChunks(maxChunksPerCall, maxBudgetUs);
 }

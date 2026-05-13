@@ -26,9 +26,7 @@ void VulkanRenderer::recordCommandBuffer(
     };
     const uint32_t nrdDebugView = frameData.giLighting.nrdDebugView;
     const bool compositeDebugView =
-        ((nrdDebugView >= 10u) && (nrdDebugView <= 18u)) ||
-        (nrdDebugView == 24u) || (nrdDebugView == 25u) ||
-        (nrdDebugView == 26u) || (nrdDebugView == 27u) ||
+        (nrdDebugView == 10u) || (nrdDebugView == 15u) || (nrdDebugView == 16u) ||
         ((nrdDebugView >= 30u) && (nrdDebugView <= 34u));
     const bool useNrdComposite = frameData.giLighting.pathTracingEnabled &&
                                  (nrdDebugView == 0u || compositeDebugView) &&
@@ -354,8 +352,20 @@ void VulkanRenderer::recordNrdCompositePass(
     scissor.extent = extent;
     m_commandBuffers[imageIndex].setScissor(0, scissor);
 
-    if (applyNrdComposite && m_nrdCompositePipeline != nullptr &&
-        m_nrdCompositePipelineLayout != nullptr) {
+    const bool usePostProcess = applyNrdComposite && (frameData.giLighting.nrdDebugView == 0u) &&
+                                m_postProcessPipeline != nullptr &&
+                                m_postProcessPipelineLayout != nullptr;
+    if (usePostProcess) {
+        m_commandBuffers[imageIndex].bindPipeline(
+            vk::PipelineBindPoint::eGraphics, *m_postProcessPipeline
+        );
+        const vk::DescriptorSet giSet = *m_giDescriptorSets[imageIndex];
+        m_commandBuffers[imageIndex].bindDescriptorSets(
+            vk::PipelineBindPoint::eGraphics, *m_postProcessPipelineLayout, 0, giSet, {}
+        );
+        m_commandBuffers[imageIndex].draw(3, 1, 0, 0);
+    } else if (applyNrdComposite && m_nrdCompositePipeline != nullptr &&
+               m_nrdCompositePipelineLayout != nullptr) {
         m_commandBuffers[imageIndex].bindPipeline(
             vk::PipelineBindPoint::eGraphics, *m_nrdCompositePipeline
         );

@@ -94,12 +94,7 @@ void App::Exit() {
     m_ShouldQuit = true;
 }
 
-bool App::initWindowAndContext() {
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
-        std::cerr << "SDL_Init failed: " << SDL_GetError() << "\n";
-        return false;
-    }
-
+bool App::initWindowAndContext(RenderApi api) {
     int swapInterval = 0;
     if (const std::optional<int> envSwapInterval = getSwapIntervalOverrideFromEnv()) {
         swapInterval = *envSwapInterval;
@@ -109,10 +104,9 @@ bool App::initWindowAndContext() {
 
     RenderBackendWindowContext backendWindow{};
     if (!CreateRenderBackendWindowContext(
-            m_RenderApi, "Voxel Ops", GameData::screenWidth, GameData::screenHeight, swapInterval,
+            api, "Voxel Ops", GameData::screenWidth, GameData::screenHeight, swapInterval,
             backendWindow
         )) {
-        SDL_Quit();
         return false;
     }
 

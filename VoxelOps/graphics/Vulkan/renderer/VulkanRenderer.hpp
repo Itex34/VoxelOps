@@ -163,6 +163,8 @@ private:
     vk::raii::Sampler m_nrdOutputSampler{nullptr};
     vk::raii::Sampler m_nrdNearestSampler{nullptr};
     vk::raii::Sampler m_nrdLinearSampler{nullptr};
+    vk::raii::PipelineLayout m_postProcessPipelineLayout{nullptr};
+    vk::raii::Pipeline m_postProcessPipeline{nullptr};
     vk::raii::PipelineLayout m_nrdCompositePipelineLayout{nullptr};
     vk::raii::Pipeline m_nrdCompositePipeline{nullptr};
 #if VOXELOPS_NRD_HEADERS
@@ -211,6 +213,8 @@ private:
     void createCommandBuffers();
     void createFramebuffers();
     void createCompositeFramebuffers();
+    void createPostProcessPipeline();
+    void cleanupPostProcessPipeline();
     void createNrdCompositePipeline();
     void cleanupNrdCompositePipeline();
     void createModelDescriptorResources();

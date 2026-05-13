@@ -244,6 +244,34 @@ void DebugUi::drawMainWindow(const UiFrameData &data, UiMutableState &state) {
         backendName.data(),
         data.mdiUsable ? "yes" : "no"
     );
+    ImGui::Separator();
+    ImGui::TextUnformatted("Renderer");
+    if (state.renderApiPreference != nullptr) {
+        int mode = std::clamp(*state.renderApiPreference, 0, 1);
+        const char *apiOptions[] = {"OpenGL", "Vulkan"};
+        if (ImGui::Combo("Render API", &mode, apiOptions, IM_ARRAYSIZE(apiOptions))) {
+            *state.renderApiPreference = mode;
+        }
+    }
+    if (state.isVulkanActive || state.isOpenGlActive) {
+        ImGui::TextUnformatted(state.isVulkanActive ? "Active API: Vulkan" : "Active API: OpenGL");
+    }
+    const bool hasSwitchWiring = state.requestSwitchToOpenGl != nullptr &&
+                                 state.requestSwitchToVulkan != nullptr &&
+                                 state.renderApiPreference != nullptr;
+    if (hasSwitchWiring) {
+        const bool selectedOpenGl = (*state.renderApiPreference == 0);
+        const bool selectedVulkan = (*state.renderApiPreference == 1);
+        const bool alreadyActive =
+            (selectedOpenGl && state.isOpenGlActive) || (selectedVulkan && state.isVulkanActive);
+        if (alreadyActive) {
+            ImGui::TextUnformatted("Selected API already active.");
+        } else if (ImGui::Button("Apply Renderer (rebuild)")) {
+            *state.requestSwitchToOpenGl = selectedOpenGl;
+            *state.requestSwitchToVulkan = selectedVulkan;
+        }
+        ImGui::TextUnformatted("Switching renderer rebuilds graphics resources.");
+    }
 
     if (ImGui::CollapsingHeader("Performance", ImGuiTreeNodeFlags_DefaultOpen)) {
         constexpr size_t kHistory = 240;

@@ -2,7 +2,7 @@
 
 #include "../ui/Hud.hpp"
 #include "ClientInputSystem.hpp"
-#include "ClientNetworkSystem.hpp"
+#include "ClientSession.hpp"
 #include "../runtime/ClientPrediction.hpp"
 #include "../render/RenderSceneBuilder.hpp"
 #include "../systems/CombatShootSystem.hpp"
@@ -45,6 +45,9 @@ struct UiFrameContext {
     bool *showDebugUi = nullptr;
     bool *showInventoryUi = nullptr;
     bool *enableRawMouseInput = nullptr;
+    bool *requestSwitchToOpenGl = nullptr;
+    bool *requestSwitchToVulkan = nullptr;
+    int *renderApiPreference = nullptr; // 0=OpenGL, 1=Vulkan
 };
 
 struct RenderFrameContext {
@@ -70,7 +73,8 @@ struct FrameOrchestratorContext {
 
 class FrameOrchestrator {
 public:
-    FrameOrchestrator(Runtime &runtime, FrameOrchestratorContext context);
+    FrameOrchestrator() = default;
+    void bind(Runtime &runtime, FrameOrchestratorContext context);
 
     void runFrame();
 
@@ -90,13 +94,16 @@ private:
     void runPresentStage(size_t localPredictionSteps);
     void updateFrameTime();
     void updateFrameHotkeysAndCounters();
+    Runtime &runtime();
+    const Runtime &runtime() const;
 
-    Runtime &m_runtime;
+    Runtime *m_runtime = nullptr;
     FrameOrchestratorContext m_context;
     ClientInputSystem m_inputSystem;
     ClientPrediction m_clientPrediction;
 
-    ClientNetworkSystem m_networkSystem;
+    
+    ClientSession m_clientSession;
     Hud m_hudSystem;
     WorldInteractionSystem m_worldInteractionSystem;
     CombatShootSystem m_combatShootSystem;

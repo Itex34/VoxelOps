@@ -54,6 +54,7 @@ public:
     void updateDirtyChunkAt(const glm::ivec3 &chunkPos);
     void markChunkDirty(const glm::ivec3 &pos);
     void markChunkDirtyHighPriority(const glm::ivec3 &pos);
+    void rebuildAllChunkMeshes(bool highPriority = true);
 
     void playerPlaceBlockAt(glm::ivec3 blockCoords, int faceNormal, BlockID blockType);
     void playerBreakBlockAt(const glm::ivec3 &blockCoords);

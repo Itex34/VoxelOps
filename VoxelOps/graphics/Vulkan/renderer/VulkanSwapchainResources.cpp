@@ -124,6 +124,111 @@ void VulkanRenderer::createCompositeFramebuffers() {
     }
 }
 
+void VulkanRenderer::createPostProcessPipeline() {
+    cleanupPostProcessPipeline();
+
+    if (m_compositeRenderPass.get() == nullptr || m_giDescriptorSetLayout == nullptr) {
+        return;
+    }
+
+    std::string shaderDir;
+#ifdef SHADER_DIR
+    shaderDir = SHADER_DIR;
+#endif
+    if (!shaderDir.empty() && shaderDir.back() != '/' && shaderDir.back() != '\\') {
+        shaderDir.push_back('/');
+    }
+
+    const vk::raii::Device &device = m_context.getDevice();
+    vk::raii::ShaderModule vertShader =
+        loadShaderModule(device, shaderDir + "postprocess.vert.spv");
+    vk::raii::ShaderModule fragShader =
+        loadShaderModule(device, shaderDir + "postprocess.frag.spv");
+
+    vk::PipelineShaderStageCreateInfo vertStage{};
+    vertStage.stage = vk::ShaderStageFlagBits::eVertex;
+    vertStage.module = *vertShader;
+    vertStage.pName = "main";
+
+    vk::PipelineShaderStageCreateInfo fragStage{};
+    fragStage.stage = vk::ShaderStageFlagBits::eFragment;
+    fragStage.module = *fragShader;
+    fragStage.pName = "main";
+
+    std::array<vk::PipelineShaderStageCreateInfo, 2> shaderStages = {vertStage, fragStage};
+
+    vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vk::PipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    vk::PipelineViewportStateCreateInfo viewportState{};
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    std::array<vk::DynamicState, 2> dynamicStates = {
+        vk::DynamicState::eViewport, vk::DynamicState::eScissor
+    };
+    vk::PipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
+
+    vk::PipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = vk::PolygonMode::eFill;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = vk::CullModeFlagBits::eNone;
+    rasterizer.frontFace = vk::FrontFace::eCounterClockwise;
+
+    vk::PipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
+
+    vk::PipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.depthTestEnable = VK_FALSE;
+    depthStencil.depthWriteEnable = VK_FALSE;
+    depthStencil.depthCompareOp = vk::CompareOp::eAlways;
+
+    vk::PipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.colorWriteMask =
+        vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+        vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+
+    vk::PipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
+
+    const std::array<vk::DescriptorSetLayout, 1> setLayouts = {*m_giDescriptorSetLayout};
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
+    pipelineLayoutInfo.pSetLayouts = setLayouts.data();
+    m_postProcessPipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
+
+    vk::GraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.stageCount = static_cast<uint32_t>(shaderStages.size());
+    pipelineInfo.pStages = shaderStages.data();
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.layout = *m_postProcessPipelineLayout;
+    pipelineInfo.renderPass = *m_compositeRenderPass.get();
+    pipelineInfo.subpass = 0;
+
+    m_postProcessPipeline = vk::raii::Pipeline(device, nullptr, pipelineInfo);
+}
+
+void VulkanRenderer::cleanupPostProcessPipeline() {
+    m_postProcessPipeline.clear();
+    m_postProcessPipelineLayout.clear();
+}
+
 void VulkanRenderer::createNrdCompositePipeline() {
     cleanupNrdCompositePipeline();
 
@@ -353,6 +458,7 @@ void VulkanRenderer::recreateSwapchainDependentResources() {
         renderPassColorAttachmentCount
     );
     createNrdCompositePipeline();
+    createPostProcessPipeline();
     createCommandBuffers();
     createTimestampResources();
     m_frameSync.recreateSwapchainSync(device, m_framebuffers.size());
@@ -375,6 +481,7 @@ void VulkanRenderer::cleanupSwapchainDependentResources() {
     m_commandBuffers.clear();
     m_framebuffers.clear();
     m_compositeFramebuffers.clear();
+    cleanupPostProcessPipeline();
     cleanupNrdCompositePipeline();
     m_chunkPipeline.cleanup();
     m_modelPipeline.cleanup();

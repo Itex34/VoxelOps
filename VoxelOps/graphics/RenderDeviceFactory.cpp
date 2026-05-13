@@ -53,7 +53,7 @@ namespace {
 RenderApi ResolveRenderApiFromEnvironment() noexcept {
     const char *renderApiEnv = std::getenv("VOXELOPS_RENDER_API");
     if (renderApiEnv == nullptr) {
-        return RenderApi::OpenGL;
+        return RenderApi::Vulkan;
     }
 
     std::string apiName = TrimAscii(std::string_view(renderApiEnv));
@@ -65,6 +65,9 @@ RenderApi ResolveRenderApiFromEnvironment() noexcept {
 
     if (apiName == "vulkan" || apiName == "vk") {
         return RenderApi::Vulkan;
+    }
+    if (apiName == "opengl" || apiName == "gl") {
+        return RenderApi::OpenGL;
     }
     return RenderApi::OpenGL;
 }

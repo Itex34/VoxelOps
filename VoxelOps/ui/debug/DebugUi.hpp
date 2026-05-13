@@ -85,6 +85,13 @@ struct UiMutableState {
     int *giNrdDebugView = nullptr;
     // 0 = Off, 1 = Flat Normal+Roughness, 2 = Flat Normal+Roughness + Zero Motion
     int *giNrdGuideOverride = nullptr;
+    bool isVulkanActive = false;
+    bool isOpenGlActive = false;
+
+    bool *requestSwitchToOpenGl = nullptr;
+    bool *requestSwitchToVulkan = nullptr;
+
+    int *renderApiPreference = nullptr; // 0=OpenGL, 1=Vulkan
 };
 
 struct UiVulkanInitInfo {

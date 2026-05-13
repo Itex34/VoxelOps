@@ -7,7 +7,7 @@
 #include <glm/vec3.hpp>
 #include "../runtime/Runtime.hpp"
 #include "../graphics/IWorldItemRenderer.hpp"
-
+#include "FrameOrchestrator.hpp"
 class Camera;
 enum class GunType : uint16_t;
 
@@ -15,11 +15,14 @@ class App {
 public:
     App() = default;
 
-    int Run(int argc, char **argv);
+    int run(int argc, char **argv);
     void Exit();
 
 private:
-    bool initWindowAndContext();
+    bool initWindowAndContext(RenderApi api);
+    bool initializeRenderBackendCore(Runtime &runtime, RenderApi api);
+    void shutdownRenderBackendCore(Runtime &runtime);
+    bool switchRenderApi(Runtime &runtime, RenderApi targetApi);
     void initCallbacks(Runtime &runtime);
     void initRenderResources(Runtime &runtime);
     void initUi(Runtime &runtime);
@@ -33,7 +36,6 @@ private:
 
     void updateDebugCamera(Runtime &runtime);
     void updateToggleStates(Runtime &runtime);
-    void renderWorldItems(Runtime &runtime, const Camera &activeCamera);
     bool equipGun(Runtime &runtime, GunType gunType);
     void applyMouseInputModes();
     void pollEvents(Runtime &runtime);
@@ -44,6 +46,8 @@ private:
     SDL_Window *m_Window = nullptr;
     SDL_GLContext m_GlContext = nullptr;
     RenderApi m_RenderApi = RenderApi::OpenGL;
+    FrameOrchestrator m_frameOrchestrator;
+
     bool m_ShouldQuit = false;
     bool m_UseDebugCamera = false;
 
@@ -54,6 +58,9 @@ private:
     bool m_ShowDebugUi = false;
     bool m_ShowInventoryUi = false;
     bool m_ForceCursorEnabled = false;
+    bool m_RequestSwitchToOpenGL = false;
+    bool m_RequestSwitchToVulkan = false;
+    int m_RenderApiPreference = 1; // 0=OpenGL, 1=Vulkan
     bool m_EnableRawMouseInput = true;
     float m_SkyExposure = 4.2f;
     glm::vec3 m_SunDirection = glm::vec3(0.0f, 0.43496552f, 0.90044713f);

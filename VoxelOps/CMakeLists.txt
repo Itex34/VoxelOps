@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.28 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.28 FATAL_ERROR)
 
 project(VoxelOps CXX)
 
@@ -76,7 +76,7 @@ add_executable(VoxelOps
     "physics/RayManager.cpp"
     "application/AppWindow.cpp"
     "application/AppSetup.cpp"
-    "application/AppUi.cpp"
+    
     "ui/Hud.cpp"
     "graphics/OpenGL/WorldItemRenderer.cpp"
     "application/AppSimulation.cpp"
@@ -84,7 +84,8 @@ add_executable(VoxelOps
     "application/AppLifecycle.cpp"
     "application/AppHelpers.cpp"
     "application/ClientInputSystem.cpp"
-    "application/ClientNetworkSystem.cpp"
+    "application/ClientDisconnectReset.cpp"
+    "application/ClientSession.cpp"
     "application/FrameOrchestrator.cpp"
     "render/RenderSceneBuilder.cpp"
     "systems/WorldInteractionSystem.cpp"
@@ -145,6 +146,12 @@ target_link_libraries(VoxelOps PRIVATE Vulkan::Vulkan)
 target_link_libraries(VoxelOps PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(VoxelOps PRIVATE GPUOpen::VulkanMemoryAllocator)
 
+
+target_include_directories(VoxelOps PRIVATE
+    ${CMAKE_SOURCE_DIR}/third_party/VkFFT/vkFFT
+)
+
+
 target_compile_definitions(VoxelOps PRIVATE GLM_ENABLE_EXPERIMENTAL) 
 if(MSVC)
     set_property(TARGET VoxelOps PROPERTY VS_DEBUGGER_ENVIRONMENT "VOXELOPS_RENDER_API=vulkan")
@@ -157,6 +164,7 @@ target_include_directories(VoxelOps PRIVATE ${VCPKG_INSTALLED_DIR}/include)
 target_include_directories(VoxelOps PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
+
 
 file(TO_CMAKE_PATH "${VOXELOPS_NRD_DLL_PATH}" VOXELOPS_NRD_DLL_PATH_CMAKE)
 if(VOXELOPS_ENABLE_NRD_BOOTSTRAP AND EXISTS "${VOXELOPS_NRD_ROOT}/Include/NRD.h")
@@ -180,6 +188,8 @@ set(VKSHADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/model.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/nrd_composite.vert
     ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/nrd_composite.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/postprocess.vert
+    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/postprocess.frag
 )
 
 set(SPIRV_OUTPUTS)

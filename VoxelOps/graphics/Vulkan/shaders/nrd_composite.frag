@@ -21,14 +21,11 @@ layout(set = 0, binding = 0, std140) uniform GiLightingParams {
 } giParams;
 
 layout(set = 0, binding = 7) uniform sampler2D nrdOutDiffRadianceHitDistSampler;
-layout(set = 0, binding = 10) uniform sampler2D nrdComposeBaseSampler;
-layout(set = 0, binding = 11) uniform sampler2D nrdComposeIndirectSampler;
 layout(set = 0, binding = 3, rgba16f) uniform readonly image2D nrdInDiffRadianceHitDistImage;
 layout(set = 0, binding = 4, rgb10_a2) uniform readonly image2D nrdInNormalRoughnessImage;
 layout(set = 0, binding = 5, rgba16f) uniform readonly image2D nrdInMotionImage;
 layout(set = 0, binding = 6, r32f) uniform readonly image2D nrdInViewZImage;
 
-layout(location = 0) in vec2 outUv;
 layout(location = 0) out vec4 outColor;
 
 vec3 toneMapAces(vec3 linearColor) {
@@ -69,41 +66,14 @@ vec3 falseColorLuma(float l) {
     return mix(c3, c4, (x - 0.75) * 4.0);
 }
 
-vec3 hashColorFromFloat(float x) {
-    float h = fract(sin(x * 43758.5453) * 12543.854);
-    float h2 = fract(h * 19.19 + 0.31);
-    float h3 = fract(h * 73.73 + 0.67);
-    return vec3(h, h2, h3);
-}
-
 void main() {
     ivec2 pixel = ivec2(gl_FragCoord.xy);
-    vec4 composeBase = texelFetch(nrdComposeBaseSampler, pixel, 0);
-    vec3 composeIndirectTint = texelFetch(nrdComposeIndirectSampler, pixel, 0).rgb;
     vec4 packedNrdOut = texelFetch(nrdOutDiffRadianceHitDistSampler, pixel, 0);
     vec3 nrdIndirect = nrdYCoCgToLinear(packedNrdOut.rgb);
-    vec3 indirectTermLinear = composeIndirectTint * nrdIndirect;
-    vec3 litLinear = composeBase.rgb + indirectTermLinear;
 
     uint debugView = giParams.header.w;
     if (debugView == 10u) {
         outColor = vec4(toneMapAces(nrdIndirect), 1.0);
-        return;
-    }
-    if (debugView == 11u) {
-        outColor = vec4(toneMapAces(composeBase.rgb), 1.0);
-        return;
-    }
-    if (debugView == 12u) {
-        outColor = vec4(clamp(composeIndirectTint, 0.0, 1.0), 1.0);
-        return;
-    }
-    if (debugView == 13u) {
-        outColor = vec4(toneMapAces(indirectTermLinear), 1.0);
-        return;
-    }
-    if (debugView == 14u) {
-        outColor = vec4(toneMapAces(litLinear), composeBase.a);
         return;
     }
     if (debugView == 15u) {
@@ -113,32 +83,6 @@ void main() {
     if (debugView == 16u) {
         float l = dot(nrdIndirect, vec3(0.2126, 0.7152, 0.0722));
         outColor = vec4(falseColorLuma(l / (l + 1.0)), 1.0);
-        return;
-    }
-    if (debugView == 17u) {
-        outColor = vec4(vec3(clamp(composeBase.a, 0.0, 1.0)), 1.0);
-        return;
-    }
-    if (debugView == 18u) {
-        vec3 diff = abs(indirectTermLinear - nrdIndirect);
-        outColor = vec4(toneMapAces(diff * 4.0), 1.0);
-        return;
-    }
-    if (debugView == 24u) {
-        outColor = vec4(toneMapAces(composeBase.rgb), composeBase.a);
-        return;
-    }
-    if (debugView == 25u) {
-        outColor = vec4(toneMapAces(indirectTermLinear), 1.0);
-        return;
-    }
-    if (debugView == 26u) {
-        outColor = vec4(vec3(clamp(texelFetch(nrdComposeIndirectSampler, pixel, 0).a, 0.0, 1.0)), 1.0);
-        return;
-    }
-    if (debugView == 27u) {
-        float t = texelFetch(nrdComposeIndirectSampler, pixel, 0).a;
-        outColor = vec4(hashColorFromFloat(t), 1.0);
         return;
     }
     if (debugView == 30u) {
@@ -169,5 +113,5 @@ void main() {
         return;
     }
 
-    outColor = vec4(toneMapAces(litLinear), composeBase.a);
+    outColor = vec4(toneMapAces(nrdIndirect), 1.0);
 }

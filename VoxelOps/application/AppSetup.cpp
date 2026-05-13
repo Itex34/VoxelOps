@@ -152,7 +152,9 @@ void App::initRenderResources(Runtime &runtime) {
 
 void App::initUi(Runtime &runtime) {
     runtime.ui.debugUi = std::make_unique<DebugUi>();
-    runtime.ui.inventoryUi = std::make_unique<InventoryUI>();
+    if (!runtime.ui.inventoryUi) {
+        runtime.ui.inventoryUi = std::make_unique<InventoryUI>();
+    }
 
     if (!runtime.render.renderer->initializeDebugUi(
             *runtime.ui.debugUi, m_Window, reinterpret_cast<void *>(m_GlContext)
@@ -160,7 +162,6 @@ void App::initUi(Runtime &runtime) {
         const RenderDeviceCapabilities caps = runtime.render.renderer->getCapabilities();
         std::cerr << "[App] Failed to initialize ImGui backend for " << caps.apiName << ".\n";
         runtime.ui.debugUi.reset();
-        runtime.ui.inventoryUi.reset();
         m_ShowDebugUi = false;
         m_ShowInventoryUi = false;
         m_ForceCursorEnabled = false;
