@@ -3,6 +3,7 @@
 #include "graphics/Vulkan/renderer/NrdBootstrap.hpp"
 #include "graphics/Vulkan/vulkan/VulkanContext.hpp"
 #include "graphics/Vulkan/vulkan/VulkanUtils.hpp"
+#include "../../../../Shared/runtime/Paths.hpp"
 
 #include <imgui.h>
 #if __has_include(<imgui_impl_vulkan.h>)
@@ -94,6 +95,14 @@ void VulkanRenderer::init() {
         m_context.isSamplerAnisotropyEnabled(),
         m_context.getMaxSamplerAnisotropy()
     );
+    m_giBlueNoiseTexture.initFromFile(
+        device,
+        physicalDevice,
+        m_uploadContext,
+        Shared::RuntimePaths::ResolveVoxelOpsPath("assets/textures/bluenoise256.exr").generic_string(),
+        false,
+        1.0f
+    );
 
     m_uploadContext.waitIdle();
 
@@ -127,8 +136,10 @@ void VulkanRenderer::cleanup() {
     }
     m_fallbackArrayTexture.cleanup();
     m_fallback2DTexture.cleanup();
+    m_giBlueNoiseTexture.cleanup();
     m_uploadContext.cleanup();
 
+    m_nrdComputeCommandPool.clear();
     m_commandPool.clear();
     m_initialized = false;
 }

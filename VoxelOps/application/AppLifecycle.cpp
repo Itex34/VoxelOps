@@ -33,14 +33,14 @@ bool App::initializeRenderBackendCore(Runtime &runtime, RenderApi api) {
     m_RenderApi = caps.api;
     m_RenderApiPreference = (caps.api == RenderApi::Vulkan) ? 1 : 0;
     std::cout << "[App] Render API selected: " << caps.apiName << "\n";
-    m_worldItemRenderer = CreateWorldItemRenderer(caps.api);
+    runtime.render.worldItemRenderer = CreateWorldItemRenderer(caps.api);
     return true;
 }
 
 void App::shutdownRenderBackendCore(Runtime &runtime) {
-    if (m_worldItemRenderer) {
-        m_worldItemRenderer->shutdown();
-        m_worldItemRenderer.reset();
+    if (runtime.render.worldItemRenderer) {
+        runtime.render.worldItemRenderer->shutdown();
+        runtime.render.worldItemRenderer.reset();
     }
     if (runtime.ui.debugUi) {
         runtime.ui.debugUi->shutdown();
@@ -90,6 +90,7 @@ bool App::switchRenderApi(Runtime &runtime, RenderApi targetApi) {
         initRenderResources(runtime);
         initUi(runtime);
         applyMouseInputModes();
+        rebindFrameOrchestrator(runtime);
         return false;
     }
 
@@ -100,6 +101,7 @@ bool App::switchRenderApi(Runtime &runtime, RenderApi targetApi) {
     initRenderResources(runtime);
     initUi(runtime);
     applyMouseInputModes();
+    rebindFrameOrchestrator(runtime);
     m_RenderApiPreference = (m_RenderApi == RenderApi::Vulkan) ? 1 : 0;
     return true;
 }
@@ -168,6 +170,7 @@ int App::run(int argc, char **argv) {
     initRenderResources(runtime);
     initUi(runtime);
     initNetworking(runtime);
+    rebindFrameOrchestrator(runtime);
 
     const double startTime = GetTimeSeconds();
     GameData::lastFrame = startTime;
@@ -175,7 +178,7 @@ int App::run(int argc, char **argv) {
     GameData::deltaTime = 0.0;
 
     while (!m_ShouldQuit) {
-        processFrame(runtime);
+        m_frameOrchestrator.runFrame();
         const bool requestedOpenGl = m_RequestSwitchToOpenGL;
         const bool requestedVulkan = m_RequestSwitchToVulkan;
         if (requestedOpenGl || requestedVulkan) {

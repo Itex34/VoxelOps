@@ -528,3 +528,11 @@ ChunkManager::getCpuChunkMeshesImpl() const noexcept {
     return m_chunkMesher->getCpuChunkMeshes();
 }
 
+uint64_t ChunkManager::getCpuChunkMeshesVersion() const noexcept {
+    return getCpuChunkMeshesVersionImpl();
+}
+
+uint64_t ChunkManager::getCpuChunkMeshesVersionImpl() const noexcept {
+    return m_chunkMesher->getCpuChunkMeshesVersion();
+}
+

@@ -1,11 +1,53 @@
 #include "graphics/Vulkan/graphics/Mesh.hpp"
 
 #include "graphics/Vulkan/vulkan/UploadContext.hpp"
-#include "graphics/Vulkan/vulkan/VulkanUtils.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <stdexcept>
 #include <utility>
+
+namespace {
+    vk::DeviceSize growBufferCapacity(vk::DeviceSize required, vk::DeviceSize currentCapacity) {
+        constexpr vk::DeviceSize kMinCapacity = 4 * 1024;
+        vk::DeviceSize target = std::max(required, kMinCapacity);
+        vk::DeviceSize capacity = std::max(currentCapacity, kMinCapacity);
+        while (capacity < target) {
+            capacity *= 2;
+        }
+        return capacity;
+    }
+
+    void createVmaBuffer(
+        VmaAllocator allocator,
+        vk::DeviceSize size,
+        vk::BufferUsageFlags usage,
+        VkBuffer &outBuffer,
+        VmaAllocation &outAllocation
+    ) {
+        if (allocator == VK_NULL_HANDLE) {
+            throw std::runtime_error("VkMesh::init requires a valid VMA allocator.");
+        }
+
+        VkBufferCreateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = std::max<vk::DeviceSize>(size, 4u);
+        bufferInfo.usage = static_cast<VkBufferUsageFlags>(usage);
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        VmaAllocationCreateInfo allocInfo{};
+        allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+        allocInfo.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+        const VkResult result =
+            vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &outBuffer, &outAllocation, nullptr);
+        if (result != VK_SUCCESS) {
+            outBuffer = VK_NULL_HANDLE;
+            outAllocation = VK_NULL_HANDLE;
+            throw std::runtime_error("VkMesh::init failed to create VMA buffer.");
+        }
+    }
+} // namespace
 
 vk::VertexInputBindingDescription VkMesh::PackedVoxelVertex::getBindingDescription() {
     vk::VertexInputBindingDescription d{};
@@ -56,6 +98,51 @@ VkMesh::VkMesh(std::vector<Vertex> vertices, std::vector<uint32_t> indices) {
     setGeometry(std::move(vertices), std::move(indices));
 }
 
+VkMesh::~VkMesh() {
+    cleanup();
+}
+
+VkMesh::VkMesh(VkMesh &&other) noexcept {
+    moveFrom(std::move(other));
+}
+
+VkMesh &VkMesh::operator=(VkMesh &&other) noexcept {
+    if (this == &other) {
+        return *this;
+    }
+    cleanup();
+    moveFrom(std::move(other));
+    return *this;
+}
+
+void VkMesh::moveFrom(VkMesh &&other) noexcept {
+    m_geometryFormat = other.m_geometryFormat;
+    m_vertices = std::move(other.m_vertices);
+    m_indices = std::move(other.m_indices);
+    m_packedVertices = std::move(other.m_packedVertices);
+    m_packedIndices = std::move(other.m_packedIndices);
+
+    m_allocator = other.m_allocator;
+    m_vertexBuffer = other.m_vertexBuffer;
+    m_vertexAllocation = other.m_vertexAllocation;
+    m_vertexCapacityBytes = other.m_vertexCapacityBytes;
+    m_indexBuffer = other.m_indexBuffer;
+    m_indexAllocation = other.m_indexAllocation;
+    m_indexCapacityBytes = other.m_indexCapacityBytes;
+    m_indexType = other.m_indexType;
+    m_indexCount = other.m_indexCount;
+
+    other.m_allocator = VK_NULL_HANDLE;
+    other.m_vertexBuffer = VK_NULL_HANDLE;
+    other.m_vertexAllocation = VK_NULL_HANDLE;
+    other.m_vertexCapacityBytes = 0;
+    other.m_indexBuffer = VK_NULL_HANDLE;
+    other.m_indexAllocation = VK_NULL_HANDLE;
+    other.m_indexCapacityBytes = 0;
+    other.m_indexType = vk::IndexType::eUint32;
+    other.m_indexCount = 0;
+}
+
 void VkMesh::setGeometry(std::vector<Vertex> vertices, std::vector<uint32_t> indices) {
     m_geometryFormat = GeometryFormat::Float32;
     m_vertices = std::move(vertices);
@@ -88,9 +175,17 @@ bool VkMesh::hasGeometry() const {
 void VkMesh::init(
     const vk::raii::Device &device,
     const vk::raii::PhysicalDevice &physicalDevice,
+    VmaAllocator allocator,
     UploadContext &uploadContext
 ) {
-    cleanup();
+    (void)device;
+    if (m_allocator != VK_NULL_HANDLE && allocator != m_allocator) {
+        destroyGpuBuffers();
+        m_allocator = VK_NULL_HANDLE;
+    }
+    if (m_allocator == VK_NULL_HANDLE) {
+        m_allocator = allocator;
+    }
 
     if (m_geometryFormat == GeometryFormat::Float32 && (m_vertices.empty() || m_indices.empty())) {
         m_vertices = createDefaultCubeVertices();
@@ -131,58 +226,95 @@ void VkMesh::init(
     const vk::DeviceSize vertexBufferSize = vertexStride * static_cast<vk::DeviceSize>(vertexCount);
     const vk::DeviceSize indexBufferSize = indexStride * static_cast<vk::DeviceSize>(indexCount);
 
-    VulkanUtils::createBuffer(
-        device,
-        physicalDevice,
-        vertexBufferSize,
-        vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
-        vk::MemoryPropertyFlagBits::eDeviceLocal,
-        m_vertexBuffer,
-        m_vertexBufferMemory
-    );
+    if (m_vertexBuffer == VK_NULL_HANDLE || m_vertexAllocation == VK_NULL_HANDLE ||
+        vertexBufferSize > m_vertexCapacityBytes) {
+        if (m_vertexBuffer != VK_NULL_HANDLE && m_vertexAllocation != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(m_allocator, m_vertexBuffer, m_vertexAllocation);
+            m_vertexBuffer = VK_NULL_HANDLE;
+            m_vertexAllocation = VK_NULL_HANDLE;
+            m_vertexCapacityBytes = 0;
+        }
+        const vk::DeviceSize newVertexCapacity =
+            growBufferCapacity(vertexBufferSize, m_vertexCapacityBytes);
+        createVmaBuffer(
+            m_allocator,
+            newVertexCapacity,
+            vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
+            m_vertexBuffer,
+            m_vertexAllocation
+        );
+        m_vertexCapacityBytes = newVertexCapacity;
+    }
 
-    VulkanUtils::createBuffer(
-        device,
-        physicalDevice,
-        indexBufferSize,
-        vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
-        vk::MemoryPropertyFlagBits::eDeviceLocal,
-        m_indexBuffer,
-        m_indexBufferMemory
-    );
+    if (m_indexBuffer == VK_NULL_HANDLE || m_indexAllocation == VK_NULL_HANDLE ||
+        indexBufferSize > m_indexCapacityBytes) {
+        if (m_indexBuffer != VK_NULL_HANDLE && m_indexAllocation != VK_NULL_HANDLE) {
+            vmaDestroyBuffer(m_allocator, m_indexBuffer, m_indexAllocation);
+            m_indexBuffer = VK_NULL_HANDLE;
+            m_indexAllocation = VK_NULL_HANDLE;
+            m_indexCapacityBytes = 0;
+        }
+        const vk::DeviceSize newIndexCapacity =
+            growBufferCapacity(indexBufferSize, m_indexCapacityBytes);
+        createVmaBuffer(
+            m_allocator,
+            newIndexCapacity,
+            vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
+            m_indexBuffer,
+            m_indexAllocation
+        );
+        m_indexCapacityBytes = newIndexCapacity;
+    }
 
     std::vector<UploadContext::BufferCopyUpload> uploads;
     uploads.reserve(2);
     uploads.push_back(
         UploadContext::BufferCopyUpload{
             uploadContext.createStagingBuffer(physicalDevice, vertexData, vertexBufferSize),
-            *m_vertexBuffer,
+            m_vertexBuffer,
             vertexBufferSize
         }
     );
     uploads.push_back(
         UploadContext::BufferCopyUpload{
             uploadContext.createStagingBuffer(physicalDevice, indexData, indexBufferSize),
-            *m_indexBuffer,
+            m_indexBuffer,
             indexBufferSize
         }
     );
-    uploadContext.submitCopyBufferBatch(std::move(uploads));
+    if (!uploads.empty()) {
+        uploadContext.submitCopyBufferBatch(std::move(uploads));
+    }
 }
 
 void VkMesh::cleanup() {
-    m_vertexBuffer.clear();
-    m_vertexBufferMemory.clear();
-    m_indexBuffer.clear();
-    m_indexBufferMemory.clear();
+    destroyGpuBuffers();
+    m_allocator = VK_NULL_HANDLE;
     m_indexCount = 0;
 }
 
+void VkMesh::destroyGpuBuffers() {
+    if (m_allocator != VK_NULL_HANDLE && m_vertexBuffer != VK_NULL_HANDLE &&
+        m_vertexAllocation != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(m_allocator, m_vertexBuffer, m_vertexAllocation);
+    }
+    if (m_allocator != VK_NULL_HANDLE && m_indexBuffer != VK_NULL_HANDLE &&
+        m_indexAllocation != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(m_allocator, m_indexBuffer, m_indexAllocation);
+    }
+    m_vertexBuffer = VK_NULL_HANDLE;
+    m_vertexAllocation = VK_NULL_HANDLE;
+    m_vertexCapacityBytes = 0;
+    m_indexBuffer = VK_NULL_HANDLE;
+    m_indexAllocation = VK_NULL_HANDLE;
+    m_indexCapacityBytes = 0;
+}
+
 void VkMesh::bind(const vk::raii::CommandBuffer &commandBuffer) const {
-    const std::array<vk::Buffer, 1> vertexBuffers = {*m_vertexBuffer};
+    const std::array<vk::Buffer, 1> vertexBuffers = {static_cast<vk::Buffer>(m_vertexBuffer)};
     const std::array<vk::DeviceSize, 1> offsets = {0};
     commandBuffer.bindVertexBuffers(0, vertexBuffers, offsets);
-    commandBuffer.bindIndexBuffer(*m_indexBuffer, 0, m_indexType);
+    commandBuffer.bindIndexBuffer(static_cast<vk::Buffer>(m_indexBuffer), 0, m_indexType);
 }
 
 std::vector<VkMesh::Vertex> VkMesh::createDefaultCubeVertices() {

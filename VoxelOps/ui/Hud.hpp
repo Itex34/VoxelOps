@@ -1,11 +1,11 @@
 #pragma once
 
 #include "../runtime/Runtime.hpp"
+#include "../application/FrameServices.hpp"
 
 #include <SDL3/SDL.h>
 
 #include <cstdint>
-#include <functional>
 #include <string>
 
 struct HudContext {
@@ -13,8 +13,8 @@ struct HudContext {
     std::string *serverIp = nullptr;
     uint16_t *serverPort = nullptr;
     std::string *requestedUsername = nullptr;
-    std::function<bool(Runtime &)> beginConnectionAttempt;
-    std::function<void()> applyMouseInputModes;
+    FrameConnectionHost *connectionHost = nullptr;
+    FrameWindowHost *windowHost = nullptr;
 };
 
 class Hud {

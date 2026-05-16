@@ -5,6 +5,13 @@
 namespace {
     constexpr double kChunkMeshBuildLogThresholdMs = 2.0;
     constexpr double kChunkMeshUploadLogThresholdMs = 2.0;
+
+    glm::vec3 decodePackedVoxelPosition(const VoxelVertex &packed) {
+        const uint32_t x = (packed.low >> 0u) & 31u;
+        const uint32_t y = (packed.low >> 5u) & 31u;
+        const uint32_t z = (packed.low >> 10u) & 31u;
+        return glm::vec3(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+    }
 } // namespace
 
 ChunkMesher::ChunkMesher(ChunkManager &owner)
@@ -116,13 +123,17 @@ void ChunkMesher::updateDirtyChunks(size_t maxChunksPerCall, int64_t maxBudgetUs
             if (!chunk.dirty.load(std::memory_order_acquire)) {
                 const auto uploadStart = std::chrono::steady_clock::now();
                 if (ready.vertices.empty() || ready.indices.empty()) {
-                    m_cpuChunkMeshes.erase(ready.chunkPos);
+                    if (m_cpuChunkMeshes.erase(ready.chunkPos) > 0) {
+                        ++m_cpuChunkMeshesVersion;
+                    }
                 } else {
                     CpuChunkMesh &cpuMesh = m_cpuChunkMeshes[ready.chunkPos];
                     cpuMesh.vertices = std::move(ready.vertices);
+                    cpuMesh.rtVertices = std::move(ready.rtVertices);
                     cpuMesh.indices = std::move(ready.indices);
                     cpuMesh.revision = m_nextCpuChunkMeshRevision++;
                     cpuMesh.highPriorityRtBuild = ready.highPriority;
+                    ++m_cpuChunkMeshesVersion;
                 }
                 const auto uploadEnd = std::chrono::steady_clock::now();
                 const double uploadMs =
@@ -177,7 +188,9 @@ void ChunkMesher::updateDirtyChunkAt(const glm::ivec3 &chunkPos) {
 
 void ChunkMesher::onChunkRemoved(const glm::ivec3 &chunkPos) {
     m_chunkBuildTickets.erase(chunkPos);
-    m_cpuChunkMeshes.erase(chunkPos);
+    if (m_cpuChunkMeshes.erase(chunkPos) > 0) {
+        ++m_cpuChunkMeshesVersion;
+    }
     m_dirtyChunkPending.erase(chunkPos);
     m_highPriorityDirtyChunkPending.erase(chunkPos);
 }
@@ -267,6 +280,10 @@ void ChunkMesher::buildChunkMeshWorker(ChunkMeshBuildJob job) {
     ready.chunkPos = job.chunkPos;
     ready.buildTicket = job.buildTicket;
     ready.highPriority = job.highPriority;
+    ready.rtVertices.reserve(built.vertices.size());
+    for (const VoxelVertex &packed : built.vertices) {
+        ready.rtVertices.push_back(decodePackedVoxelPosition(packed));
+    }
     ready.vertices = std::move(built.vertices);
     ready.indices = std::move(built.indices);
     {

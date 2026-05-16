@@ -28,9 +28,39 @@ namespace {
         const bool *keys = SDL_GetKeyboardState(&keyCount);
         return keys != nullptr && scancode < keyCount && keys[scancode];
     }
+
+    void AssertRequiredContext(const FrameOrchestratorContext &ctx) {
+        assert(ctx.inputHost != nullptr);
+        assert(ctx.connectionHost != nullptr);
+        assert(ctx.windowHost != nullptr);
+        assert(ctx.renderHost != nullptr);
+        assert(ctx.host.window != nullptr);
+
+        assert(ctx.simulation.useDebugCamera != nullptr);
+        assert(ctx.simulation.forceCursorEnabled != nullptr);
+        assert(ctx.simulation.wasWorldInteractPressed != nullptr);
+
+        assert(ctx.ui.serverIp != nullptr);
+        assert(ctx.ui.serverPort != nullptr);
+        assert(ctx.ui.requestedUsername != nullptr);
+        assert(ctx.ui.showDebugUi != nullptr);
+        assert(ctx.ui.showInventoryUi != nullptr);
+        assert(ctx.ui.enableRawMouseInput != nullptr);
+        assert(ctx.ui.requestSwitchToOpenGl != nullptr);
+        assert(ctx.ui.requestSwitchToVulkan != nullptr);
+        assert(ctx.ui.renderApiPreference != nullptr);
+
+        assert(ctx.render.skyExposure != nullptr);
+        assert(ctx.render.sunDirection != nullptr);
+        assert(ctx.render.sunShadowDirectionalBias != nullptr);
+        assert(ctx.render.sunShadowLowSunBiasBoost != nullptr);
+        assert(ctx.render.sunShadowFrontFaceCullAtLowSun != nullptr);
+        assert(ctx.render.sunShadowFrontFaceCullGrazingThreshold != nullptr);
+    }
 } // namespace
 
 void FrameOrchestrator::bind(Runtime &runtime, FrameOrchestratorContext context) {
+    AssertRequiredContext(context);
     m_runtime = &runtime;
     m_context = std::move(context);
 }
@@ -101,15 +131,19 @@ void FrameOrchestrator::updateFrameTime() {
 }
 
 FrameOrchestrator::SimulationStageResult FrameOrchestrator::runSimulationStage() {
+    FrameInputHost *inputHost = m_context.inputHost;
+    FrameConnectionHost *connectionHost = m_context.connectionHost;
+    FrameWindowHost *windowHost = m_context.windowHost;
+
     const auto perfInputStart = Clock::now();
     if (runtime().ui.debugUi) {
         runtime().ui.debugUi->beginFrame();
     }
-    if (m_context.host.updateDebugCamera) {
-        m_context.host.updateDebugCamera(runtime());
+    if (inputHost != nullptr) {
+        inputHost->updateDebugCamera(runtime());
     }
-    if (m_context.host.updateToggleStates) {
-        m_context.host.updateToggleStates(runtime());
+    if (inputHost != nullptr) {
+        inputHost->updateToggleStates(runtime());
     }
 
     if (!runtime().network.clientNet.IsConnected()) {
@@ -121,8 +155,8 @@ FrameOrchestrator::SimulationStageResult FrameOrchestrator::runSimulationStage()
         !*m_context.simulation.forceCursorEnabled;
 
     runtime().gameplay.inputCallbacks->processInput(m_context.host.window);
-    if (m_context.host.applyMouseInputModes) {
-        m_context.host.applyMouseInputModes();
+    if (windowHost != nullptr) {
+        windowHost->applyMouseInputModes();
     }
     const ClientInputIntent inputIntent = m_inputSystem.captureIntent(runtime(), m_context.host.window);
     runtime().prediction.localSimAccumulator += GameData::deltaTime;
@@ -138,8 +172,7 @@ FrameOrchestrator::SimulationStageResult FrameOrchestrator::runSimulationStage()
     const auto perfNetworkStart = Clock::now();
     ClientSessionContext netCtx{};
     netCtx.forceCursorEnabled = m_context.simulation.forceCursorEnabled;
-    netCtx.beginConnectionAttempt = m_context.simulation.beginConnectionAttempt;
-    netCtx.equipGun = m_context.simulation.equipGun;
+    netCtx.connectionHost = connectionHost;
     m_clientSession.update(runtime(), netCtx, &inputIntent);
     const auto perfNetworkEnd = Clock::now();
     runtime().app.perf.networkMs = MeasureMs(perfNetworkStart, perfNetworkEnd);
@@ -312,8 +345,8 @@ FrameOrchestrator::runUiStage(const SimulationStageResult &simulation) {
         (m_context.ui.showInventoryUi != nullptr) && *m_context.ui.showInventoryUi;
     GameData::cursorEnabled =
         forceCursor || showDebugUi || showInventoryUi || !runtime().network.clientNet.IsConnected();
-    if (m_context.host.applyMouseInputModes) {
-        m_context.host.applyMouseInputModes();
+    if (m_context.windowHost != nullptr) {
+        m_context.windowHost->applyMouseInputModes();
     }
 
     HudContext hudCtx{};
@@ -321,8 +354,8 @@ FrameOrchestrator::runUiStage(const SimulationStageResult &simulation) {
     hudCtx.serverIp = m_context.ui.serverIp;
     hudCtx.serverPort = m_context.ui.serverPort;
     hudCtx.requestedUsername = m_context.ui.requestedUsername;
-    hudCtx.beginConnectionAttempt = m_context.simulation.beginConnectionAttempt;
-    hudCtx.applyMouseInputModes = m_context.host.applyMouseInputModes;
+    hudCtx.connectionHost = m_context.connectionHost;
+    hudCtx.windowHost = m_context.windowHost;
     m_hudSystem.draw(runtime(), hudCtx);
     result.drawData = runtime().ui.debugUi->endFrame();
     return result;
@@ -353,8 +386,8 @@ void FrameOrchestrator::runRenderStage(
 
     RenderScene frameScene = m_renderSceneBuilder.build(runtime(), sceneInput);
     frameScene.renderOpaqueOverlayPasses = [&]() {
-        if (m_context.render.renderWorldItems) {
-            m_context.render.renderWorldItems(runtime(), frameScene.activeCamera);
+        if (m_context.renderHost != nullptr) {
+            m_context.renderHost->renderWorldItems(runtime(), frameScene.activeCamera);
         }
         if (frameScene.useDebugCamera && runtime().render.gunSceneRenderer) {
             runtime().render.gunSceneRenderer->renderRemotePlayerGuns(
@@ -380,21 +413,21 @@ void FrameOrchestrator::updateFrameHotkeysAndCounters() {
     static bool f11PressedLastFrame = false;
     const bool f11PressedNow = IsScancodeDown(SDL_SCANCODE_F11);
     if (f11PressedNow && !f11PressedLastFrame) {
-        if (m_context.host.toggleFullscreen) {
-            m_context.host.toggleFullscreen(m_context.host.window);
+        if (m_context.windowHost != nullptr) {
+            m_context.windowHost->toggleFullscreen(m_context.host.window);
         }
     }
     f11PressedLastFrame = f11PressedNow;
-    if (m_context.host.updateFPSCounter) {
-        m_context.host.updateFPSCounter();
+    if (m_context.windowHost != nullptr) {
+        m_context.windowHost->updateFPSCounter();
     }
 }
 
 void FrameOrchestrator::runPresentStage(size_t localPredictionSteps) {
     const auto perfPresentStart = Clock::now();
     runtime().render.renderer->present(m_context.host.window);
-    if (m_context.host.pollEvents) {
-        m_context.host.pollEvents(runtime());
+    if (m_context.inputHost != nullptr) {
+        m_context.inputHost->pollEvents(runtime());
     }
     const auto perfPresentEnd = Clock::now();
     runtime().app.perf.presentMs = MeasureMs(perfPresentStart, perfPresentEnd);

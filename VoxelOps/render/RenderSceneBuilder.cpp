@@ -89,6 +89,7 @@ RenderScene RenderSceneBuilder::build(Runtime &runtime, const RenderSceneBuilder
         .chunkWorld =
             RenderChunkWorldView{
                 .cpuChunkMeshes = &runtime.gameplay.chunkManager->getCpuChunkMeshes(),
+                .cpuChunkMeshesVersion = runtime.gameplay.chunkManager->getCpuChunkMeshesVersion(),
                 .chunks = &runtime.gameplay.chunkManager->getChunks(),
                 .enableAO = runtime.gameplay.chunkManager->enableAO
             },

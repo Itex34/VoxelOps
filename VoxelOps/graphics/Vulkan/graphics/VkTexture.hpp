@@ -35,6 +35,12 @@ public:
     vk::DescriptorSet getDescriptorSet() const {
         return m_descriptorSets.empty() ? VK_NULL_HANDLE : *m_descriptorSets[0];
     }
+    vk::ImageView getImageView() const {
+        return (m_imageView != nullptr) ? *m_imageView : VK_NULL_HANDLE;
+    }
+    vk::Sampler getSampler() const {
+        return (m_sampler != nullptr) ? *m_sampler : VK_NULL_HANDLE;
+    }
 
 private:
     vk::raii::Image m_image{nullptr};

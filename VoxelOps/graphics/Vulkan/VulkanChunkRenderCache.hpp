@@ -44,6 +44,9 @@ public:
     getChunkMeshes() const noexcept {
         return m_chunkMeshes;
     }
+    [[nodiscard]] uint64_t contentVersion() const noexcept {
+        return m_contentVersion;
+    }
 
 private:
     struct PendingChunkUploadJob {
@@ -75,7 +78,8 @@ private:
         uint64_t frameCounter,
         VulkanContext &context,
         UploadContext &uploadContext,
-        const std::function<void(const glm::ivec3 &, const CpuChunkMesh &)> &onChunkUploaded
+        const std::function<void(const glm::ivec3 &, const CpuChunkMesh &)> &onChunkUploaded,
+        size_t maxCompletedUploadsPerCall
     );
     void retireChunkMesh(VkMesh &&mesh, uint64_t frameCounter);
 
@@ -86,5 +90,6 @@ private:
 
     std::unordered_map<glm::ivec3, CachedChunkMesh, IVec3Hash> m_chunkMeshes;
     std::vector<RetiredChunkMesh> m_retiredChunkMeshes;
+    uint64_t m_contentVersion = 0;
     ThreadPool m_chunkUploadWorkerPool{1};
 };

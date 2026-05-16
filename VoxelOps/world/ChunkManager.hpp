@@ -75,6 +75,7 @@ public:
     getCpuChunkMeshes() const noexcept {
         return getCpuChunkMeshesImpl();
     }
+    [[nodiscard]] uint64_t getCpuChunkMeshesVersion() const noexcept;
 
     glm::ivec3 worldToChunkPos(const glm::ivec3 &worldPos) const;
     glm::ivec3 worldToLocalPos(const glm::ivec3 &worldPos) const;
@@ -101,6 +102,7 @@ private:
     BlockID getBlockSafe(Chunk &currentChunk, const glm::ivec3 &pos);
     const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &
     getCpuChunkMeshesImpl() const noexcept;
+    uint64_t getCpuChunkMeshesVersionImpl() const noexcept;
 
     inline std::array<bool, 6> isEdgeBlock(glm::ivec3 localPos) {
         return {

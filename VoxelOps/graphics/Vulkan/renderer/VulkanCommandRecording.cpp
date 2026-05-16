@@ -19,7 +19,8 @@ void VulkanRenderer::recordCommandBuffer(
     const FrameRenderData &frameData,
     float &outChunkCpuMs,
     float &outModelCpuMs,
-    float &outUiCpuMs
+    float &outUiCpuMs,
+    bool recordNrdAndComposite
 ) {
     const auto measureMs = [](auto start, auto end) -> float {
         return static_cast<float>(std::chrono::duration<double, std::milli>(end - start).count());
@@ -37,6 +38,11 @@ void VulkanRenderer::recordCommandBuffer(
     outChunkCpuMs = 0.0f;
     outModelCpuMs = 0.0f;
     outUiCpuMs = 0.0f;
+    m_lastFrameTimingStats.descriptorBindCount = 0;
+    m_lastFrameTimingStats.chunkDescriptorBindCount = 0;
+    m_lastFrameTimingStats.modelDescriptorBindCount = 0;
+    m_lastFrameTimingStats.drawIndexedIndirectCount = 0;
+    m_lastFrameTimingStats.drawIndexedCount = 0;
 
     vk::CommandBufferBeginInfo beginInfo{};
     m_commandBuffers[imageIndex].begin(beginInfo);
@@ -49,7 +55,6 @@ void VulkanRenderer::recordCommandBuffer(
         );
     }
     clearTemporalGiWriteTargets(imageIndex);
-
     auto nrdNormalRoughnessClear = [&](uint32_t normalEncoding) -> vk::ClearColorValue {
         if (normalEncoding == 2u) {
             return vk::ClearColorValue(std::array<float, 4>{0.5f, 0.5f, 1.0f, 0.0f});
@@ -98,10 +103,17 @@ void VulkanRenderer::recordCommandBuffer(
     scissor.offset = vk::Offset2D{0, 0};
     scissor.extent = extent;
     m_commandBuffers[imageIndex].setScissor(0, scissor);
+    if (m_timestampQueriesEnabled && imageIndex < m_timestampQueryPools.size()) {
+        m_commandBuffers[imageIndex].writeTimestamp(
+            vk::PipelineStageFlagBits::eBottomOfPipe, *m_timestampQueryPools[imageIndex], 1
+        );
+    }
 
     const vk::DescriptorSet modelDescriptorSet = *m_modelDescriptorSets[imageIndex];
     const vk::DescriptorSet giDescriptorSet =
         (imageIndex < m_giDescriptorSets.size()) ? *m_giDescriptorSets[imageIndex] : VK_NULL_HANDLE;
+    vk::DescriptorSet lastChunkTextureDescriptorSet = VK_NULL_HANDLE;
+    bool hasBoundChunkDescriptorSet = false;
     const auto chunkCpuStart = std::chrono::steady_clock::now();
 
     if (!frameData.indirectCommands.empty() && imageIndex < m_perImageDrawResources.size()) {
@@ -111,45 +123,59 @@ void VulkanRenderer::recordCommandBuffer(
             const bool supportsMultiDrawIndirect = m_context.isMultiDrawIndirectEnabled();
             const bool supportsIndirectFirstInstance =
                 m_context.isDrawIndirectFirstInstanceEnabled();
-            for (const RenderIndirectBatch &batch : frameData.indirectBatches) {
-                if (!batch.mesh || batch.commandCount == 0 ||
-                    batch.firstCommand >= frameData.indirectCommands.size()) {
-                    continue;
-                }
-
-                const uint32_t maxCommandCount =
-                    static_cast<uint32_t>(frameData.indirectCommands.size() - batch.firstCommand);
-                const uint32_t clampedCommandCount = std::min(batch.commandCount, maxCommandCount);
-                if (clampedCommandCount == 0) {
-                    continue;
-                }
-
-                batch.mesh->bind(m_commandBuffers[imageIndex]);
-
+            const bool useChunkSuperbatch =
+                frameData.chunkSuperbatchEnabled &&
+                frameData.chunkSuperbatchTexture != nullptr &&
+                !frameData.chunkSuperbatchIndices.empty() &&
+                resources.chunkSuperbatchVertexBuffer != nullptr &&
+                resources.chunkSuperbatchIndexBuffer != nullptr;
+            if (useChunkSuperbatch) {
                 vk::DescriptorSet textureDescriptorSet = m_fallbackArrayTexture.getDescriptorSet();
-                if (batch.texture && batch.texture->getDescriptorSet() != VK_NULL_HANDLE) {
-                    textureDescriptorSet = batch.texture->getDescriptorSet();
+                if (frameData.chunkSuperbatchTexture->getDescriptorSet() != VK_NULL_HANDLE) {
+                    textureDescriptorSet = frameData.chunkSuperbatchTexture->getDescriptorSet();
                 }
 
                 const std::array<vk::DescriptorSet, 3> descriptorSets = {
                     textureDescriptorSet, modelDescriptorSet, giDescriptorSet
                 };
-                m_commandBuffers[imageIndex].bindDescriptorSets(
-                    vk::PipelineBindPoint::eGraphics,
-                    *m_chunkPipeline.getLayout(),
-                    0,
-                    descriptorSets,
-                    {}
+                if (!hasBoundChunkDescriptorSet || textureDescriptorSet != lastChunkTextureDescriptorSet) {
+                    m_commandBuffers[imageIndex].bindDescriptorSets(
+                        vk::PipelineBindPoint::eGraphics,
+                        *m_chunkPipeline.getLayout(),
+                        0,
+                        descriptorSets,
+                        {}
+                    );
+                    hasBoundChunkDescriptorSet = true;
+                    lastChunkTextureDescriptorSet = textureDescriptorSet;
+                    ++m_lastFrameTimingStats.descriptorBindCount;
+                    ++m_lastFrameTimingStats.chunkDescriptorBindCount;
+                }
+
+                const std::array<vk::Buffer, 1> vertexBuffers = {
+                    *resources.chunkSuperbatchVertexBuffer
+                };
+                const std::array<vk::DeviceSize, 1> vertexOffsets = {0};
+                m_commandBuffers[imageIndex].bindVertexBuffers(0, vertexBuffers, vertexOffsets);
+                m_commandBuffers[imageIndex].bindIndexBuffer(
+                    *resources.chunkSuperbatchIndexBuffer, 0, vk::IndexType::eUint16
                 );
 
-                if (!supportsMultiDrawIndirect && clampedCommandCount > 1) {
-                    for (uint32_t i = 0; i < clampedCommandCount; ++i) {
-                        const IndexedIndirectCommand &command =
-                            frameData.indirectCommands[batch.firstCommand + i];
+                if (supportsMultiDrawIndirect && supportsIndirectFirstInstance) {
+                    m_commandBuffers[imageIndex].drawIndexedIndirect(
+                        *resources.indirectCommandBuffer,
+                        0,
+                        static_cast<uint32_t>(frameData.indirectCommands.size()),
+                        static_cast<uint32_t>(stride)
+                    );
+                    ++m_lastFrameTimingStats.drawIndexedIndirectCount;
+                } else {
+                    for (size_t commandIndex = 0; commandIndex < frameData.indirectCommands.size();
+                         ++commandIndex) {
+                        const IndexedIndirectCommand &command = frameData.indirectCommands[commandIndex];
                         if (command.indexCount == 0 || command.instanceCount == 0) {
                             continue;
                         }
-
                         if (!supportsIndirectFirstInstance && command.firstInstance != 0) {
                             m_commandBuffers[imageIndex].drawIndexed(
                                 command.indexCount,
@@ -158,58 +184,134 @@ void VulkanRenderer::recordCommandBuffer(
                                 command.vertexOffset,
                                 command.firstInstance
                             );
+                            ++m_lastFrameTimingStats.drawIndexedCount;
                             continue;
                         }
-
                         const vk::DeviceSize offset =
-                            static_cast<vk::DeviceSize>(batch.firstCommand + i) * stride;
+                            static_cast<vk::DeviceSize>(commandIndex) * stride;
                         m_commandBuffers[imageIndex].drawIndexedIndirect(
                             *resources.indirectCommandBuffer,
                             offset,
                             1,
                             static_cast<uint32_t>(stride)
                         );
+                        ++m_lastFrameTimingStats.drawIndexedIndirectCount;
                     }
-                    continue;
                 }
+            } else {
+                for (const RenderIndirectBatch &batch : frameData.indirectBatches) {
+                    if (!batch.mesh || batch.commandCount == 0 ||
+                        batch.firstCommand >= frameData.indirectCommands.size()) {
+                        continue;
+                    }
 
-                bool requiresNonZeroFirstInstance = false;
-                if (!supportsIndirectFirstInstance) {
+                    const uint32_t maxCommandCount = static_cast<uint32_t>(
+                        frameData.indirectCommands.size() - batch.firstCommand
+                    );
+                    const uint32_t clampedCommandCount =
+                        std::min(batch.commandCount, maxCommandCount);
+                    if (clampedCommandCount == 0) {
+                        continue;
+                    }
+
+                    batch.mesh->bind(m_commandBuffers[imageIndex]);
+
+                    vk::DescriptorSet textureDescriptorSet = m_fallbackArrayTexture.getDescriptorSet();
+                    if (batch.texture && batch.texture->getDescriptorSet() != VK_NULL_HANDLE) {
+                        textureDescriptorSet = batch.texture->getDescriptorSet();
+                    }
+
+                    const std::array<vk::DescriptorSet, 3> descriptorSets = {
+                        textureDescriptorSet, modelDescriptorSet, giDescriptorSet
+                    };
+                    if (!hasBoundChunkDescriptorSet ||
+                        textureDescriptorSet != lastChunkTextureDescriptorSet) {
+                        m_commandBuffers[imageIndex].bindDescriptorSets(
+                            vk::PipelineBindPoint::eGraphics,
+                            *m_chunkPipeline.getLayout(),
+                            0,
+                            descriptorSets,
+                            {}
+                        );
+                        hasBoundChunkDescriptorSet = true;
+                        lastChunkTextureDescriptorSet = textureDescriptorSet;
+                        ++m_lastFrameTimingStats.descriptorBindCount;
+                        ++m_lastFrameTimingStats.chunkDescriptorBindCount;
+                    }
+
+                    if (!supportsMultiDrawIndirect && clampedCommandCount > 1) {
+                        for (uint32_t i = 0; i < clampedCommandCount; ++i) {
+                            const IndexedIndirectCommand &command =
+                                frameData.indirectCommands[batch.firstCommand + i];
+                            if (command.indexCount == 0 || command.instanceCount == 0) {
+                                continue;
+                            }
+
+                            if (!supportsIndirectFirstInstance && command.firstInstance != 0) {
+                                m_commandBuffers[imageIndex].drawIndexed(
+                                    command.indexCount,
+                                    command.instanceCount,
+                                    command.firstIndex,
+                                    command.vertexOffset,
+                                    command.firstInstance
+                                );
+                                ++m_lastFrameTimingStats.drawIndexedCount;
+                                continue;
+                            }
+
+                            const vk::DeviceSize offset =
+                                static_cast<vk::DeviceSize>(batch.firstCommand + i) * stride;
+                            m_commandBuffers[imageIndex].drawIndexedIndirect(
+                                *resources.indirectCommandBuffer,
+                                offset,
+                                1,
+                                static_cast<uint32_t>(stride)
+                            );
+                            ++m_lastFrameTimingStats.drawIndexedIndirectCount;
+                        }
+                        continue;
+                    }
+
+                    bool requiresNonZeroFirstInstance = false;
+                    if (!supportsIndirectFirstInstance) {
+                        for (uint32_t i = 0; i < clampedCommandCount; ++i) {
+                            const IndexedIndirectCommand &command =
+                                frameData.indirectCommands[batch.firstCommand + i];
+                            if (command.firstInstance != 0) {
+                                requiresNonZeroFirstInstance = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!requiresNonZeroFirstInstance) {
+                        const vk::DeviceSize offset =
+                            static_cast<vk::DeviceSize>(batch.firstCommand) * stride;
+                        m_commandBuffers[imageIndex].drawIndexedIndirect(
+                            *resources.indirectCommandBuffer,
+                            offset,
+                            clampedCommandCount,
+                            static_cast<uint32_t>(stride)
+                        );
+                        ++m_lastFrameTimingStats.drawIndexedIndirectCount;
+                        continue;
+                    }
+
                     for (uint32_t i = 0; i < clampedCommandCount; ++i) {
                         const IndexedIndirectCommand &command =
                             frameData.indirectCommands[batch.firstCommand + i];
-                        if (command.firstInstance != 0) {
-                            requiresNonZeroFirstInstance = true;
-                            break;
+                        if (command.indexCount == 0 || command.instanceCount == 0) {
+                            continue;
                         }
+                        m_commandBuffers[imageIndex].drawIndexed(
+                            command.indexCount,
+                            command.instanceCount,
+                            command.firstIndex,
+                            command.vertexOffset,
+                            command.firstInstance
+                        );
+                        ++m_lastFrameTimingStats.drawIndexedCount;
                     }
-                }
-
-                if (!requiresNonZeroFirstInstance) {
-                    const vk::DeviceSize offset =
-                        static_cast<vk::DeviceSize>(batch.firstCommand) * stride;
-                    m_commandBuffers[imageIndex].drawIndexedIndirect(
-                        *resources.indirectCommandBuffer,
-                        offset,
-                        clampedCommandCount,
-                        static_cast<uint32_t>(stride)
-                    );
-                    continue;
-                }
-
-                for (uint32_t i = 0; i < clampedCommandCount; ++i) {
-                    const IndexedIndirectCommand &command =
-                        frameData.indirectCommands[batch.firstCommand + i];
-                    if (command.indexCount == 0 || command.instanceCount == 0) {
-                        continue;
-                    }
-                    m_commandBuffers[imageIndex].drawIndexed(
-                        command.indexCount,
-                        command.instanceCount,
-                        command.firstIndex,
-                        command.vertexOffset,
-                        command.firstInstance
-                    );
                 }
             }
         }
@@ -218,7 +320,7 @@ void VulkanRenderer::recordCommandBuffer(
     outChunkCpuMs = measureMs(chunkCpuStart, chunkCpuEnd);
     if (m_timestampQueriesEnabled && imageIndex < m_timestampQueryPools.size()) {
         m_commandBuffers[imageIndex].writeTimestamp(
-            vk::PipelineStageFlagBits::eBottomOfPipe, *m_timestampQueryPools[imageIndex], 1
+            vk::PipelineStageFlagBits::eBottomOfPipe, *m_timestampQueryPools[imageIndex], 2
         );
     }
 
@@ -226,6 +328,8 @@ void VulkanRenderer::recordCommandBuffer(
     if (!frameData.objects.empty()) {
         m_modelPipeline.bind(m_commandBuffers[imageIndex]);
         m_modelPipeline.pushViewProjection(m_commandBuffers[imageIndex], viewProjection);
+        vk::DescriptorSet lastModelTextureDescriptorSet = VK_NULL_HANDLE;
+        bool hasBoundModelDescriptorSet = false;
 
         const uint32_t modelBaseInstance = static_cast<uint32_t>(frameData.modelMatrices.size());
         uint32_t objectIndex = 0;
@@ -261,16 +365,23 @@ void VulkanRenderer::recordCommandBuffer(
                 const std::array<vk::DescriptorSet, 3> descriptorSets = {
                     textureDescriptorSet, modelDescriptorSet, giDescriptorSet
                 };
-                m_commandBuffers[imageIndex].bindDescriptorSets(
-                    vk::PipelineBindPoint::eGraphics,
-                    *m_modelPipeline.getLayout(),
-                    0,
-                    descriptorSets,
-                    {}
-                );
+                if (!hasBoundModelDescriptorSet || textureDescriptorSet != lastModelTextureDescriptorSet) {
+                    m_commandBuffers[imageIndex].bindDescriptorSets(
+                        vk::PipelineBindPoint::eGraphics,
+                        *m_modelPipeline.getLayout(),
+                        0,
+                        descriptorSets,
+                        {}
+                    );
+                    hasBoundModelDescriptorSet = true;
+                    lastModelTextureDescriptorSet = textureDescriptorSet;
+                    ++m_lastFrameTimingStats.descriptorBindCount;
+                    ++m_lastFrameTimingStats.modelDescriptorBindCount;
+                }
                 m_commandBuffers[imageIndex].drawIndexed(
                     mesh.getIndexCount(), 1, 0, 0, firstInstance
                 );
+                ++m_lastFrameTimingStats.drawIndexedCount;
             }
         }
     }
@@ -278,38 +389,47 @@ void VulkanRenderer::recordCommandBuffer(
     outModelCpuMs = measureMs(modelCpuStart, modelCpuEnd);
     if (m_timestampQueriesEnabled && imageIndex < m_timestampQueryPools.size()) {
         m_commandBuffers[imageIndex].writeTimestamp(
-            vk::PipelineStageFlagBits::eBottomOfPipe, *m_timestampQueryPools[imageIndex], 2
+            vk::PipelineStageFlagBits::eBottomOfPipe, *m_timestampQueryPools[imageIndex], 3
         );
     }
 
     const auto uiCpuStart = std::chrono::steady_clock::now();
     const auto uiCpuEnd = std::chrono::steady_clock::now();
     outUiCpuMs = measureMs(uiCpuStart, uiCpuEnd);
-    if (m_timestampQueriesEnabled && imageIndex < m_timestampQueryPools.size()) {
-        m_commandBuffers[imageIndex].writeTimestamp(
-            vk::PipelineStageFlagBits::eBottomOfPipe, *m_timestampQueryPools[imageIndex], 3
-        );
-    }
-
     m_commandBuffers[imageIndex].endRenderPass();
-    barrierNrdSignalsForCompute(imageIndex);
-#if VOXELOPS_NRD_HEADERS
-    dispatchNrdPass(imageIndex, frameData);
-#endif
-    if (useNrdComposite) {
-        barrierNrdSignalsForComposite(imageIndex);
-    }
-    recordNrdCompositePass(imageIndex, frameData, useNrdComposite);
     if (m_timestampQueriesEnabled && imageIndex < m_timestampQueryPools.size()) {
         m_commandBuffers[imageIndex].writeTimestamp(
             vk::PipelineStageFlagBits::eBottomOfPipe, *m_timestampQueryPools[imageIndex], 4
         );
     }
+    if (recordNrdAndComposite) {
+        barrierNrdSignalsForCompute(*m_commandBuffers[imageIndex], imageIndex);
+#if VOXELOPS_NRD_HEADERS
+        dispatchNrdPass(*m_commandBuffers[imageIndex], imageIndex, frameData);
+#endif
+        if (m_timestampQueriesEnabled && imageIndex < m_timestampQueryPools.size()) {
+            m_commandBuffers[imageIndex].writeTimestamp(
+                vk::PipelineStageFlagBits::eBottomOfPipe, *m_timestampQueryPools[imageIndex], 5
+            );
+        }
+        if (useNrdComposite) {
+            barrierNrdSignalsForComposite(*m_commandBuffers[imageIndex], imageIndex);
+        }
+        recordNrdCompositePass(*m_commandBuffers[imageIndex], imageIndex, frameData, useNrdComposite);
+        if (m_timestampQueriesEnabled && imageIndex < m_timestampQueryPools.size()) {
+            m_commandBuffers[imageIndex].writeTimestamp(
+                vk::PipelineStageFlagBits::eBottomOfPipe, *m_timestampQueryPools[imageIndex], 6
+            );
+        }
+    }
     m_commandBuffers[imageIndex].end();
 }
 
 void VulkanRenderer::recordNrdCompositePass(
-    uint32_t imageIndex, const FrameRenderData &frameData, bool applyNrdComposite
+    vk::CommandBuffer commandBuffer,
+    uint32_t imageIndex,
+    const FrameRenderData &frameData,
+    bool applyNrdComposite
 ) {
     if (imageIndex >= m_compositeFramebuffers.size() || imageIndex >= m_giDescriptorSets.size() ||
         m_compositeRenderPass.get() == nullptr) {
@@ -321,7 +441,7 @@ void VulkanRenderer::recordNrdCompositePass(
     colorBarrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
     colorBarrier.dstAccessMask =
         vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite;
-    m_commandBuffers[imageIndex].pipelineBarrier(
+    commandBuffer.pipelineBarrier(
         vk::PipelineStageFlagBits::eColorAttachmentOutput,
         vk::PipelineStageFlagBits::eColorAttachmentOutput,
         {},
@@ -336,7 +456,7 @@ void VulkanRenderer::recordNrdCompositePass(
     renderPassInfo.renderArea.offset = vk::Offset2D{0, 0};
     renderPassInfo.renderArea.extent = extent;
 
-    m_commandBuffers[imageIndex].beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+    commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 
     vk::Viewport viewport{};
     viewport.x = 0.0f;
@@ -345,47 +465,93 @@ void VulkanRenderer::recordNrdCompositePass(
     viewport.height = static_cast<float>(extent.height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
-    m_commandBuffers[imageIndex].setViewport(0, viewport);
+    commandBuffer.setViewport(0, viewport);
 
     vk::Rect2D scissor{};
     scissor.offset = vk::Offset2D{0, 0};
     scissor.extent = extent;
-    m_commandBuffers[imageIndex].setScissor(0, scissor);
+    commandBuffer.setScissor(0, scissor);
 
     const bool usePostProcess = applyNrdComposite && (frameData.giLighting.nrdDebugView == 0u) &&
                                 m_postProcessPipeline != nullptr &&
                                 m_postProcessPipelineLayout != nullptr;
     if (usePostProcess) {
-        m_commandBuffers[imageIndex].bindPipeline(
+        commandBuffer.bindPipeline(
             vk::PipelineBindPoint::eGraphics, *m_postProcessPipeline
         );
         const vk::DescriptorSet giSet = *m_giDescriptorSets[imageIndex];
-        m_commandBuffers[imageIndex].bindDescriptorSets(
+        commandBuffer.bindDescriptorSets(
             vk::PipelineBindPoint::eGraphics, *m_postProcessPipelineLayout, 0, giSet, {}
         );
-        m_commandBuffers[imageIndex].draw(3, 1, 0, 0);
+        commandBuffer.draw(3, 1, 0, 0);
     } else if (applyNrdComposite && m_nrdCompositePipeline != nullptr &&
                m_nrdCompositePipelineLayout != nullptr) {
-        m_commandBuffers[imageIndex].bindPipeline(
+        commandBuffer.bindPipeline(
             vk::PipelineBindPoint::eGraphics, *m_nrdCompositePipeline
         );
         const vk::DescriptorSet giSet = *m_giDescriptorSets[imageIndex];
-        m_commandBuffers[imageIndex].bindDescriptorSets(
+        commandBuffer.bindDescriptorSets(
             vk::PipelineBindPoint::eGraphics, *m_nrdCompositePipelineLayout, 0, giSet, {}
         );
-        m_commandBuffers[imageIndex].draw(3, 1, 0, 0);
+        commandBuffer.draw(3, 1, 0, 0);
     }
 
 #if VOXELOPS_IMGUI_VULKAN_BACKEND_AVAILABLE
     ImDrawData *drawData = frameData.uiDrawData;
     if (drawData != nullptr && drawData->CmdListsCount > 0 &&
         ImGui::GetCurrentContext() != nullptr) {
-        ImGuiIO &io = ImGui::GetIO();
+            ImGuiIO &io = ImGui::GetIO();
         if (io.BackendRendererUserData != nullptr) {
-            ImGui_ImplVulkan_RenderDrawData(drawData, *m_commandBuffers[imageIndex]);
+            ImGui_ImplVulkan_RenderDrawData(drawData, commandBuffer);
         }
     }
 #endif
 
-    m_commandBuffers[imageIndex].endRenderPass();
+    commandBuffer.endRenderPass();
 }
+
+#if VOXELOPS_NRD_HEADERS
+void VulkanRenderer::recordNrdComputeCommandBuffer(
+    uint32_t imageIndex, const FrameRenderData &frameData
+) {
+    if (imageIndex >= m_nrdComputeCommandBuffers.size()) {
+        return;
+    }
+
+    vk::CommandBufferBeginInfo beginInfo{};
+    m_nrdComputeCommandBuffers[imageIndex].begin(beginInfo);
+    barrierNrdSignalsForCompute(*m_nrdComputeCommandBuffers[imageIndex], imageIndex);
+    dispatchNrdPass(*m_nrdComputeCommandBuffers[imageIndex], imageIndex, frameData);
+    m_nrdComputeCommandBuffers[imageIndex].end();
+}
+#endif
+
+void VulkanRenderer::recordCompositeCommandBuffer(
+    uint32_t imageIndex, const FrameRenderData &frameData, bool applyNrdComposite
+) {
+    if (imageIndex >= m_compositeCommandBuffers.size()) {
+        return;
+    }
+
+    vk::CommandBufferBeginInfo beginInfo{};
+    m_compositeCommandBuffers[imageIndex].begin(beginInfo);
+    if (m_timestampQueriesEnabled && imageIndex < m_timestampQueryPools.size()) {
+        m_compositeCommandBuffers[imageIndex].writeTimestamp(
+            vk::PipelineStageFlagBits::eTopOfPipe, *m_timestampQueryPools[imageIndex], 5
+        );
+    }
+    if (applyNrdComposite) {
+        barrierNrdSignalsForComposite(*m_compositeCommandBuffers[imageIndex], imageIndex);
+    }
+    recordNrdCompositePass(
+        *m_compositeCommandBuffers[imageIndex], imageIndex, frameData, applyNrdComposite
+    );
+    if (m_timestampQueriesEnabled && imageIndex < m_timestampQueryPools.size()) {
+        m_compositeCommandBuffers[imageIndex].writeTimestamp(
+            vk::PipelineStageFlagBits::eBottomOfPipe, *m_timestampQueryPools[imageIndex], 6
+        );
+    }
+    m_compositeCommandBuffers[imageIndex].end();
+}
+
+

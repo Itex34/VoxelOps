@@ -82,7 +82,10 @@ bool VulkanSceneUploader::ensureRemotePlayerAssetsLoaded(
         m_remotePlayerModel = std::make_unique<VkModel>();
         m_remotePlayerModel->loadModel(modelPath);
         m_remotePlayerModel->initGpuResources(
-            context.getDevice(), context.getPhysicalDevice(), uploadContext
+            context.getDevice(),
+            context.getPhysicalDevice(),
+            context.getVmaAllocator(),
+            uploadContext
         );
 
         const auto &meshTexturePaths = m_remotePlayerModel->getMeshTexturePaths();

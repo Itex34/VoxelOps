@@ -35,8 +35,15 @@ void VulkanRenderer::updateGpuTimingStatsForImage(uint32_t imageIndex) {
     };
 
     m_lastFrameTimingStats.gpuValid = true;
-    m_lastFrameTimingStats.gpuChunkPassMs = deltaMs(ticks[0], ticks[1]);
-    m_lastFrameTimingStats.gpuModelPassMs = deltaMs(ticks[1], ticks[2]);
-    m_lastFrameTimingStats.gpuUiPassMs = deltaMs(ticks[2], ticks[3]);
-    m_lastFrameTimingStats.gpuFrameMs = deltaMs(ticks[0], ticks[4]);
+    m_lastFrameTimingStats.gpuMainSetupMs = deltaMs(ticks[0], ticks[1]);
+    m_lastFrameTimingStats.gpuChunkDrawMs = deltaMs(ticks[1], ticks[2]);
+    m_lastFrameTimingStats.gpuChunkPassMs =
+        m_lastFrameTimingStats.gpuMainSetupMs + m_lastFrameTimingStats.gpuChunkDrawMs;
+    m_lastFrameTimingStats.gpuModelPassMs = deltaMs(ticks[2], ticks[3]);
+    m_lastFrameTimingStats.gpuMainTailMs = deltaMs(ticks[3], ticks[4]);
+    m_lastFrameTimingStats.gpuMainPassMs = deltaMs(ticks[0], ticks[4]);
+    m_lastFrameTimingStats.gpuNrdDispatchMs = deltaMs(ticks[4], ticks[5]);
+    m_lastFrameTimingStats.gpuCompositePassMs = deltaMs(ticks[5], ticks[6]);
+    m_lastFrameTimingStats.gpuUiPassMs = m_lastFrameTimingStats.gpuCompositePassMs;
+    m_lastFrameTimingStats.gpuFrameMs = deltaMs(ticks[0], ticks[6]);
 }

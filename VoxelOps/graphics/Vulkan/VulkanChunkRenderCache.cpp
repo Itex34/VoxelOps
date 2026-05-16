@@ -36,7 +36,12 @@ void VulkanChunkRenderCache::syncFromCpuChunkMeshes(
 
     m_acceptBackgroundJobs = true;
     consumeCompletedUploadJobs(
-        cpuMeshes, frameCounter, context, uploadContext, onChunkUploaded
+        cpuMeshes,
+        frameCounter,
+        context,
+        uploadContext,
+        onChunkUploaded,
+        std::max<size_t>(1u, maxChunkUploadsPerFrame)
     );
 
     std::vector<glm::ivec3> chunksToRemove;
@@ -84,6 +89,7 @@ void VulkanChunkRenderCache::syncFromCpuChunkMeshes(
                 onChunkRemoved(chunkPos);
                 retireChunkMesh(std::move(cachedIt->second.mesh), frameCounter);
                 m_chunkMeshes.erase(cachedIt);
+                ++m_contentVersion;
             }
             continue;
         }
@@ -121,6 +127,7 @@ void VulkanChunkRenderCache::syncFromCpuChunkMeshes(
         onChunkRemoved(chunkPos);
         retireChunkMesh(std::move(it->second.mesh), frameCounter);
         m_chunkMeshes.erase(it);
+        ++m_contentVersion;
         std::lock_guard<std::mutex> lock(m_chunkUploadStateMutex);
         m_pendingChunkUploadRevisions.erase(chunkPos);
     }
@@ -180,6 +187,9 @@ void VulkanChunkRenderCache::cleanup() {
 
     for (auto &[_, mesh] : m_chunkMeshes) {
         mesh.mesh.cleanup();
+    }
+    if (!m_chunkMeshes.empty()) {
+        ++m_contentVersion;
     }
     m_chunkMeshes.clear();
 
@@ -256,15 +266,24 @@ void VulkanChunkRenderCache::consumeCompletedUploadJobs(
     uint64_t frameCounter,
     VulkanContext &context,
     UploadContext &uploadContext,
-    const std::function<void(const glm::ivec3 &, const CpuChunkMesh &)> &onChunkUploaded
+    const std::function<void(const glm::ivec3 &, const CpuChunkMesh &)> &onChunkUploaded,
+    size_t maxCompletedUploadsPerCall
 ) {
+    if (maxCompletedUploadsPerCall == 0) {
+        maxCompletedUploadsPerCall = 1;
+    }
     std::deque<CompletedChunkUploadJob> completed;
     {
         std::lock_guard<std::mutex> lock(m_chunkUploadStateMutex);
         if (m_completedChunkUploadJobs.empty()) {
             return;
         }
-        completed.swap(m_completedChunkUploadJobs);
+        size_t processed = 0;
+        while (processed < maxCompletedUploadsPerCall && !m_completedChunkUploadJobs.empty()) {
+            completed.push_back(std::move(m_completedChunkUploadJobs.front()));
+            m_completedChunkUploadJobs.pop_front();
+            ++processed;
+        }
     }
 
     for (CompletedChunkUploadJob &job : completed) {
@@ -288,12 +307,22 @@ void VulkanChunkRenderCache::consumeCompletedUploadJobs(
 
         VkMesh mesh{};
         mesh.setPackedVoxelGeometry(std::move(job.packedVertices), std::move(job.indices));
-        mesh.init(context.getDevice(), context.getPhysicalDevice(), uploadContext);
+        mesh.init(
+            context.getDevice(),
+            context.getPhysicalDevice(),
+            context.getVmaAllocator(),
+            uploadContext
+        );
 
         CachedChunkMesh &cache = m_chunkMeshes[job.chunkPos];
+        const bool hadMesh = (cache.mesh.getIndexCount() > 0);
+        const uint64_t previousRevision = cache.revision;
         retireChunkMesh(std::move(cache.mesh), frameCounter);
         cache.mesh = std::move(mesh);
         cache.revision = job.revision;
+        if (!hadMesh || previousRevision != cache.revision) {
+            ++m_contentVersion;
+        }
         onChunkUploaded(job.chunkPos, cpu);
     }
 }

@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <vulkan/vulkan_raii.hpp>
+#include <vk_mem_alloc.h>
 
 #include "graphics/Vulkan/graphics/Mesh.hpp"
 
@@ -24,6 +25,7 @@ public:
     void initGpuResources(
         const vk::raii::Device &device,
         const vk::raii::PhysicalDevice &physicalDevice,
+        VmaAllocator allocator,
         UploadContext &uploadContext
     );
     void cleanupGpuResources();

@@ -5,6 +5,8 @@
 #include "../../graphics/AtlasLayout.hpp"
 #include "../../misc/ThreadPool.hpp"
 
+#include <glm/vec3.hpp>
+
 #include <atomic>
 #include <array>
 #include <chrono>
@@ -32,6 +34,9 @@ public:
     getCpuChunkMeshes() const noexcept {
         return m_cpuChunkMeshes;
     }
+    [[nodiscard]] uint64_t getCpuChunkMeshesVersion() const noexcept {
+        return m_cpuChunkMeshesVersion;
+    }
 
 private:
     struct ChunkMeshBuildJob {
@@ -51,6 +56,7 @@ private:
         uint64_t buildTicket = 0;
         bool highPriority = false;
         std::vector<VoxelVertex> vertices;
+        std::vector<glm::vec3> rtVertices;
         std::vector<uint16_t> indices;
     };
 
@@ -68,6 +74,7 @@ private:
 
     std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> m_cpuChunkMeshes;
     uint64_t m_nextCpuChunkMeshRevision = 1;
+    uint64_t m_cpuChunkMeshesVersion = 1;
 
     std::deque<glm::ivec3> m_highPriorityDirtyChunkQueue;
     std::deque<glm::ivec3> m_dirtyChunkQueue;

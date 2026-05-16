@@ -177,8 +177,8 @@ void Hud::drawConnectionPrompt(Runtime &runtime, const HudContext &ctx) {
             runtime.app.connection.usernamePromptError =
                 "Server must be host:port (example: 127.0.0.1:27015).";
             ImGui::End();
-            if (ctx.applyMouseInputModes) {
-                ctx.applyMouseInputModes();
+            if (ctx.windowHost != nullptr) {
+                ctx.windowHost->applyMouseInputModes();
             }
             return;
         }
@@ -238,7 +238,8 @@ void Hud::drawConnectionPrompt(Runtime &runtime, const HudContext &ctx) {
             );
 
             runtime.app.connection.usernamePromptError.clear();
-            if (!ctx.beginConnectionAttempt || !ctx.beginConnectionAttempt(runtime)) {
+            if (ctx.connectionHost == nullptr ||
+                !ctx.connectionHost->beginConnectionAttempt(runtime)) {
                 runtime.app.connection.usernamePromptError =
                     "Failed to start connection. Check server reachability and retry.";
             }
@@ -258,8 +259,8 @@ void Hud::drawConnectionPrompt(Runtime &runtime, const HudContext &ctx) {
     ImGui::Text("Status: %s", runtime.network.clientNet.GetConnectionStatusText().c_str());
 
     ImGui::End();
-    if (ctx.applyMouseInputModes) {
-        ctx.applyMouseInputModes();
+    if (ctx.windowHost != nullptr) {
+        ctx.windowHost->applyMouseInputModes();
     }
 }
 

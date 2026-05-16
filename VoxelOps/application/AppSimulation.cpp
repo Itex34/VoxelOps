@@ -1,10 +1,18 @@
 #include "App.hpp"
-#include "FrameOrchestrator.hpp"
-#include "../graphics/IWorldItemRenderer.hpp"
 #include <utility>
 
-void App::processFrame(Runtime &runtime) {
+App::App()
+    : m_inputHost(*this)
+    , m_connectionHost(*this)
+    , m_windowHost(*this)
+    , m_renderHost(*this) {}
+
+FrameOrchestratorContext App::buildFrameOrchestratorContext() {
     FrameOrchestratorContext context{};
+    context.inputHost = &m_inputHost;
+    context.connectionHost = &m_connectionHost;
+    context.windowHost = &m_windowHost;
+    context.renderHost = &m_renderHost;
     context.host.window = m_Window;
     context.ui.serverIp = &m_ServerIp;
     context.ui.serverPort = &m_ServerPort;
@@ -26,24 +34,17 @@ void App::processFrame(Runtime &runtime) {
     context.render.sunShadowLowSunBiasBoost = &m_SunShadowLowSunBiasBoost;
     context.render.sunShadowFrontFaceCullAtLowSun = &m_SunShadowFrontFaceCullAtLowSun;
     context.render.sunShadowFrontFaceCullGrazingThreshold = &m_SunShadowFrontFaceCullGrazingThreshold;
-
-    context.host.updateDebugCamera = [this](Runtime &ctxRuntime) { updateDebugCamera(ctxRuntime); };
-    context.host.updateToggleStates = [this](Runtime &ctxRuntime) { updateToggleStates(ctxRuntime); };
-    context.host.pollEvents = [this](Runtime &ctxRuntime) { pollEvents(ctxRuntime); };
-    context.simulation.beginConnectionAttempt = [this](Runtime &ctxRuntime) {
-        return beginConnectionAttempt(ctxRuntime);
-    };
-    context.simulation.equipGun = [this](Runtime &ctxRuntime, GunType gunType) {
-        return equipGun(ctxRuntime, gunType);
-    };
-    context.render.renderWorldItems = [this](Runtime &ctxRuntime, const Camera &activeCamera) {
-        m_worldItemRenderer->render(ctxRuntime, activeCamera);
-    };
-    context.host.applyMouseInputModes = [this]() { applyMouseInputModes(); };
-    context.host.updateFPSCounter = [this]() { updateFPSCounter(); };
-    context.host.toggleFullscreen = [this](SDL_Window *window) { toggleFullscreen(window); };
     context.simulation.wasWorldInteractPressed = &m_WasWorldInteractPressed;
 
-    m_frameOrchestrator.bind(runtime, std::move(context));
-    m_frameOrchestrator.runFrame();
+    return context;
+}
+
+void App::rebindFrameOrchestrator(Runtime &runtime) {
+    m_frameOrchestrator.bind(runtime, buildFrameOrchestratorContext());
+}
+
+void App::renderWorldItems(Runtime &runtime, const Camera &activeCamera) {
+    if (runtime.render.worldItemRenderer) {
+        runtime.render.worldItemRenderer->render(runtime, activeCamera);
+    }
 }

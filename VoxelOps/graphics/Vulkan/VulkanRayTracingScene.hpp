@@ -47,8 +47,12 @@ public:
         size_t maxUploadsPerCall,
         const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuChunkMeshes
     );
-    void pollFinishedBlasBuilds(VulkanContext &context, uint64_t frameCounter);
-    void pollFinishedTlasBuild(VulkanContext &context, uint64_t frameCounter);
+    void pollFinishedBlasBuilds(
+        VulkanContext &context, uint64_t frameCounter, bool forcePoll = false
+    );
+    void pollFinishedTlasBuild(
+        VulkanContext &context, uint64_t frameCounter, bool forcePoll = false
+    );
     void removeChunkGeometry(uint64_t frameCounter, const glm::ivec3 &chunkPos);
     bool rebuild(VulkanContext &context, uint64_t frameCounter);
     [[nodiscard]] bool hasPendingBuildWork() const noexcept;
@@ -79,4 +83,6 @@ private:
     bool m_highPriorityTlasRefreshRequested = false;
     bool m_dirty = false;
     VkAccelerationStructureKHR m_activeTlas = VK_NULL_HANDLE;
+
+    void trimInactiveBlasCache(uint64_t frameCounter);
 };

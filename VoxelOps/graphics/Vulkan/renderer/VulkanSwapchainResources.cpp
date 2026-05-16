@@ -12,7 +12,9 @@
 #endif
 
 #include <array>
+#include <cstdlib>
 #include <fstream>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -42,11 +44,29 @@ namespace {
         shaderModuleInfo.pCode = code.data();
         return vk::raii::ShaderModule(device, shaderModuleInfo);
     }
+
+    bool parseBoolEnv(const char *name, bool defaultValue) {
+        const char *env = std::getenv(name);
+        if (env == nullptr) {
+            return defaultValue;
+        }
+        if (env[0] == '1' || env[0] == 't' || env[0] == 'T' || env[0] == 'y' || env[0] == 'Y') {
+            return true;
+        }
+        if (env[0] == '0' || env[0] == 'f' || env[0] == 'F' || env[0] == 'n' || env[0] == 'N') {
+            return false;
+        }
+        return defaultValue;
+    }
 } // namespace
 
 void VulkanRenderer::createCommandBuffers() {
     const vk::raii::Device &device = m_context.getDevice();
     m_commandBuffers.clear();
+    m_compositeCommandBuffers.clear();
+    m_nrdComputeCommandBuffers.clear();
+    m_nrdGraphicsToComputeSemaphores.clear();
+    m_nrdComputeToGraphicsSemaphores.clear();
 
     if (m_framebuffers.empty()) {
         return;
@@ -57,6 +77,24 @@ void VulkanRenderer::createCommandBuffers() {
     allocInfo.level = vk::CommandBufferLevel::ePrimary;
     allocInfo.commandBufferCount = static_cast<uint32_t>(m_framebuffers.size());
     m_commandBuffers = device.allocateCommandBuffers(allocInfo);
+
+    if (!m_nrdAsyncComputeEnabled || m_nrdComputeCommandPool == nullptr) {
+        return;
+    }
+
+    allocInfo.commandPool = *m_commandPool;
+    m_compositeCommandBuffers = device.allocateCommandBuffers(allocInfo);
+
+    allocInfo.commandPool = *m_nrdComputeCommandPool;
+    m_nrdComputeCommandBuffers = device.allocateCommandBuffers(allocInfo);
+
+    vk::SemaphoreCreateInfo semaphoreInfo{};
+    m_nrdGraphicsToComputeSemaphores.reserve(m_framebuffers.size());
+    m_nrdComputeToGraphicsSemaphores.reserve(m_framebuffers.size());
+    for (size_t i = 0; i < m_framebuffers.size(); ++i) {
+        m_nrdGraphicsToComputeSemaphores.emplace_back(device, semaphoreInfo);
+        m_nrdComputeToGraphicsSemaphores.emplace_back(device, semaphoreInfo);
+    }
 }
 
 void VulkanRenderer::createFramebuffers() {
@@ -367,6 +405,26 @@ void VulkanRenderer::recreateSwapchainDependentResources() {
     cleanupSwapchainDependentResources();
 
     const vk::raii::Device &device = m_context.getDevice();
+    const bool asyncRequested = parseBoolEnv("VOXELOPS_NRD_ASYNC_COMPUTE", true);
+#if VOXELOPS_NRD_HEADERS
+    m_nrdAsyncComputeEnabled = asyncRequested && m_context.hasDedicatedRtBuildQueue();
+#else
+    m_nrdAsyncComputeEnabled = false;
+#endif
+    if (asyncRequested && !m_context.hasDedicatedRtBuildQueue()) {
+        std::cout << "[Vulkan][NRD] Async compute requested, but no dedicated compute queue is "
+                     "available. Using graphics queue fallback.\n";
+    }
+    if (m_nrdAsyncComputeEnabled) {
+        if (m_nrdComputeCommandPool == nullptr) {
+            vk::CommandPoolCreateInfo poolInfo{};
+            poolInfo.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
+            poolInfo.queueFamilyIndex = m_context.getRtBuildQueueFamily();
+            m_nrdComputeCommandPool = vk::raii::CommandPool(device, poolInfo);
+        }
+    } else {
+        m_nrdComputeCommandPool.clear();
+    }
 
     constexpr vk::Format kComposeFormat = vk::Format::eR16G16B16A16Sfloat;
     constexpr vk::Format kNrdDiffFormat = vk::Format::eR16G16B16A16Sfloat;
@@ -479,8 +537,13 @@ void VulkanRenderer::recreateSwapchainDependentResources() {
 void VulkanRenderer::cleanupSwapchainDependentResources() {
     cleanupTimestampResources();
     m_commandBuffers.clear();
+    m_compositeCommandBuffers.clear();
+    m_nrdComputeCommandBuffers.clear();
+    m_nrdGraphicsToComputeSemaphores.clear();
+    m_nrdComputeToGraphicsSemaphores.clear();
     m_framebuffers.clear();
     m_compositeFramebuffers.clear();
+    m_nrdAsyncComputeEnabled = false;
     cleanupPostProcessPipeline();
     cleanupNrdCompositePipeline();
     m_chunkPipeline.cleanup();

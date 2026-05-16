@@ -6,19 +6,24 @@
 #include <SDL3/SDL.h>
 #include <glm/vec3.hpp>
 #include "../runtime/Runtime.hpp"
-#include "../graphics/IWorldItemRenderer.hpp"
+#include "FrameServices.hpp"
 #include "FrameOrchestrator.hpp"
 class Camera;
 enum class GunType : uint16_t;
 
-class App {
+class App final {
 public:
-    App() = default;
+    App();
 
     int run(int argc, char **argv);
     void Exit();
 
 private:
+    friend struct FrameInputHost;
+    friend struct FrameConnectionHost;
+    friend struct FrameWindowHost;
+    friend struct FrameRenderHost;
+
     bool initWindowAndContext(RenderApi api);
     bool initializeRenderBackendCore(Runtime &runtime, RenderApi api);
     void shutdownRenderBackendCore(Runtime &runtime);
@@ -30,8 +35,8 @@ private:
     void preloadGuns(Runtime &runtime);
     void configureBackendPolicy(Runtime &runtime);
     void initNetworking(Runtime &runtime);
-    bool beginConnectionAttempt(Runtime &runtime);
-    void processFrame(Runtime &runtime);
+    FrameOrchestratorContext buildFrameOrchestratorContext();
+    void rebindFrameOrchestrator(Runtime &runtime);
     void shutdown(Runtime &runtime);
 
     void updateDebugCamera(Runtime &runtime);
@@ -39,7 +44,8 @@ private:
     bool equipGun(Runtime &runtime, GunType gunType);
     void applyMouseInputModes();
     void pollEvents(Runtime &runtime);
-
+    void renderWorldItems(Runtime &runtime, const Camera &activeCamera);
+    bool beginConnectionAttempt(Runtime &runtime);
     void updateFPSCounter();
     void toggleFullscreen(SDL_Window *window);
 
@@ -47,6 +53,10 @@ private:
     SDL_GLContext m_GlContext = nullptr;
     RenderApi m_RenderApi = RenderApi::OpenGL;
     FrameOrchestrator m_frameOrchestrator;
+    FrameInputHost m_inputHost;
+    FrameConnectionHost m_connectionHost;
+    FrameWindowHost m_windowHost;
+    FrameRenderHost m_renderHost;
 
     bool m_ShouldQuit = false;
     bool m_UseDebugCamera = false;
@@ -69,7 +79,6 @@ private:
     float m_SunShadowLowSunBiasBoost = 5.8f;
     bool m_SunShadowFrontFaceCullAtLowSun = true;
     float m_SunShadowFrontFaceCullGrazingThreshold = 0.78f;
-    std::unique_ptr<IWorldItemRenderer> m_worldItemRenderer;
 
     std::string m_ServerIp = "variety-reduction.gl.at.ply.gg:20047";
     uint16_t m_ServerPort = 27015;

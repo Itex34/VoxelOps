@@ -132,7 +132,9 @@ void VulkanRenderer::ensurePerImageDrawBufferCapacity(
 void VulkanRenderer::updatePerImageDrawBuffers(
     uint32_t imageIndex,
     const std::vector<glm::mat4> &modelMatrices,
-    const std::vector<IndexedIndirectCommand> &indirectCommands
+    const std::vector<IndexedIndirectCommand> &indirectCommands,
+    const std::vector<PackedVoxelVertexGpu> &chunkSuperbatchVertices,
+    const std::vector<uint16_t> &chunkSuperbatchIndices
 ) {
     if (imageIndex >= m_perImageDrawResources.size()) {
         return;
@@ -158,6 +160,78 @@ void VulkanRenderer::updatePerImageDrawBuffers(
             indirectCommands.data(),
             static_cast<size_t>(indirectBytes)
         );
+    }
+
+    const vk::DeviceSize chunkSuperVertexBytes = static_cast<vk::DeviceSize>(
+        chunkSuperbatchVertices.size() * sizeof(PackedVoxelVertexGpu)
+    );
+    const vk::DeviceSize chunkSuperIndexBytes =
+        static_cast<vk::DeviceSize>(chunkSuperbatchIndices.size() * sizeof(uint16_t));
+    const vk::raii::Device &device = m_context.getDevice();
+    const vk::raii::PhysicalDevice &physicalDevice = m_context.getPhysicalDevice();
+
+    if (chunkSuperVertexBytes > 0) {
+        if (resources.chunkSuperbatchVertexCapacityBytes < chunkSuperVertexBytes ||
+            resources.chunkSuperbatchVertexBuffer == nullptr) {
+            if (resources.chunkSuperbatchVertexMapped != nullptr) {
+                resources.chunkSuperbatchVertexBufferMemory.unmapMemory();
+                resources.chunkSuperbatchVertexMapped = nullptr;
+            }
+            resources.chunkSuperbatchVertexBuffer.clear();
+            resources.chunkSuperbatchVertexBufferMemory.clear();
+            resources.chunkSuperbatchVertexCapacityBytes =
+                growCapacity(4096u, chunkSuperVertexBytes);
+            VulkanUtils::createBuffer(
+                device,
+                physicalDevice,
+                resources.chunkSuperbatchVertexCapacityBytes,
+                vk::BufferUsageFlagBits::eVertexBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+                resources.chunkSuperbatchVertexBuffer,
+                resources.chunkSuperbatchVertexBufferMemory
+            );
+            resources.chunkSuperbatchVertexMapped =
+                resources.chunkSuperbatchVertexBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
+        }
+        if (resources.chunkSuperbatchVertexMapped != nullptr) {
+            std::memcpy(
+                resources.chunkSuperbatchVertexMapped,
+                chunkSuperbatchVertices.data(),
+                static_cast<size_t>(chunkSuperVertexBytes)
+            );
+        }
+    }
+
+    if (chunkSuperIndexBytes > 0) {
+        if (resources.chunkSuperbatchIndexCapacityBytes < chunkSuperIndexBytes ||
+            resources.chunkSuperbatchIndexBuffer == nullptr) {
+            if (resources.chunkSuperbatchIndexMapped != nullptr) {
+                resources.chunkSuperbatchIndexBufferMemory.unmapMemory();
+                resources.chunkSuperbatchIndexMapped = nullptr;
+            }
+            resources.chunkSuperbatchIndexBuffer.clear();
+            resources.chunkSuperbatchIndexBufferMemory.clear();
+            resources.chunkSuperbatchIndexCapacityBytes =
+                growCapacity(4096u, chunkSuperIndexBytes);
+            VulkanUtils::createBuffer(
+                device,
+                physicalDevice,
+                resources.chunkSuperbatchIndexCapacityBytes,
+                vk::BufferUsageFlagBits::eIndexBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+                resources.chunkSuperbatchIndexBuffer,
+                resources.chunkSuperbatchIndexBufferMemory
+            );
+            resources.chunkSuperbatchIndexMapped =
+                resources.chunkSuperbatchIndexBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
+        }
+        if (resources.chunkSuperbatchIndexMapped != nullptr) {
+            std::memcpy(
+                resources.chunkSuperbatchIndexMapped,
+                chunkSuperbatchIndices.data(),
+                static_cast<size_t>(chunkSuperIndexBytes)
+            );
+        }
     }
 }
 
@@ -207,6 +281,22 @@ void VulkanRenderer::cleanupPerImageDrawResources() {
         resources.indirectCommandBuffer.clear();
         resources.indirectCommandBufferMemory.clear();
         resources.indirectCommandCapacityBytes = 0;
+
+        if (resources.chunkSuperbatchVertexMapped != nullptr) {
+            resources.chunkSuperbatchVertexBufferMemory.unmapMemory();
+            resources.chunkSuperbatchVertexMapped = nullptr;
+        }
+        resources.chunkSuperbatchVertexBuffer.clear();
+        resources.chunkSuperbatchVertexBufferMemory.clear();
+        resources.chunkSuperbatchVertexCapacityBytes = 0;
+
+        if (resources.chunkSuperbatchIndexMapped != nullptr) {
+            resources.chunkSuperbatchIndexBufferMemory.unmapMemory();
+            resources.chunkSuperbatchIndexMapped = nullptr;
+        }
+        resources.chunkSuperbatchIndexBuffer.clear();
+        resources.chunkSuperbatchIndexBufferMemory.clear();
+        resources.chunkSuperbatchIndexCapacityBytes = 0;
 
         if (resources.giParamsMapped != nullptr) {
             resources.giParamsBufferMemory.unmapMemory();

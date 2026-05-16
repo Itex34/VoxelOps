@@ -208,8 +208,11 @@ void VulkanContext::cleanup() {
     instance.clear();
     graphicsQueue = vk::raii::Queue(nullptr);
     presentQueue = vk::raii::Queue(nullptr);
+    rtBuildQueue = vk::raii::Queue(nullptr);
     graphicsQueueFamily = 0;
     presentQueueFamily = 0;
+    rtBuildQueueFamily = 0;
+    m_hasDedicatedRtBuildQueue = false;
     m_samplerAnisotropyEnabled = true;
     m_maxSamplerAnisotropy = 1.0f;
     m_timestampQueriesSupported = false;
@@ -437,6 +440,10 @@ QueueFamilyIndices VulkanContext::findQueueFamilies(
     auto families = device.getQueueFamilyProperties();
 
     for (uint32_t i = 0; i < families.size(); i++) {
+        if (families[i].queueCount == 0) {
+            continue;
+        }
+
         if (!indices.graphics && (families[i].queueFlags & vk::QueueFlagBits::eGraphics)) {
             indices.graphics = i;
         }
@@ -444,9 +451,9 @@ QueueFamilyIndices VulkanContext::findQueueFamilies(
         if (!indices.present && device.getSurfaceSupportKHR(i, surface)) {
             indices.present = i;
         }
-
-        if (indices.isComplete()) {
-            break;
+        if (!indices.rtBuild && (families[i].queueFlags & vk::QueueFlagBits::eCompute) &&
+            !(families[i].queueFlags & vk::QueueFlagBits::eGraphics)) {
+            indices.rtBuild = i;
         }
     }
 
@@ -463,6 +470,9 @@ void VulkanContext::createDevice() {
     std::vector<vk::DeviceQueueCreateInfo> queueInfos;
 
     std::set<uint32_t> uniqueQueues = {indices.graphics.value(), indices.present.value()};
+    if (indices.rtBuild.has_value()) {
+        uniqueQueues.insert(indices.rtBuild.value());
+    }
 
     for (uint32_t queueFamily : uniqueQueues) {
         queueInfos.emplace_back(vk::DeviceQueueCreateInfo({}, queueFamily, 1, &priority));
@@ -632,8 +642,19 @@ void VulkanContext::createDevice() {
     device = vk::raii::Device(physicalDevice, deviceInfo);
     graphicsQueue = device.getQueue(indices.graphics.value(), 0);
     presentQueue = device.getQueue(indices.present.value(), 0);
+    m_hasDedicatedRtBuildQueue = indices.rtBuild.has_value();
+    if (m_hasDedicatedRtBuildQueue) {
+        rtBuildQueue = device.getQueue(indices.rtBuild.value(), 0);
+        rtBuildQueueFamily = indices.rtBuild.value();
+    } else {
+        rtBuildQueue = device.getQueue(indices.graphics.value(), 0);
+        rtBuildQueueFamily = indices.graphics.value();
+    }
     graphicsQueueFamily = indices.graphics.value();
     presentQueueFamily = indices.present.value();
+    std::cout << "[Vulkan] RT build queue: family " << rtBuildQueueFamily
+              << (m_hasDedicatedRtBuildQueue ? " (dedicated compute)" : " (graphics fallback)")
+              << "\n";
 }
 
 void VulkanContext::createSwapchain(uint32_t windowWidth, uint32_t windowHeight) {

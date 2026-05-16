@@ -31,10 +31,11 @@ namespace {
 void VkModel::initGpuResources(
     const vk::raii::Device &device,
     const vk::raii::PhysicalDevice &physicalDevice,
+    VmaAllocator allocator,
     UploadContext &uploadContext
 ) {
     for (VkMesh &mesh : m_meshes) {
-        mesh.init(device, physicalDevice, uploadContext);
+        mesh.init(device, physicalDevice, allocator, uploadContext);
     }
 }
 

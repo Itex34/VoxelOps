@@ -83,6 +83,7 @@ add_executable(VoxelOps
     "application/AppInputEvents.cpp"
     "application/AppLifecycle.cpp"
     "application/AppHelpers.cpp"
+    "application/FrameServices.cpp"
     "application/ClientInputSystem.cpp"
     "application/ClientDisconnectReset.cpp"
     "application/ClientSession.cpp"
@@ -194,6 +195,7 @@ set(VKSHADERS
 
 set(SPIRV_OUTPUTS)
 set(SPIRV_DIR "${CMAKE_BINARY_DIR}/shaders/spir-v")
+set(VK_SHADER_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders")
 file(MAKE_DIRECTORY ${SPIRV_DIR})
 
 foreach(VKSHADER ${VKSHADERS})
@@ -203,7 +205,7 @@ foreach(VKSHADER ${VKSHADERS})
 
     add_custom_command(
         OUTPUT ${SPIRV}
-        COMMAND ${GLSLC_EXECUTABLE} ${VKSHADER_ABS} -o ${SPIRV}
+        COMMAND ${GLSLC_EXECUTABLE} -I ${VK_SHADER_INCLUDE_DIR} ${VKSHADER_ABS} -o ${SPIRV}
         DEPENDS ${VKSHADER_ABS}
         COMMENT "Compiling shader ${FILE_NAME}"
         VERBATIM
@@ -226,11 +228,12 @@ foreach(VKSHADER_RT ${VKSHADERS_RT})
 
     add_custom_command(
         OUTPUT ${SPIRV_RT}
-        COMMAND ${GLSLC_EXECUTABLE} --target-env=vulkan1.2 -DVOXELOPS_RAY_QUERY=1 ${VKSHADER_ABS} -o ${SPIRV_RT}
+        COMMAND ${GLSLC_EXECUTABLE} --target-env=vulkan1.2 -I ${VK_SHADER_INCLUDE_DIR} -DVOXELOPS_RAY_QUERY=1 ${VKSHADER_ABS} -o ${SPIRV_RT}
         DEPENDS ${VKSHADER_ABS}
         COMMENT "Compiling RT shader ${RT_FILE_NAME}"
         VERBATIM
     )
+
 
     list(APPEND SPIRV_OUTPUTS ${SPIRV_RT})
 endforeach()

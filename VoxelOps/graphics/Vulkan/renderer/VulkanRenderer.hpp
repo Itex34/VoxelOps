@@ -29,13 +29,24 @@ public:
         bool gpuValid = false;
         float gpuFrameMs = 0.0f;
         float gpuChunkPassMs = 0.0f;
+        float gpuMainSetupMs = 0.0f;
+        float gpuChunkDrawMs = 0.0f;
         float gpuModelPassMs = 0.0f;
         float gpuUiPassMs = 0.0f;
+        float gpuMainTailMs = 0.0f;
+        float gpuMainPassMs = 0.0f;
+        float gpuNrdDispatchMs = 0.0f;
+        float gpuCompositePassMs = 0.0f;
 
         float cpuCommandRecordMs = 0.0f;
         float cpuChunkPassMs = 0.0f;
         float cpuModelPassMs = 0.0f;
         float cpuUiPassMs = 0.0f;
+        uint32_t descriptorBindCount = 0;
+        uint32_t chunkDescriptorBindCount = 0;
+        uint32_t modelDescriptorBindCount = 0;
+        uint32_t drawIndexedIndirectCount = 0;
+        uint32_t drawIndexedCount = 0;
     };
 
     struct PingPongImageResources {
@@ -75,7 +86,7 @@ private:
     static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 3;
     static constexpr vk::DeviceSize MIN_MODEL_BUFFER_BYTES = sizeof(glm::mat4);
     static constexpr vk::DeviceSize MIN_INDIRECT_BUFFER_BYTES = sizeof(IndexedIndirectCommand);
-    static constexpr uint32_t TIMESTAMP_QUERY_COUNT = 5;
+    static constexpr uint32_t TIMESTAMP_QUERY_COUNT = 7;
     static constexpr uint32_t GI_PARAM_BINDING = 0;
     static constexpr uint32_t GI_SHADOW_OCCUPANCY_BINDING = 1;
     static constexpr uint32_t GI_MATERIAL_BINDING = 2;
@@ -88,17 +99,26 @@ private:
     static constexpr uint32_t GI_NRD_COMPOSE_INDIRECT_STORAGE_BINDING = 9;
     static constexpr uint32_t GI_NRD_COMPOSE_BASE_SAMPLED_BINDING = 10;
     static constexpr uint32_t GI_NRD_COMPOSE_INDIRECT_SAMPLED_BINDING = 11;
-    static constexpr uint32_t GI_RT_SCENE_BINDING = 12;
-    static constexpr uint32_t GI_BINDING_COUNT = 13;
+    static constexpr uint32_t GI_NRD_SHADOW_IN_BINDING = 12;
+    static constexpr uint32_t GI_NRD_SHADOW_OUT_BINDING = 13;
+    static constexpr uint32_t GI_BLUE_NOISE_BINDING = 14;
+    static constexpr uint32_t GI_RT_SCENE_BINDING = 15;
+    static constexpr uint32_t GI_BINDING_COUNT = 16;
 
     VulkanContext &m_context;
     std::unique_ptr<NrdBootstrap> m_nrdBootstrap;
     bool m_initialized = false;
 
     vk::raii::CommandPool m_commandPool{nullptr};
+    vk::raii::CommandPool m_nrdComputeCommandPool{nullptr};
     std::vector<vk::raii::CommandBuffer> m_commandBuffers;
+    std::vector<vk::raii::CommandBuffer> m_compositeCommandBuffers;
+    std::vector<vk::raii::CommandBuffer> m_nrdComputeCommandBuffers;
     std::vector<vk::raii::Framebuffer> m_framebuffers;
     std::vector<vk::raii::Framebuffer> m_compositeFramebuffers;
+    std::vector<vk::raii::Semaphore> m_nrdGraphicsToComputeSemaphores;
+    std::vector<vk::raii::Semaphore> m_nrdComputeToGraphicsSemaphores;
+    bool m_nrdAsyncComputeEnabled = false;
 
     RenderPass m_renderPass;
     RenderPass m_compositeRenderPass;
@@ -108,6 +128,7 @@ private:
     UploadContext m_uploadContext;
     VkTexture m_fallbackArrayTexture;
     VkTexture m_fallback2DTexture;
+    VkTexture m_giBlueNoiseTexture;
 
     struct PerImageDrawResources {
         vk::raii::Buffer modelMatrixBuffer{nullptr};
@@ -119,6 +140,16 @@ private:
         vk::raii::DeviceMemory indirectCommandBufferMemory{nullptr};
         vk::DeviceSize indirectCommandCapacityBytes = 0;
         void *indirectCommandMapped = nullptr;
+
+        vk::raii::Buffer chunkSuperbatchVertexBuffer{nullptr};
+        vk::raii::DeviceMemory chunkSuperbatchVertexBufferMemory{nullptr};
+        vk::DeviceSize chunkSuperbatchVertexCapacityBytes = 0;
+        void *chunkSuperbatchVertexMapped = nullptr;
+
+        vk::raii::Buffer chunkSuperbatchIndexBuffer{nullptr};
+        vk::raii::DeviceMemory chunkSuperbatchIndexBufferMemory{nullptr};
+        vk::DeviceSize chunkSuperbatchIndexCapacityBytes = 0;
+        void *chunkSuperbatchIndexMapped = nullptr;
 
         vk::raii::Buffer giParamsBuffer{nullptr};
         vk::raii::DeviceMemory giParamsBufferMemory{nullptr};
@@ -152,6 +183,8 @@ private:
         SignalImageResources motionIn;
         SignalImageResources viewZIn;
         SignalImageResources diffOut;
+        SignalImageResources shadowIn;
+        SignalImageResources shadowOut;
         SignalImageResources composeBase;
         SignalImageResources composeIndirect;
     };
@@ -242,15 +275,26 @@ private:
 #if VOXELOPS_NRD_HEADERS
     bool createNrdRuntimeResources();
     void cleanupNrdRuntimeResources();
-    void dispatchNrdPass(uint32_t imageIndex, const FrameRenderData &frameData);
+    void dispatchNrdPass(
+        vk::CommandBuffer commandBuffer, uint32_t imageIndex, const FrameRenderData &frameData
+    );
 #endif
 
     void clearTemporalGiWriteTargets(uint32_t imageIndex);
-    void barrierNrdSignalsForCompute(uint32_t imageIndex);
-    void barrierNrdSignalsForComposite(uint32_t imageIndex);
+    void barrierNrdSignalsForCompute(vk::CommandBuffer commandBuffer, uint32_t imageIndex);
+    void barrierNrdSignalsForComposite(vk::CommandBuffer commandBuffer, uint32_t imageIndex);
     void recordNrdCompositePass(
+        vk::CommandBuffer commandBuffer,
+        uint32_t imageIndex,
+        const FrameRenderData &frameData,
+        bool applyNrdComposite
+    );
+    void recordCompositeCommandBuffer(
         uint32_t imageIndex, const FrameRenderData &frameData, bool applyNrdComposite
     );
+#if VOXELOPS_NRD_HEADERS
+    void recordNrdComputeCommandBuffer(uint32_t imageIndex, const FrameRenderData &frameData);
+#endif
     void createTimestampResources();
     void cleanupTimestampResources();
     void updateGpuTimingStatsForImage(uint32_t imageIndex);
@@ -260,7 +304,9 @@ private:
     void updatePerImageDrawBuffers(
         uint32_t imageIndex,
         const std::vector<glm::mat4> &modelMatrices,
-        const std::vector<IndexedIndirectCommand> &indirectCommands
+        const std::vector<IndexedIndirectCommand> &indirectCommands,
+        const std::vector<PackedVoxelVertexGpu> &chunkSuperbatchVertices,
+        const std::vector<uint16_t> &chunkSuperbatchIndices
     );
     void updateModelDescriptorSet(uint32_t imageIndex);
     void updateGiDescriptorSet(
@@ -279,6 +325,7 @@ private:
         const FrameRenderData &frameData,
         float &outChunkCpuMs,
         float &outModelCpuMs,
-        float &outUiCpuMs
+        float &outUiCpuMs,
+        bool recordNrdAndComposite
     );
 };

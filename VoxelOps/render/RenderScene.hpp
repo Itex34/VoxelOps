@@ -24,6 +24,7 @@ struct RenderRemotePlayerState {
 
 struct RenderChunkWorldView {
     const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> *cpuChunkMeshes = nullptr;
+    uint64_t cpuChunkMeshesVersion = 0;
     const std::unordered_map<glm::ivec3, Chunk, IVec3Hash> *chunks = nullptr;
     bool enableAO = false;
 };

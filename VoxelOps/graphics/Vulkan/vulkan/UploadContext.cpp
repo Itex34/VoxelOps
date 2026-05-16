@@ -2,12 +2,27 @@
 
 #include "graphics/Vulkan/vulkan/VulkanUtils.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstring>
 #include <limits>
 #include <stdexcept>
 #include <utility>
+
+namespace {
+    constexpr vk::DeviceSize kMaxReusableStagingBytes = 256ull * 1024ull * 1024ull;
+
+    vk::DeviceSize roundStagingCapacity(vk::DeviceSize requested) {
+        constexpr vk::DeviceSize kMinCapacity = 4 * 1024;
+        vk::DeviceSize target = std::max(requested, kMinCapacity);
+        vk::DeviceSize capacity = kMinCapacity;
+        while (capacity < target && capacity < (std::numeric_limits<vk::DeviceSize>::max() >> 1u)) {
+            capacity <<= 1u;
+        }
+        return capacity;
+    }
+} // namespace
 
 void UploadContext::init(
     const vk::raii::Device &device, uint32_t queueFamilyIndex, const vk::raii::Queue &queue
@@ -28,6 +43,8 @@ void UploadContext::cleanup() {
         waitIdle();
     }
 
+    m_reusableStagingBuffers.clear();
+    m_reusableStagingBytes = 0;
     m_pendingUploads.clear();
     m_commandPool.clear();
     m_queue = nullptr;
@@ -44,6 +61,9 @@ void UploadContext::poll() {
         const std::array<vk::Fence, 1> fences = {*m_pendingUploads[index].fence};
         const vk::Result waitResult = m_device->waitForFences(fences, vk::True, 0);
         if (waitResult == vk::Result::eSuccess) {
+            for (StagingBuffer &staging : m_pendingUploads[index].stagingBuffers) {
+                recycleStagingBuffer(std::move(staging));
+            }
             m_pendingUploads.erase(m_pendingUploads.begin() + static_cast<std::ptrdiff_t>(index));
             continue;
         }
@@ -68,6 +88,9 @@ void UploadContext::waitIdle() {
                 "UploadContext::waitIdle failed while waiting for upload fence."
             );
         }
+        for (StagingBuffer &staging : upload.stagingBuffers) {
+            recycleStagingBuffer(std::move(staging));
+        }
     }
 
     m_pendingUploads.clear();
@@ -80,16 +103,20 @@ UploadContext::StagingBuffer UploadContext::createStagingBuffer(
         throw std::runtime_error("UploadContext::createStagingBuffer called before init.");
     }
 
-    StagingBuffer stagingBuffer{};
-    VulkanUtils::createBuffer(
-        *m_device,
-        physicalDevice,
-        size,
-        vk::BufferUsageFlagBits::eTransferSrc,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        stagingBuffer.buffer,
-        stagingBuffer.memory
-    );
+    const vk::DeviceSize requestedSize = std::max<vk::DeviceSize>(size, 4u);
+    StagingBuffer stagingBuffer = acquireReusableStagingBuffer(requestedSize);
+    if (stagingBuffer.buffer == nullptr) {
+        stagingBuffer.capacity = roundStagingCapacity(requestedSize);
+        VulkanUtils::createBuffer(
+            *m_device,
+            physicalDevice,
+            stagingBuffer.capacity,
+            vk::BufferUsageFlagBits::eTransferSrc,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            stagingBuffer.buffer,
+            stagingBuffer.memory
+        );
+    }
 
     if (data && size > 0) {
         void *mapped = stagingBuffer.memory.mapMemory(0, size);
@@ -297,4 +324,41 @@ void UploadContext::submitPendingUpload(PendingUpload &&pendingUpload) {
 
     m_queue->submit(submitInfo, *pendingUpload.fence);
     m_pendingUploads.emplace_back(std::move(pendingUpload));
+}
+
+UploadContext::StagingBuffer UploadContext::acquireReusableStagingBuffer(vk::DeviceSize minimumSize) {
+    if (m_reusableStagingBuffers.empty()) {
+        return {};
+    }
+
+    auto bestIt = m_reusableStagingBuffers.end();
+    for (auto it = m_reusableStagingBuffers.begin(); it != m_reusableStagingBuffers.end(); ++it) {
+        if (it->buffer == nullptr || it->memory == nullptr || it->capacity < minimumSize) {
+            continue;
+        }
+        if (bestIt == m_reusableStagingBuffers.end() || it->capacity < bestIt->capacity) {
+            bestIt = it;
+        }
+    }
+    if (bestIt == m_reusableStagingBuffers.end()) {
+        return {};
+    }
+
+    StagingBuffer staging = std::move(*bestIt);
+    m_reusableStagingBytes =
+        (m_reusableStagingBytes > staging.capacity) ? (m_reusableStagingBytes - staging.capacity) : 0;
+    m_reusableStagingBuffers.erase(bestIt);
+    return staging;
+}
+
+void UploadContext::recycleStagingBuffer(StagingBuffer &&stagingBuffer) {
+    if (stagingBuffer.buffer == nullptr || stagingBuffer.memory == nullptr ||
+        stagingBuffer.capacity == 0) {
+        return;
+    }
+    if ((m_reusableStagingBytes + stagingBuffer.capacity) > kMaxReusableStagingBytes) {
+        return;
+    }
+    m_reusableStagingBytes += stagingBuffer.capacity;
+    m_reusableStagingBuffers.emplace_back(std::move(stagingBuffer));
 }

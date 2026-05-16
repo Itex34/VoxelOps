@@ -10,6 +10,7 @@ public:
     struct StagingBuffer {
         vk::raii::Buffer buffer{nullptr};
         vk::raii::DeviceMemory memory{nullptr};
+        vk::DeviceSize capacity = 0;
     };
 
     void
@@ -53,7 +54,11 @@ private:
     const vk::raii::Queue *m_queue = nullptr;
     vk::raii::CommandPool m_commandPool{nullptr};
     std::vector<PendingUpload> m_pendingUploads;
+    std::vector<StagingBuffer> m_reusableStagingBuffers;
+    vk::DeviceSize m_reusableStagingBytes = 0;
 
     vk::raii::CommandBuffer beginCommandBuffer();
     void submitPendingUpload(PendingUpload &&pendingUpload);
+    StagingBuffer acquireReusableStagingBuffer(vk::DeviceSize minimumSize);
+    void recycleStagingBuffer(StagingBuffer &&stagingBuffer);
 };

@@ -70,6 +70,9 @@ void VulkanRenderer::createGiDescriptorResources() {
     addBinding(
         GI_NRD_COMPOSE_INDIRECT_SAMPLED_BINDING, vk::DescriptorType::eCombinedImageSampler
     );
+    addBinding(GI_NRD_SHADOW_IN_BINDING, vk::DescriptorType::eStorageImage);
+    addBinding(GI_NRD_SHADOW_OUT_BINDING, vk::DescriptorType::eCombinedImageSampler);
+    addBinding(GI_BLUE_NOISE_BINDING, vk::DescriptorType::eCombinedImageSampler);
     if (m_giRtDescriptorEnabled) {
         addBinding(GI_RT_SCENE_BINDING, vk::DescriptorType::eAccelerationStructureKHR);
     }
@@ -91,11 +94,11 @@ void VulkanRenderer::createGiDescriptorResources() {
     poolSizes.push_back(uniformPool);
     vk::DescriptorPoolSize sampledPool{};
     sampledPool.type = vk::DescriptorType::eCombinedImageSampler;
-    sampledPool.descriptorCount = static_cast<uint32_t>(m_framebuffers.size()) * 3u;
+    sampledPool.descriptorCount = static_cast<uint32_t>(m_framebuffers.size()) * 5u;
     poolSizes.push_back(sampledPool);
     vk::DescriptorPoolSize storageImagePool{};
     storageImagePool.type = vk::DescriptorType::eStorageImage;
-    storageImagePool.descriptorCount = static_cast<uint32_t>(m_framebuffers.size()) * 6u;
+    storageImagePool.descriptorCount = static_cast<uint32_t>(m_framebuffers.size()) * 7u;
     poolSizes.push_back(storageImagePool);
     if (m_giRtDescriptorEnabled) {
         vk::DescriptorPoolSize accelPool{};
@@ -274,6 +277,9 @@ void VulkanRenderer::updateGiDescriptorSet(
     vk::DescriptorImageInfo nrdComposeIndirectStorageInfo{};
     vk::DescriptorImageInfo nrdComposeBaseSampledInfo{};
     vk::DescriptorImageInfo nrdComposeIndirectSampledInfo{};
+    vk::DescriptorImageInfo nrdShadowInInfo{};
+    vk::DescriptorImageInfo nrdShadowOutInfo{};
+    vk::DescriptorImageInfo blueNoiseInfo{};
 
     const NrdPerImageResources *nrdResources = nullptr;
     if (!m_nrdPerImage.empty()) {
@@ -321,10 +327,27 @@ void VulkanRenderer::updateGiDescriptorSet(
             (m_nrdOutputSampler != nullptr) ? *m_nrdOutputSampler : VK_NULL_HANDLE;
         nrdComposeIndirectSampledInfo.imageView = *nrdResources->composeIndirect.view;
         nrdComposeIndirectSampledInfo.imageLayout = vk::ImageLayout::eGeneral;
+
+        nrdShadowInInfo.sampler = VK_NULL_HANDLE;
+        nrdShadowInInfo.imageView = *nrdResources->shadowIn.view;
+        nrdShadowInInfo.imageLayout = vk::ImageLayout::eGeneral;
+
+        nrdShadowOutInfo.sampler =
+            (m_nrdOutputSampler != nullptr) ? *m_nrdOutputSampler : VK_NULL_HANDLE;
+        nrdShadowOutInfo.imageView = *nrdResources->shadowOut.view;
+        nrdShadowOutInfo.imageLayout = vk::ImageLayout::eGeneral;
     } else if (!m_loggedMissingNrdResources) {
         std::cerr << "[Vulkan][NRD] Missing signal resources, GI descriptors are using null NRD "
                      "bindings.\n";
         m_loggedMissingNrdResources = true;
+    }
+
+    blueNoiseInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    blueNoiseInfo.imageView = m_giBlueNoiseTexture.getImageView();
+    blueNoiseInfo.sampler = m_giBlueNoiseTexture.getSampler();
+    if (blueNoiseInfo.imageView == VK_NULL_HANDLE || blueNoiseInfo.sampler == VK_NULL_HANDLE) {
+        blueNoiseInfo.imageView = m_fallback2DTexture.getImageView();
+        blueNoiseInfo.sampler = m_fallback2DTexture.getSampler();
     }
 
     std::vector<vk::WriteDescriptorSet> writes;
@@ -349,7 +372,6 @@ void VulkanRenderer::updateGiDescriptorSet(
             write.pImageInfo = info;
             writes.push_back(write);
         };
-
     pushBufferWrite(
         GI_PARAM_BINDING, vk::DescriptorType::eUniformBuffer, &bufferInfos[GI_PARAM_BINDING]
     );
@@ -391,6 +413,15 @@ void VulkanRenderer::updateGiDescriptorSet(
         GI_NRD_COMPOSE_INDIRECT_SAMPLED_BINDING,
         vk::DescriptorType::eCombinedImageSampler,
         &nrdComposeIndirectSampledInfo
+    );
+    pushImageWrite(
+        GI_NRD_SHADOW_IN_BINDING, vk::DescriptorType::eStorageImage, &nrdShadowInInfo
+    );
+    pushImageWrite(
+        GI_NRD_SHADOW_OUT_BINDING, vk::DescriptorType::eCombinedImageSampler, &nrdShadowOutInfo
+    );
+    pushImageWrite(
+        GI_BLUE_NOISE_BINDING, vk::DescriptorType::eCombinedImageSampler, &blueNoiseInfo
     );
 
     vk::WriteDescriptorSetAccelerationStructureKHR rtSceneInfo{};

@@ -29,7 +29,7 @@
 #endif
 
 namespace {
-    constexpr uint32_t kNrdDenoiserId = 0x564F5855u; // "VOXU" as a stable ID.
+    constexpr uint32_t kNrdReblurDenoiserId = 0x564F5855u; // "VOXU" as a stable ID.
 
     inline uint16_t clampDimToU16(uint32_t v) {
         return static_cast<uint16_t>(std::min<uint32_t>(v, std::numeric_limits<uint16_t>::max()));
@@ -165,13 +165,13 @@ void NrdBootstrap::init() {
     }
     m_impl->getComputeDispatches = reinterpret_cast<Impl::PfnGetComputeDispatches>(proc);
 
-    nrd::DenoiserDesc denoiserDesc{};
-    denoiserDesc.identifier = kNrdDenoiserId;
-    denoiserDesc.denoiser = nrd::Denoiser::REBLUR_DIFFUSE;
+    std::array<nrd::DenoiserDesc, 1> denoiserDescs{};
+    denoiserDescs[0].identifier = kNrdReblurDenoiserId;
+    denoiserDescs[0].denoiser = nrd::Denoiser::REBLUR_DIFFUSE;
 
     nrd::InstanceCreationDesc instanceCreationDesc{};
-    instanceCreationDesc.denoisers = &denoiserDesc;
-    instanceCreationDesc.denoisersNum = 1u;
+    instanceCreationDesc.denoisers = denoiserDescs.data();
+    instanceCreationDesc.denoisersNum = static_cast<uint32_t>(denoiserDescs.size());
 
     const nrd::Result createResult = m_impl->createInstance(instanceCreationDesc, m_impl->instance);
     if (createResult != nrd::Result::SUCCESS || m_impl->instance == nullptr) {
@@ -292,7 +292,8 @@ void NrdBootstrap::updateFrame(
     commonSettings.rectSizePrev[1] = commonSettings.resourceSizePrev[1];
     commonSettings.motionVectorScale[0] = 1.0f / static_cast<float>(renderWidth);
     commonSettings.motionVectorScale[1] = 1.0f / static_cast<float>(renderHeight);
-    // Use 2D motion vectors for stability in rasterized voxel geometry guides.
+    // Forward/back camera motion artifacts are typically caused by inconsistent MV.z conventions.
+    // Keep high-quality XY reprojection and disable Z motion until MV.z is fully validated end-to-end.
     commonSettings.motionVectorScale[2] = 0.0f;
     commonSettings.cameraJitter[0] = 0.0f;
     commonSettings.cameraJitter[1] = 0.0f;
@@ -331,19 +332,24 @@ void NrdBootstrap::updateFrame(
     reblurSettings.minMaterialForDiffuse = 0.0f;
     reblurSettings.minMaterialForSpecular = 0.0f;
 
-    const nrd::Result settingsResult =
-        m_impl->setDenoiserSettings(*m_impl->instance, kNrdDenoiserId, &reblurSettings);
-    if (settingsResult != nrd::Result::SUCCESS) {
+    const nrd::Result reblurSettingsResult = m_impl->setDenoiserSettings(
+        *m_impl->instance, kNrdReblurDenoiserId, &reblurSettings
+    );
+    if (reblurSettingsResult != nrd::Result::SUCCESS) {
         std::cerr << "[NRD] SetDenoiserSettings failed with code "
-                  << static_cast<uint32_t>(settingsResult) << "\n";
+                  << static_cast<uint32_t>(reblurSettingsResult) << "\n";
         return;
     }
 
-    const nrd::Identifier denoiserIds[] = {kNrdDenoiserId};
+    const nrd::Identifier denoiserIds[] = {kNrdReblurDenoiserId};
     const nrd::DispatchDesc *dispatchDescs = nullptr;
     uint32_t dispatchCount = 0;
     const nrd::Result dispatchResult = m_impl->getComputeDispatches(
-        *m_impl->instance, denoiserIds, 1u, dispatchDescs, dispatchCount
+        *m_impl->instance,
+        denoiserIds,
+        static_cast<uint32_t>(std::size(denoiserIds)),
+        dispatchDescs,
+        dispatchCount
     );
     if (dispatchResult != nrd::Result::SUCCESS) {
         std::cerr << "[NRD] GetComputeDispatches failed with code "

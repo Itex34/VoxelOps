@@ -202,6 +202,8 @@ void VulkanRenderer::createNrdSignalResources() {
     const vk::Format kNormalRoughnessFormat = chooseNrdNormalRoughnessFormat(normalEncoding);
     constexpr vk::Format kMotionFormat = vk::Format::eR16G16B16A16Sfloat;
     constexpr vk::Format kViewZFormat = vk::Format::eR32Sfloat;
+    constexpr vk::Format kShadowPenumbraFormat = vk::Format::eR16Sfloat;
+    constexpr vk::Format kShadowOutFormat = vk::Format::eR8Unorm;
     constexpr vk::Format kComposeFormat = vk::Format::eR16G16B16A16Sfloat;
     m_loggedMissingNrdResources = false;
 
@@ -233,6 +235,7 @@ void VulkanRenderer::createNrdSignalResources() {
     };
     if (!supportsStorage(kDiffFormat) || !supportsStorage(kNormalRoughnessFormat) ||
         !supportsStorage(kMotionFormat) || !supportsStorage(kViewZFormat) ||
+        !supportsStorage(kShadowPenumbraFormat) || !supportsStorage(kShadowOutFormat) ||
         !supportsStorage(kComposeFormat)) {
         throw std::runtime_error(
             "NRD signal formats are not supported as storage images by this Vulkan device."
@@ -282,6 +285,8 @@ void VulkanRenderer::createNrdSignalResources() {
     createSignal(m_nrdFallback.motionIn, kMotionFormat, 1u, 1u);
     createSignal(m_nrdFallback.viewZIn, kViewZFormat, 1u, 1u);
     createSignal(m_nrdFallback.diffOut, kDiffFormat, 1u, 1u);
+    createSignal(m_nrdFallback.shadowIn, kShadowPenumbraFormat, 1u, 1u);
+    createSignal(m_nrdFallback.shadowOut, kShadowOutFormat, 1u, 1u);
     createSignal(m_nrdFallback.composeBase, kComposeFormat, 1u, 1u);
     createSignal(m_nrdFallback.composeIndirect, kComposeFormat, 1u, 1u);
     m_nrdFallbackReady = true;
@@ -292,6 +297,8 @@ void VulkanRenderer::createNrdSignalResources() {
         createSignal(resources.motionIn, kMotionFormat, extent.width, extent.height);
         createSignal(resources.viewZIn, kViewZFormat, extent.width, extent.height);
         createSignal(resources.diffOut, kDiffFormat, extent.width, extent.height);
+        createSignal(resources.shadowIn, kShadowPenumbraFormat, extent.width, extent.height);
+        createSignal(resources.shadowOut, kShadowOutFormat, extent.width, extent.height);
         createSignal(resources.composeBase, kComposeFormat, extent.width, extent.height);
         createSignal(resources.composeIndirect, kComposeFormat, extent.width, extent.height);
     }
@@ -326,11 +333,14 @@ void VulkanRenderer::createNrdSignalResources() {
     const vk::ClearColorValue clearZero(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f});
     const vk::ClearColorValue clearNormalRoughness = nrdNormalRoughnessClearValue(normalEncoding);
     const vk::ClearColorValue clearViewZ(std::array<float, 4>{-1.0f, 0.0f, 0.0f, 0.0f});
+    const vk::ClearColorValue clearPenumbraLit(std::array<float, 4>{65504.0f, 0.0f, 0.0f, 0.0f});
     transitionAndClear(*m_nrdFallback.diffIn.image, clearZero);
     transitionAndClear(*m_nrdFallback.normalRoughnessIn.image, clearNormalRoughness);
     transitionAndClear(*m_nrdFallback.motionIn.image, clearZero);
     transitionAndClear(*m_nrdFallback.viewZIn.image, clearViewZ);
     transitionAndClear(*m_nrdFallback.diffOut.image, clearZero);
+    transitionAndClear(*m_nrdFallback.shadowIn.image, clearPenumbraLit);
+    transitionAndClear(*m_nrdFallback.shadowOut.image, clearZero);
     transitionAndClear(*m_nrdFallback.composeBase.image, clearZero);
     transitionAndClear(*m_nrdFallback.composeIndirect.image, clearZero);
     for (const NrdPerImageResources &resources : m_nrdPerImage) {
@@ -339,6 +349,8 @@ void VulkanRenderer::createNrdSignalResources() {
         transitionAndClear(*resources.motionIn.image, clearZero);
         transitionAndClear(*resources.viewZIn.image, clearViewZ);
         transitionAndClear(*resources.diffOut.image, clearZero);
+        transitionAndClear(*resources.shadowIn.image, clearPenumbraLit);
+        transitionAndClear(*resources.shadowOut.image, clearZero);
         transitionAndClear(*resources.composeBase.image, clearZero);
         transitionAndClear(*resources.composeIndirect.image, clearZero);
     }
@@ -366,6 +378,12 @@ void VulkanRenderer::cleanupNrdSignalResources() {
     m_nrdFallback.diffOut.view.clear();
     m_nrdFallback.diffOut.image.clear();
     m_nrdFallback.diffOut.memory.clear();
+    m_nrdFallback.shadowIn.view.clear();
+    m_nrdFallback.shadowIn.image.clear();
+    m_nrdFallback.shadowIn.memory.clear();
+    m_nrdFallback.shadowOut.view.clear();
+    m_nrdFallback.shadowOut.image.clear();
+    m_nrdFallback.shadowOut.memory.clear();
     m_nrdFallback.composeBase.view.clear();
     m_nrdFallback.composeBase.image.clear();
     m_nrdFallback.composeBase.memory.clear();
@@ -833,7 +851,9 @@ void VulkanRenderer::cleanupNrdRuntimeResources() {
     m_nrdRuntimeReady = false;
 }
 
-void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData &frameData) {
+void VulkanRenderer::dispatchNrdPass(
+    vk::CommandBuffer commandBuffer, uint32_t imageIndex, const FrameRenderData &frameData
+) {
     const auto setNrdValidForAllImages = [&](bool valid) {
         std::fill(m_nrdValidPerImage.begin(), m_nrdValidPerImage.end(), valid);
     };
@@ -893,6 +913,12 @@ void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData 
             return true;
         case nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST:
             outView = *external.diffOut.view;
+            return true;
+        case nrd::ResourceType::IN_PENUMBRA:
+            outView = *external.shadowIn.view;
+            return true;
+        case nrd::ResourceType::OUT_SHADOW_TRANSLUCENCY:
+            outView = *external.shadowOut.view;
             return true;
         default:
             break;
@@ -1022,11 +1048,11 @@ void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData 
         const uint32_t dynamicOffset = cbIndex * m_nrdConstantBufferStride;
         const std::array<uint32_t, 1> dynamicOffsets = {dynamicOffset};
 
-        m_commandBuffers[imageIndex].bindPipeline(
+        commandBuffer.bindPipeline(
             vk::PipelineBindPoint::eCompute, *m_nrdPipelines[dispatch.pipelineIndex]
         );
         const vk::DescriptorSet resourcesSet = resourceSetForDispatch;
-        m_commandBuffers[imageIndex].bindDescriptorSets(
+        commandBuffer.bindDescriptorSets(
             vk::PipelineBindPoint::eCompute,
             *m_nrdPipelineLayout,
             m_nrdSetResourcesIndex,
@@ -1034,19 +1060,19 @@ void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData 
             {}
         );
         const vk::DescriptorSet constantsSet = *runtimeFrame.constantsSet;
-        m_commandBuffers[imageIndex].bindDescriptorSets(
+        commandBuffer.bindDescriptorSets(
             vk::PipelineBindPoint::eCompute,
             *m_nrdPipelineLayout,
             m_nrdSetConstantsIndex,
             constantsSet,
             dynamicOffsets
         );
-        m_commandBuffers[imageIndex].dispatch(dispatch.gridWidth, dispatch.gridHeight, 1u);
+        commandBuffer.dispatch(dispatch.gridWidth, dispatch.gridHeight, 1u);
 
         vk::MemoryBarrier barrier{};
         barrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
         barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
-        m_commandBuffers[imageIndex].pipelineBarrier(
+        commandBuffer.pipelineBarrier(
             vk::PipelineStageFlagBits::eComputeShader,
             vk::PipelineStageFlagBits::eComputeShader,
             {},
@@ -1060,7 +1086,9 @@ void VulkanRenderer::dispatchNrdPass(uint32_t imageIndex, const FrameRenderData 
 }
 #endif
 
-void VulkanRenderer::barrierNrdSignalsForCompute(uint32_t imageIndex) {
+void VulkanRenderer::barrierNrdSignalsForCompute(
+    vk::CommandBuffer commandBuffer, uint32_t imageIndex
+) {
     if (m_nrdPerImage.empty()) {
         return;
     }
@@ -1077,7 +1105,8 @@ void VulkanRenderer::barrierNrdSignalsForCompute(uint32_t imageIndex) {
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.image = image;
         barrier.subresourceRange = range;
-        barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+        barrier.srcAccessMask =
+            vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eShaderWrite;
         barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
         return barrier;
     };
@@ -1101,7 +1130,7 @@ void VulkanRenderer::barrierNrdSignalsForCompute(uint32_t imageIndex) {
         makeInputBarrier(*nrd.viewZIn.image),
         makeHistoryBarrier(*nrd.diffOut.image),
     };
-    m_commandBuffers[imageIndex].pipelineBarrier(
+    commandBuffer.pipelineBarrier(
         vk::PipelineStageFlagBits::eColorAttachmentOutput |
             vk::PipelineStageFlagBits::eComputeShader |
             vk::PipelineStageFlagBits::eFragmentShader,
@@ -1113,7 +1142,9 @@ void VulkanRenderer::barrierNrdSignalsForCompute(uint32_t imageIndex) {
     );
 }
 
-void VulkanRenderer::barrierNrdSignalsForComposite(uint32_t imageIndex) {
+void VulkanRenderer::barrierNrdSignalsForComposite(
+    vk::CommandBuffer commandBuffer, uint32_t imageIndex
+) {
     if (m_nrdPerImage.empty()) {
         return;
     }
@@ -1152,7 +1183,7 @@ void VulkanRenderer::barrierNrdSignalsForComposite(uint32_t imageIndex) {
         makeColorBarrier(*nrd.composeBase.image),
         makeColorBarrier(*nrd.composeIndirect.image),
     };
-    m_commandBuffers[imageIndex].pipelineBarrier(
+    commandBuffer.pipelineBarrier(
         vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader |
             vk::PipelineStageFlagBits::eColorAttachmentOutput,
         vk::PipelineStageFlagBits::eFragmentShader,

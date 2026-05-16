@@ -3,6 +3,7 @@
 #include "../ui/Hud.hpp"
 #include "ClientInputSystem.hpp"
 #include "ClientSession.hpp"
+#include "FrameServices.hpp"
 #include "../runtime/ClientPrediction.hpp"
 #include "../render/RenderSceneBuilder.hpp"
 #include "../systems/CombatShootSystem.hpp"
@@ -12,59 +13,55 @@
 
 #include "../../Shared/gun/GunType.hpp"
 
-#include <functional>
 #include <cstddef>
+#include <cstdint>
+#include <string>
+
+#include <glm/vec3.hpp>
 
 struct ImDrawData;
 class Camera;
 struct SDL_Window;
 
 struct HostFrameContext {
-    SDL_Window *window = nullptr;
-    std::function<void(Runtime &)> updateDebugCamera;
-    std::function<void(Runtime &)> updateToggleStates;
-    std::function<void(Runtime &)> pollEvents;
-    std::function<void()> applyMouseInputModes;
-    std::function<void()> updateFPSCounter;
-    std::function<void(SDL_Window *)> toggleFullscreen;
+    SDL_Window *window = nullptr; // required, non-owning
 };
 
 struct SimulationFrameContext {
-    bool *useDebugCamera = nullptr;
-    bool *forceCursorEnabled = nullptr;
-    bool *wasWorldInteractPressed = nullptr;
-
-    std::function<bool(Runtime &)> beginConnectionAttempt;
-    std::function<bool(Runtime &, GunType)> equipGun;
+    bool *useDebugCamera = nullptr;        // required, non-owning
+    bool *forceCursorEnabled = nullptr;    // required, non-owning
+    bool *wasWorldInteractPressed = nullptr; // required, non-owning
 };
 
 struct UiFrameContext {
-    std::string *serverIp = nullptr;
-    uint16_t *serverPort = nullptr;
-    std::string *requestedUsername = nullptr;
-    bool *showDebugUi = nullptr;
-    bool *showInventoryUi = nullptr;
-    bool *enableRawMouseInput = nullptr;
-    bool *requestSwitchToOpenGl = nullptr;
-    bool *requestSwitchToVulkan = nullptr;
-    int *renderApiPreference = nullptr; // 0=OpenGL, 1=Vulkan
+    std::string *serverIp = nullptr;       // required, non-owning
+    uint16_t *serverPort = nullptr;        // required, non-owning
+    std::string *requestedUsername = nullptr; // required, non-owning
+    bool *showDebugUi = nullptr;           // required, non-owning
+    bool *showInventoryUi = nullptr;       // required, non-owning
+    bool *enableRawMouseInput = nullptr;   // required, non-owning
+    bool *requestSwitchToOpenGl = nullptr; // required, non-owning
+    bool *requestSwitchToVulkan = nullptr; // required, non-owning
+    int *renderApiPreference = nullptr;    // required, non-owning, 0=OpenGL, 1=Vulkan
 };
 
 struct RenderFrameContext {
-    bool *toggleWireframe = nullptr;
-    bool *toggleChunkBorders = nullptr;
-    bool *toggleDebugFrustum = nullptr;
-    float *skyExposure = nullptr;
-    glm::vec3 *sunDirection = nullptr;
-    glm::vec3 *sunShadowDirectionalBias = nullptr;
-    float *sunShadowLowSunBiasBoost = nullptr;
-    bool *sunShadowFrontFaceCullAtLowSun = nullptr;
-    float *sunShadowFrontFaceCullGrazingThreshold = nullptr;
-
-    std::function<void(Runtime &, const Camera &)> renderWorldItems;
+    bool *toggleWireframe = nullptr; // optional, non-owning
+    bool *toggleChunkBorders = nullptr; // optional, non-owning
+    bool *toggleDebugFrustum = nullptr; // optional, non-owning
+    float *skyExposure = nullptr; // required, non-owning
+    glm::vec3 *sunDirection = nullptr; // required, non-owning
+    glm::vec3 *sunShadowDirectionalBias = nullptr; // required, non-owning
+    float *sunShadowLowSunBiasBoost = nullptr; // required, non-owning
+    bool *sunShadowFrontFaceCullAtLowSun = nullptr; // required, non-owning
+    float *sunShadowFrontFaceCullGrazingThreshold = nullptr; // required, non-owning
 };
 
 struct FrameOrchestratorContext {
+    FrameInputHost *inputHost = nullptr; // required, non-owning
+    FrameConnectionHost *connectionHost = nullptr; // required, non-owning
+    FrameWindowHost *windowHost = nullptr; // required, non-owning
+    FrameRenderHost *renderHost = nullptr; // required, non-owning
     HostFrameContext host;
     SimulationFrameContext simulation;
     UiFrameContext ui;

@@ -84,8 +84,8 @@ void ClientSession::syncEquippedGunFromInventory(
         return;
     }
 
-    if (ctx.equipGun) {
-        (void)ctx.equipGun(runtime, *selectedGunType);
+    if (ctx.connectionHost != nullptr) {
+        (void)ctx.connectionHost->equipGun(runtime, *selectedGunType);
     }
 }
 
@@ -122,8 +122,9 @@ void ClientSession::update(
     if (connState == ClientNetwork::ConnectionState::Disconnected) {
         if (runtime.network.clientNet.ShouldAutoReconnect() &&
             now >= runtime.app.connection.nextReconnectAttemptTime) {
-            const bool started =
-                ctx.beginConnectionAttempt ? ctx.beginConnectionAttempt(runtime) : false;
+            const bool started = (ctx.connectionHost != nullptr)
+                                     ? ctx.connectionHost->beginConnectionAttempt(runtime)
+                                     : false;
             const double backoff = runtime.app.connection.reconnectBackoffSeconds;
             runtime.app.connection.nextReconnectAttemptTime = now + (started ? backoff : 2.0);
             runtime.app.connection.reconnectBackoffSeconds =

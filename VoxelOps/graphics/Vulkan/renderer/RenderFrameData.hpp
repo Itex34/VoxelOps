@@ -11,6 +11,11 @@ class VkModel;
 class VkTexture;
 struct ImDrawData;
 
+struct PackedVoxelVertexGpu {
+    uint32_t low = 0;
+    uint32_t high = 0;
+};
+
 struct RenderObject {
     const VkModel *model = nullptr;
     const std::vector<const VkTexture *> *meshTextures = nullptr;
@@ -42,7 +47,7 @@ struct GiLightingData {
     bool hardwareRayTracingSupported = false;
     GiTracingBackend tracingBackend = GiTracingBackend::SoftwareDda;
     uint32_t pathTraceRaysPerPixel = 1;
-    uint32_t pathTraceMaxBounces = 2;
+    uint32_t pathTraceMaxBounces = 8;
     float baseDiffuse = 1.0f;
     float giIntensity = 0.55f;
     float sunIntensity = 0.70f;
@@ -80,6 +85,10 @@ struct FrameRenderData {
     // Region-level indirect commands.
     std::vector<IndexedIndirectCommand> indirectCommands;
     std::vector<RenderIndirectBatch> indirectBatches;
+    bool chunkSuperbatchEnabled = false;
+    const VkTexture *chunkSuperbatchTexture = nullptr;
+    std::vector<PackedVoxelVertexGpu> chunkSuperbatchVertices;
+    std::vector<uint16_t> chunkSuperbatchIndices;
     ImDrawData *uiDrawData = nullptr;
     GiLightingData giLighting{};
 
@@ -88,6 +97,10 @@ struct FrameRenderData {
         modelMatrices.clear();
         indirectCommands.clear();
         indirectBatches.clear();
+        chunkSuperbatchEnabled = false;
+        chunkSuperbatchTexture = nullptr;
+        chunkSuperbatchVertices.clear();
+        chunkSuperbatchIndices.clear();
         uiDrawData = nullptr;
         giLighting = GiLightingData{};
     }

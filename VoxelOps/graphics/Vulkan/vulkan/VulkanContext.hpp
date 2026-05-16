@@ -11,6 +11,7 @@
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphics;
     std::optional<uint32_t> present;
+    std::optional<uint32_t> rtBuild;
 
     bool isComplete() const {
         return graphics.has_value() && present.has_value();
@@ -61,11 +62,20 @@ public:
     const vk::raii::Queue &getPresentQueue() const {
         return presentQueue;
     }
+    const vk::raii::Queue &getRtBuildQueue() const {
+        return hasDedicatedRtBuildQueue() ? rtBuildQueue : graphicsQueue;
+    }
     uint32_t getGraphicsQueueFamily() const {
         return graphicsQueueFamily;
     }
     uint32_t getPresentQueueFamily() const {
         return presentQueueFamily;
+    }
+    uint32_t getRtBuildQueueFamily() const {
+        return hasDedicatedRtBuildQueue() ? rtBuildQueueFamily : graphicsQueueFamily;
+    }
+    bool hasDedicatedRtBuildQueue() const {
+        return m_hasDedicatedRtBuildQueue;
     }
     const vk::raii::PhysicalDevice &getPhysicalDevice() const {
         return physicalDevice;
@@ -108,8 +118,11 @@ private:
 
     vk::raii::Queue graphicsQueue{nullptr};
     vk::raii::Queue presentQueue{nullptr};
+    vk::raii::Queue rtBuildQueue{nullptr};
     uint32_t graphicsQueueFamily = 0;
     uint32_t presentQueueFamily = 0;
+    uint32_t rtBuildQueueFamily = 0;
+    bool m_hasDedicatedRtBuildQueue = false;
 
     vk::raii::SwapchainKHR swapchain{nullptr};
     std::vector<vk::Image> swapchainImages;
