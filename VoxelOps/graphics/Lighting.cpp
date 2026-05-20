@@ -34,14 +34,18 @@ void Lighting::prepareChunkAO(
     const uint8_t *solidPadded
 ) {
     (void)chunkPos;
+
     const int paddedStrideZ = kPaddedSize * kPaddedSize;
-    std::fill_n(aoBuffer, kPaddedVolume, uint8_t(15)); // full light
+
+    //fully lit
+    std::fill_n(aoBuffer, kPaddedVolume, uint8_t(15));
 
     auto solidIndex = [](int x, int y, int z) -> int {
         return (x + kSolidPad) + kSolidSize * ((y + kSolidPad) + kSolidSize * (z + kSolidPad));
     };
 
     thread_local std::array<uint8_t, kSolidVolume> localSolid{};
+
     if (!solidPadded) {
         buildSolidPadded(chunk, neighbors, localSolid.data());
         solidPadded = localSolid.data();
@@ -49,22 +53,50 @@ void Lighting::prepareChunkAO(
 
     for (int z = -1; z <= chunkSize + 1; ++z) {
         const int outZ = (z + PAD) * paddedStrideZ;
+
         for (int y = -1; y <= chunkSize + 1; ++y) {
             const int outZY = outZ + (y + PAD) * kPaddedSize;
+
             for (int x = -1; x <= chunkSize + 1; ++x) {
-                const int i_sx = solidIndex(x - 1, y, z);
-                const int i_sy = solidIndex(x, y - 1, z);
-                const int i_sz = solidIndex(x, y, z - 1);
-                const uint8_t sx = solidPadded[i_sx];
-                const uint8_t sy = solidPadded[i_sy];
-                const uint8_t sz = solidPadded[i_sz];
+                //neighbor occupancy along each axis
+                const uint8_t solidNegX = solidPadded[solidIndex(x - 1, y, z)];
 
-                const uint8_t sxy = uint8_t(sx & sy & solidPadded[solidIndex(x - 1, y - 1, z)]);
-                const uint8_t sxz = uint8_t(sx & sz & solidPadded[solidIndex(x - 1, y, z - 1)]);
-                const uint8_t syz = uint8_t(sy & sz & solidPadded[solidIndex(x, y - 1, z - 1)]);
+                const uint8_t solidNegY = solidPadded[solidIndex(x, y - 1, z)];
 
-                const int occlusion = int(sx) + int(sy) + int(sz) + int(sxy) + int(sxz) + int(syz);
+                const uint8_t solidNegZ = solidPadded[solidIndex(x, y, z - 1)];
+
+                //corner occupancy where two axis-neighbors meet
+                const uint8_t solidNegXNegY =
+                    uint8_t(
+                        solidNegX & 
+                        solidNegY & 
+                        solidPadded[solidIndex(x - 1, y - 1, z)]
+                    );
+
+                const uint8_t solidNegXNegZ =
+                    uint8_t(
+                        solidNegX & 
+                        solidNegZ & 
+                        solidPadded[solidIndex(x - 1, y, z - 1)]
+                    );
+
+                const uint8_t solidNegYNegZ =
+                    uint8_t(
+                        solidNegY & 
+                        solidNegZ & 
+                        solidPadded[solidIndex(x, y - 1, z - 1)]
+                    );
+
+                const int occlusion = 
+                    int(solidNegX) 
+                    + int(solidNegY) 
+                    + int(solidNegZ) 
+                    + int(solidNegXNegY) 
+                    + int(solidNegXNegZ) 
+                    + int(solidNegYNegZ);
+
                 const uint8_t ao = uint8_t(15 - occlusion * 2);
+
                 aoBuffer[outZY + (x + PAD)] = ao;
             }
         }

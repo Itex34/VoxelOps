@@ -1,15 +1,19 @@
 #pragma once
 
 #include "../ui/Hud.hpp"
+#include "../ui/player/MainMenu.hpp"
+#include "../ui/player/UiStateController.hpp"
 #include "ClientInputSystem.hpp"
 #include "ClientSession.hpp"
 #include "FrameServices.hpp"
 #include "../runtime/ClientPrediction.hpp"
 #include "../render/RenderSceneBuilder.hpp"
 #include "../systems/CombatShootSystem.hpp"
+#include "../systems/CombatGrappleSystem.hpp"
 #include "../world/ChunkStreamingClient.hpp"
 #include "../systems/WorldInteractionSystem.hpp"
 #include "../runtime/Runtime.hpp"
+#include "../graphics/OpenGL/debug_render/OpenGLDebugRenderer.hpp"
 
 #include "../../Shared/gun/GunType.hpp"
 
@@ -101,10 +105,14 @@ private:
 
     
     ClientSession m_clientSession;
+    UiStateController m_uiStateController;
+    MainMenu m_mainMenu;
     Hud m_hudSystem;
     WorldInteractionSystem m_worldInteractionSystem;
     CombatShootSystem m_combatShootSystem;
+    CombatGrappleSystem m_combatGrappleSystem;
     ChunkStreamingClient m_chunkStreaming;
     RenderSceneBuilder m_renderSceneBuilder;
     double m_frameNow = 0.0;
+    OpenGLDebugRenderer m_debugRenderer;
 };

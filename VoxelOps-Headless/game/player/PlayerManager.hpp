@@ -28,6 +28,16 @@ public:
     bool enqueuePlayerInput(PlayerID id, const PlayerInput &input);
     bool setFlyModeAllowed(PlayerID id, bool allowed);
     bool setEquippedWeapon(PlayerID id, uint16_t weaponId);
+    bool tryFireGrapple(
+        PlayerID id,
+        const glm::vec3 &origin,
+        const glm::vec3 &direction,
+        double nowSeconds,
+        const ChunkManager &chunkManager,
+        GrappleFireResult &outResult
+    );
+    bool releaseGrapple(PlayerID id);
+    bool setGrappleReeling(PlayerID id, bool reelingIn, double nowSeconds);
     void SetDebugLoggingEnabled(bool enabled);
     bool IsDebugLoggingEnabled();
 

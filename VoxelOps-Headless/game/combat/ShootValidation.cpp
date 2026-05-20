@@ -67,18 +67,16 @@ namespace ShootValidation {
             return out;
         }
 
-        float eyePathHitDistance = 0.0f;
-        glm::vec3 eyePathHitPoint(0.0f);
-        const bool eyePathBlocked = WorldRaycast::FindFirstSolidBlockHit(
+        WorldRaycastResult rayResult = WorldRaycast::FindFirstSolidBlockHit(
             chunkManager,
             shooterEyePos,
             eyeToRequest,
-            eyeToRequestDist,
-            eyePathHitDistance,
-            eyePathHitPoint
+            eyeToRequestDist
         );
+        bool eyePathBlocked = rayResult.hit;
+
         out.requestedOriginAccepted =
-            !eyePathBlocked || ((eyePathHitDistance + originOcclusionEpsilon) >= eyeToRequestDist);
+            !eyePathBlocked || ((rayResult.distance + originOcclusionEpsilon) >= eyeToRequestDist);
         out.origin = out.requestedOriginAccepted ? requestPos : shooterEyePos;
         return out;
     }

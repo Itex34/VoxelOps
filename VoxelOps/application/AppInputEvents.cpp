@@ -132,7 +132,7 @@ void App::updateToggleStates(Runtime &runtime) {
         (ImGui::GetCurrentContext() != nullptr) && ImGui::GetIO().WantTextInput;
     const auto refreshCursorState = [&]() {
         GameData::cursorEnabled = m_ForceCursorEnabled || m_ShowDebugUi || m_ShowInventoryUi ||
-                                  !runtime.network.clientNet.IsConnected();
+                                  runtime.ui.wantsCursor;
         applyMouseInputModes();
     };
 

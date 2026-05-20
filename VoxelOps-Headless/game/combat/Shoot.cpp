@@ -28,31 +28,32 @@ namespace Shoot {
 
     ShootOutcome ResolveHit(
         const ShootContext &ctx,
-        const HitDetection::HitDetectionResult &hit,
+        const HitDetection::HitDetectionResult &hitResult,
         float blockOcclusionEpsilon,
         PlayerManager &playerManager
     ) {
         ShootOutcome outcome{};
         outcome.accepted = true;
 
-        if (!hit.playerHit || (hit.blockHit && (hit.blockDistance + blockOcclusionEpsilon) <=
-                                                   hit.bestPlayerDistance)) {
+        if (!hitResult.playerHit || (hitResult.worldRaycastResult.hit && (hitResult.worldRaycastResult.distance + blockOcclusionEpsilon)
+            <= hitResult.bestPlayerDistance)) {
+
             outcome.hit = false;
             outcome.hitPoint =
-                hit.blockHit ? hit.blockHitPoint : (ctx.rayOrigin + ctx.rayDir * hit.maxDistance);
+                hitResult.worldRaycastResult.hit ? hitResult.worldRaycastResult.hitPoint : (ctx.rayOrigin + ctx.rayDir * hitResult.maxDistance);
             return outcome;
         }
 
-        outcome.hitPlayerId = hit.hitPlayerId;
-        outcome.hitRegion = hit.hitRegion;
-        outcome.hitPoint = hit.hitPoint;
+        outcome.hitPlayerId = hitResult.hitPlayerId;
+        outcome.hitRegion = hitResult.hitRegion;
+        outcome.hitPoint = hitResult.hitPoint;
 
         const Damage::DamageResolution damage = Damage::ResolveDamage(
-            playerManager, hit.hitPlayerId, ctx.request.weaponId, hit.hitRegion
+            playerManager, hitResult.hitPlayerId, ctx.request.weaponId, hitResult.hitRegion
         );
         if (!damage.applied) {
             outcome.hit = false;
-            outcome.hitPoint = hit.hitPoint;
+            outcome.hitPoint = hitResult.hitPoint;
             return outcome;
         }
 

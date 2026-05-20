@@ -22,6 +22,7 @@
 
 #include <GameNetworkingSockets/steam/steamnetworkingsockets.h>
 #include <GameNetworkingSockets/steam/steamnetworkingtypes.h>
+#include <GameNetworkingSockets/steam/isteamnetworkingutils.h>
 
 #include "../../../Shared/network/PacketType.hpp"
 #include "../../../Shared/network/Packets.hpp"
@@ -97,6 +98,8 @@ private:
     HandleBlockBreakRequestPacket(HSteamNetConnection incoming, const void *data, uint32_t size);
     void HandleShootRequestPacket(HSteamNetConnection incoming, const void *data, uint32_t size);
     ShootResult ExecuteShootRequest(HSteamNetConnection incoming, const ShootRequest &req);
+    void HandleGrappleRequestPacket(HSteamNetConnection incoming, const void *data, uint32_t size);
+    GrappleResult ExecuteGrappleRequest(HSteamNetConnection incoming, const GrappleRequest &req);
     void HandleInventoryActionRequestPacket(
         HSteamNetConnection incoming, const void *data, uint32_t size
     );

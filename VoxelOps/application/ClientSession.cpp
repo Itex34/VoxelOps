@@ -17,6 +17,7 @@
 #include <vector>
 
 #include <glm/gtc/quaternion.hpp>
+#include <glm/geometric.hpp>
 
 using namespace AppHelpers;
 
@@ -140,6 +141,11 @@ void ClientSession::update(
             std::cout << "[shoot] rejected shot id=" << shootResult.clientShotId << "\n";
             continue;
         }
+        runtime.combat.hasLastAcceptedShotResult = true;
+        runtime.combat.lastAcceptedShotResultId = shootResult.clientShotId;
+        runtime.combat.lastAcceptedShotResultPoint =
+            glm::vec3(shootResult.hitX, shootResult.hitY, shootResult.hitZ);
+        runtime.combat.lastAcceptedShotResultTime = now;
         if (shootResult.didHit) {
             std::cout << "[shoot] hit id=" << shootResult.hitEntityId
                       << " dmg=" << shootResult.damageApplied << " at=(" << shootResult.hitX << ","
@@ -148,6 +154,46 @@ void ClientSession::update(
             std::cout << "[shoot] miss"
                       << " at=(" << shootResult.hitX << "," << shootResult.hitY << ","
                       << shootResult.hitZ << ")\n";
+        }
+    }
+
+    GrappleResult grappleResult{};
+    while (runtime.network.clientNet.PopGrappleResult(grappleResult)) {
+        const auto controlIt =
+            runtime.combat.grapple.pendingControlRequestIds.find(grappleResult.clientGrappleId);
+        const bool isControlAck =
+            (controlIt != runtime.combat.grapple.pendingControlRequestIds.end());
+        if (isControlAck) {
+            runtime.combat.grapple.pendingControlRequestIds.erase(controlIt);
+            continue;
+        }
+
+        if (!grappleResult.accepted) {
+            std::cout << "[grapple] rejected id=" << grappleResult.clientGrappleId << "\n";
+            continue;
+        }
+
+        runtime.combat.grapple.hasAcceptedResult = true;
+        runtime.combat.grapple.lastAcceptedResultId = grappleResult.clientGrappleId;
+        runtime.combat.grapple.lastAcceptedResultTime = now;
+
+        if (grappleResult.didHit) {
+            runtime.combat.grapple.isAttached = true;
+            runtime.combat.grapple.anchorPoint =
+                glm::vec3(grappleResult.hitX, grappleResult.hitY, grappleResult.hitZ);
+            runtime.combat.grapple.ropeLength = glm::length(
+                runtime.combat.grapple.anchorPoint - runtime.gameplay.player->getPosition()
+            );
+            runtime.combat.grapple.anchorFaceNormal = grappleResult.faceNormal;
+            std::cout << "[grapple] attached id=" << grappleResult.clientGrappleId
+                      << " anchor=(" << grappleResult.hitX << "," << grappleResult.hitY << ","
+                      << grappleResult.hitZ << ")"
+                      << " face=" << static_cast<int>(grappleResult.faceNormal) << "\n";
+        } else {
+            runtime.combat.grapple.isAttached = false;
+            runtime.combat.grapple.ropeLength = 0.0f;
+            runtime.combat.grapple.anchorFaceNormal = 255;
+            std::cout << "[grapple] miss id=" << grappleResult.clientGrappleId << "\n";
         }
     }
 
@@ -489,11 +535,12 @@ void ClientSession::update(
         runtime.world.hasLastChunkRequestCenter = true;
         (void)runtime.network.clientNet.SendChunkRequest(centerChunk, viewDistance);
     }
+
+    if (!runtime.combat.localPlayerAlive) {
+        runtime.combat.grapple.isAttached = false;
+        runtime.combat.grapple.ropeLength = 0.0f;
+    }
 }
-
-
-
-
 
 
 

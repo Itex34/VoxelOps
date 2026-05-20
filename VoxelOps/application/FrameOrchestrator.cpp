@@ -2,6 +2,7 @@
 
 #include "AppHelpers.hpp"
 #include "../graphics/IGunSceneRenderer.hpp"
+#include "../graphics/Camera.hpp"
 #include "../render/RenderScene.hpp"
 #include "../data/GameData.hpp"
 #include <SDL3/SDL.h>
@@ -12,6 +13,8 @@
 #include <cmath>
 #include <iostream>
 #include <utility>
+
+#include <glm/geometric.hpp>
 
 namespace {
     using Clock = std::chrono::steady_clock;
@@ -27,6 +30,38 @@ namespace {
         int keyCount = 0;
         const bool *keys = SDL_GetKeyboardState(&keyCount);
         return keys != nullptr && scancode < keyCount && keys[scancode];
+    }
+
+    glm::vec3 ComputeViewmodelMuzzlePosition(const Camera &camera, const RuntimeCombatState &combat) {
+        glm::vec3 forward = camera.front;
+        const float forwardLenSq = glm::dot(forward, forward);
+        if (!std::isfinite(forwardLenSq) || forwardLenSq < 1e-8f) {
+            forward = glm::vec3(0.0f, 0.0f, -1.0f);
+        } else {
+            forward = glm::normalize(forward);
+        }
+
+        glm::vec3 up = camera.up;
+        const float upLenSq = glm::dot(up, up);
+        if (!std::isfinite(upLenSq) || upLenSq < 1e-8f) {
+            up = glm::vec3(0.0f, 1.0f, 0.0f);
+        } else {
+            up = glm::normalize(up);
+        }
+
+        glm::vec3 right = glm::cross(forward, up);
+        const float rightLenSq = glm::dot(right, right);
+        if (!std::isfinite(rightLenSq) || rightLenSq < 1e-8f) {
+            right = glm::vec3(1.0f, 0.0f, 0.0f);
+        } else {
+            right = glm::normalize(right);
+        }
+        up = glm::normalize(glm::cross(right, forward));
+
+        const glm::vec3 gunPos = camera.position + right * combat.equippedGunViewOffset.x +
+                                 up * combat.equippedGunViewOffset.y +
+                                 forward * combat.equippedGunViewOffset.z;
+        return gunPos + (forward * 0.70f);
     }
 
     void AssertRequiredContext(const FrameOrchestratorContext &ctx) {
@@ -142,17 +177,16 @@ FrameOrchestrator::SimulationStageResult FrameOrchestrator::runSimulationStage()
     if (inputHost != nullptr) {
         inputHost->updateDebugCamera(runtime());
     }
+    m_uiStateController.update(runtime().ui, runtime().network.clientNet);
     if (inputHost != nullptr) {
         inputHost->updateToggleStates(runtime());
     }
-
-    if (!runtime().network.clientNet.IsConnected()) {
-        GameData::cursorEnabled = true;
-    }
     GameData::gameplayInputEnabled =
-        runtime().network.clientNet.IsConnected() && (m_context.ui.showDebugUi != nullptr) &&
+        runtime().network.clientNet.IsConnected() &&
+        (runtime().ui.activeView == UiView::InGame) && (m_context.ui.showDebugUi != nullptr) &&
+        (m_context.ui.showInventoryUi != nullptr) &&
         (m_context.simulation.forceCursorEnabled != nullptr) && !*m_context.ui.showDebugUi &&
-        !*m_context.simulation.forceCursorEnabled;
+        !*m_context.ui.showInventoryUi && !*m_context.simulation.forceCursorEnabled;
 
     runtime().gameplay.inputCallbacks->processInput(m_context.host.window);
     if (windowHost != nullptr) {
@@ -235,6 +269,9 @@ FrameOrchestrator::SimulationStageResult FrameOrchestrator::runSimulationStage()
     combatShootCtx.useDebugCamera =
         (m_context.simulation.useDebugCamera != nullptr) && *m_context.simulation.useDebugCamera;
     m_combatShootSystem.update(runtime(), combatShootCtx);
+    CombatGrappleSystemContext combatGrappleCtx{};
+    combatGrappleCtx.useDebugCamera = combatShootCtx.useDebugCamera;
+    m_combatGrappleSystem.update(runtime(), combatGrappleCtx);
     const auto perfGameplayEnd = Clock::now();
     runtime().app.perf.gameplayMs = MeasureMs(perfGameplayStart, perfGameplayEnd);
 
@@ -338,25 +375,29 @@ FrameOrchestrator::runUiStage(const SimulationStageResult &simulation) {
         }
     }
 
+    m_uiStateController.update(runtime().ui, runtime().network.clientNet);
+    if (runtime().ui.activeView == UiView::MainMenu) {
+        MainMenuContext mainMenuCtx{};
+        mainMenuCtx.window = m_context.host.window;
+        mainMenuCtx.serverIp = m_context.ui.serverIp;
+        mainMenuCtx.serverPort = m_context.ui.serverPort;
+        mainMenuCtx.requestedUsername = m_context.ui.requestedUsername;
+        mainMenuCtx.connectionHost = m_context.connectionHost;
+        mainMenuCtx.windowHost = m_context.windowHost;
+        m_mainMenu.draw(runtime(), mainMenuCtx);
+    }
+
     const bool forceCursor = (m_context.simulation.forceCursorEnabled != nullptr) &&
                              *m_context.simulation.forceCursorEnabled;
     const bool showDebugUi = (m_context.ui.showDebugUi != nullptr) && *m_context.ui.showDebugUi;
     const bool showInventoryUi =
         (m_context.ui.showInventoryUi != nullptr) && *m_context.ui.showInventoryUi;
-    GameData::cursorEnabled =
-        forceCursor || showDebugUi || showInventoryUi || !runtime().network.clientNet.IsConnected();
+    GameData::cursorEnabled = forceCursor || showDebugUi || showInventoryUi || runtime().ui.wantsCursor;
     if (m_context.windowHost != nullptr) {
         m_context.windowHost->applyMouseInputModes();
     }
 
-    HudContext hudCtx{};
-    hudCtx.window = m_context.host.window;
-    hudCtx.serverIp = m_context.ui.serverIp;
-    hudCtx.serverPort = m_context.ui.serverPort;
-    hudCtx.requestedUsername = m_context.ui.requestedUsername;
-    hudCtx.connectionHost = m_context.connectionHost;
-    hudCtx.windowHost = m_context.windowHost;
-    m_hudSystem.draw(runtime(), hudCtx);
+    m_hudSystem.draw(runtime());
     result.drawData = runtime().ui.debugUi->endFrame();
     return result;
 }
@@ -385,7 +426,54 @@ void FrameOrchestrator::runRenderStage(
     sceneInput.uiDrawData = ui.drawData;
 
     RenderScene frameScene = m_renderSceneBuilder.build(runtime(), sceneInput);
+    const bool renderDebugLine = simulation.renderCapabilities.api == RenderApi::OpenGL;
+    const bool renderGrappleRope =
+        renderDebugLine && runtime().combat.grapple.isAttached && runtime().combat.localPlayerAlive;
+    constexpr double kAcceptedShotLineDurationSeconds = 0.30;
+    constexpr double kLocalShotFallbackDurationSeconds = 0.10;
+    const bool acceptedMatchesLocalShot =
+        runtime().combat.hasLastAcceptedShotResult && runtime().combat.hasLastLocalShot &&
+        (runtime().combat.lastAcceptedShotResultId == runtime().combat.lastLocalShotId);
+    const bool drawAcceptedShotLine =
+        renderDebugLine && acceptedMatchesLocalShot &&
+        ((m_frameNow - runtime().combat.lastAcceptedShotResultTime) <=
+         kAcceptedShotLineDurationSeconds);
+    const bool drawLocalShotFallback =
+        renderDebugLine && runtime().combat.hasLastLocalShot &&
+        ((m_frameNow - runtime().combat.lastLocalShotTime) <= kLocalShotFallbackDurationSeconds);
     frameScene.renderOpaqueOverlayPasses = [&]() {
+        if (renderGrappleRope) {
+            const glm::vec3 ropeStart =
+                ComputeViewmodelMuzzlePosition(frameScene.activeCamera, runtime().combat);
+            m_debugRenderer.drawLine(
+                ropeStart,
+                runtime().combat.grapple.anchorPoint,
+                glm::vec3(0.35f, 0.95f, 1.0f),
+                LineDrawMode::TwoVertices,
+                1.0f,
+                frameScene.activeCamera
+            );
+        }
+        if (drawAcceptedShotLine) {
+            m_debugRenderer.drawLine(
+                runtime().combat.lastLocalShotOrigin,
+                runtime().combat.lastAcceptedShotResultPoint,
+                glm::vec3(1.0f, 0.85f, 0.15f),
+                LineDrawMode::TwoVertices,
+                1.0f,
+                frameScene.activeCamera
+            );
+        } else if (drawLocalShotFallback) {
+            m_debugRenderer.drawLine(
+                runtime().combat.lastLocalShotOrigin,
+                runtime().combat.lastLocalShotOrigin +
+                    (runtime().combat.lastLocalShotDirection * 64.0f),
+                glm::vec3(1.0f, 0.45f, 0.1f),
+                LineDrawMode::TwoVertices,
+                1.0f,
+                frameScene.activeCamera
+            );
+        }
         if (m_context.renderHost != nullptr) {
             m_context.renderHost->renderWorldItems(runtime(), frameScene.activeCamera);
         }

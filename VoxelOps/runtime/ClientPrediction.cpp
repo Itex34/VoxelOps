@@ -16,6 +16,16 @@ void ClientPrediction::update(
 
     runtime.gameplay.player->setNetworkInputState(intent.networkInput);
     if (deltaTime > 0.0) {
-        runtime.gameplay.player->simulateFromNetworkInput(intent.networkInput, deltaTime, true);
+        GrappleConstraintState grappleConstraint{};
+        grappleConstraint.active = runtime.combat.grapple.isAttached;
+        grappleConstraint.anchor = runtime.combat.grapple.anchorPoint;
+        grappleConstraint.ropeLength = runtime.combat.grapple.ropeLength;
+        runtime.gameplay.player->simulateFromNetworkInput(
+            intent.networkInput,
+            deltaTime,
+            true,
+            runtime.combat.grapple.isAttached,
+            &grappleConstraint
+        );
     }
 }

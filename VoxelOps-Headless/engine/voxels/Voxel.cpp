@@ -1,17 +1,14 @@
-// BlocksServer.cpp
-// Server-side replacement for Voxel.cpp / getTexCoordsForFace()
-// No glm, no TextureAtlas — just returns texture *names* for faces.
 
 #include "Voxel.hpp"
 #include <stdexcept>
 
-/// Face indices should match your previous convention:
 // 0 = +X (Right)
 // 1 = -X (Left)
 // 2 = +Y (Top)
 // 3 = -Y (Bottom)
 // 4 = +Z (Front)
 // 5 = -Z (Back)
+
 
 /// Return the name of the texture tile that the client would use for this face.
 /// This keeps the same logical API (you can ask "what texture goes on this face?")

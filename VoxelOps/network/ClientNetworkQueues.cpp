@@ -52,6 +52,16 @@ bool ClientNetwork::PopShootResult(ShootResult &out) {
     return true;
 }
 
+bool ClientNetwork::PopGrappleResult(GrappleResult &out) {
+    std::lock_guard<std::mutex> lk(m_inboundMutex);
+    if (m_grappleResultQueue.empty()) {
+        return false;
+    }
+    out = std::move(m_grappleResultQueue.front());
+    m_grappleResultQueue.pop_front();
+    return true;
+}
+
 bool ClientNetwork::PopInventoryActionResult(InventoryActionResult &out) {
     std::lock_guard<std::mutex> lk(m_inboundMutex);
     if (m_inventoryActionResultQueue.empty()) {

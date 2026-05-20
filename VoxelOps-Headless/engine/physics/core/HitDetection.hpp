@@ -3,6 +3,7 @@
 #include "../../../game/combat/LagCompensation.hpp"
 #include "../../../game/player/Hitbox.hpp"
 #include "../../../game/player/ServerPlayer.hpp"
+#include "../../world/WorldRaycast.hpp"
 
 #include <glm/vec3.hpp>
 
@@ -32,9 +33,7 @@ namespace HitDetection {
         glm::vec3 hitPoint{0.0f};
         float bestPlayerDistance = 0.0f;
         float maxDistance = 0.0f;
-        bool blockHit = false;
-        float blockDistance = 0.0f;
-        glm::vec3 blockHitPoint{0.0f};
+        WorldRaycastResult worldRaycastResult{};
     };
 
     HitDetectionResult RaycastPlayersAndWorld(const HitDetectionInput &input);

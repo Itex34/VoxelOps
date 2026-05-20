@@ -15,6 +15,7 @@
 
 #include <GameNetworkingSockets/steam/steamnetworkingsockets.h>
 #include <GameNetworkingSockets/steam/steamnetworkingtypes.h>
+#include <GameNetworkingSockets/steam/isteamnetworkingutils.h>
 
 #include "../../Shared/network/PacketType.hpp" //for packet types
 
@@ -95,12 +96,20 @@ public:
         uint32_t seed = 0,
         uint8_t inputFlags = 0
     );
+    bool SendGrappleRequest(
+        uint32_t clientGrappleId,
+        uint32_t clientTick,
+        const glm::vec3 &pos,
+        const glm::vec3 &dir,
+        uint32_t seed = 0
+    );
 
     bool PopChunkData(ChunkData &out);
     bool PopChunkDelta(ChunkDelta &out);
     bool PopChunkUnload(ChunkUnload &out);
     bool PopPlayerSnapshot(PlayerSnapshotFrame &out);
     bool PopShootResult(ShootResult &out);
+    bool PopGrappleResult(GrappleResult &out);
     bool PopInventoryActionResult(InventoryActionResult &out);
     bool PopInventorySnapshot(InventorySnapshot &out);
     bool PopWorldItemSnapshot(WorldItemSnapshot &out);
@@ -137,6 +146,7 @@ private:
     std::deque<ChunkUnload> m_chunkUnloadQueue;
     std::deque<PlayerSnapshotFrame> m_playerSnapshotQueue;
     std::deque<ShootResult> m_shootResultQueue;
+    std::deque<GrappleResult> m_grappleResultQueue;
     std::deque<InventoryActionResult> m_inventoryActionResultQueue;
     std::deque<InventorySnapshot> m_inventorySnapshotQueue;
     std::deque<WorldItemSnapshot> m_worldItemSnapshotQueue;

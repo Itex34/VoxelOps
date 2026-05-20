@@ -13,6 +13,7 @@ bool ParseChunkData(std::span<const uint8_t> bytes, ChunkData &out);
 bool ParseChunkDelta(std::span<const uint8_t> bytes, ChunkDelta &out);
 bool ParseChunkUnload(std::span<const uint8_t> bytes, ChunkUnload &out);
 bool ParseShootResult(std::span<const uint8_t> bytes, ShootResult &out);
+bool ParseGrappleResult(std::span<const uint8_t> bytes, GrappleResult &out);
 bool ParseInventoryActionResult(std::span<const uint8_t> bytes, InventoryActionResult &out);
 bool ParseInventorySnapshot(std::span<const uint8_t> bytes, InventorySnapshot &out);
 bool ParseWorldItemSnapshot(std::span<const uint8_t> bytes, WorldItemSnapshot &out);

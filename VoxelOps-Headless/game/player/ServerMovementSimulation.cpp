@@ -3,6 +3,7 @@
 #include "../../engine/world/ChunkManager.hpp"
 #include "../../../Shared/network/Packets.hpp"
 #include "../../../Shared/player/MovementSimulation.hpp"
+#include "../../../Shared/player/GrappleSwing.hpp"
 #include "../../../Shared/player/PlayerData.hpp"
 #include "../../../Shared/utils/Math.hpp"
 
@@ -98,6 +99,32 @@ namespace ServerMovementSimulation {
         simState.jumpPressedLastTick = p.jumpPressedLastTick;
         simState.timeSinceGrounded = p.timeSinceGrounded;
         simState.jumpBufferTimer = p.jumpBufferTimer;
+        if (!simState.flyMode && p.grappleState.active) {
+            const double nowSeconds = std::chrono::duration<double>(
+                                          std::chrono::steady_clock::now().time_since_epoch()
+            )
+                                          .count();
+            constexpr double kReelCommandTimeoutSeconds = 0.20;
+            if (p.grappleState.reelingIn &&
+                (nowSeconds - p.grappleState.lastReelCommandTime) <= kReelCommandTimeoutSeconds) {
+                Shared::Grapple::ApplyReelIn(
+                    p.grappleState.ropeLength,
+                    static_cast<float>(dt)
+                );
+            } else {
+                p.grappleState.reelingIn = false;
+            }
+
+            Shared::Grapple::ApplyRopeConstraint(
+                p.grappleState.anchor,
+                p.grappleState.ropeLength,
+                simState.position,
+                simState.velocity,
+                [&p, &chunkManager](const glm::vec3 &testPos) {
+                    return checkCollision(p, testPos, chunkManager);
+                }
+            );
+        }
 
         Shared::Movement::InputState simInput;
         simInput.moveX = effectiveMoveX;
@@ -109,6 +136,7 @@ namespace ServerMovementSimulation {
         simOptions.allowFlyMode = p.allowFlyMode;
         simOptions.allowStepUp = true;
         simOptions.requireSprintForStepUp = true;
+        simOptions.disableAirControlWhenAirborne = p.grappleState.active;
 
         Shared::Movement::Simulate(
             simState,

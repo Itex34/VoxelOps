@@ -1,28 +1,12 @@
 #pragma once
 
 #include "../runtime/Runtime.hpp"
-#include "../application/FrameServices.hpp"
-
-#include <SDL3/SDL.h>
-
-#include <cstdint>
-#include <string>
-
-struct HudContext {
-    SDL_Window *window = nullptr;
-    std::string *serverIp = nullptr;
-    uint16_t *serverPort = nullptr;
-    std::string *requestedUsername = nullptr;
-    FrameConnectionHost *connectionHost = nullptr;
-    FrameWindowHost *windowHost = nullptr;
-};
 
 class Hud {
 public:
-    void draw(Runtime &runtime, const HudContext &ctx);
+    void draw(Runtime &runtime);
 
 private:
-    void drawConnectionPrompt(Runtime &runtime, const HudContext &ctx);
     void drawKillFeed(Runtime &runtime);
     void drawScoreboard(Runtime &runtime);
     void drawPingCounter(Runtime &runtime);

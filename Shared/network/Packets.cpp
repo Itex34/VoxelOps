@@ -374,6 +374,107 @@ std::optional<ShootResult> ShootResult::deserialize(const std::vector<uint8_t> &
     return r;
 }
 
+std::vector<uint8_t> GrappleRequest::serialize() const {
+    std::vector<uint8_t> out;
+    out.reserve(1 + 4 + 4 + 12 + 12 + 4);
+    write_u8(out, static_cast<uint8_t>(PacketType::GrappleRequest));
+    write_u32(out, clientGrappleId);
+    write_u32(out, clientTick);
+    write_f32(out, posX);
+    write_f32(out, posY);
+    write_f32(out, posZ);
+    write_f32(out, dirX);
+    write_f32(out, dirY);
+    write_f32(out, dirZ);
+    write_u32(out, seed);
+    return out;
+}
+
+std::optional<GrappleRequest> GrappleRequest::deserialize(const std::vector<uint8_t> &buf) {
+    size_t off = 0;
+    uint8_t type = 0;
+    if (!read_u8(buf, off, type))
+        return std::nullopt;
+    if (type != static_cast<uint8_t>(PacketType::GrappleRequest))
+        return std::nullopt;
+
+    GrappleRequest r;
+    if (!read_u32(buf, off, r.clientGrappleId))
+        return std::nullopt;
+    if (!read_u32(buf, off, r.clientTick))
+        return std::nullopt;
+    if (!read_f32(buf, off, r.posX))
+        return std::nullopt;
+    if (!read_f32(buf, off, r.posY))
+        return std::nullopt;
+    if (!read_f32(buf, off, r.posZ))
+        return std::nullopt;
+    if (!read_f32(buf, off, r.dirX))
+        return std::nullopt;
+    if (!read_f32(buf, off, r.dirY))
+        return std::nullopt;
+    if (!read_f32(buf, off, r.dirZ))
+        return std::nullopt;
+    if (!read_u32(buf, off, r.seed))
+        return std::nullopt;
+    if (!std::isfinite(r.posX) || !std::isfinite(r.posY) || !std::isfinite(r.posZ) ||
+        !std::isfinite(r.dirX) || !std::isfinite(r.dirY) || !std::isfinite(r.dirZ)) {
+        return std::nullopt;
+    }
+    return r;
+}
+
+std::vector<uint8_t> GrappleResult::serialize() const {
+    std::vector<uint8_t> out;
+    out.reserve(1 + 4 + 4 + 1 + 1 + 4 + 12 + 1 + 4);
+    write_u8(out, static_cast<uint8_t>(PacketType::GrappleResult));
+    write_u32(out, clientGrappleId);
+    write_u32(out, serverTick);
+    write_u8(out, accepted);
+    write_u8(out, didHit);
+    write_u32(out, static_cast<uint32_t>(hitEntityId));
+    write_f32(out, hitX);
+    write_f32(out, hitY);
+    write_f32(out, hitZ);
+    write_u8(out, faceNormal);
+    write_u32(out, serverSeed);
+    return out;
+}
+
+std::optional<GrappleResult> GrappleResult::deserialize(const std::vector<uint8_t> &buf) {
+    size_t off = 0;
+    uint8_t type = 0;
+    if (!read_u8(buf, off, type))
+        return std::nullopt;
+    if (type != static_cast<uint8_t>(PacketType::GrappleResult))
+        return std::nullopt;
+
+    GrappleResult r;
+    uint32_t tmp = 0;
+    if (!read_u32(buf, off, r.clientGrappleId))
+        return std::nullopt;
+    if (!read_u32(buf, off, r.serverTick))
+        return std::nullopt;
+    if (!read_u8(buf, off, r.accepted))
+        return std::nullopt;
+    if (!read_u8(buf, off, r.didHit))
+        return std::nullopt;
+    if (!read_u32(buf, off, tmp))
+        return std::nullopt;
+    r.hitEntityId = static_cast<int32_t>(tmp);
+    if (!read_f32(buf, off, r.hitX))
+        return std::nullopt;
+    if (!read_f32(buf, off, r.hitY))
+        return std::nullopt;
+    if (!read_f32(buf, off, r.hitZ))
+        return std::nullopt;
+    if (!read_u8(buf, off, r.faceNormal))
+        return std::nullopt;
+    if (!read_u32(buf, off, r.serverSeed))
+        return std::nullopt;
+    return r;
+}
+
 // -------------------- PlayerSnapshotFrame --------------------
 std::vector<uint8_t> PlayerSnapshotFrame::serialize() const {
     std::vector<uint8_t> out;

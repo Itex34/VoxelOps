@@ -41,6 +41,7 @@ namespace PlayerLifecycle {
 
         (void)player.inventory.appendItems(static_cast<uint16_t>(ITEM_PISTOL), 1);
         (void)player.inventory.appendItems(static_cast<uint16_t>(ITEM_SNIPER), 1);
+        (void)player.inventory.appendItems(static_cast<uint16_t>(ITEM_GRAPPLE_GUN), 1);
         (void)player.inventory.appendItems(static_cast<uint16_t>(ITEM_PISTOL_AMMO), 48);
         (void)player.inventory.appendItems(
             static_cast<uint16_t>(ITEM_SAPPHIRE_BLOCK), kMaxBlockStack

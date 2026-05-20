@@ -59,6 +59,19 @@ namespace {
         bool valid = false;
     };
 
+    struct SharedPlayerHitboxes {
+        const std::vector<Hitbox> &hitboxes;
+        float referenceHeight;
+        float referenceRadius;
+    };
+
+
+    struct SharedPlayerMeshHitData {
+        const std::vector<MeshHitTriangle> &triangles;
+        float referenceHeight;
+        const MeshBroadphaseBounds &broadphaseBounds;
+    };
+
     HitRegion RegionFromLocalHeight(float localY, float height) {
         if (!std::isfinite(localY) || !std::isfinite(height) || height <= 1e-4f) {
             return HitRegion::Unknown;
@@ -84,8 +97,7 @@ namespace {
         return (byHeight == HitRegion::Unknown) ? fallback : byHeight;
     }
 
-    const std::vector<Hitbox> &
-    GetSharedPlayerHitboxes(float &outReferenceHeight, float &outReferenceRadius) {
+    SharedPlayerHitboxes GetSharedPlayerHitboxes() {
         static std::once_flag initFlag;
         static float referenceHeight = movementSettings().collisionHeight;
         static float referenceRadius = movementSettings().collisionRadius;
@@ -136,14 +148,14 @@ namespace {
             }
         });
 
-        outReferenceHeight = referenceHeight;
-        outReferenceRadius = referenceRadius;
-        return cachedHitboxes;
+        return {
+            cachedHitboxes, 
+            referenceHeight, 
+            referenceRadius
+        };
     }
 
-    const std::vector<MeshHitTriangle> &GetSharedPlayerMeshHitTriangles(
-        float &outReferenceHeight, MeshBroadphaseBounds *outBroadphaseBounds
-    ) {
+    SharedPlayerMeshHitData GetSharedPlayerMeshHitTriangles() {
         static std::once_flag initFlag;
         static float referenceHeight = movementSettings().collisionHeight;
         static std::vector<MeshHitTriangle> cachedTriangles;
@@ -204,11 +216,11 @@ namespace {
             }
         });
 
-        outReferenceHeight = referenceHeight;
-        if (outBroadphaseBounds != nullptr) {
-            *outBroadphaseBounds = cachedBounds;
-        }
-        return cachedTriangles;
+        return {
+            cachedTriangles,
+            referenceHeight,
+            cachedBounds
+        };
     }
 
     bool RayIntersectsTriangle(
@@ -350,14 +362,14 @@ namespace HitDetection {
 
         float meshReferenceHeight = 0.0f;
         MeshBroadphaseBounds meshBroadphase;
-        const std::vector<MeshHitTriangle> &meshTriangles =
-            GetSharedPlayerMeshHitTriangles(meshReferenceHeight, &meshBroadphase);
+        const auto meshHitData = GetSharedPlayerMeshHitTriangles();
 
-        float referenceHeight = 0.0f;
-        float referenceRadius = 0.0f;
-        const std::vector<Hitbox> *baseHitboxes = nullptr;
-        if (meshTriangles.empty()) {
-            baseHitboxes = &GetSharedPlayerHitboxes(referenceHeight, referenceRadius);
+
+
+        std::optional<SharedPlayerHitboxes> sharedHitboxes;
+
+        if (meshHitData.triangles.empty()) {
+            sharedHitboxes.emplace(GetSharedPlayerHitboxes());
         }
 
         for (const ServerPlayerCombatSnapshot &target : *input.players) {
@@ -384,7 +396,7 @@ namespace HitDetection {
             glm::vec3 broadphaseCenterWorld(0.0f);
             float broadphaseRadiusWorld = 0.0f;
 
-            if (!meshTriangles.empty() && meshBroadphase.valid) {
+            if (!meshHitData.triangles.empty() && meshBroadphase.valid) {
                 const float uniformScale =
                     (meshReferenceHeight > 1e-4f) ? (targetHeight / meshReferenceHeight) : 1.0f;
                 const glm::vec3 meshCenterLocal = meshBroadphase.centerLocal * uniformScale;
@@ -414,27 +426,34 @@ namespace HitDetection {
             }
 
             HitResult hit;
-            if (!meshTriangles.empty()) {
+            if (!meshHitData.triangles.empty()) {
                 const float uniformScale =
                     (meshReferenceHeight > 1e-4f) ? (targetHeight / meshReferenceHeight) : 1.0f;
                 hit = RaycastMeshTriangles(
                     input.rayOrigin,
                     input.rayDir,
-                    meshTriangles,
+                    meshHitData.triangles,
                     targetTransform,
                     uniformScale,
                     input.maxDistance
                 );
+                
             } else {
-                const float sx =
-                    (referenceRadius > 1e-4f) ? (targetRadius / referenceRadius) : 1.0f;
-                const float sy =
-                    (referenceHeight > 1e-4f) ? (targetHeight / referenceHeight) : 1.0f;
+                const SharedPlayerHitboxes &hitboxData = *sharedHitboxes;
+
+                const float sx = (hitboxData.referenceRadius > 1e-4f)
+                                     ? (targetRadius / hitboxData.referenceRadius)
+                                     : 1.0f;
+
+                const float sy = (hitboxData.referenceHeight > 1e-4f)
+                                     ? (targetHeight / hitboxData.referenceHeight)
+                                     : 1.0f;
                 const float sz = sx;
 
                 std::vector<Hitbox> scaledHitboxes;
-                scaledHitboxes.reserve(baseHitboxes->size());
-                for (const Hitbox &base : *baseHitboxes) {
+                scaledHitboxes.reserve(hitboxData.hitboxes.size());
+
+                for (const Hitbox &base : hitboxData.hitboxes) {
                     Hitbox scaled = base;
                     scaled.min = glm::vec3(
                         base.min.x * sx - input.hitboxPadXZ,
@@ -483,14 +502,11 @@ namespace HitDetection {
             }
         }
 
-        detection.blockDistance = input.maxDistance + 1.0f;
-        detection.blockHit = WorldRaycast::FindFirstSolidBlockHit(
+        detection.worldRaycastResult = WorldRaycast::FindFirstSolidBlockHit(
             *input.chunkManager,
             input.rayOrigin,
             input.rayDir,
-            input.maxDistance,
-            detection.blockDistance,
-            detection.blockHitPoint
+            input.maxDistance
         );
         return detection;
     }

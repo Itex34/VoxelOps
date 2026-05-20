@@ -8,6 +8,7 @@
 #include "../../network/snapshots/PlayerSnapshots.hpp"
 #include "../player/ServerMovementSimulation.hpp"
 #include "../../engine/world/ChunkManager.hpp"
+#include "../../../Shared/items/Items.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -18,6 +19,15 @@ namespace {
     constexpr int64_t kSlowPlayerManagerUpdateUs = 4000;
     std::atomic<uint64_t> g_playerManagerSlowUpdateCount{0};
     std::atomic<bool> g_enablePlayerManagerPerfDiagnostics{false};
+
+    bool inventoryHasItem(const Inventory &inventory, uint16_t itemId) {
+        for (const Slot &slot : inventory.slots()) {
+            if (slot.itemId == itemId && slot.quantity > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
 } // namespace
 
 PlayerManager::PlayerManager() = default;
@@ -96,6 +106,74 @@ bool PlayerManager::setFlyModeAllowed(PlayerID id, bool allowed) {
 bool PlayerManager::setEquippedWeapon(PlayerID id, uint16_t weaponId) {
     std::lock_guard<std::mutex> lock(mtx);
     return PlayerInventory::setEquippedWeapon(playersById, id, weaponId);
+}
+
+bool PlayerManager::tryFireGrapple(
+    PlayerID id,
+    const glm::vec3 &origin,
+    const glm::vec3 &direction,
+    double nowSeconds,
+    const ChunkManager &chunkManager,
+    GrappleFireResult &outResult
+) {
+    std::lock_guard<std::mutex> lock(mtx);
+    const auto it = playersById.find(id);
+    if (it == playersById.end()) {
+        return false;
+    }
+
+    ServerPlayer &player = it->second;
+    if (!player.isAlive) {
+        outResult = GrappleFireResult{};
+        return true;
+    }
+    if (!inventoryHasItem(player.inventory, static_cast<uint16_t>(ITEM_GRAPPLE_GUN))) {
+        outResult = GrappleFireResult{};
+        return true;
+    }
+
+    GrappleGun grappleGun;
+    GrappleContext context{
+        .state = player.grappleState,
+        .origin = origin,
+        .direction = direction,
+        .playerPosition = player.position,
+        .nowSeconds = nowSeconds,
+        .chunkManager = chunkManager
+    };
+    outResult = grappleGun.tryFire(context);
+    return true;
+}
+
+bool PlayerManager::releaseGrapple(PlayerID id) {
+    std::lock_guard<std::mutex> lock(mtx);
+    const auto it = playersById.find(id);
+    if (it == playersById.end()) {
+        return false;
+    }
+
+    GrappleGun grappleGun;
+    grappleGun.release(it->second.grappleState);
+    return true;
+}
+
+bool PlayerManager::setGrappleReeling(PlayerID id, bool reelingIn, double nowSeconds) {
+    std::lock_guard<std::mutex> lock(mtx);
+    const auto it = playersById.find(id);
+    if (it == playersById.end()) {
+        return false;
+    }
+    ServerPlayer &player = it->second;
+    if (!player.grappleState.active) {
+        player.grappleState.reelingIn = false;
+        return true;
+    }
+
+    player.grappleState.reelingIn = reelingIn;
+    if (reelingIn) {
+        player.grappleState.lastReelCommandTime = nowSeconds;
+    }
+    return true;
 }
 
 void PlayerManager::update(double deltaSeconds, ChunkManager &chunkManager) {

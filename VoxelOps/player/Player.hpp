@@ -33,6 +33,12 @@ struct NetworkInputState {
     bool flyMode = false;
 };
 
+struct GrappleConstraintState {
+    bool active = false;
+    glm::vec3 anchor{0.0f};
+    float ropeLength = 0.0f;
+};
+
 class Player {
 public:
     struct SimulationState { 
@@ -107,7 +113,11 @@ public:
         m_networkInput = input;
     }
     void simulateFromNetworkInput(
-        const NetworkInputState &input, double deltaTime, bool updateFov = false
+        const NetworkInputState &input,
+        double deltaTime,
+        bool updateFov = false,
+        bool disableAirControlWhenAirborne = false,
+        const GrappleConstraintState *grappleConstraint = nullptr
     );
     [[nodiscard]] float getYawDegrees() const noexcept {
         return static_cast<float>(yaw);
@@ -196,7 +206,13 @@ private:
     // Movement / collisions
     void moveAndCollide(const glm::vec3 &delta, bool allowStepUp, float *outStepUpHeight = nullptr);
     bool checkCollision(const glm::vec3 &pos) const;
-    void simulateMovement(const NetworkInputState &input, float dt, bool updateFov);
+    void simulateMovement(
+        const NetworkInputState &input,
+        float dt,
+        bool updateFov,
+        bool disableAirControlWhenAirborne,
+        const GrappleConstraintState *grappleConstraint
+    );
 
     // Internal helpers
     void updateModelMatrix() noexcept;

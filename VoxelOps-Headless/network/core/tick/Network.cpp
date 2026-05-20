@@ -31,6 +31,9 @@ void Runtime::DispatchInboundPacket(
     case PacketType::ShootRequest:
         HandleShootRequestPacket(incoming, data, size);
         return;
+    case PacketType::GrappleRequest:
+        HandleGrappleRequestPacket(incoming, data, size);
+        return;
     case PacketType::InventoryActionRequest:
         HandleInventoryActionRequestPacket(incoming, data, size);
         return;

@@ -11,7 +11,7 @@
 
 struct RuntimeRenderState {
     std::unique_ptr<IRenderDevice> renderer;
-
+   
     std::unique_ptr<ISkyBackend> sky;
     std::shared_ptr<IGunRenderer> gunRenderer;
     std::unique_ptr<IGunSceneRenderer> gunSceneRenderer;

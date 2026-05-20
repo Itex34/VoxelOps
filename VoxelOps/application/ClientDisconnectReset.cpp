@@ -16,6 +16,8 @@ void ClientDisconnectReset::apply(Runtime &runtime, bool *forceCursorEnabled) co
     runtime.ui.matchEnded = false;
     runtime.ui.matchWinner.clear();
     runtime.ui.scoreboardEntries.clear();
+    runtime.ui.activeView = UiView::MainMenu;
+    runtime.ui.wantsCursor = true;
     runtime.combat.localPlayerAlive = true;
     runtime.combat.localHealth = 100.0f;
     runtime.combat.localRespawnSeconds = 0.0f;
@@ -25,6 +27,7 @@ void ClientDisconnectReset::apply(Runtime &runtime, bool *forceCursorEnabled) co
     runtime.gameplay.player->clearConnectedPlayers();
     runtime.world.worldItems.clear();
     runtime.world.lastWorldItemSnapshotTick = 0;
+    runtime.combat.grapple = RuntimeCombatState::GrappleRuntimeState{};
     runtime.combat.activeHotbarSlot = 0;
     runtime.network.snapshotInterpolator.Clear();
     runtime.prediction.hasLocalPlayerId = false;

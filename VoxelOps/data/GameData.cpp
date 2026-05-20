@@ -6,7 +6,7 @@
 namespace GameData {
 
     int screenWidth = 800, screenHeight = 600;
-    extern int windowedX = 400, windowedY = 300;
+    int windowedX = 400, windowedY = 300;
 
     double deltaTime = 0.0f;
     double lastFrame = 0.0f;

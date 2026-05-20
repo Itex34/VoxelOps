@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
 add_executable(VoxelOps-Headless 
     "server_main.cpp"  
@@ -65,14 +65,14 @@ add_executable(VoxelOps-Headless
     "game/player/ServerMovementSimulation.cpp"
     "game/world/BlockEdits.cpp"
     "game/spawn/Respawning.cpp" 
-    "engine/world/WorldCollision.cpp")
+    "engine/world/WorldCollision.cpp" "game/combat/GrappleGun.cpp")
 
 find_package(glm CONFIG REQUIRED)
 find_package(GameNetworkingSockets CONFIG REQUIRED)
 find_package(lz4 CONFIG REQUIRED)
 
 target_link_libraries(VoxelOps-Headless PRIVATE glm::glm)
-target_link_libraries(VoxelOps-Headless PRIVATE GameNetworkingSockets::shared GameNetworkingSockets::static GameNetworkingSockets::GameNetworkingSockets GameNetworkingSockets::GameNetworkingSockets_s)
+target_link_libraries(VoxelOps-Headless PRIVATE GameNetworkingSockets::GameNetworkingSockets)
 target_link_libraries(VoxelOps-Headless PRIVATE Shared)
 target_link_libraries(VoxelOps-Headless PRIVATE lz4::lz4)
 

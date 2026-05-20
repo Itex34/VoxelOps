@@ -217,6 +217,23 @@ bool ParseShootResult(std::span<const uint8_t> bytes, ShootResult &out) {
     return offset == bytes.size();
 }
 
+bool ParseGrappleResult(std::span<const uint8_t> bytes, GrappleResult &out) {
+    size_t offset = 0;
+    uint8_t type = 0;
+    uint32_t entityRaw = 0;
+    if (!ReadU8(bytes, offset, type) || type != static_cast<uint8_t>(PacketType::GrappleResult) ||
+        !ReadU32LE(bytes, offset, out.clientGrappleId) ||
+        !ReadU32LE(bytes, offset, out.serverTick) || !ReadU8(bytes, offset, out.accepted) ||
+        !ReadU8(bytes, offset, out.didHit) || !ReadU32LE(bytes, offset, entityRaw) ||
+        !ReadF32LE(bytes, offset, out.hitX) || !ReadF32LE(bytes, offset, out.hitY) ||
+        !ReadF32LE(bytes, offset, out.hitZ) || !ReadU8(bytes, offset, out.faceNormal) ||
+        !ReadU32LE(bytes, offset, out.serverSeed)) {
+        return false;
+    }
+    out.hitEntityId = static_cast<int32_t>(entityRaw);
+    return offset == bytes.size();
+}
+
 bool ParseInventoryActionResult(std::span<const uint8_t> bytes, InventoryActionResult &out) {
     if (bytes.empty()) {
         return false;

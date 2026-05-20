@@ -10,6 +10,11 @@
 #include <string>
 #include <vector>
 
+enum class UiView : uint8_t {
+    MainMenu = 0,
+    InGame = 1
+};
+
 struct RuntimeUiState {
     struct KillFeedEntry {
         std::string killer;
@@ -30,4 +35,6 @@ struct RuntimeUiState {
     bool matchEnded = false;
     std::string matchWinner;
     std::vector<ClientNetwork::ScoreboardEntry> scoreboardEntries;
+    UiView activeView = UiView::MainMenu;
+    bool wantsCursor = true;
 };

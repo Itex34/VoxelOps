@@ -213,3 +213,32 @@ bool ClientNetwork::SendShootRequest(
     );
     return (r == k_EResultOK);
 }
+
+bool ClientNetwork::SendGrappleRequest(
+    uint32_t clientGrappleId,
+    uint32_t clientTick,
+    const glm::vec3 &pos,
+    const glm::vec3 &dir,
+    uint32_t seed
+) {
+    if (!IsConnected()) {
+        return false;
+    }
+
+    GrappleRequest req;
+    req.clientGrappleId = clientGrappleId;
+    req.clientTick = clientTick;
+    req.posX = pos.x;
+    req.posY = pos.y;
+    req.posZ = pos.z;
+    req.dirX = dir.x;
+    req.dirY = dir.y;
+    req.dirZ = dir.z;
+    req.seed = seed;
+
+    std::vector<uint8_t> buf = req.serialize();
+    const EResult r = SteamNetworkingSockets()->SendMessageToConnection(
+        m_conn, buf.data(), static_cast<uint32_t>(buf.size()), k_nSteamNetworkingSend_Reliable, nullptr
+    );
+    return (r == k_EResultOK);
+}

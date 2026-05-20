@@ -55,6 +55,23 @@ namespace NetPacket {
                std::isfinite(out.dirX) && std::isfinite(out.dirY) && std::isfinite(out.dirZ);
     }
 
+    bool ParseGrappleRequestPacket(const uint8_t *data, uint32_t size, GrappleRequest &out) {
+        if (!data || size != kGrappleRequestPacketBytes) {
+            return false;
+        }
+        out.clientGrappleId = ReadU32LE(data + 1);
+        out.clientTick = ReadU32LE(data + 5);
+        out.posX = ReadF32LE(data + 9);
+        out.posY = ReadF32LE(data + 13);
+        out.posZ = ReadF32LE(data + 17);
+        out.dirX = ReadF32LE(data + 21);
+        out.dirY = ReadF32LE(data + 25);
+        out.dirZ = ReadF32LE(data + 29);
+        out.seed = ReadU32LE(data + 33);
+        return std::isfinite(out.posX) && std::isfinite(out.posY) && std::isfinite(out.posZ) &&
+               std::isfinite(out.dirX) && std::isfinite(out.dirY) && std::isfinite(out.dirZ);
+    }
+
     bool ParseInventoryActionRequestPacket(
         const uint8_t *data, uint32_t size, InventoryActionRequest &out
     ) {

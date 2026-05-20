@@ -19,6 +19,7 @@ namespace NetPacket {
     inline constexpr uint32_t kBlockBreakRequestPacketMaxBytes =
         1u + 4u + 2u + static_cast<uint32_t>(kMaxBlockBreakEditsPerRequest) * (4u + 4u + 4u);
     inline constexpr uint32_t kShootRequestPacketBytes = 1u + 4u + 4u + 2u + 12u + 12u + 4u + 1u;
+    inline constexpr uint32_t kGrappleRequestPacketBytes = 1u + 4u + 4u + 12u + 12u + 4u;
     inline constexpr uint32_t kInventoryActionRequestPacketBytes = 1u + 4u + 4u + 1u + 2u + 2u + 2u;
 
     bool IsInboundPacketSizeValid(PacketType type, uint32_t bytes);

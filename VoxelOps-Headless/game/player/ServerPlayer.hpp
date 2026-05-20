@@ -10,6 +10,7 @@
 #include "../../../Shared/player/Inventory.hpp"
 #include "../../../Shared/gun/GunType.hpp"
 #include "../../network/gameplay/InputBuffer.hpp"
+#include "../combat/GrappleGun.hpp"
 
 using PlayerID = uint64_t;
 using Clock = std::chrono::steady_clock;
@@ -53,6 +54,7 @@ struct ServerPlayer {
     float timeSinceGrounded = 0.0f;
     float jumpBufferTimer = 0.0f;
     Inventory inventory{};
+    GrappleState grappleState{};
 
     std::list<PlayerID>::iterator orderIt;
 };

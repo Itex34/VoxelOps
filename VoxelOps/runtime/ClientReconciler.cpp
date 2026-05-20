@@ -90,6 +90,10 @@ bool ClientReconciler::Apply(Runtime &runtime, const ServerSnapshot &snapshot) {
 
     constexpr size_t kMaxReplaySteps = 64;
     size_t replayCount = 0;
+    GrappleConstraintState grappleConstraint{};
+    grappleConstraint.active = runtime.combat.grapple.isAttached;
+    grappleConstraint.anchor = runtime.combat.grapple.anchorPoint;
+    grappleConstraint.ropeLength = runtime.combat.grapple.ropeLength;
     for (const RuntimePredictionState::PendingInputEntry &pending : runtime.prediction.pendingInputs) {
         if (replayCount >= kMaxReplaySteps) {
             static uint32_t s_replayCapHitCount = 0;
@@ -108,7 +112,13 @@ bool ClientReconciler::Apply(Runtime &runtime, const ServerSnapshot &snapshot) {
         replayInput.pitch = pending.packet.pitch;
         replayInput.flags = pending.packet.inputFlags;
         replayInput.flyMode = snapshot.allowFlyMode && (pending.packet.flyMode != 0);
-        runtime.gameplay.player->simulateFromNetworkInput(replayInput, RuntimePredictionState::LocalPredictionStep, false);
+        runtime.gameplay.player->simulateFromNetworkInput(
+            replayInput,
+            RuntimePredictionState::LocalPredictionStep,
+            false,
+            runtime.combat.grapple.isAttached,
+            &grappleConstraint
+        );
         ++replayCount;
     }
 

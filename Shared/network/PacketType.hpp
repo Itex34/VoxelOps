@@ -15,6 +15,9 @@ enum class PacketType : uint8_t {
     ShootRequest = 11, // client -> server: request to fire
     ShootResult = 12,  // server -> client: authoritative shot result
 
+    GrappleRequest = 13, // client -> server: request to fire grapple gun
+    GrappleResult = 14,  // server -> client: authoritative grapple result
+
     ChunkRequest = 20, // client -> server: request/refresh chunk interest area
     ChunkData = 21,    // server -> client: full chunk payload (serialized/compressed bytes)
     ChunkDelta = 22,   // server -> client: block edits for a chunk

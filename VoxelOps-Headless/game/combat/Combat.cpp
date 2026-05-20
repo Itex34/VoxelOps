@@ -8,6 +8,8 @@
 #include "../../engine/physics/core/HitDetection.hpp"
 #include "../../../Shared/player/PlayerData.hpp"
 
+#include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <iostream>
 #include <mutex>
@@ -165,26 +167,27 @@ ShootResult Runtime::ExecuteShootRequest(HSteamNetConnection incoming, const Sho
     detectionInput.players = &players;
     detectionInput.enableValidationLogs = kEnableShootValidationLogs;
 
-    const HitDetection::HitDetectionResult hit =
+    const HitDetection::HitDetectionResult hitResult =
         HitDetection::RaycastPlayersAndWorld(detectionInput);
 
     if (kEnableShootValidationLogs) {
-        std::cout << "[shoot/validate] nearest playerHit=" << (hit.playerHit ? "yes" : "no")
-                  << " playerDist=" << (hit.playerHit ? hit.bestPlayerDistance : -1.0f)
-                  << " blockHit=" << (hit.blockHit ? "yes" : "no")
-                  << " blockDist=" << (hit.blockHit ? hit.blockDistance : -1.0f) << "\n";
+        std::cout << "[shoot/validate] nearest playerHit=" << (hitResult.playerHit ? "yes" : "no")
+                  << " playerDist=" << (hitResult.playerHit ? hitResult.bestPlayerDistance : -1.0f)
+                  << " blockHit=" << (hitResult.worldRaycastResult.hit ? "yes" : "no")
+                  << " blockDist=" << (hitResult.worldRaycastResult.hit ? hitResult.worldRaycastResult.distance : -1.0f)
+                  << "\n";
     }
 
     const Shoot::ShootOutcome outcome =
-        Shoot::ResolveHit(ctx, hit, kShootBlockOcclusionEpsilon, m_playerManager);
+        Shoot::ResolveHit(ctx, hitResult, kShootBlockOcclusionEpsilon, m_playerManager);
     Shoot::ApplyOutcomeToResult(ctx, outcome);
 
     if (kEnableShootValidationLogs) {
         if (!outcome.hit) {
-            const char *reason = (!hit.playerHit) ? "no_player_intersection" : "miss_or_occluded";
+            const char *reason = (!hitResult.playerHit) ? "no_player_intersection" : "miss_or_occluded";
             std::cout << "[shoot/validate] result=miss reason=" << reason
-                      << " blockDist=" << (hit.blockHit ? hit.blockDistance : -1.0f)
-                      << " playerDist=" << (hit.playerHit ? hit.bestPlayerDistance : -1.0f)
+                      << " blockDist=" << (hitResult.worldRaycastResult.hit ? hitResult.worldRaycastResult.distance : -1.0f)
+                      << " playerDist=" << (hitResult.playerHit ? hitResult.bestPlayerDistance : -1.0f)
                       << " epsilon=" << kShootBlockOcclusionEpsilon << " endpoint=("
                       << outcome.hitPoint.x << "," << outcome.hitPoint.y << ","
                       << outcome.hitPoint.z << ")"
@@ -231,4 +234,85 @@ ShootResult Runtime::ExecuteShootRequest(HSteamNetConnection incoming, const Sho
     }
 
     return ctx.result;
+}
+
+GrappleResult Runtime::ExecuteGrappleRequest(HSteamNetConnection incoming, const GrappleRequest &req) {
+    GrappleResult result{};
+    result.clientGrappleId = req.clientGrappleId;
+    result.serverTick = m_serverTick.load(std::memory_order_acquire);
+    result.serverSeed = req.seed;
+    result.faceNormal = 255;
+
+    PlayerID playerId = 0;
+    {
+        std::lock_guard<std::mutex> lk(m_mutex);
+        const auto it = m_clients.find(incoming);
+        if (it == m_clients.end()) {
+            return result;
+        }
+        const Runtime::ClientSession &session = it->second;
+        if (session.username.empty() || session.playerId == 0) {
+            std::cout << "[recv] GrappleRequest from unregistered conn = " << incoming << "\n";
+            return result;
+        }
+        playerId = session.playerId;
+    }
+
+    m_playerManager.touchHeartbeat(playerId);
+
+    const glm::vec3 requestedDirection(req.dirX, req.dirY, req.dirZ);
+    const float dirLenSq =
+        (requestedDirection.x * requestedDirection.x) +
+        (requestedDirection.y * requestedDirection.y) +
+        (requestedDirection.z * requestedDirection.z);
+    const double nowSeconds = std::chrono::duration<double>(
+                                  std::chrono::steady_clock::now().time_since_epoch()
+    )
+                                  .count();
+
+    if (!std::isfinite(dirLenSq) || dirLenSq < 1e-8f) {
+        if (m_playerManager.releaseGrapple(playerId)) {
+            result.accepted = 1u;
+        }
+        return result;
+    }
+
+    const bool controlPacket =
+        std::abs(req.posX) < 1e-6f && std::abs(req.posY) < 1e-6f && std::abs(req.posZ) < 1e-6f;
+
+    if (controlPacket) {
+        if (m_playerManager.setGrappleReeling(playerId, true, nowSeconds)) {
+            result.accepted = 1u;
+        }
+        return result;
+    }
+
+    const std::optional<ServerPlayer> shooterOpt = m_playerManager.getPlayerCopy(playerId);
+    if (!shooterOpt.has_value() || !shooterOpt->isAlive) {
+        return result;
+    }
+
+    // Grapple targeting is authoritative from eye/crosshair origin for predictable feel.
+    const glm::vec3 origin =
+        shooterOpt->position + glm::vec3(0.0f, movementSettings().eyeHeight, 0.0f);
+    const glm::vec3 direction = requestedDirection / std::sqrt(dirLenSq);
+
+    GrappleFireResult fireResult{};
+    if (!m_playerManager.tryFireGrapple(
+            playerId, origin, direction, nowSeconds, m_chunkManager, fireResult
+        )) {
+        return result;
+    }
+
+    result.accepted = fireResult.accepted ? 1u : 0u;
+    result.didHit = fireResult.attached ? 1u : 0u;
+    if (!fireResult.attached) {
+        return result;
+    }
+
+    result.hitX = fireResult.anchor.x;
+    result.hitY = fireResult.anchor.y;
+    result.hitZ = fireResult.anchor.z;
+    result.faceNormal = fireResult.blockNormal;
+    return result;
 }

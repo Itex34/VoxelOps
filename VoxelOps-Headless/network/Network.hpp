@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <GameNetworkingSockets/steam/steamnetworkingtypes.h>
+#include <GameNetworkingSockets/steam/isteamnetworkingutils.h>
 #include "../../Shared/network/PacketType.hpp"
 
 class Runtime;

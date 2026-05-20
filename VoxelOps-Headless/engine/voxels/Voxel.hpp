@@ -32,6 +32,15 @@ enum class BlockID : uint8_t {
     COUNT,
 };
 
+enum class BlockFace : uint8_t {
+    PosX = 0,
+    NegX = 1,
+    PosY = 2,
+    NegY = 3,
+    PosZ = 4,
+    NegZ = 5
+};
+
 namespace std {
     template <> struct hash<BlockID> {
         size_t operator()(const BlockID &id) const noexcept {

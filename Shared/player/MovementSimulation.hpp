@@ -32,6 +32,7 @@ namespace Shared::Movement {
         bool allowFlyMode = false;
         bool allowStepUp = true;
         bool requireSprintForStepUp = true;
+        bool disableAirControlWhenAirborne = false;
     };
 
     inline float Lerp(float a, float b, float t) {
@@ -218,21 +219,26 @@ namespace Shared::Movement {
         }
 
         const bool jumpPressed = (input.flags & kPlayerInputFlagJump) != 0;
+        const bool disableAirControl = options.disableAirControlWhenAirborne && !state.onGround;
+        const bool effectiveJumpPressed = disableAirControl ? false : jumpPressed;
         if (state.onGround) {
             state.timeSinceGrounded = 0.0f;
         } else {
             state.timeSinceGrounded += dt;
         }
-        if (jumpPressed && !state.jumpPressedLastTick) {
+        if (effectiveJumpPressed && !state.jumpPressedLastTick) {
             state.jumpBufferTimer = movement.jumpBufferSec;
         } else {
             state.jumpBufferTimer = std::max(0.0f, state.jumpBufferTimer - dt);
         }
 
-        const float accel = state.onGround ? movement.groundAcceleration : movement.airAcceleration;
-        const float alpha = std::clamp(accel * dt, 0.0f, 1.0f);
-        state.velocity.x = Lerp(state.velocity.x, desiredHorizontal.x, alpha);
-        state.velocity.z = Lerp(state.velocity.z, desiredHorizontal.z, alpha);
+        if (!disableAirControl) {
+            const float accel =
+                state.onGround ? movement.groundAcceleration : movement.airAcceleration;
+            const float alpha = std::clamp(accel * dt, 0.0f, 1.0f);
+            state.velocity.x = Lerp(state.velocity.x, desiredHorizontal.x, alpha);
+            state.velocity.z = Lerp(state.velocity.z, desiredHorizontal.z, alpha);
+        }
 
         state.velocity.y += movement.gravity * dt;
         if (state.velocity.y < -movement.terminalVelocity) {
@@ -250,7 +256,7 @@ namespace Shared::Movement {
             state.timeSinceGrounded = movement.coyoteTimeSec + dt;
             state.jumpBufferTimer = 0.0f;
         }
-        state.jumpPressedLastTick = jumpPressed;
+        state.jumpPressedLastTick = effectiveJumpPressed;
 
         const bool allowStepUpForTick =
             options.allowStepUp && (!options.requireSprintForStepUp || sprint);

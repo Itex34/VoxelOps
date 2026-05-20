@@ -19,6 +19,8 @@ namespace NetPacket {
             return bytes >= (1u + 4u + 2u) && bytes <= kBlockBreakRequestPacketMaxBytes;
         case PacketType::ShootRequest:
             return bytes == kShootRequestPacketBytes;
+        case PacketType::GrappleRequest:
+            return bytes == kGrappleRequestPacketBytes;
         case PacketType::InventoryActionRequest:
             return bytes == kInventoryActionRequestPacketBytes;
         default:

@@ -2,6 +2,7 @@
 
 #include "../world/ChunkManager.hpp"
 #include "../../Shared/player/PlayerData.hpp"
+#include "../../Shared/player/GrappleSwing.hpp"
 #include "../../Shared/player/MovementSimulation.hpp"
 #include "../../Shared/network/Packets.hpp"
 
@@ -175,11 +176,29 @@ void Player::setTreatMissingCollisionAsSolid(bool enabled) noexcept {
     m_treatMissingCollisionAsSolid = enabled;
 }
 
-void Player::simulateFromNetworkInput(const NetworkInputState &input, double deltaTime, bool updateFov) {
-    simulateMovement(input, static_cast<float>(deltaTime), updateFov);
+void Player::simulateFromNetworkInput(
+    const NetworkInputState &input,
+    double deltaTime,
+    bool updateFov,
+    bool disableAirControlWhenAirborne,
+    const GrappleConstraintState *grappleConstraint
+) {
+    simulateMovement(
+        input,
+        static_cast<float>(deltaTime),
+        updateFov,
+        disableAirControlWhenAirborne,
+        grappleConstraint
+    );
 }
 
-void Player::simulateMovement(const NetworkInputState &input, float dt, bool updateFov) {
+void Player::simulateMovement(
+    const NetworkInputState &input,
+    float dt,
+    bool updateFov,
+    bool disableAirControlWhenAirborne,
+    const GrappleConstraintState *grappleConstraint
+) {
     const auto &movement = movementSettings();
 
     yaw = static_cast<double>(NormalizeYawDegrees(input.yaw));
@@ -204,6 +223,15 @@ void Player::simulateMovement(const NetworkInputState &input, float dt, bool upd
     state.jumpPressedLastTick = m_jumpPressedLastTick;
     state.timeSinceGrounded = m_timeSinceGrounded;
     state.jumpBufferTimer = m_jumpBufferTimer;
+    if (!state.flyMode && grappleConstraint != nullptr && grappleConstraint->active) {
+        Shared::Grapple::ApplyRopeConstraint(
+            grappleConstraint->anchor,
+            grappleConstraint->ropeLength,
+            state.position,
+            state.velocity,
+            [this](const glm::vec3 &testPos) { return checkCollision(testPos); }
+        );
+    }
 
     Shared::Movement::InputState simInput;
     simInput.moveX = input.moveX;
@@ -215,6 +243,8 @@ void Player::simulateMovement(const NetworkInputState &input, float dt, bool upd
     simOptions.allowFlyMode = m_flyModeAllowed;
     simOptions.allowStepUp = true;
     simOptions.requireSprintForStepUp = true;
+    simOptions.disableAirControlWhenAirborne =
+        disableAirControlWhenAirborne || (grappleConstraint != nullptr && grappleConstraint->active);
 
     float steppedHeight = 0.0f;
     Shared::Movement::Simulate(

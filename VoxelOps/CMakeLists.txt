@@ -5,9 +5,11 @@ project(VoxelOps CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
-option(VOXELOPS_ENABLE_NRD_BOOTSTRAP "Enable early NRD API bootstrap integration" ON)
+option(VOXELOPS_OPENGL_ONLY "Build VoxelOps with OpenGL backend only" ON)
+
+option(VOXELOPS_ENABLE_NRD_BOOTSTRAP "Enable early NRD API bootstrap integration" OFF)
 set(VOXELOPS_NRD_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../NRD" CACHE PATH "Path to NVIDIA NRD repository")
 set(VOXELOPS_NRD_DLL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../NRD-Sample/_Bin/NRD.dll" CACHE FILEPATH "Path to NRD.dll used by runtime bootstrap")
 
@@ -91,6 +93,7 @@ add_executable(VoxelOps
     "render/RenderSceneBuilder.cpp"
     "systems/WorldInteractionSystem.cpp"
     "systems/CombatShootSystem.cpp"
+    "systems/CombatGrappleSystem.cpp"
     
     "graphics/Lighting.cpp"
     "network/ClientNetwork.cpp"
@@ -117,11 +120,12 @@ add_executable(VoxelOps
     "ui/debug/DebugUi.cpp"
     "ui/player/InventoryUI.cpp"
     "ui/player/Crosshair.cpp"
+    "ui/player/UiStateController.cpp"
     "commands/CommandParser.cpp"
     "ui/player/SettingsUI.cpp"
     "ui/player/MainMenu.cpp"
     "runtime/ClientPrediction.cpp" 
-    "graphics/Vulkan/vulkan/VmaImpl.cpp")
+    "graphics/Vulkan/vulkan/VmaImpl.cpp" "graphics/OpenGL/debug_render/RenderLine.cpp")
 
 find_package(SDL3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
@@ -130,19 +134,25 @@ find_package(glad CONFIG REQUIRED)
 find_package(GameNetworkingSockets CONFIG REQUIRED)
 find_package(lz4 CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
+find_package(RmlUi REQUIRED)
+
 find_package(Vulkan REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
 
+
 target_link_libraries(VoxelOps PRIVATE SDL3::SDL3)
+
 target_link_libraries(VoxelOps PRIVATE glm::glm)
 target_link_libraries(VoxelOps PRIVATE assimp::assimp)
 target_link_libraries(VoxelOps PRIVATE glad::glad)
-target_link_libraries(VoxelOps PRIVATE GameNetworkingSockets::shared GameNetworkingSockets::static GameNetworkingSockets::GameNetworkingSockets GameNetworkingSockets::GameNetworkingSockets_s)
+target_link_libraries(VoxelOps PRIVATE GameNetworkingSockets::GameNetworkingSockets)
 target_link_libraries(VoxelOps PRIVATE Shared)
 target_link_libraries(VoxelOps PRIVATE lz4::lz4)
 target_link_libraries(VoxelOps PRIVATE imgui::imgui)
+target_link_libraries(VoxelOps PRIVATE RmlUi::RmlUi)
+
 target_link_libraries(VoxelOps PRIVATE Vulkan::Vulkan)
 target_link_libraries(VoxelOps PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(VoxelOps PRIVATE GPUOpen::VulkanMemoryAllocator)
@@ -180,63 +190,68 @@ else()
     target_compile_definitions(VoxelOps PRIVATE VOXELOPS_NRD_HEADERS=0)
 endif()
 
-find_program(GLSLC_EXECUTABLE glslc REQUIRED)
 
-set(VKSHADERS
-    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/VoxelTerrainGI.vert
-    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/VoxelTerrainGI.frag
-    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/model.vert
-    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/model.frag
-    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/nrd_composite.vert
-    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/nrd_composite.frag
-    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/postprocess.vert
-    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/postprocess.frag
-)
 
-set(SPIRV_OUTPUTS)
-set(SPIRV_DIR "${CMAKE_BINARY_DIR}/shaders/spir-v")
-set(VK_SHADER_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders")
-file(MAKE_DIRECTORY ${SPIRV_DIR})
 
-foreach(VKSHADER ${VKSHADERS})
-    get_filename_component(FILE_NAME ${VKSHADER} NAME)
-    get_filename_component(VKSHADER_ABS ${VKSHADER} ABSOLUTE)
-    set(SPIRV "${SPIRV_DIR}/${FILE_NAME}.spv")
+if(!VOXELOPS_OPENGL_ONLY)
+    find_program(GLSLC_EXECUTABLE glslc REQUIRED)
 
-    add_custom_command(
-        OUTPUT ${SPIRV}
-        COMMAND ${GLSLC_EXECUTABLE} -I ${VK_SHADER_INCLUDE_DIR} ${VKSHADER_ABS} -o ${SPIRV}
-        DEPENDS ${VKSHADER_ABS}
-        COMMENT "Compiling shader ${FILE_NAME}"
-        VERBATIM
+    set(VKSHADERS
+        ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/VoxelTerrainGI.vert
+        ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/VoxelTerrainGI.frag
+        ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/model.vert
+        ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/model.frag
+        ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/nrd_composite.vert
+        ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/nrd_composite.frag
+        ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/postprocess.vert
+        ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/postprocess.frag
     )
 
-    list(APPEND SPIRV_OUTPUTS ${SPIRV})
-endforeach()
+    set(SPIRV_OUTPUTS)
+    set(SPIRV_DIR "${CMAKE_BINARY_DIR}/shaders/spir-v")
+    set(VK_SHADER_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders")
+    file(MAKE_DIRECTORY ${SPIRV_DIR})
 
-set(VKSHADERS_RT
-    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/VoxelTerrainGI.frag
-    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/model.frag
-)
+    foreach(VKSHADER ${VKSHADERS})
+        get_filename_component(FILE_NAME ${VKSHADER} NAME)
+        get_filename_component(VKSHADER_ABS ${VKSHADER} ABSOLUTE)
+        set(SPIRV "${SPIRV_DIR}/${FILE_NAME}.spv")
 
-foreach(VKSHADER_RT ${VKSHADERS_RT})
-    get_filename_component(FILE_NAME ${VKSHADER_RT} NAME)
-    get_filename_component(VKSHADER_ABS ${VKSHADER_RT} ABSOLUTE)
-    set(RT_FILE_NAME ${FILE_NAME})
-    string(REPLACE ".frag" "_rt.frag" RT_FILE_NAME ${RT_FILE_NAME})
-    set(SPIRV_RT "${SPIRV_DIR}/${RT_FILE_NAME}.spv")
+        add_custom_command(
+            OUTPUT ${SPIRV}
+            COMMAND ${GLSLC_EXECUTABLE} -I ${VK_SHADER_INCLUDE_DIR} ${VKSHADER_ABS} -o ${SPIRV}
+            DEPENDS ${VKSHADER_ABS}
+            COMMENT "Compiling shader ${FILE_NAME}"
+            VERBATIM
+        )
 
-    add_custom_command(
-        OUTPUT ${SPIRV_RT}
-        COMMAND ${GLSLC_EXECUTABLE} --target-env=vulkan1.2 -I ${VK_SHADER_INCLUDE_DIR} -DVOXELOPS_RAY_QUERY=1 ${VKSHADER_ABS} -o ${SPIRV_RT}
-        DEPENDS ${VKSHADER_ABS}
-        COMMENT "Compiling RT shader ${RT_FILE_NAME}"
-        VERBATIM
+        list(APPEND SPIRV_OUTPUTS ${SPIRV})
+    endforeach()
+
+    set(VKSHADERS_RT
+        ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/VoxelTerrainGI.frag
+        ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/model.frag
     )
 
+    foreach(VKSHADER_RT ${VKSHADERS_RT})
+        get_filename_component(FILE_NAME ${VKSHADER_RT} NAME)
+        get_filename_component(VKSHADER_ABS ${VKSHADER_RT} ABSOLUTE)
+        set(RT_FILE_NAME ${FILE_NAME})
+        string(REPLACE ".frag" "_rt.frag" RT_FILE_NAME ${RT_FILE_NAME})
+        set(SPIRV_RT "${SPIRV_DIR}/${RT_FILE_NAME}.spv")
 
-    list(APPEND SPIRV_OUTPUTS ${SPIRV_RT})
-endforeach()
+        add_custom_command(
+            OUTPUT ${SPIRV_RT}
+            COMMAND ${GLSLC_EXECUTABLE} --target-env=vulkan1.2 -I ${VK_SHADER_INCLUDE_DIR} -DVOXELOPS_RAY_QUERY=1 ${VKSHADER_ABS} -o ${SPIRV_RT}
+            DEPENDS ${VKSHADER_ABS}
+            COMMENT "Compiling RT shader ${RT_FILE_NAME}"
+            VERBATIM
+        )
+
+
+        list(APPEND SPIRV_OUTPUTS ${SPIRV_RT})
+    endforeach()
+endif()
 
 add_custom_target(VulkanShaders ALL DEPENDS ${SPIRV_OUTPUTS})
 add_dependencies(VoxelOps VulkanShaders)

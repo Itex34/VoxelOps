@@ -16,6 +16,7 @@ constexpr int MAX_ITEMS = 4096;
 enum ItemID : uint16_t {
     ITEM_PISTOL,
     ITEM_SNIPER,
+    ITEM_GRAPPLE_GUN,
     ITEM_ORANGE_BERRY,
     ITEM_RED_BERRY,
     ITEM_PISTOL_AMMO,

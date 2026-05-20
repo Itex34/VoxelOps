@@ -21,6 +21,7 @@ constexpr size_t kMaxScoreboardQueueDepth = 16;
 constexpr size_t kMaxWorldItemSnapshotQueueDepth = 8;
 constexpr size_t kMaxBlockPlaceResultQueueDepth = 128;
 constexpr size_t kMaxBlockBreakResultQueueDepth = 128;
+constexpr size_t kMaxGrappleResultQueueDepth = 32;
 constexpr size_t kMaxMessagesPerPoll = 128;
 constexpr int64_t kMessagePollBudgetUs = 2000;
 constexpr bool kEnableClientNetProfiling = false;
@@ -174,7 +175,8 @@ void ClientNetwork::Poll() {
         if (cb >= 1) {
             const PacketType type = static_cast<PacketType>(data[0]);
             const bool highPriority =
-                (type == PacketType::PlayerSnapshot) || (type == PacketType::ShootResult);
+                (type == PacketType::PlayerSnapshot) || (type == PacketType::ShootResult) ||
+                (type == PacketType::GrappleResult);
 
             OnMessage(data, cb);
 
@@ -382,6 +384,20 @@ void ClientNetwork::OnMessage(const uint8_t *data, uint32_t size) {
             while (m_shootResultQueue.size() > 32) {
                 m_shootResultQueue.pop_front();
             }
+        }
+        return;
+    }
+
+    if (static_cast<PacketType>(t) == PacketType::GrappleResult) {
+        GrappleResult result;
+        if (!ClientPackets::ParseGrappleResult(std::span<const uint8_t>(data, size), result)) {
+            std::cerr << "[net] malformed GrappleResult\n";
+            return;
+        }
+        {
+            std::lock_guard<std::mutex> lk(m_inboundMutex);
+            m_grappleResultQueue.push_back(std::move(result));
+            TrimQueueToDepth(m_grappleResultQueue, kMaxGrappleResultQueueDepth);
         }
         return;
     }

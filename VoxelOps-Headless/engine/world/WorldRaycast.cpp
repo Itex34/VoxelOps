@@ -2,26 +2,49 @@
 
 #include "ChunkManager.hpp"
 
+#include <glm/common.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
 
 namespace WorldRaycast {
+    namespace {
+        BlockFace faceFromEntryAxis(int axis, int stepSign, const glm::vec3 &rayDir) {
+            if (axis < 0) {
+                const glm::vec3 absDir = glm::abs(rayDir);
+                if (absDir.x >= absDir.y && absDir.x >= absDir.z) {
+                    return (rayDir.x > 0.0f) ? BlockFace::NegX : BlockFace::PosX;
+                }
+                if (absDir.y >= absDir.z) {
+                    return (rayDir.y > 0.0f) ? BlockFace::NegY : BlockFace::PosY;
+                }
+                return (rayDir.z > 0.0f) ? BlockFace::NegZ : BlockFace::PosZ;
+            }
+            switch (axis) {
+            case 0:
+                return (stepSign > 0) ? BlockFace::NegX : BlockFace::PosX;
+            case 1:
+                return (stepSign > 0) ? BlockFace::NegY : BlockFace::PosY;
+            case 2:
+            default:
+                return (stepSign > 0) ? BlockFace::NegZ : BlockFace::PosZ;
+            }
+        }
+    } // namespace
 
-    bool FindFirstSolidBlockHit(
+    WorldRaycastResult FindFirstSolidBlockHit(
         const ChunkManager &chunkManager,
         const glm::vec3 &origin,
         const glm::vec3 &dir,
-        float maxDistance,
-        float &outDistance,
-        glm::vec3 &outHitPoint
+        float maxDistance
     ) {
         if (!std::isfinite(maxDistance) || maxDistance <= 0.0f) {
-            return false;
+            return {};
         }
         const float dirLenSq = glm::dot(dir, dir);
         if (!std::isfinite(dirLenSq) || dirLenSq < 1e-8f) {
-            return false;
+            return {};
         }
 
         const glm::vec3 rayDir = glm::normalize(dir);
@@ -44,6 +67,8 @@ namespace WorldRaycast {
 
         constexpr int kMaxDdaSteps = 2048;
         float traveled = 0.0f;
+        int enteredAxis = -1;
+        int enteredStepSign = 1;
         const ServerChunk *cachedChunk = nullptr;
         glm::ivec3 cachedChunkCoords(std::numeric_limits<int>::max());
         for (int i = 0; i < kMaxDdaSteps; ++i) {
@@ -57,9 +82,14 @@ namespace WorldRaycast {
                 if (cachedChunk->getBlockUnchecked(
                         blockInChunk.x, blockInChunk.y, blockInChunk.z
                     ) != BlockID::Air) {
-                    outDistance = traveled;
-                    outHitPoint = origin + rayDir * traveled;
-                    return true;
+                    const BlockFace hitFace =
+                        faceFromEntryAxis(enteredAxis, enteredStepSign, rayDir);
+                    return {
+                        .hit = true,
+                        .distance = traveled,
+                        .hitPoint = origin + rayDir * traveled,
+                        .face = hitFace
+                    };
                 }
             }
 
@@ -71,27 +101,35 @@ namespace WorldRaycast {
             if (tMax.x < tMax.y) {
                 if (tMax.x < tMax.z) {
                     traveled = tMax.x;
+                    enteredAxis = 0;
+                    enteredStepSign = step.x;
                     currentBlock.x += step.x;
                     tMax.x += tDelta.x;
                 } else {
                     traveled = tMax.z;
+                    enteredAxis = 2;
+                    enteredStepSign = step.z;
                     currentBlock.z += step.z;
                     tMax.z += tDelta.z;
                 }
             } else {
                 if (tMax.y < tMax.z) {
                     traveled = tMax.y;
+                    enteredAxis = 1;
+                    enteredStepSign = step.y;
                     currentBlock.y += step.y;
                     tMax.y += tDelta.y;
                 } else {
                     traveled = tMax.z;
+                    enteredAxis = 2;
+                    enteredStepSign = step.z;
                     currentBlock.z += step.z;
                     tMax.z += tDelta.z;
                 }
             }
         }
 
-        return false;
+        return {};
     }
 
 } // namespace WorldRaycast
