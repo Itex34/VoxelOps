@@ -3,6 +3,7 @@
 #include "ChunkManager.hpp"
 
 #include <atomic>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -57,41 +58,52 @@ namespace WorldCollision {
         const int iy1 = static_cast<int>(std::floor(maxY));
         const int iz1 = static_cast<int>(std::floor(maxZ));
 
-        const auto lockStart = std::chrono::steady_clock::now();
-        std::shared_lock<std::shared_mutex> lk(manager.mapMutex);
-        const auto waitUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                                std::chrono::steady_clock::now() - lockStart
-        )
-                                .count();
-        MaybeLogSlowChunkMapLock("queryAabbCollision.scan", waitUs);
+        const glm::ivec3 minChunkPos = manager.worldToChunkPos(glm::ivec3(ix0, iy0, iz0));
+        const glm::ivec3 maxChunkPos = manager.worldToChunkPos(glm::ivec3(ix1, iy1, iz1));
 
-        glm::ivec3 cachedChunkPos(0);
-        ServerChunk *cachedChunk = nullptr;
-        bool hasCachedChunk = false;
-
-        for (int x = ix0; x <= ix1; ++x) {
-            for (int y = iy0; y <= iy1; ++y) {
-                for (int z = iz0; z <= iz1; ++z) {
-                    const glm::ivec3 worldPos(x, y, z);
-                    const glm::ivec3 chunkPos = manager.worldToChunkPos(worldPos);
+        for (int cx = minChunkPos.x; cx <= maxChunkPos.x; ++cx) {
+            for (int cy = minChunkPos.y; cy <= maxChunkPos.y; ++cy) {
+                for (int cz = minChunkPos.z; cz <= maxChunkPos.z; ++cz) {
+                    const glm::ivec3 chunkPos(cx, cy, cz);
                     if (!manager.inBounds(chunkPos)) {
                         continue;
                     }
 
-                    ServerChunk *chunkPtr = nullptr;
-                    if (hasCachedChunk && chunkPos == cachedChunkPos) {
-                        chunkPtr = cachedChunk;
-                    } else {
+                    const int chunkWorldMinX = cx * CHUNK_SIZE;
+                    const int chunkWorldMinY = cy * CHUNK_SIZE;
+                    const int chunkWorldMinZ = cz * CHUNK_SIZE;
+                    const int chunkWorldMaxX = chunkWorldMinX + CHUNK_SIZE - 1;
+                    const int chunkWorldMaxY = chunkWorldMinY + CHUNK_SIZE - 1;
+                    const int chunkWorldMaxZ = chunkWorldMinZ + CHUNK_SIZE - 1;
+
+                    const int localMinX = std::max(ix0, chunkWorldMinX) - chunkWorldMinX;
+                    const int localMinY = std::max(iy0, chunkWorldMinY) - chunkWorldMinY;
+                    const int localMinZ = std::max(iz0, chunkWorldMinZ) - chunkWorldMinZ;
+                    const int localMaxX = std::min(ix1, chunkWorldMaxX) - chunkWorldMinX;
+                    const int localMaxY = std::min(iy1, chunkWorldMaxY) - chunkWorldMinY;
+                    const int localMaxZ = std::min(iz1, chunkWorldMaxZ) - chunkWorldMinZ;
+
+                    std::array<BlockID, CHUNK_VOLUME> chunkBlocks{};
+                    bool haveChunk = false;
+                    {
+                        const auto lockStart = std::chrono::steady_clock::now();
+                        std::shared_lock<std::shared_mutex> lk(manager.mapMutex);
+                        const auto waitUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                                                std::chrono::steady_clock::now() - lockStart
+                        )
+                                                .count();
+                        MaybeLogSlowChunkMapLock("queryAabbCollision.chunkFetch", waitUs);
                         auto it = manager.chunkMap.find(chunkPos);
                         if (it != manager.chunkMap.end()) {
-                            chunkPtr = it->second.get();
+                            it->second->fillRawVoxelBytes(
+                                reinterpret_cast<uint8_t *>(chunkBlocks.data()),
+                                chunkBlocks.size() * sizeof(BlockID)
+                            );
+                            haveChunk = true;
                         }
-                        cachedChunkPos = chunkPos;
-                        cachedChunk = chunkPtr;
-                        hasCachedChunk = true;
                     }
 
-                    if (!chunkPtr) {
+                    if (!haveChunk) {
                         if (!result.missingChunk) {
                             result.missingChunk = true;
                             result.firstMissingChunk = chunkPos;
@@ -103,10 +115,17 @@ namespace WorldCollision {
                         continue;
                     }
 
-                    const glm::ivec3 localPos = worldPos - chunkPos * CHUNK_SIZE;
-                    if (chunkPtr->getBlock(localPos.x, localPos.y, localPos.z) != BlockID::Air) {
-                        result.collided = true;
-                        return result;
+                    for (int lx = localMinX; lx <= localMaxX; ++lx) {
+                        for (int ly = localMinY; ly <= localMaxY; ++ly) {
+                            for (int lz = localMinZ; lz <= localMaxZ; ++lz) {
+                                const size_t idx = static_cast<size_t>(lx + ly * CHUNK_SIZE +
+                                                                       lz * CHUNK_SIZE * CHUNK_SIZE);
+                                if (chunkBlocks[idx] != BlockID::Air) {
+                                    result.collided = true;
+                                    return result;
+                                }
+                            }
+                        }
                     }
                 }
             }

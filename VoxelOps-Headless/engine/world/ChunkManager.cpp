@@ -233,7 +233,7 @@ BlockID ChunkManager::getBlockGlobal(int worldX, int worldY, int worldZ) {
 
     if (!chunkPtr)
         return BlockID::Air;
-    return chunkPtr->getBlock(lp.x, lp.y, lp.z);
+    return chunkPtr->getBlockNoTouch(lp.x, lp.y, lp.z);
 }
 
 bool ChunkManager::hasChunkLoaded(const glm::ivec3 &chunkPos) const {
@@ -267,7 +267,7 @@ void ChunkManager::setBlockSafe(ServerChunk &currentChunk, const glm::ivec3 &pos
 BlockID ChunkManager::getBlockSafe(ServerChunk &currentChunk, const glm::ivec3 &pos) {
     if (pos.x >= 0 && pos.x < CHUNK_SIZE && pos.y >= 0 && pos.y < CHUNK_SIZE && pos.z >= 0 &&
         pos.z < CHUNK_SIZE) {
-        return currentChunk.getBlock(pos.x, pos.y, pos.z);
+        return currentChunk.getBlockNoTouch(pos.x, pos.y, pos.z);
     } else {
         glm::ivec3 worldPos = currentChunk.getWorldPosition() + pos;
         return getBlockGlobal(worldPos.x, worldPos.y, worldPos.z);

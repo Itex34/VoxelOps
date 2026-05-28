@@ -464,7 +464,7 @@ void FrameOrchestrator::runRenderStage(
     const bool acceptedMatchesLocalShot =
         runtime().combat.hasLastAcceptedShotResult && runtime().combat.hasLastLocalShot &&
         (runtime().combat.lastAcceptedShotResultId == runtime().combat.lastLocalShotId);
-    const bool drawAcceptedShotLine =
+    const bool drawAcceptedShotConfirmation =
         renderDebugLine && acceptedMatchesLocalShot &&
         ((m_frameNow - runtime().combat.lastAcceptedShotResultTime) <=
          kAcceptedShotLineDurationSeconds);
@@ -484,21 +484,34 @@ void FrameOrchestrator::runRenderStage(
                 frameScene.activeCamera
             );
         }
-        if (drawAcceptedShotLine) {
-            m_debugRenderer.drawLine(
-                runtime().combat.lastLocalShotOrigin,
-                runtime().combat.lastAcceptedShotResultPoint,
-                glm::vec3(1.0f, 0.85f, 0.15f),
-                LineDrawMode::TwoVertices,
-                1.0f,
-                frameScene.activeCamera
-            );
-        } else if (drawLocalShotFallback) {
+        if (drawLocalShotFallback) {
             m_debugRenderer.drawLine(
                 runtime().combat.lastLocalShotOrigin,
                 runtime().combat.lastLocalShotOrigin +
                     (runtime().combat.lastLocalShotDirection * 64.0f),
                 glm::vec3(1.0f, 0.45f, 0.1f),
+                LineDrawMode::TwoVertices,
+                1.0f,
+                frameScene.activeCamera
+            );
+        }
+        if (drawAcceptedShotConfirmation) {
+            const glm::vec3 hitPoint = runtime().combat.lastAcceptedShotResultPoint;
+            const glm::vec3 hitUp(0.0f, 0.10f, 0.0f);
+            const glm::vec3 hitBack =
+                runtime().combat.lastLocalShotDirection * -0.25f;
+            m_debugRenderer.drawLine(
+                hitPoint - hitUp,
+                hitPoint + hitUp,
+                glm::vec3(1.0f, 0.9f, 0.2f),
+                LineDrawMode::TwoVertices,
+                1.0f,
+                frameScene.activeCamera
+            );
+            m_debugRenderer.drawLine(
+                hitPoint,
+                hitPoint + hitBack,
+                glm::vec3(1.0f, 0.9f, 0.2f),
                 LineDrawMode::TwoVertices,
                 1.0f,
                 frameScene.activeCamera

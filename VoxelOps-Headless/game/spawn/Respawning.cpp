@@ -115,6 +115,7 @@ namespace Respawning {
             player.isAlive = true;
             player.respawnAt = Clock::time_point{};
             player.pendingRespawnRequest = false;
+            ++player.movementRevision;
         }
     } // namespace
 
@@ -135,6 +136,7 @@ namespace Respawning {
         player.timeSinceGrounded = 0.0f;
         player.jumpBufferTimer = 0.0f;
         player.inputBuffer.reset();
+        ++player.movementRevision;
     }
 
     bool RequestRespawn(ServerPlayer &player, Clock::time_point now) {

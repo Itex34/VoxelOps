@@ -23,7 +23,7 @@ void WorldGen::applyClientDecorationPass(
         for (int x = 0; x < CHUNK_SIZE; ++x) {
             int topY = -1;
             for (int y = CHUNK_SIZE - 1; y >= 0; --y) {
-                if (chunk.getBlock(x, y, z) == BlockID::Grass) {
+                if (chunk.getBlockNoTouch(x, y, z) == BlockID::Grass) {
                     topY = y;
                     break;
                 }

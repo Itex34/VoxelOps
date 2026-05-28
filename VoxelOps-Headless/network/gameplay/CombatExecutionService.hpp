@@ -14,7 +14,9 @@
 #include <deque>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 class CombatExecutionService {
@@ -38,7 +40,17 @@ public:
     GrappleResult ExecuteGrappleRequest(HSteamNetConnection incoming, const GrappleRequest &req);
 
 private:
+    struct InputTickHistoryFrame {
+        uint32_t serverTick = 0;
+        std::unordered_map<PlayerID, uint32_t> lastProcessedInputTicksByPlayer;
+    };
+
     const std::vector<ServerPlayerCombatSnapshot> &GetCombatSnapshotsForTick(uint32_t serverTick);
+    void RecordInputTickHistory(
+        uint32_t serverTick, const std::vector<ServerPlayerCombatSnapshot> &players
+    );
+    std::optional<uint32_t>
+    MapClientInputTickToServerTick(PlayerID playerId, uint32_t clientInputTick) const;
 
 private:
     std::mutex &m_mutex;
@@ -48,6 +60,7 @@ private:
     std::atomic<uint32_t> &m_serverTick;
     Hooks m_hooks;
     std::deque<LagCompensation::LagCompFrame> m_lagCompFrames;
+    std::deque<InputTickHistoryFrame> m_inputTickHistory;
     std::vector<ServerPlayerCombatSnapshot> m_combatSnapshotsAliveCache;
     uint32_t m_combatSnapshotsAliveCacheTick = 0;
     bool m_hasCombatSnapshotsAliveCache = false;

@@ -89,6 +89,44 @@ bool InputBuffer::consumeNext(PlayerInput &outInput) {
     return consumed;
 }
 
+bool InputBuffer::peekNext(PlayerInput &outInput, uint32_t &outInputTick) const {
+    if (!hasReceivedInput_) {
+        if (pendingInputs_.empty()) {
+            return false;
+        }
+        const auto firstIt = pendingInputs_.begin();
+        outInput = firstIt->second;
+        outInputTick = firstIt->first;
+        return true;
+    }
+
+    const uint32_t expectedTick = lastProcessedInputTick_ + 1;
+    const auto pendingIt = pendingInputs_.find(expectedTick);
+    if (pendingIt == pendingInputs_.end()) {
+        return false;
+    }
+
+    outInput = pendingIt->second;
+    outInputTick = pendingIt->first;
+    return true;
+}
+
+void InputBuffer::markProcessedUpTo(uint32_t processedTick) {
+    if (!hasReceivedInput_) {
+        hasReceivedInput_ = true;
+        lastProcessedInputTick_ = processedTick;
+    } else if (Shared::Utils::IsNewerU32(processedTick, lastProcessedInputTick_)) {
+        lastProcessedInputTick_ = processedTick;
+    } else {
+        return;
+    }
+
+    while (!pendingInputs_.empty() &&
+           !Shared::Utils::IsNewerU32(pendingInputs_.begin()->first, lastProcessedInputTick_)) {
+        pendingInputs_.erase(pendingInputs_.begin());
+    }
+}
+
 void InputBuffer::reset() {
     pendingInputs_.clear();
     lastProcessedInputTick_ = 0;

@@ -33,6 +33,7 @@ uint64_t SimulationPhase::RunSimulationPhase(
         simAccumulator -= kServerTickSeconds;
         ++serverTick;
         m_serverTick.store(serverTick, std::memory_order_release);
+        m_playerManager.CaptureReplicationSnapshot(serverTick);
         m_hooks.recordLagCompFrame(serverTick);
         ++simTicksThisLoop;
     }

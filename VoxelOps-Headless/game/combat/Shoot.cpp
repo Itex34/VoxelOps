@@ -80,15 +80,7 @@ namespace Shoot {
             return false;
         }
 
-        glm::vec3 shooterBasePos = shooter.position;
-        if (lagFrame != nullptr) {
-            const auto shooterLagIt = lagFrame->players.find(ctx.session.playerId);
-            if (shooterLagIt != lagFrame->players.end()) {
-                shooterBasePos = shooterLagIt->second.position;
-            }
-        }
-
-        const glm::vec3 shooterEyePos = shooterBasePos + glm::vec3(0.0f, eyeHeight, 0.0f);
+        const glm::vec3 shooterEyePos = shooter.position + glm::vec3(0.0f, eyeHeight, 0.0f);
         const glm::vec3 requestPos(ctx.request.posX, ctx.request.posY, ctx.request.posZ);
         const ShootValidation::ValidatedOrigin validatedOrigin =
             ShootValidation::ComputeValidatedOrigin(

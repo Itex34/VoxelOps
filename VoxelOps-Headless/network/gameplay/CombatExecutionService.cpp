@@ -8,6 +8,7 @@
 #include "../gameplay/Rules.hpp"
 #include "../../../Shared/player/PlayerData.hpp"
 
+#include <atomic>
 #include <cmath>
 #include <iostream>
 #include <optional>
@@ -22,7 +23,13 @@ constexpr float kShootHitboxPadY = 0.04f;
 constexpr float kShootBlockOcclusionEpsilon = 0.06f;
 constexpr float kShootOriginTolerance = 0.60f;
 constexpr float kShootOriginOcclusionEpsilon = 0.02f;
+constexpr float kShootMaxClientTickRewindSeconds = 0.150f;
+constexpr uint32_t kShootMaxClientTickRewindTicks = static_cast<uint32_t>(
+    kShootMaxClientTickRewindSeconds * static_cast<float>(LagCompensation::kServerTickRateHz) + 0.5f
+);
 constexpr bool kEnableShootValidationLogs = false;
+std::atomic<uint64_t> g_staleShootTickClampLogCount{0};
+std::atomic<uint64_t> g_unmappedShootInputTickLogCount{0};
 
 inline const Shared::PlayerData::MovementSettings &movementSettings() {
     return Shared::PlayerData::GetMovementSettings();
@@ -63,6 +70,46 @@ void CombatExecutionService::InvalidateCombatSnapshotCache() {
 void CombatExecutionService::RecordLagCompFrame(uint32_t serverTick) {
     const std::vector<ServerPlayerCombatSnapshot> &players = GetCombatSnapshotsForTick(serverTick);
     LagCompensation::RecordFrame(m_lagCompFrames, serverTick, players);
+    RecordInputTickHistory(serverTick, players);
+}
+
+void CombatExecutionService::RecordInputTickHistory(
+    uint32_t serverTick, const std::vector<ServerPlayerCombatSnapshot> &players
+) {
+    InputTickHistoryFrame frame{};
+    frame.serverTick = serverTick;
+    frame.lastProcessedInputTicksByPlayer.reserve(players.size());
+    for (const ServerPlayerCombatSnapshot &player : players) {
+        frame.lastProcessedInputTicksByPlayer.emplace(player.id, player.lastProcessedInputTick);
+    }
+
+    m_inputTickHistory.push_back(std::move(frame));
+    while (m_inputTickHistory.size() > LagCompensation::kShootLagCompensationMaxFrames) {
+        m_inputTickHistory.pop_front();
+    }
+}
+
+std::optional<uint32_t> CombatExecutionService::MapClientInputTickToServerTick(
+    PlayerID playerId, uint32_t clientInputTick
+) const {
+    if (clientInputTick == 0 || m_inputTickHistory.empty()) {
+        return std::nullopt;
+    }
+
+    for (const InputTickHistoryFrame &frame : m_inputTickHistory) {
+        const auto it = frame.lastProcessedInputTicksByPlayer.find(playerId);
+        if (it == frame.lastProcessedInputTicksByPlayer.end()) {
+            continue;
+        }
+
+        const uint32_t processedInputTick = it->second;
+        if (processedInputTick == clientInputTick ||
+            LagCompensation::IsNewerU32(processedInputTick, clientInputTick)) {
+            return frame.serverTick;
+        }
+    }
+
+    return std::nullopt;
 }
 
 ShootResult CombatExecutionService::ExecuteShootRequest(
@@ -139,8 +186,48 @@ ShootResult CombatExecutionService::ExecuteShootRequest(
         return ctx.result;
     }
 
+    uint32_t lagCompClientTick = currentServerTick;
+    bool mappedClientInputTick = false;
+    if (const std::optional<uint32_t> mappedTick =
+            MapClientInputTickToServerTick(ctx.session.playerId, req.clientTick);
+        mappedTick.has_value()) {
+        lagCompClientTick = *mappedTick;
+        mappedClientInputTick = true;
+    } else if (req.clientTick != 0) {
+        const uint64_t logCount =
+            g_unmappedShootInputTickLogCount.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (logCount <= 40 || (logCount % 200) == 0) {
+            std::cout << "[shoot/validate] reason=client_input_tick_unmapped"
+                      << " player=" << ctx.session.playerId
+                      << " shotId=" << req.clientShotId
+                      << " inputTick=" << req.clientTick
+                      << " serverTick=" << currentServerTick << "\n";
+        }
+    }
+    bool clampedStaleClientTick = false;
+    if (lagCompClientTick == 0 || lagCompClientTick > currentServerTick) {
+        lagCompClientTick = currentServerTick;
+    } else {
+        const uint32_t rewindTicks = currentServerTick - lagCompClientTick;
+        if (rewindTicks > kShootMaxClientTickRewindTicks) {
+            lagCompClientTick = currentServerTick - kShootMaxClientTickRewindTicks;
+            clampedStaleClientTick = true;
+            const uint64_t logCount =
+                g_staleShootTickClampLogCount.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (logCount <= 40 || (logCount % 200) == 0) {
+                std::cout << "[shoot/validate] reason=stale_client_tick_clamped"
+                          << " player=" << ctx.session.playerId
+                          << " shotId=" << req.clientShotId
+                          << " reqTick=" << req.clientTick
+                          << " serverTick=" << currentServerTick
+                          << " rewindTicks=" << rewindTicks
+                          << " clampedToTick=" << lagCompClientTick
+                          << " maxRewindTicks=" << kShootMaxClientTickRewindTicks << "\n";
+            }
+        }
+    }
     ctx.lagFrame =
-        LagCompensation::GetFrameForTick(m_lagCompFrames, currentServerTick, req.clientTick);
+        LagCompensation::GetFrameForTick(m_lagCompFrames, currentServerTick, lagCompClientTick);
 
     const std::optional<ServerPlayer> shooterOpt =
         m_playerManager.getPlayerCopy(ctx.session.playerId);
@@ -162,6 +249,9 @@ ShootResult CombatExecutionService::ExecuteShootRequest(
     if (kEnableShootValidationLogs) {
         std::cout << "[shoot/validate] shooter=" << ctx.session.playerId << " lagCompTick="
                   << (ctx.lagFrame ? static_cast<int64_t>(ctx.lagFrame->serverTick) : -1)
+                  << " inputTickMapped=" << (mappedClientInputTick ? "yes" : "no")
+                  << " clientTickUsed=" << lagCompClientTick
+                  << " staleClamp=" << (clampedStaleClientTick ? "yes" : "no")
                   << " origin=(" << ctx.rayOrigin.x << "," << ctx.rayOrigin.y << ","
                   << ctx.rayOrigin.z << ")"
                   << " requestedOriginAccepted=" << (ctx.requestedOriginAccepted ? "yes" : "no")

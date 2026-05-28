@@ -36,6 +36,7 @@ public:
 
     // Thread-safe accessors. These lock internally.
     BlockID getBlock(int x, int y, int z) const noexcept;
+    BlockID getBlockNoTouch(int x, int y, int z) const noexcept;
     BlockID getBlockUnchecked(int x, int y, int z) const noexcept;
     // Apply edit and return resulting version. Validates coordinates.
     int64_t applyEdit(int x, int y, int z, BlockID id);

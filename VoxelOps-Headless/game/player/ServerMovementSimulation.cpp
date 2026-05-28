@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <optional>
 
 namespace ServerMovementSimulation {
     namespace {
@@ -43,15 +44,30 @@ namespace ServerMovementSimulation {
         }
     } // namespace
 
-    void simulatePhysicsForPlayer(ServerPlayer &p, double dt, ChunkManager &chunkManager) {
+    void simulatePhysicsForPlayerPrepared(
+        ServerPlayer &p,
+        double dt,
+        ChunkManager &chunkManager,
+        const PlayerInput *preparedInput
+    ) {
         const auto &movement = Shared::PlayerData::GetMovementSettings();
         constexpr uint8_t kContinuousMoveFlags = kPlayerInputFlagForward |
                                                  kPlayerInputFlagBackward | kPlayerInputFlagLeft |
                                                  kPlayerInputFlagRight | kPlayerInputFlagSprint |
                                                  kPlayerInputFlagFlyUp | kPlayerInputFlagFlyDown;
 
-        PlayerInput cmd{};
-        if (p.inputBuffer.consumeNext(cmd)) {
+        std::optional<PlayerInput> cmdOpt;
+        if (preparedInput != nullptr) {
+            cmdOpt = *preparedInput;
+        } else {
+            PlayerInput cmd{};
+            if (p.inputBuffer.consumeNext(cmd)) {
+                cmdOpt = cmd;
+            }
+        }
+
+        if (cmdOpt.has_value()) {
+            const PlayerInput &cmd = *cmdOpt;
             const float safeYaw = std::isfinite(cmd.yaw) ? cmd.yaw : 0.0f;
             const float safePitch = std::isfinite(cmd.pitch) ? cmd.pitch : 0.0f;
             const float safeMoveX = std::isfinite(cmd.moveX) ? cmd.moveX : 0.0f;
@@ -157,6 +173,10 @@ namespace ServerMovementSimulation {
         p.jumpPressedLastTick = simState.jumpPressedLastTick;
         p.timeSinceGrounded = simState.timeSinceGrounded;
         p.jumpBufferTimer = simState.jumpBufferTimer;
+    }
+
+    void simulatePhysicsForPlayer(ServerPlayer &p, double dt, ChunkManager &chunkManager) {
+        simulatePhysicsForPlayerPrepared(p, dt, chunkManager, nullptr);
     }
 
     void setMissingChunkCollisionDiagnosticsEnabled(bool enabled) {

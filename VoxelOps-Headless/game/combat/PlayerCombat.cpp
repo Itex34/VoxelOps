@@ -25,6 +25,7 @@ namespace PlayerCombat {
             snapshot.height = src.height;
             snapshot.radius = src.radius;
             snapshot.isAlive = src.isAlive;
+            snapshot.lastProcessedInputTick = src.inputBuffer.lastProcessedInputTick();
             players.push_back(snapshot);
         }
         return players;

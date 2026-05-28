@@ -55,6 +55,7 @@ struct ServerPlayer {
     float jumpBufferTimer = 0.0f;
     Inventory inventory{};
     GrappleState grappleState{};
+    uint64_t movementRevision = 0;
 
     std::list<PlayerID>::iterator orderIt;
 };
@@ -66,4 +67,5 @@ struct ServerPlayerCombatSnapshot {
     float height = 2.56f;
     float radius = 0.3f;
     bool isAlive = false;
+    uint32_t lastProcessedInputTick = 0;
 };

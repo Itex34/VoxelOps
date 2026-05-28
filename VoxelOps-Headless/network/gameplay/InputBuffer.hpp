@@ -8,6 +8,8 @@ class InputBuffer {
 public:
     bool enqueue(const PlayerInput &input);
     bool consumeNext(PlayerInput &outInput);
+    bool peekNext(PlayerInput &outInput, uint32_t &outInputTick) const;
+    void markProcessedUpTo(uint32_t processedTick);
     void reset();
 
     uint32_t lastProcessedInputTick() const {

@@ -1,5 +1,6 @@
 #pragma once
 #include "ServerPlayer.hpp"
+#include "../../network/snapshots/ReplicationPlayerState.hpp"
 #include <unordered_map>
 #include <list>
 #include <mutex>
@@ -14,6 +15,8 @@ class ChunkManager;
 
 class PlayerManager {
 public:
+    using ReplicationSnapshot = std::unordered_map<PlayerID, ReplicationPlayerState>;
+
     PlayerManager();
     ~PlayerManager() = default;
 
@@ -48,6 +51,7 @@ public:
     std::vector<uint8_t> buildSnapshotFor(PlayerID recipientId, uint32_t serverTick);
     std::vector<std::vector<uint8_t>>
     buildSnapshotsForRecipients(const std::vector<PlayerID> &recipientIds, uint32_t serverTick);
+    void CaptureReplicationSnapshot(uint32_t serverTick);
 
     // Send snapshots to all players (calls connection->send). This is a convenience
     // that iterates players and uses buildSnapshotFor.
@@ -90,6 +94,8 @@ private:
 
     std::mutex mtx;
     std::atomic<PlayerID> nextId{1};
+    std::shared_ptr<const ReplicationSnapshot> m_replicationSnapshot;
+    uint32_t m_replicationSnapshotTick = 0;
 
     // Config
     std::chrono::seconds heartbeatTimeout{300};

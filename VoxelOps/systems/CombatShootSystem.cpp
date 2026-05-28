@@ -50,7 +50,7 @@ void CombatShootSystem::update(Runtime &runtime, const CombatShootSystemContext 
     const glm::vec3 shootPos = cam.position;
     const uint32_t shotId = runtime.combat.nextClientShotId++;
     const uint32_t clientTick =
-        runtime.prediction.hasAppliedServerTick ? runtime.prediction.lastAppliedServerTick : 0u;
+        (runtime.prediction.inputTickCounter > 0) ? (runtime.prediction.inputTickCounter - 1u) : 0u;
     const uint32_t seed = shotId ^ (clientTick * 2654435761u);
 
     if (runtime.network.clientNet.SendShootRequest(

@@ -7,15 +7,17 @@
 #include <chrono>
 #include <utility>
 
+using Clock = std::chrono::steady_clock;
 namespace {
     std::vector<uint8_t> buildPlayersPayload(
-        const std::unordered_map<PlayerID, ServerPlayer> &playersById, Clock::time_point now
+        const std::unordered_map<PlayerID, ReplicationPlayerState> &playersById,
+        std::chrono::steady_clock::time_point now
     ) {
         std::vector<PlayerSnapshot> players;
         players.reserve(playersById.size());
 
         for (const auto &entry : playersById) {
-            const ServerPlayer &player = entry.second;
+            const ReplicationPlayerState &player = entry.second;
             PlayerSnapshot pkt{};
             pkt.id = player.id;
             pkt.px = player.position.x;
@@ -29,10 +31,10 @@ namespace {
             pkt.onGround = player.onGround ? 1 : 0;
             pkt.flyMode = player.flyMode ? 1 : 0;
             pkt.allowFlyMode = player.allowFlyMode ? 1 : 0;
-            pkt.weaponId = player.equippedWeaponId;
+            pkt.weaponId = player.weaponId;
             pkt.health = player.health;
             pkt.isAlive = player.isAlive ? 1 : 0;
-            if (player.isAlive || player.respawnAt == Clock::time_point{}) {
+            if (player.isAlive || player.respawnAt == std::chrono::steady_clock::time_point{}) {
                 pkt.respawnSeconds = 0.0f;
             } else {
                 const float remaining =
@@ -54,7 +56,7 @@ namespace PlayerSnapshots {
     std::vector<uint8_t> buildSnapshotFor(
         PlayerID recipientId,
         uint32_t serverTick,
-        const std::unordered_map<PlayerID, ServerPlayer> &playersById
+        const std::unordered_map<PlayerID, ReplicationPlayerState> &playersById
     ) {
         const std::vector<PlayerID> recipients{recipientId};
         std::vector<std::vector<uint8_t>> snapshots =
@@ -68,7 +70,7 @@ namespace PlayerSnapshots {
     std::vector<std::vector<uint8_t>> buildSnapshotsForRecipients(
         const std::vector<PlayerID> &recipientIds,
         uint32_t serverTick,
-        const std::unordered_map<PlayerID, ServerPlayer> &playersById
+        const std::unordered_map<PlayerID, ReplicationPlayerState> &playersById
     ) {
         std::vector<std::vector<uint8_t>> frames;
         frames.reserve(recipientIds.size());
@@ -88,7 +90,7 @@ namespace PlayerSnapshots {
                 PlayerSnapshotSerializer::buildFrame(
                     serverTick,
                     recipientId,
-                    recipientIt->second.inputBuffer.lastProcessedInputTick(),
+                    recipientIt->second.lastProcessedInputTick,
                     playersPayload
                 )
             );

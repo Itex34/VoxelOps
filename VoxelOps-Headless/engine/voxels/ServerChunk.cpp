@@ -28,6 +28,13 @@ BlockID ServerChunk::getBlock(int x, int y, int z) const noexcept {
     return m_blocks[idx(x, y, z)];
 }
 
+BlockID ServerChunk::getBlockNoTouch(int x, int y, int z) const noexcept {
+    if (!inBounds(x, y, z))
+        return static_cast<BlockID>(0);
+    std::shared_lock<std::shared_mutex> lk(m_mutex);
+    return m_blocks[idx(x, y, z)];
+}
+
 BlockID ServerChunk::getBlockUnchecked(int x, int y, int z) const noexcept {
     // caller promises in-bounds; use shared lock for thread-safety
     std::shared_lock<std::shared_mutex> lk(m_mutex);

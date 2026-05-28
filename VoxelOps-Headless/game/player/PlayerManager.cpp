@@ -31,7 +31,9 @@ namespace {
     }
 } // namespace
 
-PlayerManager::PlayerManager() = default;
+PlayerManager::PlayerManager()
+    : m_replicationSnapshot(std::make_shared<ReplicationSnapshot>())
+    , m_replicationSnapshotTick(0) {}
 
 void PlayerManager::SetDebugLoggingEnabled(bool enabled) {
     g_enablePlayerManagerPerfDiagnostics.store(enabled, std::memory_order_release);
@@ -101,6 +103,7 @@ bool PlayerManager::setFlyModeAllowed(PlayerID id, bool allowed) {
         player.activeInputFlags &=
             static_cast<uint8_t>(~(kPlayerInputFlagFlyUp | kPlayerInputFlagFlyDown));
     }
+    ++player.movementRevision;
     return true;
 }
 
@@ -143,6 +146,7 @@ bool PlayerManager::tryFireGrapple(
         .chunkManager = chunkManager
     };
     outResult = grappleGun.tryFire(context);
+    ++player.movementRevision;
     return true;
 }
 
@@ -155,6 +159,7 @@ bool PlayerManager::releaseGrapple(PlayerID id) {
 
     GrappleGun grappleGun;
     grappleGun.release(it->second.grappleState);
+    ++it->second.movementRevision;
     return true;
 }
 
@@ -167,6 +172,7 @@ bool PlayerManager::setGrappleReeling(PlayerID id, bool reelingIn, double nowSec
     ServerPlayer &player = it->second;
     if (!player.grappleState.active) {
         player.grappleState.reelingIn = false;
+        ++player.movementRevision;
         return true;
     }
 
@@ -174,18 +180,114 @@ bool PlayerManager::setGrappleReeling(PlayerID id, bool reelingIn, double nowSec
     if (reelingIn) {
         player.grappleState.lastReelCommandTime = nowSeconds;
     }
+    ++player.movementRevision;
     return true;
 }
 
 void PlayerManager::update(double deltaSeconds, ChunkManager &chunkManager) {
     const auto updateStart = std::chrono::steady_clock::now();
     size_t playerCountForLog = 0;
+    const auto now = Clock::now();
+    struct SimTask {
+        PlayerID id = 0;
+        ServerPlayer workingPlayer{};
+        uint64_t baseMovementRevision = 0;
+        bool hasPreparedInput = false;
+        PlayerInput preparedInput{};
+        uint32_t preparedInputTick = 0;
+    };
+    std::vector<SimTask> simTasks;
+    std::vector<PlayerID> playerOrderSnapshot;
     {
         auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
         playerCountForLog = playersById.size();
-        PlayerUpdate::updatePlayers(
-            playersById, playersOrder, deltaSeconds, chunkManager, heartbeatTimeout
+        simTasks.reserve(playersById.size());
+        playerOrderSnapshot.reserve(playersById.size());
+        for (const auto &[id, _] : playersById) {
+            playerOrderSnapshot.push_back(id);
+        }
+
+        for (const PlayerID id : playerOrderSnapshot) {
+            auto it = playersById.find(id);
+            if (it == playersById.end()) {
+                continue;
+            }
+
+            ServerPlayer &player = it->second;
+            if (!player.isAlive) {
+                PlayerUpdate::handleRespawn(player, playersById, chunkManager, now);
+                continue;
+            }
+
+            SimTask task{};
+            task.id = id;
+            task.workingPlayer = player;
+            task.baseMovementRevision = player.movementRevision;
+            task.hasPreparedInput =
+                player.inputBuffer.peekNext(task.preparedInput, task.preparedInputTick);
+            simTasks.push_back(std::move(task));
+        }
+    }
+
+    for (SimTask &task : simTasks) {
+        const PlayerInput *preparedInput = task.hasPreparedInput ? &task.preparedInput : nullptr;
+        ServerMovementSimulation::simulatePhysicsForPlayerPrepared(
+            task.workingPlayer, deltaSeconds, chunkManager, preparedInput
         );
+    }
+
+    {
+        auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, "PlayerManager::update.apply");
+        for (const SimTask &task : simTasks) {
+            auto it = playersById.find(task.id);
+            if (it == playersById.end() || !it->second.isAlive) {
+                continue;
+            }
+            if (it->second.movementRevision != task.baseMovementRevision) {
+                continue;
+            }
+
+            ServerPlayer &player = it->second;
+            player.position = task.workingPlayer.position;
+            player.velocity = task.workingPlayer.velocity;
+            player.yaw = task.workingPlayer.yaw;
+            player.pitch = task.workingPlayer.pitch;
+            player.onGround = task.workingPlayer.onGround;
+            player.flyMode = task.workingPlayer.flyMode;
+            player.activeInputFlags = task.workingPlayer.activeInputFlags;
+            player.moveX = task.workingPlayer.moveX;
+            player.moveZ = task.workingPlayer.moveZ;
+            player.jumpPressedLastTick = task.workingPlayer.jumpPressedLastTick;
+            player.timeSinceGrounded = task.workingPlayer.timeSinceGrounded;
+            player.jumpBufferTimer = task.workingPlayer.jumpBufferTimer;
+            player.grappleState = task.workingPlayer.grappleState;
+            ++player.movementRevision;
+            if (task.hasPreparedInput) {
+                player.inputBuffer.markProcessedUpTo(task.preparedInputTick);
+            } else {
+                const uint32_t expectedTick = player.inputBuffer.lastProcessedInputTick() + 1;
+                uint32_t nextPendingTick = 0;
+                PlayerInput ignored{};
+                if (player.inputBuffer.peekNext(ignored, nextPendingTick)) {
+                    const uint32_t gap = (nextPendingTick > expectedTick)
+                                             ? (nextPendingTick - expectedTick)
+                                             : 0;
+                    constexpr uint32_t kMaxInputGapTicks = 8;
+                    if (gap > kMaxInputGapTicks && nextPendingTick > 0) {
+                        player.inputBuffer.markProcessedUpTo(nextPendingTick - 1);
+                    }
+                }
+            }
+        }
+
+        std::vector<PlayerID> timedOutPlayerIds;
+        timedOutPlayerIds.reserve(playersById.size());
+        for (const auto &[id, player] : playersById) {
+            if (now - player.lastHeartbeat > heartbeatTimeout) {
+                timedOutPlayerIds.push_back(id);
+            }
+        }
+        PlayerUpdate::handleTimeouts(playersById, playersOrder, timedOutPlayerIds);
     }
 
     const int64_t updateUs = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -204,15 +306,53 @@ void PlayerManager::update(double deltaSeconds, ChunkManager &chunkManager) {
 }
 
 std::vector<uint8_t> PlayerManager::buildSnapshotFor(PlayerID recipientId, uint32_t serverTick) {
-    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
-    return PlayerSnapshots::buildSnapshotFor(recipientId, serverTick, playersById);
+    const std::vector<PlayerID> recipients{recipientId};
+    std::vector<std::vector<uint8_t>> snapshots =
+        buildSnapshotsForRecipients(recipients, serverTick);
+    if (snapshots.empty()) {
+        return {};
+    }
+    return std::move(snapshots.front());
 }
 
 std::vector<std::vector<uint8_t>> PlayerManager::buildSnapshotsForRecipients(
     const std::vector<PlayerID> &recipientIds, uint32_t serverTick
 ) {
+    std::shared_ptr<const ReplicationSnapshot> snapshot;
+    {
+        auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
+        snapshot = m_replicationSnapshot;
+    }
+
+    return PlayerSnapshots::buildSnapshotsForRecipients(recipientIds, serverTick, *snapshot);
+}
+
+void PlayerManager::CaptureReplicationSnapshot(uint32_t serverTick) {
     auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
-    return PlayerSnapshots::buildSnapshotsForRecipients(recipientIds, serverTick, playersById);
+    auto snapshot = std::make_shared<ReplicationSnapshot>();
+    snapshot->reserve(playersById.size());
+    for (const auto &[id, player] : playersById) {
+        ReplicationPlayerState state{};
+        state.id = id;
+        state.position = player.position;
+        state.velocity = player.velocity;
+        state.yaw = player.yaw;
+        state.pitch = player.pitch;
+        state.onGround = player.onGround;
+        state.flyMode = player.flyMode;
+        state.allowFlyMode = player.allowFlyMode;
+        state.weaponId = player.equippedWeaponId;
+        state.health = player.health;
+        state.isAlive = player.isAlive;
+        state.respawnAt = player.respawnAt;
+        state.jumpPressedLastTick = player.jumpPressedLastTick;
+        state.timeSinceGrounded = player.timeSinceGrounded;
+        state.jumpBufferTimer = player.jumpBufferTimer;
+        state.lastProcessedInputTick = player.inputBuffer.lastProcessedInputTick();
+        snapshot->emplace(id, state);
+    }
+    m_replicationSnapshot = std::move(snapshot);
+    m_replicationSnapshotTick = serverTick;
 }
 
 void PlayerManager::sendBytes(
