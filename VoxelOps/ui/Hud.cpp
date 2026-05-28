@@ -1,9 +1,15 @@
 #include "Hud.hpp"
 
 #include "../application/AppHelpers.hpp"
+#include "../data/GameData.hpp"
 
 #include "../../Shared/items/Items.hpp"
 #include "../../Shared/player/Inventory.hpp"
+#include "../../Shared/runtime/Paths.hpp"
+
+#include <RmlUi/Core.h>
+#include <RmlUi/Core/Element.h>
+#include <RmlUi/Core/ElementDocument.h>
 
 #include <imgui.h>
 #include <SDL3/SDL.h>
@@ -12,7 +18,10 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <iostream>
+#include <sstream>
 #include <string>
+#include <string_view>
 
 using namespace AppHelpers;
 
@@ -22,17 +31,358 @@ namespace {
         const bool *keys = SDL_GetKeyboardState(&keyCount);
         return keys != nullptr && scancode < keyCount && keys[scancode];
     }
+
+    std::string EscapeRml(std::string_view text) {
+        std::string escaped;
+        escaped.reserve(text.size() + 16);
+        for (const char c : text) {
+            switch (c) {
+            case '&':
+                escaped += "&amp;";
+                break;
+            case '<':
+                escaped += "&lt;";
+                break;
+            case '>':
+                escaped += "&gt;";
+                break;
+            default:
+                escaped.push_back(c);
+                break;
+            }
+        }
+        return escaped;
+    }
 } // namespace
 
 void Hud::draw(Runtime &runtime) {
-    drawScoreboard(runtime);
-    drawPingCounter(runtime);
-    drawKillFeed(runtime);
-    drawPlayerHud(runtime);
-    drawDeathOverlay(runtime);
+    if (runtime.ui.activeView != UiView::InGame) {
+        if (m_rmlDocument && m_rmlDocumentVisible) {
+            m_rmlDocument->Hide();
+            m_rmlDocumentVisible = false;
+        }
+        return;
+    }
+
+    if (runtime.ui.rmlUi && runtime.ui.rmlUi->isUsingOpenGlBackend()) {
+        drawRml(runtime);
+        return;
+    }
+    drawImGui(runtime);
 }
 
-void Hud::drawKillFeed(Runtime &runtime) {
+bool Hud::ensureRmlDocument(Runtime &runtime) {
+    if (!runtime.ui.rmlUi || !runtime.ui.rmlUi->isUsingOpenGlBackend()) {
+        resetRmlDocument();
+        return false;
+    }
+
+    Rml::Context *context = runtime.ui.rmlUi->context();
+    if (context == nullptr) {
+        resetRmlDocument();
+        return false;
+    }
+
+    if (m_rmlContext == context && m_rmlDocument != nullptr) {
+        return true;
+    }
+
+    resetRmlDocument();
+    m_rmlContext = context;
+
+    const std::string hudPath =
+        Shared::RuntimePaths::ResolveVoxelOpsPath("ui/rml/documents/hud.rml").generic_string();
+    m_rmlDocument = m_rmlContext->LoadDocument(hudPath);
+    if (!m_rmlDocument) {
+        std::cerr << "[HUD][RmlUi] Failed to load document: " << hudPath << "\n";
+        return false;
+    }
+
+    auto requireElement = [this](const char *id) -> Rml::Element * {
+        Rml::Element *element = m_rmlDocument->GetElementById(id);
+        if (!element) {
+            std::cerr << "[HUD][RmlUi] Missing required element id='" << id
+                      << "' in ui/rml/documents/hud.rml\n";
+        }
+        return element;
+    };
+
+    m_pingText = requireElement("ping");
+    m_killFeedText = requireElement("killfeed");
+    m_scoreboardPanel = requireElement("scoreboard");
+    m_scoreboardTitle = requireElement("score_title");
+    m_scoreboardTimer = requireElement("score_timer");
+    m_scoreboardRows = requireElement("score_rows");
+    m_healthFill = requireElement("health_fill");
+    m_healthText = requireElement("health_label");
+    m_hotbarSlots.fill(nullptr);
+    for (int i = 0; i < kHotbarSlots; ++i) {
+        m_hotbarSlots[static_cast<size_t>(i)] =
+            requireElement(("hotbar_slot_" + std::to_string(i)).c_str());
+    }
+    m_deathOverlay = requireElement("death_overlay");
+    m_deathTitle = requireElement("death_title");
+    m_deathTimer = requireElement("death_timer");
+    m_crosshair = requireElement("crosshair");
+
+    if (!m_pingText || !m_killFeedText || !m_scoreboardPanel || !m_scoreboardTitle ||
+        !m_scoreboardTimer || !m_scoreboardRows || !m_healthFill || !m_healthText ||
+        !m_deathOverlay || !m_deathTitle || !m_deathTimer || !m_crosshair) {
+        resetRmlDocument();
+        std::cerr << "[HUD][RmlUi] HUD document is missing one or more required nodes; falling back to ImGui.\n";
+        return false;
+    }
+    for (Rml::Element *slot : m_hotbarSlots) {
+        if (!slot) {
+            resetRmlDocument();
+            std::cerr << "[HUD][RmlUi] HUD hotbar nodes are incomplete; falling back to ImGui.\n";
+            return false;
+        }
+    }
+
+    m_rmlDocument->Show();
+    m_rmlDocumentVisible = true;
+    return true;
+}
+
+void Hud::resetRmlDocument() {
+    if (m_rmlDocument) {
+        m_rmlDocument->Close();
+    }
+    m_pingText = nullptr;
+    m_killFeedText = nullptr;
+    m_scoreboardPanel = nullptr;
+    m_scoreboardTitle = nullptr;
+    m_scoreboardTimer = nullptr;
+    m_scoreboardRows = nullptr;
+    m_healthFill = nullptr;
+    m_healthText = nullptr;
+    m_hotbarSlots.fill(nullptr);
+    m_deathOverlay = nullptr;
+    m_deathTitle = nullptr;
+    m_deathTimer = nullptr;
+    m_crosshair = nullptr;
+    m_rmlDocument = nullptr;
+    m_rmlContext = nullptr;
+    m_rmlDocumentVisible = false;
+}
+
+void Hud::syncRmlState(Runtime &runtime) {
+    if (!m_rmlDocument) {
+        return;
+    }
+
+    const int pingMs = runtime.network.clientNet.GetPingMs();
+    if (m_pingText) {
+        m_pingText->SetInnerRML(
+            (pingMs >= 0) ? ("Ping: " + std::to_string(pingMs) + " ms") : std::string("Ping: --")
+        );
+        if (pingMs >= 150) {
+            m_pingText->SetProperty("color", "#ff7b00");
+        } else if (pingMs >= 80) {
+            m_pingText->SetProperty("color", "#ffb866");
+        } else {
+            m_pingText->SetProperty("color", "#d7d7d7");
+        }
+    }
+
+    {
+        const double now = GetTimeSeconds();
+        while (!runtime.ui.killFeedEntries.empty() && runtime.ui.killFeedEntries.back().expiresAt <= now) {
+            runtime.ui.killFeedEntries.pop_back();
+        }
+        const std::string localName = runtime.network.clientNet.GetAssignedUsername();
+        std::string killFeedRml;
+        for (const RuntimeUiState::KillFeedEntry &entry : runtime.ui.killFeedEntries) {
+            std::string line = EscapeRml(entry.killer) + " [" +
+                               EscapeRml(std::string(GunTypeName(static_cast<GunType>(entry.weaponId)))) +
+                               "] " + EscapeRml(entry.victim);
+            std::string color = "#d7d7d7";
+            if (!localName.empty() && entry.killer == localName) {
+                color = "#ffb866";
+            } else if (!localName.empty() && entry.victim == localName) {
+                color = "#ff7b00";
+            }
+            killFeedRml += "<div style='margin-bottom:6px; background-color:#1c1c1c; border:1px #4a4a4a; padding:3px 8px; border-radius:4px; color:";
+            killFeedRml += color;
+            killFeedRml += ";'>";
+            killFeedRml += line;
+            killFeedRml += "</div>";
+        }
+        if (m_killFeedText) {
+            m_killFeedText->SetInnerRML(killFeedRml);
+        }
+    }
+
+    const bool showScoreboard = IsScancodeDown(SDL_SCANCODE_TAB) || runtime.ui.matchEnded;
+    if (m_scoreboardPanel) {
+        m_scoreboardPanel->SetProperty("display", showScoreboard ? "block" : "none");
+    }
+    if (showScoreboard) {
+        const int clampedRemaining = std::max(0, runtime.ui.matchRemainingSeconds);
+        const int minutes = clampedRemaining / 60;
+        const int seconds = clampedRemaining % 60;
+        char timerLine[64]{};
+        if (!runtime.ui.matchStarted) {
+            std::snprintf(timerLine, sizeof(timerLine), "Waiting for players");
+        } else {
+            std::snprintf(timerLine, sizeof(timerLine), "Time Left: %02d:%02d", minutes, seconds);
+        }
+
+        std::string title = "Deathmatch";
+        if (runtime.ui.matchEnded) {
+            title = "Match Ended";
+            if (!runtime.ui.matchWinner.empty()) {
+                title += " - Winner: ";
+                title += runtime.ui.matchWinner;
+            }
+        }
+
+        if (m_scoreboardTitle) {
+            m_scoreboardTitle->SetInnerRML(EscapeRml(title));
+        }
+        if (m_scoreboardTimer) {
+            m_scoreboardTimer->SetInnerRML(EscapeRml(timerLine));
+        }
+        if (m_scoreboardRows) {
+            std::string rows = "Player                      K    D    Ping<br/>";
+            const std::string localName = runtime.network.clientNet.GetAssignedUsername();
+            for (const auto &entry : runtime.ui.scoreboardEntries) {
+                std::string name = entry.username;
+                if (name.size() > 24) {
+                    name.resize(24);
+                }
+                rows += (entry.username == localName) ? "<span style='color:#ffb866'>" : "";
+                rows += EscapeRml(name);
+                if (entry.username == localName) {
+                    rows += "</span>";
+                }
+                if (name.size() < 24) {
+                    rows.append(24 - name.size(), ' ');
+                }
+                rows += std::to_string(entry.kills);
+                rows += "    ";
+                rows += std::to_string(entry.deaths);
+                rows += "    ";
+                rows += (entry.pingMs >= 0) ? std::to_string(entry.pingMs) : "--";
+                rows += "<br/>";
+            }
+            m_scoreboardRows->SetInnerRML(rows);
+        }
+    }
+
+    const float health = std::clamp(runtime.combat.localHealth, 0.0f, 100.0f);
+    const float healthPct = health / 100.0f;
+    if (m_healthFill) {
+        m_healthFill->SetProperty("width", std::to_string(healthPct * 100.0f) + "%");
+        m_healthFill->SetProperty("background-color", runtime.combat.localPlayerAlive ? "#ff9f43" : "#ff7b00");
+    }
+    if (m_healthText) {
+        char healthText[64]{};
+        if (runtime.combat.localPlayerAlive) {
+            std::snprintf(healthText, sizeof(healthText), "HP %d", static_cast<int>(std::round(health)));
+        } else {
+            std::snprintf(healthText, sizeof(healthText), "HP 0");
+        }
+        m_healthText->SetInnerRML(healthText);
+    }
+
+    {
+        const bool hasInventorySnapshot = runtime.ui.inventoryUi && runtime.ui.inventoryUi->hasSnapshot();
+        const std::array<Slot, kInventorySlotCount> *slots =
+            hasInventorySnapshot ? &runtime.ui.inventoryUi->slots() : nullptr;
+
+        auto hotbarItemName = [](const Slot &slot) -> std::string {
+            if (Inventory::IsEmpty(slot) || !Inventory::IsValidItemId(slot.itemId)) {
+                return "Empty";
+            }
+            std::string name = Items::ItemDatabase[slot.itemId].name;
+            if (name.empty()) {
+                name = "Item " + std::to_string(slot.itemId);
+            }
+            if (name.size() > 12) {
+                name.resize(12);
+            }
+            return name;
+        };
+
+        for (int i = 0; i < kHotbarSlots; ++i) {
+            Rml::Element *slotElement = m_hotbarSlots[static_cast<size_t>(i)];
+            if (!slotElement) {
+                continue;
+            }
+            Slot slot{};
+            slot.itemId = kInventoryEmptyItemId;
+            slot.quantity = 0;
+            if (slots != nullptr) {
+                slot = (*slots)[static_cast<size_t>(i)];
+            }
+
+            const std::string name = EscapeRml(hotbarItemName(slot));
+            const std::string qty = Inventory::IsEmpty(slot) ? "" : ("x" + std::to_string(slot.quantity));
+            std::ostringstream inner;
+            inner << "<div class='hotbar_index'>" << (i + 1) << "</div>"
+                  << "<div class='hotbar_name'>" << name << "</div>"
+                  << "<div class='hotbar_qty'>" << EscapeRml(qty) << "</div>";
+            slotElement->SetInnerRML(inner.str());
+
+            const bool isActive = (static_cast<uint16_t>(i) == runtime.combat.activeHotbarSlot);
+            slotElement->SetClass("active", isActive);
+        }
+    }
+
+    if (m_deathOverlay) {
+        m_deathOverlay->SetProperty("display", runtime.combat.localPlayerAlive ? "none" : "block");
+    }
+    if (!runtime.combat.localPlayerAlive) {
+        if (m_deathTitle) {
+            std::string title = "You were killed";
+            if (!runtime.combat.localDeathKiller.empty()) {
+                title += " by [";
+                title += runtime.combat.localDeathKiller;
+                title += "]";
+            }
+            m_deathTitle->SetInnerRML(EscapeRml(title));
+        }
+        if (m_deathTimer) {
+            char timerLine[64]{};
+            const float secondsRemaining = std::max(0.0f, runtime.combat.localRespawnSeconds);
+            if (secondsRemaining > 0.05f) {
+                std::snprintf(timerLine, sizeof(timerLine), "Respawning in %.1fs", secondsRemaining);
+            } else {
+                std::snprintf(timerLine, sizeof(timerLine), "Click to respawn");
+            }
+            m_deathTimer->SetInnerRML(timerLine);
+        }
+    }
+
+    if (m_crosshair) {
+        const bool showCrosshair = !GameData::cursorEnabled && runtime.combat.localPlayerAlive;
+        m_crosshair->SetProperty("display", showCrosshair ? "block" : "none");
+    }
+}
+
+void Hud::drawRml(Runtime &runtime) {
+    if (!ensureRmlDocument(runtime)) {
+        drawImGui(runtime);
+        return;
+    }
+    if (m_rmlDocument && !m_rmlDocumentVisible) {
+        m_rmlDocument->Show();
+        m_rmlDocumentVisible = true;
+    }
+    syncRmlState(runtime);
+}
+
+void Hud::drawImGui(Runtime &runtime) {
+    drawScoreboardImGui(runtime);
+    drawPingCounterImGui(runtime);
+    drawKillFeedImGui(runtime);
+    drawPlayerHudImGui(runtime);
+    drawDeathOverlayImGui(runtime);
+}
+
+void Hud::drawKillFeedImGui(Runtime &runtime) {
     if (ImGui::GetCurrentContext() == nullptr || runtime.ui.killFeedEntries.empty()) {
         return;
     }
@@ -72,7 +422,7 @@ void Hud::drawKillFeed(Runtime &runtime) {
     }
 }
 
-void Hud::drawScoreboard(Runtime &runtime) {
+void Hud::drawScoreboardImGui(Runtime &runtime) {
     if (ImGui::GetCurrentContext() == nullptr) {
         return;
     }
@@ -186,7 +536,7 @@ void Hud::drawScoreboard(Runtime &runtime) {
     }
 }
 
-void Hud::drawPingCounter(Runtime &runtime) {
+void Hud::drawPingCounterImGui(Runtime &runtime) {
     if (ImGui::GetCurrentContext() == nullptr) {
         return;
     }
@@ -213,7 +563,7 @@ void Hud::drawPingCounter(Runtime &runtime) {
     drawList->AddText(ImVec2(x, y), textColor, line.c_str());
 }
 
-void Hud::drawPlayerHud(Runtime &runtime) {
+void Hud::drawPlayerHudImGui(Runtime &runtime) {
     if (ImGui::GetCurrentContext() == nullptr || !runtime.network.clientNet.IsConnected()) {
         return;
     }
@@ -329,7 +679,7 @@ void Hud::drawPlayerHud(Runtime &runtime) {
     }
 }
 
-void Hud::drawDeathOverlay(Runtime &runtime) {
+void Hud::drawDeathOverlayImGui(Runtime &runtime) {
     if (ImGui::GetCurrentContext() == nullptr || runtime.combat.localPlayerAlive) {
         return;
     }
@@ -374,7 +724,3 @@ void Hud::drawDeathOverlay(Runtime &runtime) {
         timerLine
     );
 }
-
-
-
-

@@ -6,13 +6,13 @@
 #include <memory>
 #include <limits>
 
+#include "../../../Shared/player/PlayerID.hpp"
 #include "../../../Shared/network/Packets.hpp"
 #include "../../../Shared/player/Inventory.hpp"
 #include "../../../Shared/gun/GunType.hpp"
 #include "../../network/gameplay/InputBuffer.hpp"
 #include "../combat/GrappleGun.hpp"
 
-using PlayerID = uint64_t;
 using Clock = std::chrono::steady_clock;
 
 struct ConnectionHandle {

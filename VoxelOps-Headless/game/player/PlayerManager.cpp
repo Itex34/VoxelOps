@@ -6,6 +6,7 @@
 
 #include "../combat/PlayerCombat.hpp"
 #include "../../network/snapshots/PlayerSnapshots.hpp"
+#include "../../network/core/LockWaitTelemetry.hpp"
 #include "../player/ServerMovementSimulation.hpp"
 #include "../../engine/world/ChunkManager.hpp"
 #include "../../../Shared/items/Items.hpp"
@@ -47,13 +48,13 @@ PlayerID PlayerManager::addPlayerInternal() {
 }
 
 bool PlayerManager::requestRespawn(PlayerID id) {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     return PlayerLifecycle::requestRespawn(playersById, id, Clock::now());
 }
 
 PlayerID
 PlayerManager::onPlayerConnect(std::shared_ptr<ConnectionHandle> conn, const glm::vec3 &spawnPos) {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     const PlayerID id = addPlayerInternal();
     PlayerLifecycle::onPlayerConnect(
         playersById, playersOrder, id, std::move(conn), spawnPos, Clock::now()
@@ -62,17 +63,17 @@ PlayerManager::onPlayerConnect(std::shared_ptr<ConnectionHandle> conn, const glm
 }
 
 bool PlayerManager::removePlayer(PlayerID id) {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     return PlayerLifecycle::removePlayer(playersById, playersOrder, id);
 }
 
 bool PlayerManager::touchHeartbeat(PlayerID id) {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     return PlayerLifecycle::touchHeartbeat(playersById, id, Clock::now());
 }
 
 bool PlayerManager::enqueuePlayerInput(PlayerID id, const PlayerInput &input) {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     const auto it = playersById.find(id);
     if (it == playersById.end()) {
         return false;
@@ -87,7 +88,7 @@ bool PlayerManager::enqueuePlayerInput(PlayerID id, const PlayerInput &input) {
 }
 
 bool PlayerManager::setFlyModeAllowed(PlayerID id, bool allowed) {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     const auto it = playersById.find(id);
     if (it == playersById.end()) {
         return false;
@@ -104,7 +105,7 @@ bool PlayerManager::setFlyModeAllowed(PlayerID id, bool allowed) {
 }
 
 bool PlayerManager::setEquippedWeapon(PlayerID id, uint16_t weaponId) {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     return PlayerInventory::setEquippedWeapon(playersById, id, weaponId);
 }
 
@@ -116,7 +117,7 @@ bool PlayerManager::tryFireGrapple(
     const ChunkManager &chunkManager,
     GrappleFireResult &outResult
 ) {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     const auto it = playersById.find(id);
     if (it == playersById.end()) {
         return false;
@@ -146,7 +147,7 @@ bool PlayerManager::tryFireGrapple(
 }
 
 bool PlayerManager::releaseGrapple(PlayerID id) {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     const auto it = playersById.find(id);
     if (it == playersById.end()) {
         return false;
@@ -158,7 +159,7 @@ bool PlayerManager::releaseGrapple(PlayerID id) {
 }
 
 bool PlayerManager::setGrappleReeling(PlayerID id, bool reelingIn, double nowSeconds) {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     const auto it = playersById.find(id);
     if (it == playersById.end()) {
         return false;
@@ -180,7 +181,7 @@ void PlayerManager::update(double deltaSeconds, ChunkManager &chunkManager) {
     const auto updateStart = std::chrono::steady_clock::now();
     size_t playerCountForLog = 0;
     {
-        std::lock_guard<std::mutex> lock(mtx);
+        auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
         playerCountForLog = playersById.size();
         PlayerUpdate::updatePlayers(
             playersById, playersOrder, deltaSeconds, chunkManager, heartbeatTimeout
@@ -203,14 +204,14 @@ void PlayerManager::update(double deltaSeconds, ChunkManager &chunkManager) {
 }
 
 std::vector<uint8_t> PlayerManager::buildSnapshotFor(PlayerID recipientId, uint32_t serverTick) {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     return PlayerSnapshots::buildSnapshotFor(recipientId, serverTick, playersById);
 }
 
 std::vector<std::vector<uint8_t>> PlayerManager::buildSnapshotsForRecipients(
     const std::vector<PlayerID> &recipientIds, uint32_t serverTick
 ) {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     return PlayerSnapshots::buildSnapshotsForRecipients(recipientIds, serverTick, playersById);
 }
 
@@ -227,7 +228,7 @@ void PlayerManager::sendBytes(
 void PlayerManager::broadcastSnapshots() {
     std::vector<std::pair<PlayerID, std::shared_ptr<ConnectionHandle>>> recipients;
     {
-        std::lock_guard<std::mutex> lock(mtx);
+        auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
         recipients.reserve(playersById.size());
         for (const auto &entry : playersById) {
             recipients.emplace_back(entry.first, entry.second.conn);
@@ -243,7 +244,7 @@ void PlayerManager::broadcastSnapshots() {
 }
 
 std::optional<ServerPlayer> PlayerManager::getPlayerCopy(PlayerID id) {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     const auto it = playersById.find(id);
     if (it == playersById.end()) {
         return std::nullopt;
@@ -252,7 +253,7 @@ std::optional<ServerPlayer> PlayerManager::getPlayerCopy(PlayerID id) {
 }
 
 std::vector<ServerPlayer> PlayerManager::getAllPlayersCopy() {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     std::vector<ServerPlayer> players;
     players.reserve(playersById.size());
     for (const auto &entry : playersById) {
@@ -262,12 +263,12 @@ std::vector<ServerPlayer> PlayerManager::getAllPlayersCopy() {
 }
 
 std::vector<ServerPlayerCombatSnapshot> PlayerManager::getAllCombatSnapshotsCopy(bool aliveOnly) {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     return PlayerCombat::getAllCombatSnapshotsCopy(playersById, aliveOnly);
 }
 
 bool PlayerManager::applyDamage(PlayerID id, float damage, float &outHealthAfter, bool &outKilled) {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     return PlayerCombat::applyDamage(
         playersById, id, damage, outHealthAfter, outKilled, respawnDelay, Clock::now()
     );
@@ -279,17 +280,17 @@ bool PlayerManager::applyInventoryAction(
     InventoryActionResult &outResult,
     InventorySnapshot &outSnapshot
 ) {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     return PlayerInventory::applyInventoryAction(playersById, id, request, outResult, outSnapshot);
 }
 
 bool PlayerManager::getInventorySnapshot(PlayerID id, InventorySnapshot &outSnapshot) {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     return PlayerInventory::getInventorySnapshot(playersById, id, outSnapshot);
 }
 
 bool PlayerManager::getInventorySlot(PlayerID id, uint16_t slotIndex, Slot &outSlot) {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     return PlayerInventory::getInventorySlot(playersById, id, slotIndex, outSlot);
 }
 
@@ -300,7 +301,7 @@ bool PlayerManager::appendItemsToInventory(
     uint16_t &outAcceptedQuantity,
     InventorySnapshot *outSnapshot
 ) {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     return PlayerInventory::appendItemsToInventory(
         playersById, id, itemId, quantity, outAcceptedQuantity, outSnapshot
     );
@@ -311,6 +312,7 @@ bool PlayerManager::consumeItemsFromInventory(
     const std::vector<std::pair<uint16_t, uint16_t>> &itemQuantities,
     InventorySnapshot *outSnapshot
 ) {
-    std::lock_guard<std::mutex> lock(mtx);
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     return PlayerInventory::consumeItemsFromInventory(playersById, id, itemQuantities, outSnapshot);
 }
+

@@ -11,6 +11,7 @@
 #include <atomic>
 #include <deque>
 #include <mutex>
+#include <unordered_map>
 #include <glm/vec3.hpp>
 
 #include <GameNetworkingSockets/steam/steamnetworkingsockets.h>
@@ -120,6 +121,26 @@ public:
     ChunkQueueDepths GetChunkQueueDepths();
 
 private:
+    struct ChunkCoordKey {
+        int32_t x = 0;
+        int32_t y = 0;
+        int32_t z = 0;
+
+        bool operator==(const ChunkCoordKey &other) const noexcept {
+            return x == other.x && y == other.y && z == other.z;
+        }
+    };
+
+    struct ChunkCoordKeyHash {
+        size_t operator()(const ChunkCoordKey &key) const noexcept {
+            const uint64_t ux = static_cast<uint32_t>(key.x);
+            const uint64_t uy = static_cast<uint32_t>(key.y);
+            const uint64_t uz = static_cast<uint32_t>(key.z);
+            const uint64_t h = (ux * 73856093u) ^ (uy * 19349663u) ^ (uz * 83492791u);
+            return static_cast<size_t>(h);
+        }
+    };
+
     HSteamNetConnection m_conn = k_HSteamNetConnection_Invalid;
     std::atomic<bool> m_started{false};
     // helper serialization
@@ -129,6 +150,8 @@ private:
     // handle messages received from server
     void OnMessage(const uint8_t *data, uint32_t size);
     bool EnsureClientIdentity();
+    bool ShouldSendChunkResyncForOverflow(const glm::ivec3 &chunkPos);
+    void PruneChunkResyncOverflowState();
     void SetConnectionStatus(ConnectionState state, std::string text, bool allowReconnect = true);
 
     // small internal: store last connect response state
@@ -139,6 +162,10 @@ private:
     ConnectionState m_connectionState = ConnectionState::Disconnected;
     bool m_allowAutoReconnect = true;
     bool m_useTransientIdentity = false;
+    bool m_hasEverConnectedSuccessfully = false;
+    bool m_retryWithAutoAssignedUsername = false;
+    std::unordered_map<ChunkCoordKey, std::chrono::steady_clock::time_point, ChunkCoordKeyHash>
+        m_chunkResyncOverflowCooldownUntil;
 
     std::mutex m_inboundMutex;
     std::deque<ChunkData> m_chunkDataQueue;

@@ -1,6 +1,5 @@
 #include "InputCallbacks.hpp"
 #include <glad/glad.h>
-#include <imgui.h>
 
 InputCallbacks::InputCallbacks(Player &inPlayer)
     : player(inPlayer) {}
@@ -17,11 +16,14 @@ void InputCallbacks::framebuffer_size_callback(SDL_Window *window, int width, in
 void InputCallbacks::mouse_motion_callback(
     SDL_Window *window, float xpos, float ypos, float xrel, float yrel, bool dbgCam
 ) {
-    if (ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse)
-        return;
     if (GameData::cursorEnabled)
         return;
-    if (window && SDL_GetWindowRelativeMouseMode(window)) {
+    const bool relativeMouseMode = (window != nullptr) && SDL_GetWindowRelativeMouseMode(window);
+    // When gameplay has locked relative mouse mode, transient UI capture flags should not
+    // suppress camera look.
+    if (GameData::uiWantsMouseCapture && !relativeMouseMode)
+        return;
+    if (relativeMouseMode) {
         m_virtualMouseX += static_cast<double>(xrel);
         m_virtualMouseY += static_cast<double>(yrel);
     } else {
@@ -33,7 +35,7 @@ void InputCallbacks::mouse_motion_callback(
 
 void InputCallbacks::mouse_button_callback(SDL_Window *window, uint8_t button, bool pressed) {
     (void)window;
-    if (ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse)
+    if (GameData::uiWantsMouseCapture)
         return;
     if (button == SDL_BUTTON_LEFT && pressed) {
         GameData::cursorEnabled = false;
@@ -42,7 +44,7 @@ void InputCallbacks::mouse_button_callback(SDL_Window *window, uint8_t button, b
 
 void InputCallbacks::processInput(SDL_Window *window) {
     (void)window;
-    if (ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureKeyboard)
+    if (GameData::uiWantsKeyboardCapture || GameData::uiWantsTextInput)
         return;
     int keyCount = 0;
     const bool *keys = SDL_GetKeyboardState(&keyCount);

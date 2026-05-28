@@ -8,12 +8,13 @@
 #include <cstdint>
 #include <utility>
 
+#include "../Shared/player/PlayerID.hpp"
+
 #include "../graphics/Camera.hpp"
 #include "../physics/RayManager.hpp"
 
 #include "Hitbox.hpp"
 
-using PlayerID = uint64_t;
 
 class ChunkManager;
 

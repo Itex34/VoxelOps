@@ -9,4 +9,7 @@ struct WorldInteractionSystemContext {
 class WorldInteractionSystem {
 public:
     void update(Runtime &runtime, const WorldInteractionSystemContext &ctx);
+
+private:
+    bool m_wasBlockPlaceActionPressed = false;
 };

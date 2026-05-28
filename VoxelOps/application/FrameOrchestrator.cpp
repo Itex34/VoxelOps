@@ -5,6 +5,7 @@
 #include "../graphics/Camera.hpp"
 #include "../render/RenderScene.hpp"
 #include "../data/GameData.hpp"
+#include <imgui.h>
 #include <SDL3/SDL.h>
 
 #include <algorithm>
@@ -287,12 +288,32 @@ FrameOrchestrator::SimulationStageResult FrameOrchestrator::runSimulationStage()
 FrameOrchestrator::UiStageResult
 FrameOrchestrator::runUiStage(const SimulationStageResult &simulation) {
     UiStageResult result;
-    if (!runtime().ui.debugUi) {
-        return result;
+    GameData::uiWantsMouseCapture = false;
+    GameData::uiWantsKeyboardCapture = false;
+    GameData::uiWantsTextInput = false;
+
+    if (runtime().ui.rmlUi) {
+        GameData::uiWantsMouseCapture = runtime().ui.rmlUi->wantsMouseCapture();
+        GameData::uiWantsKeyboardCapture = runtime().ui.rmlUi->wantsKeyboardCapture();
+        GameData::uiWantsTextInput = runtime().ui.rmlUi->wantsKeyboardCapture();
     }
 
-    runtime().ui.debugUi->drawCrosshair(!GameData::cursorEnabled && runtime().combat.localPlayerAlive);
-    if (runtime().ui.debugUi->isVisible()) {
+    if (ImGui::GetCurrentContext() != nullptr) {
+        const ImGuiIO &io = ImGui::GetIO();
+        GameData::uiWantsMouseCapture = GameData::uiWantsMouseCapture || io.WantCaptureMouse;
+        GameData::uiWantsKeyboardCapture = GameData::uiWantsKeyboardCapture || io.WantCaptureKeyboard;
+        GameData::uiWantsTextInput = GameData::uiWantsTextInput || io.WantTextInput;
+    }
+
+    if (runtime().ui.debugUi) {
+        const bool rmlOwnsHud = runtime().ui.rmlUi && runtime().ui.rmlUi->isUsingOpenGlBackend();
+        if (!rmlOwnsHud) {
+            runtime().ui.debugUi->drawCrosshair(
+                !GameData::cursorEnabled && runtime().combat.localPlayerAlive
+            );
+        }
+    }
+    if (runtime().ui.debugUi && runtime().ui.debugUi->isVisible()) {
         const ClientNetwork::ChunkQueueDepths queueDepths =
             runtime().network.clientNet.GetChunkQueueDepths();
         UiFrameData frameData;
@@ -363,12 +384,14 @@ FrameOrchestrator::runUiStage(const SimulationStageResult &simulation) {
         runtime().ui.debugUi->drawMainWindow(frameData, mutableState);
     }
 
-    if (!runtime().ui.debugUi->isVisible() && m_context.ui.showDebugUi != nullptr &&
+    if (runtime().ui.debugUi && !runtime().ui.debugUi->isVisible() && m_context.ui.showDebugUi != nullptr &&
         *m_context.ui.showDebugUi) {
         *m_context.ui.showDebugUi = false;
     }
     if (runtime().ui.inventoryUi) {
-        runtime().ui.inventoryUi->draw(runtime().network.clientNet, runtime().network.clientNet.IsConnected());
+        runtime().ui.inventoryUi->draw(
+            runtime(), runtime().network.clientNet, runtime().network.clientNet.IsConnected()
+        );
         if (!runtime().ui.inventoryUi->isVisible() && m_context.ui.showInventoryUi != nullptr &&
             *m_context.ui.showInventoryUi) {
             *m_context.ui.showInventoryUi = false;
@@ -385,20 +408,27 @@ FrameOrchestrator::runUiStage(const SimulationStageResult &simulation) {
         mainMenuCtx.connectionHost = m_context.connectionHost;
         mainMenuCtx.windowHost = m_context.windowHost;
         m_mainMenu.draw(runtime(), mainMenuCtx);
+    } else {
+        m_mainMenu.hide();
     }
-
     const bool forceCursor = (m_context.simulation.forceCursorEnabled != nullptr) &&
                              *m_context.simulation.forceCursorEnabled;
     const bool showDebugUi = (m_context.ui.showDebugUi != nullptr) && *m_context.ui.showDebugUi;
     const bool showInventoryUi =
         (m_context.ui.showInventoryUi != nullptr) && *m_context.ui.showInventoryUi;
     GameData::cursorEnabled = forceCursor || showDebugUi || showInventoryUi || runtime().ui.wantsCursor;
+    if (!GameData::cursorEnabled && runtime().ui.activeView == UiView::InGame) {
+        GameData::uiWantsMouseCapture = false;
+    }
     if (m_context.windowHost != nullptr) {
         m_context.windowHost->applyMouseInputModes();
     }
 
     m_hudSystem.draw(runtime());
-    result.drawData = runtime().ui.debugUi->endFrame();
+    if (runtime().ui.rmlUi) {
+        runtime().ui.rmlUi->update();
+    }
+    result.drawData = runtime().ui.debugUi ? runtime().ui.debugUi->endFrame() : nullptr;
     return result;
 }
 
@@ -485,6 +515,11 @@ void FrameOrchestrator::runRenderStage(
     };
     runtime().render.renderer->renderFrame(frameScene);
     *m_context.render.sunDirection = frameScene.sunDirection;
+
+    if (runtime().ui.rmlUi && runtime().ui.rmlUi->isUsingOpenGlBackend() &&
+        simulation.renderCapabilities.api == RenderApi::OpenGL) {
+        runtime().ui.rmlUi->render();
+    }
 
     if (simulation.renderCapabilities.supportsFirstPersonViewmodel && !useDebugCamera &&
         runtime().combat.localPlayerAlive && runtime().render.gunSceneRenderer) {

@@ -93,6 +93,8 @@ void ClientSession::syncEquippedGunFromInventory(
 void ClientSession::update(
     Runtime &runtime, const ClientSessionContext &ctx, const ClientInputIntent *inputIntent
 ) {
+    const double now = GetTimeSeconds();
+
     runtime.network.clientNet.Poll();
     if (runtime.ui.inventoryUi) {
         runtime.ui.inventoryUi->consumeNetwork(runtime.network.clientNet);
@@ -109,10 +111,16 @@ void ClientSession::update(
         } else if (statusNow.find("username already taken") != std::string::npos) {
             runtime.app.connection.usernamePromptError =
                 "Username already taken. Enter a different username and retry.";
+        } else if (statusNow.find("rate limit exceeded") != std::string::npos) {
+            runtime.app.connection.nextReconnectAttemptTime =
+                std::max(runtime.app.connection.nextReconnectAttemptTime, now + 2.5);
+            runtime.app.connection.reconnectBackoffSeconds =
+                std::max(runtime.app.connection.reconnectBackoffSeconds, 2.0);
+            runtime.app.connection.usernamePromptError.clear();
+            std::cout << "[net] reconnect throttled after rate-limit disconnect\n";
         }
     }
 
-    const double now = GetTimeSeconds();
     runtime.world.justRespawned = false;
     runtime.gameplay.player->setTreatMissingCollisionAsSolid(now >= runtime.world.respawnMissingChunkGraceUntil);
     if (runtime.world.rbDiagActive && now >= runtime.world.rbDiagUntil) {

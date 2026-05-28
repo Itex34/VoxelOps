@@ -7,9 +7,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
-option(VOXELOPS_OPENGL_ONLY "Build VoxelOps with OpenGL backend only" ON)
+option(VOXELOPS_OPENGL_ONLY "Build VoxelOps with OpenGL backend only" OFF)
 
-option(VOXELOPS_ENABLE_NRD_BOOTSTRAP "Enable early NRD API bootstrap integration" OFF)
+option(VOXELOPS_ENABLE_NRD_BOOTSTRAP "Enable early NRD API bootstrap integration" ON)
 set(VOXELOPS_NRD_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../NRD" CACHE PATH "Path to NVIDIA NRD repository")
 set(VOXELOPS_NRD_DLL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../NRD-Sample/_Bin/NRD.dll" CACHE FILEPATH "Path to NRD.dll used by runtime bootstrap")
 
@@ -118,6 +118,7 @@ add_executable(VoxelOps
     "graphics/OpenGL/ShaderSkyBackend.cpp"
     
     "ui/debug/DebugUi.cpp"
+    "ui/rml/RmlUiSystem.cpp"
     "ui/player/InventoryUI.cpp"
     "ui/player/Crosshair.cpp"
     "ui/player/UiStateController.cpp"
@@ -193,7 +194,10 @@ endif()
 
 
 
-if(!VOXELOPS_OPENGL_ONLY)
+set(SPIRV_OUTPUTS)
+set(SPIRV_DIR "${CMAKE_BINARY_DIR}/shaders/spir-v")
+
+if(NOT VOXELOPS_OPENGL_ONLY)
     find_program(GLSLC_EXECUTABLE glslc REQUIRED)
 
     set(VKSHADERS
@@ -207,8 +211,6 @@ if(!VOXELOPS_OPENGL_ONLY)
         ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/postprocess.frag
     )
 
-    set(SPIRV_OUTPUTS)
-    set(SPIRV_DIR "${CMAKE_BINARY_DIR}/shaders/spir-v")
     set(VK_SHADER_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders")
     file(MAKE_DIRECTORY ${SPIRV_DIR})
 
@@ -249,12 +251,16 @@ if(!VOXELOPS_OPENGL_ONLY)
         )
 
 
+
         list(APPEND SPIRV_OUTPUTS ${SPIRV_RT})
     endforeach()
+    add_custom_target(VulkanShaders ALL DEPENDS ${SPIRV_OUTPUTS})
+    add_dependencies(VoxelOps VulkanShaders)
+    target_compile_definitions(VoxelOps PRIVATE VOXELOPS_VULKAN_SHADERS_BUILT=1)
+else()
+    target_compile_definitions(VoxelOps PRIVATE VOXELOPS_VULKAN_SHADERS_BUILT=0)
 endif()
 
-add_custom_target(VulkanShaders ALL DEPENDS ${SPIRV_OUTPUTS})
-add_dependencies(VoxelOps VulkanShaders)
 target_compile_definitions(VoxelOps PRIVATE SHADER_DIR="${SPIRV_DIR}/")
 
 

@@ -23,6 +23,9 @@ namespace GameData {
     bool firstMouse = true;
     bool cursorEnabled = false;
     bool gameplayInputEnabled = true;
+    bool uiWantsMouseCapture = false;
+    bool uiWantsKeyboardCapture = false;
+    bool uiWantsTextInput = false;
     int giTracingBackendPreference = 0;
     int giNrdDebugView = 0;
     int giNrdGuideOverride = 0;

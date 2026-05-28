@@ -3,6 +3,7 @@
 #include "../network/ClientNetwork.hpp"
 #include "../ui/debug/DebugUi.hpp"
 #include "../ui/player/InventoryUI.hpp"
+#include "../ui/rml/RmlUiSystem.hpp"
 
 #include <cstdint>
 #include <deque>
@@ -28,6 +29,7 @@ struct RuntimeUiState {
 
     std::unique_ptr<DebugUi> debugUi;
     std::unique_ptr<InventoryUI> inventoryUi;
+    std::unique_ptr<RmlUiSystem> rmlUi;
 
     std::deque<KillFeedEntry> killFeedEntries;
     int matchRemainingSeconds = 600;

@@ -2,9 +2,9 @@
 
 #include "../gun/Gun.hpp"
 #include "../network/ClientNetwork.hpp"
+#include "../data/GameData.hpp"
 #include "../../Shared/runtime/Paths.hpp"
 
-#include <imgui.h>
 #include <SDL3/SDL.h>
 
 #include <algorithm>
@@ -49,11 +49,7 @@ namespace AppHelpers {
     const glm::vec3 kRemoteGunRightHandAnchorOffset(0.5f, 1.24f, 0.3f);
 
     bool IsImGuiTextInputActive() {
-        if (ImGui::GetCurrentContext() == nullptr) {
-            return false;
-        }
-        const ImGuiIO &io = ImGui::GetIO();
-        return io.WantTextInput || io.WantCaptureKeyboard;
+        return GameData::uiWantsTextInput || GameData::uiWantsKeyboardCapture;
     }
 
     float LatencyCorrectionBlend(const ClientNetwork &net) {

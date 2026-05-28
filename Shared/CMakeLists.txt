@@ -4,6 +4,8 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 
+find_package(glm CONFIG REQUIRED)
+
 add_library(Shared STATIC
     "network/Packets.cpp"
     "network/IdentityValidation.cpp"
@@ -16,9 +18,13 @@ add_library(Shared STATIC
     "player/BlockPlace.cpp"
 )
 
+find_package(glm CONFIG REQUIRED)
+
 target_include_directories(Shared PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}   # so headers are found as "Shared/network/Packets.hpp"
 )
+
+target_link_libraries(Shared PUBLIC glm::glm)
 
 
 #target_compile_features(Shared PUBLIC cxx_std_23)

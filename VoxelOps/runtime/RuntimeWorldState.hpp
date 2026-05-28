@@ -3,6 +3,8 @@
 #include <glm/ext/vector_int3.hpp>
 #include <glm/vec3.hpp>
 
+#include "../../Shared/player/BlockPlace.hpp"
+
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
@@ -61,6 +63,7 @@ struct RuntimeWorldState {
 
     std::unordered_map<uint32_t, PendingBlockPlaceRequest> pendingBlockPlaceRequests;
     uint32_t nextBlockPlaceRequestId = 1;
+    BlockPlace::BlockMode blockPlaceMode = BlockPlace::BlockMode::Block;
     std::unordered_map<uint32_t, PendingBlockBreakRequest> pendingBlockBreakRequests;
     uint32_t nextBlockBreakRequestId = 1;
 

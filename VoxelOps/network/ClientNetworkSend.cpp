@@ -33,10 +33,17 @@ bool ClientNetwork::SendConnectRequest(std::string_view requestedUsername) {
         return false;
     }
 
+    std::string effectiveRequestedUsername(requestedUsername);
+    if (m_retryWithAutoAssignedUsername && !effectiveRequestedUsername.empty()) {
+        std::cout << "[net] retrying connect without requested username after previous rejection\n";
+        effectiveRequestedUsername.clear();
+        m_retryWithAutoAssignedUsername = false;
+    }
+
     ConnectRequest req;
     req.protocolVersion = kVoxelOpsProtocolVersion;
     req.identity = m_clientIdentity;
-    req.requestedUsername.assign(requestedUsername.begin(), requestedUsername.end());
+    req.requestedUsername = effectiveRequestedUsername;
     const std::vector<uint8_t> out = req.serialize();
 
     const EResult r = SteamNetworkingSockets()->SendMessageToConnection(

@@ -1,0 +1,204 @@
+<rml>
+	<head>
+		<style>
+			* {
+			font-family: "SF Pro Text";
+			font-size: 16px;
+			box-sizing: border-box;
+			}
+
+			body {
+			width: 100%;
+			height: 100%;
+			margin: 0;
+
+			color: #ffffff;
+			}
+
+			div {
+			display: block;
+			}
+
+
+
+
+			#panel {
+			position: absolute;
+
+			left: 50%;
+			top: 50%;
+
+			width: 480px;
+
+			margin-left: -240px;
+			margin-top: -170px;
+
+			background-color: #1b1b1f;
+
+			border-width: 1px;
+			border-color: #3a3a40;
+
+			border-radius: 14px;
+
+			padding: 24px;
+			}
+
+
+			#title {
+			font-size: 24px;
+			font-weight: bold;
+
+			margin-bottom: 20px;
+
+			color: #ffffff;
+			}
+
+			.label {
+			margin-bottom: 6px;
+
+			color: #b8b8c0;
+			}
+
+			#endpoint_row {
+			display: flex;
+			flex-direction: row;
+
+			width: 100%;
+
+			margin-bottom: 16px;
+			}
+
+			input {
+			height: 40px;
+
+			background-color: #2a2a30;
+
+			color: #ffffff;
+
+			border-width: 1px;
+			border-color: #4a4a52;
+
+			border-radius: 8px;
+
+			padding: 8px 10px;
+			}
+
+			input:focus {
+			border-color: #f0c27b;
+			}
+
+			#endpoint_input {
+			flex: 1;
+
+			margin-right: 8px;
+
+			}
+
+			#paste_button {
+			width: 72px;
+			height: 40px;
+			line-height: 40px;
+			}
+
+			button {
+			display: block;
+
+			background-color: #f0c27b;
+			color: #2f2417;
+
+			border-width: 0;
+			border-radius: 8px;
+
+			padding: 0;
+
+			font-weight: bold;
+			text-align: center;
+			}
+
+			#username_input {
+			width: 100%;
+
+			margin-bottom: 18px;
+			}
+
+			#connect_button {
+			width: 100%;
+			height: 44px;
+			line-height: 44px;
+
+			margin-bottom: 14px;
+
+			font-size: 17px;
+			}
+
+			#error_text {
+			color: #ff7b7b;
+
+			min-height: 20px;
+
+			margin-bottom: 10px;
+			}
+
+			#hint_text {
+			color: #9d9da5;
+
+			font-size: 14px;
+			line-height: 20px;
+
+			margin-bottom: 8px;
+			}
+
+			#status_text {
+			color: #7f7f88;
+
+			font-size: 14px;
+			}
+		</style>
+	</head>
+
+	<body>
+		<div id="panel">
+			<div id="title">Connect to Server</div>
+
+			<div class="label">
+				Server address
+			</div>
+
+			<div id="endpoint_row">
+				<input
+					type="text"
+					id="endpoint_input"
+					placeholder="127.0.0.1:27015"
+				/>
+
+				<button id="paste_button">
+					Paste
+				</button>
+			</div>
+
+			<div class="label">
+				Username
+			</div>
+
+			<input
+				type="text"
+				id="username_input"
+				maxlength="32"
+			/>
+
+			<button id="connect_button">
+				Connect
+			</button>
+
+			<div id="error_text"></div>
+
+			<div id="hint_text">
+				If the username is already taken, choose another one and try again.
+			</div>
+
+			<div id="status_text">
+				Status: network initialized
+			</div>
+		</div>
+	</body>
+</rml>

@@ -8,6 +8,7 @@ void ClientDisconnectReset::apply(Runtime &runtime, bool *forceCursorEnabled) co
     runtime.prediction.pendingInputs.clear();
     runtime.world.pendingBlockPlaceRequests.clear();
     runtime.world.nextBlockPlaceRequestId = 1;
+    runtime.world.blockPlaceMode = BlockPlace::BlockMode::Block;
     runtime.world.pendingBlockBreakRequests.clear();
     runtime.world.nextBlockBreakRequestId = 1;
     runtime.ui.killFeedEntries.clear();

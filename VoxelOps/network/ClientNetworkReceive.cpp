@@ -152,6 +152,7 @@ void ClientNetwork::Poll() {
             m_conn = k_HSteamNetConnection_Invalid;
             m_registered = false;
             m_assignedUsername.clear();
+            m_chunkResyncOverflowCooldownUntil.clear();
             SetConnectionStatus(ConnectionState::Disconnected, reason);
             const auto pollTotalEnd = std::chrono::steady_clock::now();
             const int64_t pollUs = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -228,6 +229,8 @@ void ClientNetwork::OnMessage(const uint8_t *data, uint32_t size) {
 
         if (resp.ok != 0) {
             m_registered = true;
+            m_hasEverConnectedSuccessfully = true;
+            m_retryWithAutoAssignedUsername = false;
             m_assignedUsername = resp.assignedUsername;
             const std::string displayName =
                 m_assignedUsername.empty() ? std::string("connected")
@@ -251,11 +254,21 @@ void ClientNetwork::OnMessage(const uint8_t *data, uint32_t size) {
                 std::cout << "[net] identity conflict detected; rotating to transient identity for "
                              "retry\n";
             }
+            if (resp.reason == ConnectRejectReason::UsernameTaken &&
+                m_hasEverConnectedSuccessfully) {
+                m_retryWithAutoAssignedUsername = true;
+                std::cout << "[net] username rejected during reconnect; will retry with "
+                             "server-assigned username\n";
+            }
 
             const bool fatalMismatch = (resp.reason == ConnectRejectReason::ProtocolMismatch) ||
-                                       (resp.reason == ConnectRejectReason::InvalidIdentity) ||
-                                       (resp.reason == ConnectRejectReason::UsernameTaken);
-            SetConnectionStatus(ConnectionState::Disconnected, reason, !fatalMismatch);
+                                       (resp.reason == ConnectRejectReason::InvalidIdentity);
+            bool allowReconnect = !fatalMismatch;
+            if (resp.reason == ConnectRejectReason::UsernameTaken &&
+                !m_hasEverConnectedSuccessfully) {
+                allowReconnect = false;
+            }
+            SetConnectionStatus(ConnectionState::Disconnected, reason, allowReconnect);
 
             if (m_conn != k_HSteamNetConnection_Invalid) {
                 SteamNetworkingSockets()->CloseConnection(m_conn, 0, reason.c_str(), false);
@@ -337,7 +350,10 @@ void ClientNetwork::OnMessage(const uint8_t *data, uint32_t size) {
                           << droppedChunkPos.z << ")"
                           << " count=" << s_droppedChunkDataCount << "\n";
             }
-            (void)SendChunkResyncRequest(droppedChunkPos);
+            PruneChunkResyncOverflowState();
+            if (ShouldSendChunkResyncForOverflow(droppedChunkPos)) {
+                (void)SendChunkResyncRequest(droppedChunkPos);
+            }
         }
         return;
     }

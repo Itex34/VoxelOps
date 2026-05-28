@@ -12,7 +12,8 @@
 #include <string_view>
 #include <print>
 
-#include "network/Network.hpp"
+#include "network/core/ServerHost.hpp"
+#include "../Shared/network/PacketType.hpp"
 #include "../Shared/runtime/Paths.hpp"
 
 using namespace std::chrono_literals;
@@ -20,6 +21,12 @@ using namespace std::chrono_literals;
 static std::atomic<bool> g_running{true};
 static std::mutex g_consoleQueueMutex;
 static std::deque<std::string> g_consoleQueue;
+
+namespace {
+    constexpr bool kEnableHeartbeatBroadcast = false;
+    constexpr auto kHeartbeatInterval = 1s;
+    constexpr auto kConsolePollInterval = 10ms;
+}
 
 static void handle_signal(int) {
     g_running = false;
@@ -126,7 +133,7 @@ static bool parse_launch_options(int argc, char **argv, ServerLaunchOptions &out
     return true;
 }
 
-static void process_console_command(const std::string &rawCommand, Network &serverNet) {
+static void process_console_command(const std::string &rawCommand, ServerHost &serverHost) {
     const std::string command = trim_copy(rawCommand);
     if (command.empty()) {
         return;
@@ -145,12 +152,12 @@ static void process_console_command(const std::string &rawCommand, Network &serv
     if (cmd == "stop" || cmd == "quit" || cmd == "exit") {
         std::cout << "[Console] Stop requested.\n";
         g_running = false;
-        serverNet.Stop();
+        serverHost.Stop();
         return;
     }
 
     if (cmd == "players") {
-        const auto users = serverNet.GetConnectedUsers();
+        const auto users = serverHost.GetConnectedUsers();
         if (users.empty()) {
             std::cout << "[Console] No connected players.\n";
             return;
@@ -163,7 +170,7 @@ static void process_console_command(const std::string &rawCommand, Network &serv
     }
 
     if (cmd == "admins") {
-        const auto admins = serverNet.GetAdminUsernames();
+        const auto admins = serverHost.GetAdminUsernames();
         if (admins.empty()) {
             std::cout << "[Console] Admin list is empty.\n";
             return;
@@ -181,7 +188,7 @@ static void process_console_command(const std::string &rawCommand, Network &serv
         action = to_lower_copy(action);
 
         if (action == "list") {
-            const auto admins = serverNet.GetAdminUsernames();
+            const auto admins = serverHost.GetAdminUsernames();
             if (admins.empty()) {
                 std::cout << "[Console] Admin list is empty.\n";
             } else {
@@ -209,7 +216,7 @@ static void process_console_command(const std::string &rawCommand, Network &serv
         }
 
         const bool isGrant = (action == "grant");
-        const bool changed = serverNet.SetAdminByUsername(username, isGrant);
+        const bool changed = serverHost.SetAdminByUsername(username, isGrant);
         if (!changed) {
             std::cout << "[Console] No matching user/admin state changed for '" << username
                       << "'.\n";
@@ -223,17 +230,17 @@ static void process_console_command(const std::string &rawCommand, Network &serv
         arg = to_lower_copy(arg);
 
         if (arg.empty()) {
-            std::cout << "[Console] debug is " << (serverNet.IsDebugLoggingEnabled() ? "on" : "off")
+            std::cout << "[Console] debug is " << (serverHost.IsDebugLoggingEnabled() ? "on" : "off")
                       << "\n";
             return;
         }
 
         if (arg == "on") {
-            serverNet.SetDebugLoggingEnabled(true);
+            serverHost.SetDebugLoggingEnabled(true);
             return;
         }
         if (arg == "off") {
-            serverNet.SetDebugLoggingEnabled(false);
+            serverHost.SetDebugLoggingEnabled(false);
             return;
         }
 
@@ -243,6 +250,97 @@ static void process_console_command(const std::string &rawCommand, Network &serv
 
     std::cout << "[Console] Unknown command: " << command << "\n";
     print_console_help();
+}
+
+static void install_signal_handlers() {
+    std::signal(SIGINT, handle_signal);
+    std::signal(SIGTERM, handle_signal);
+}
+
+static void start_console_input_thread() {
+    std::thread consoleInputThread([]() {
+        std::string line;
+        while (std::getline(std::cin, line)) {
+            std::lock_guard<std::mutex> lk(g_consoleQueueMutex);
+            g_consoleQueue.push_back(line);
+        }
+    });
+    consoleInputThread.detach();
+}
+
+static std::deque<std::string> drain_console_queue() {
+    std::deque<std::string> pendingCommands;
+    {
+        std::lock_guard<std::mutex> lk(g_consoleQueueMutex);
+        pendingCommands.swap(g_consoleQueue);
+    }
+    return pendingCommands;
+}
+
+static void maybe_broadcast_heartbeat(
+    ServerHost &serverHost,
+    const std::chrono::steady_clock::time_point now,
+    std::chrono::steady_clock::time_point &lastHeartbeat
+) {
+    if (!kEnableHeartbeatBroadcast || (now - lastHeartbeat < kHeartbeatInterval)) {
+        return;
+    }
+    lastHeartbeat = now;
+
+    std::string msg;
+    msg.push_back(static_cast<char>(PacketType::Message));
+    msg += "server_heartbeat";
+
+    serverHost.BroadcastRaw(
+        msg.data(), static_cast<uint32_t>(msg.size()), k_HSteamNetConnection_Invalid
+    );
+    if (serverHost.IsDebugLoggingEnabled()) {
+        std::cout << "[Server] Heartbeat broadcasted.\n";
+    }
+}
+
+static void run_console_loop(ServerHost &serverHost) {
+    auto lastHeartbeat = std::chrono::steady_clock::now();
+    while (g_running) {
+        const std::deque<std::string> pendingCommands = drain_console_queue();
+        for (const std::string &command : pendingCommands) {
+            process_console_command(command, serverHost);
+        }
+
+        if (!g_running) {
+            break;
+        }
+
+        maybe_broadcast_heartbeat(serverHost, std::chrono::steady_clock::now(), lastHeartbeat);
+
+        std::this_thread::sleep_for(kConsolePollInterval);
+    }
+}
+
+static int run_server_process(const ServerLaunchOptions &launchOptions) {
+    std::cout << "VoxelOps headless server starting...\n";
+    std::cout << "[Server] Runtime paths: " << Shared::RuntimePaths::Describe() << "\n";
+
+    install_signal_handlers();
+
+    ServerHost serverHost;
+    if (!serverHost.Start(launchOptions.port)) {
+        std::cerr << "Failed to start ServerHost on port " << launchOptions.port << "\n";
+        return 1;
+    }
+
+    std::thread serverHostThread([&serverHost]() { serverHost.Run(); });
+    start_console_input_thread();
+    print_console_help();
+    run_console_loop(serverHost);
+
+    std::cout << "Shutdown requested. Stopping server...\n";
+    serverHost.Stop();
+    if (serverHostThread.joinable()) {
+        serverHostThread.join();
+    }
+    std::cout << "Server stopped\n";
+    return 0;
 }
 
 int main(int argc, char **argv) {
@@ -258,79 +356,11 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    std::cout << "VoxelOps headless server starting...\n";
-    std::cout << "[Server] Runtime paths: " << Shared::RuntimePaths::Describe() << "\n";
-
-    // Handle Ctrl+C and termination signals
-    std::signal(SIGINT, handle_signal);
-    std::signal(SIGTERM, handle_signal);
-
-    const uint16_t port = launchOptions.port;
-    Network serverNet;
-
-    if (!serverNet.Start(port)) {
-        std::cerr << "Failed to start Network on port " << port << "\n";
-        return 1;
+    g_running = true;
+    {
+        std::lock_guard<std::mutex> lk(g_consoleQueueMutex);
+        g_consoleQueue.clear();
     }
 
-    // Launch networking thread
-    std::thread netThread([&serverNet]() {
-        serverNet.Run(); // blocking loop
-    });
-
-    std::thread consoleInputThread([]() {
-        std::string line;
-        while (std::getline(std::cin, line)) {
-            std::lock_guard<std::mutex> lk(g_consoleQueueMutex);
-            g_consoleQueue.push_back(line);
-        }
-    });
-    consoleInputThread.detach();
-
-    print_console_help();
-
-    // Optional periodic heartbeat broadcast.
-    constexpr bool kEnableHeartbeatBroadcast = false;
-    const auto heartbeatInterval = 1s;
-    auto lastHeartbeat = std::chrono::steady_clock::now();
-
-    while (g_running) {
-        std::deque<std::string> pendingCommands;
-        {
-            std::lock_guard<std::mutex> lk(g_consoleQueueMutex);
-            pendingCommands.swap(g_consoleQueue);
-        }
-        for (const std::string &command : pendingCommands) {
-            process_console_command(command, serverNet);
-        }
-
-        if (!g_running) {
-            break;
-        }
-
-        auto now = std::chrono::steady_clock::now();
-        if (kEnableHeartbeatBroadcast && (now - lastHeartbeat >= heartbeatInterval)) {
-            lastHeartbeat = now;
-
-            std::string msg;
-            msg.push_back(static_cast<char>(PacketType::Message));
-            msg += "server_heartbeat";
-
-            serverNet.BroadcastRaw(
-                msg.data(), static_cast<uint32_t>(msg.size()), k_HSteamNetConnection_Invalid
-            );
-            if (serverNet.IsDebugLoggingEnabled()) {
-                std::cout << "[Server] Heartbeat broadcasted.\n";
-            }
-        }
-
-        std::this_thread::sleep_for(10ms);
-    }
-
-    std::cout << "Shutdown requested. Stopping server...\n";
-    serverNet.Stop();
-    if (netThread.joinable())
-        netThread.join();
-    std::cout << "Server stopped\n";
-    return 0;
+    return run_server_process(launchOptions);
 }

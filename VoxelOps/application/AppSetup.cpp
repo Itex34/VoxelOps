@@ -151,6 +151,17 @@ void App::initRenderResources(Runtime &runtime) {
 }
 
 void App::initUi(Runtime &runtime) {
+    runtime.ui.rmlUi = std::make_unique<RmlUiSystem>();
+    if (!runtime.ui.rmlUi->initialize(m_Window, m_RenderApi)) {
+        std::cerr << "[App] Failed to initialize RmlUi subsystem.\n";
+        runtime.ui.rmlUi.reset();
+    } else if (m_Window != nullptr) {
+        int width = 0;
+        int height = 0;
+        SDL_GetWindowSizeInPixels(m_Window, &width, &height);
+        runtime.ui.rmlUi->onWindowResized(width, height);
+    }
+
     runtime.ui.debugUi = std::make_unique<DebugUi>();
     if (!runtime.ui.inventoryUi) {
         runtime.ui.inventoryUi = std::make_unique<InventoryUI>();

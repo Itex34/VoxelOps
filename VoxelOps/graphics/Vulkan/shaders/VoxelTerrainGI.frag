@@ -160,7 +160,7 @@ void main() {
             viewZ,
             nrdMaxDistance
         );
-        outColor = vec4(debugColor, texel.r);
+        outColor = vec4(debugColor, texel.a);
         return;
     }
     outColor = vec4(lit, texel.a);

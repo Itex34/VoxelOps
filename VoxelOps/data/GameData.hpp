@@ -21,6 +21,9 @@ namespace GameData {
     extern bool firstMouse;
     extern bool cursorEnabled;
     extern bool gameplayInputEnabled;
+    extern bool uiWantsMouseCapture;
+    extern bool uiWantsKeyboardCapture;
+    extern bool uiWantsTextInput;
     // 0 = Auto, 1 = Software DDA, 2 = Hardware RT
     extern int giTracingBackendPreference;
     // NRD debug mode index from Debug UI combo (0..29)

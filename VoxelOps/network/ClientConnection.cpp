@@ -178,6 +178,7 @@ bool ClientNetwork::ConnectTo(std::string_view host, uint16_t port) {
     m_registered = false;
     m_assignedUsername.clear();
     m_allowAutoReconnect = true;
+    m_chunkResyncOverflowCooldownUntil.clear();
 
     SteamNetworkingIPAddr addr;
     addr.Clear();
@@ -212,6 +213,9 @@ void ClientNetwork::Shutdown() {
     }
     m_registered = false;
     m_assignedUsername.clear();
+    m_hasEverConnectedSuccessfully = false;
+    m_retryWithAutoAssignedUsername = false;
+    m_chunkResyncOverflowCooldownUntil.clear();
     SetConnectionStatus(ConnectionState::Disconnected, "disconnected");
 
     {

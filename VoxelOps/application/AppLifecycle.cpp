@@ -5,9 +5,58 @@
 #include "../graphics/RenderDeviceFactory.hpp"
 #include "../../Shared/runtime/Paths.hpp"
 #include <array>
+#include <filesystem>
 #include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
 
 using namespace AppHelpers;
+
+namespace {
+    bool IsRegularFile(const std::filesystem::path &path) {
+        std::error_code ec;
+        return std::filesystem::is_regular_file(path, ec);
+    }
+
+    std::string JoinMissingPaths(const std::vector<std::filesystem::path> &paths) {
+        std::ostringstream out;
+        for (size_t i = 0; i < paths.size(); ++i) {
+            out << "  - " << paths[i].generic_string();
+            if (i + 1 < paths.size()) {
+                out << "\n";
+            }
+        }
+        return out.str();
+    }
+
+    std::filesystem::path ResolveShaderDir() {
+#ifdef SHADER_DIR
+        std::filesystem::path shaderDir = std::filesystem::path(SHADER_DIR);
+        if (shaderDir.empty()) {
+            return shaderDir;
+        }
+        std::error_code ec;
+        if (shaderDir.is_relative()) {
+            shaderDir = std::filesystem::absolute(shaderDir, ec);
+        }
+        if (!ec) {
+            shaderDir = shaderDir.lexically_normal();
+        }
+        return shaderDir;
+#else
+        return {};
+#endif
+    }
+
+    bool IsObviouslyMisconfiguredShaderDir(const std::filesystem::path &shaderDir) {
+        if (shaderDir.empty()) {
+            return true;
+        }
+        const std::string generic = shaderDir.generic_string();
+        return generic == "/" || generic == "\\";
+    }
+} // namespace
 
 bool App::initializeRenderBackendCore(Runtime &runtime, RenderApi api) {
     if (!initWindowAndContext(api)) {
@@ -45,6 +94,10 @@ void App::shutdownRenderBackendCore(Runtime &runtime) {
     if (runtime.ui.debugUi) {
         runtime.ui.debugUi->shutdown();
         runtime.ui.debugUi.reset();
+    }
+    if (runtime.ui.rmlUi) {
+        runtime.ui.rmlUi->shutdown();
+        runtime.ui.rmlUi.reset();
     }
     runtime.render.gunSceneRenderer.reset();
     if (runtime.render.gunRenderer) {
@@ -134,13 +187,75 @@ int App::run(int argc, char **argv) {
     }
     std::cout << "\n";
 
+    {
+        const std::array<std::filesystem::path, 4> requiredFiles = {
+            Shared::RuntimePaths::ResolveVoxelOpsPath("ui/rml/documents/hud.rml"),
+            Shared::RuntimePaths::ResolveVoxelOpsPath("ui/rml/documents/inventory.rml"),
+            Shared::RuntimePaths::ResolveVoxelOpsPath("ui/rml/documents/main_menu.rml"),
+            Shared::RuntimePaths::ResolveVoxelOpsPath("Assets/fonts/SF/SF-Pro-Text-Medium.otf")
+        };
+
+        std::vector<std::filesystem::path> missingFiles;
+        for (const auto &path : requiredFiles) {
+            if (!IsRegularFile(path)) {
+                missingFiles.push_back(path);
+            }
+        }
+        if (!missingFiles.empty()) {
+            std::cerr << "[App][fatal] Missing required runtime files:\n"
+                      << JoinMissingPaths(missingFiles) << "\n";
+            return -1;
+        }
+    }
+
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         std::cerr << "SDL_Init failed: " << SDL_GetError() << "\n";
         return -1;
     }
 
-    const RenderApi requestedApi = ResolveRenderApiFromEnvironment();
+    RenderApi requestedApi = ResolveRenderApiFromEnvironment();
     std::cout << "[App] Requested render API: " << GetRenderApiName(requestedApi) << "\n";
+    if (requestedApi == RenderApi::Vulkan) {
+        std::vector<std::filesystem::path> missingShaders;
+        const std::filesystem::path shaderDir = ResolveShaderDir();
+        if (IsObviouslyMisconfiguredShaderDir(shaderDir)) {
+            std::cerr << "[App] Vulkan preflight failed: SHADER_DIR is invalid ('"
+                      << shaderDir.generic_string()
+                      << "'). Reconfigure CMake and rebuild.\n";
+            std::cout << "[App] Falling back to OpenGL.\n";
+            requestedApi = RenderApi::OpenGL;
+        } else {
+            const std::array<const char *, 8> requiredShaders = {
+                "VoxelTerrainGI.vert.spv",
+                "VoxelTerrainGI.frag.spv",
+                "VoxelTerrainGI_rt.frag.spv",
+                "model.vert.spv",
+                "model.frag.spv",
+                "model_rt.frag.spv",
+                "postprocess.vert.spv",
+                "postprocess.frag.spv"
+            };
+            for (const char *fileName : requiredShaders) {
+                const std::filesystem::path shaderPath = shaderDir / fileName;
+                if (!IsRegularFile(shaderPath)) {
+                    missingShaders.push_back(shaderPath);
+                }
+            }
+
+            if (!missingShaders.empty()) {
+#if defined(VOXELOPS_VULKAN_SHADERS_BUILT) && (VOXELOPS_VULKAN_SHADERS_BUILT == 0)
+                std::cerr << "[App] Vulkan preflight failed: shaders were not built "
+                             "(VOXELOPS_OPENGL_ONLY=ON at configure time).\n";
+#else
+                std::cerr << "[App] Vulkan preflight failed: missing compiled SPIR-V shader files.\n";
+#endif
+                std::cerr << "[App] Expected shader directory: " << shaderDir.generic_string() << "\n";
+                std::cerr << JoinMissingPaths(missingShaders) << "\n";
+                std::cout << "[App] Falling back to OpenGL.\n";
+                requestedApi = RenderApi::OpenGL;
+            }
+        }
+    }
 
     Runtime runtime;
     const std::array<RenderApi, 2> startupCandidates{requestedApi, RenderApi::OpenGL};

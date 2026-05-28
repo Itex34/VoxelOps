@@ -8,9 +8,9 @@
 #include <memory>
 #include <vector>
 
-#include "graphics/Vulkan/renderer/IRenderBackend.hpp"
 #include "graphics/Vulkan/renderer/FrameSync.hpp"
 #include "graphics/Vulkan/renderer/Pipeline.hpp"
+#include "graphics/Vulkan/renderer/RenderFrameData.hpp"
 #include "graphics/Vulkan/renderer/RenderPass.hpp"
 #include "graphics/Vulkan/graphics/Mesh.hpp"
 #include "graphics/Vulkan/graphics/VkTexture.hpp"
@@ -23,7 +23,7 @@
 class VulkanContext;
 class NrdBootstrap;
 
-class VulkanRenderer final : public IRenderBackend {
+class VulkanRenderer {
 public:
     struct FrameTimingStats {
         bool gpuValid = false;
@@ -63,7 +63,7 @@ public:
     VulkanRenderer(VulkanRenderer &&) = delete;
     VulkanRenderer &operator=(VulkanRenderer &&) = delete;
 
-    void init() override;
+    void init();
     void renderFrame(
         uint32_t windowWidth,
         uint32_t windowHeight,
@@ -71,9 +71,9 @@ public:
         const glm::mat4 &projectionMatrix,
         const glm::mat4 &viewProjection,
         const FrameRenderData &frameData
-    ) override;
-    void handleWindowResize(uint32_t windowWidth, uint32_t windowHeight) override;
-    void cleanup() override;
+    );
+    void handleWindowResize(uint32_t windowWidth, uint32_t windowHeight) ;
+    void cleanup() ;
     vk::RenderPass getRenderPassHandle() const noexcept;
     uint32_t getSwapchainImageCount() const noexcept;
     const FrameTimingStats &getLastFrameTimingStats() const noexcept {

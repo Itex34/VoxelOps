@@ -8,8 +8,6 @@
 #include <glm/common.hpp>
 #include <glm/geometric.hpp>
 
-#include <imgui.h>
-
 namespace {
     bool IsScancodeDown(SDL_Scancode scancode) {
         int keyCount = 0;
@@ -26,6 +24,9 @@ void App::pollEvents(Runtime &runtime) {
     SDL_Event event;
     const SDL_WindowID windowId = (m_Window != nullptr) ? SDL_GetWindowID(m_Window) : 0;
     while (SDL_PollEvent(&event)) {
+        if (runtime.ui.rmlUi) {
+            runtime.ui.rmlUi->processEvent(event);
+        }
         if (runtime.ui.debugUi) {
             runtime.ui.debugUi->processEvent(event);
         }
@@ -46,6 +47,9 @@ void App::pollEvents(Runtime &runtime) {
                     m_Window, event.window.data1, event.window.data2
                 );
                 runtime.render.renderer->onWindowResized(event.window.data1, event.window.data2);
+                if (runtime.ui.rmlUi) {
+                    runtime.ui.rmlUi->onWindowResized(event.window.data1, event.window.data2);
+                }
             }
             break;
         case SDL_EVENT_MOUSE_MOTION:
@@ -128,8 +132,7 @@ void App::updateDebugCamera(Runtime &runtime) {
 
 void App::updateToggleStates(Runtime &runtime) {
     const bool keyboardBlockedByUi = AppHelpers::IsImGuiTextInputActive();
-    const bool textInputBlocked =
-        (ImGui::GetCurrentContext() != nullptr) && ImGui::GetIO().WantTextInput;
+    const bool textInputBlocked = GameData::uiWantsTextInput;
     const auto refreshCursorState = [&]() {
         GameData::cursorEnabled = m_ForceCursorEnabled || m_ShowDebugUi || m_ShowInventoryUi ||
                                   runtime.ui.wantsCursor;
