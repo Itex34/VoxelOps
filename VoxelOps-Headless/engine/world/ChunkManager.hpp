@@ -13,6 +13,7 @@
 #include <memory>
 
 #include "../voxels/ServerChunk.hpp"
+#include "ChunkGrid.hpp"
 #include "WorldCollision.hpp"
 #include "../../../third_party/FastNoiseLite.h"
 #include "../../../Shared/world/Constants.hpp"
@@ -83,13 +84,6 @@ public:
     // still protected internally)
     std::unordered_map<glm::ivec3, ServerChunk *, IVec3Hash, IVec3Eq> snapshotChunkMap() const;
 
-    // Unsafe low-level access: returns reference to internal map. Caller MUST hold mapMutex for the
-    // duration of use.
-    std::unordered_map<glm::ivec3, std::unique_ptr<ServerChunk>, IVec3Hash, IVec3Eq> &
-    getChunksRefUnsafe() {
-        return chunkMap;
-    }
-
     // Helper: safely obtain a raw pointer to a chunk (or nullptr if missing). Snapshot-style (map
     // lock held briefly).
     ServerChunk *getChunkIfExists(const glm::ivec3 &chunkPos) const;
@@ -117,9 +111,9 @@ private:
     FastNoiseLite noise;
     uint64_t worldSeed = 1337u;
 
-    // protects chunkMap structure (only)
+    // protects m_chunks structure (only)
     mutable std::shared_mutex mapMutex;
-    std::unordered_map<glm::ivec3, std::unique_ptr<ServerChunk>, IVec3Hash, IVec3Eq> chunkMap;
+    ServerChunkGrid m_chunks;
     // Tracks whether a chunk has had decoration pass applied at least once.
     std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> decoratedChunks;
 

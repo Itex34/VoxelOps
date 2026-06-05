@@ -354,6 +354,9 @@ ConnectionService::Hooks ServerComposition::BuildConnectionHooks() {
         [this](HSteamNetConnection conn, const ClientSessionManager::ChunkCoord &coord) {
             return m_chunkStreamingService.SendChunkData(conn, coord);
         },
+        [this](HSteamNetConnection conn, const ClientSessionManager::ChunkCoord &coord) {
+            return m_chunkStreamingService.QueueChunkPreparation(conn, coord);
+        },
         [this](HSteamNetConnection conn,
                const ClientSessionManager::ClientSession &session,
                const char *closeReason,

@@ -93,9 +93,9 @@ namespace WorldCollision {
                         )
                                                 .count();
                         MaybeLogSlowChunkMapLock("queryAabbCollision.chunkFetch", waitUs);
-                        auto it = manager.chunkMap.find(chunkPos);
-                        if (it != manager.chunkMap.end()) {
-                            it->second->fillRawVoxelBytes(
+                        const ServerChunk *chunk = manager.m_chunks.get(chunkPos);
+                        if (chunk != nullptr) {
+                            chunk->fillRawVoxelBytes(
                                 reinterpret_cast<uint8_t *>(chunkBlocks.data()),
                                 chunkBlocks.size() * sizeof(BlockID)
                             );

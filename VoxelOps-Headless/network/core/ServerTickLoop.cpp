@@ -106,6 +106,15 @@ void ServerTickLoop::Run() {
             frameTimings.messageDrainUs
         );
         m_tickNetworkPhase.RunConnectionCleanupPhase();
+        // Prewarm runs BEFORE simulation so that neighboring chunks are available
+        // during collision resolution. Running it after causes a guaranteed 1-tick
+        // divergence every time a player's AABB first crosses into a new chunk,
+        // because the server sees the neighbor as missing (solid) while the client
+        // may have already received it from streaming.
+        const size_t collisionPrewarmGeneratedThisLoop =
+            m_collisionPrewarmPhase.RunCollisionPrewarmPhase(
+                simBacklog, nextCollisionPrewarmAt, frameTimings.collisionPrewarmUs
+            );
         const uint64_t simTicksThisLoop = m_simulationPhase.RunSimulationPhase(
             simAccumulator, serverTick, frameTimings.simUs, simBacklog
         );
@@ -119,10 +128,6 @@ void ServerTickLoop::Run() {
         const size_t chunksSentThisLoop = m_chunkSendPhase.RunChunkSendPhase(
             simBacklog, nextChunkSendFlushAt, frameTimings.chunkSendUs
         );
-        const size_t collisionPrewarmGeneratedThisLoop =
-            m_collisionPrewarmPhase.RunCollisionPrewarmPhase(
-                simBacklog, nextCollisionPrewarmAt, frameTimings.collisionPrewarmUs
-            );
 
         const double loopUs =
             static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(

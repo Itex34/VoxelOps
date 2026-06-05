@@ -5,6 +5,7 @@
 #include <glm/ext/vector_int3.hpp>
 #include <glm/vec3.hpp>
 
+#include <algorithm>
 #include <charconv>
 #include <chrono>
 #include <iostream>
@@ -19,6 +20,8 @@ constexpr uint32_t kMaxInboundPacketsPerWindow = 900u;
 constexpr uint32_t kMaxInboundBytesPerWindow = 256u * 1024u;
 constexpr uint32_t kMaxPlayerInputsPerWindow = 360u;
 constexpr uint32_t kMaxChunkRequestsPerWindow = 120u;
+constexpr auto kChunkResyncRateWindow = std::chrono::seconds(1);
+constexpr uint32_t kMaxChunkResyncRequestsPerWindow = 12u;
 
 } // namespace
 
@@ -407,18 +410,63 @@ void ConnectionService::HandleMessagePacket(HSteamNetConnection incoming, const 
             }
 
             const ChunkCoord coord{cx, cy, cz};
-            if (m_chunkManager.getChunkIfExists(chunkPos) == nullptr) {
-                (void)m_hooks.prepareChunkForStreaming(coord);
+            bool allowResync = false;
+            bool rateLimited = false;
+            m_sessionState.WithLock([&](ClientSessionManager &sessions) {
+                auto it = sessions.find(incoming);
+                if (it == sessions.end() || it->second.playerId == 0 || it->second.username.empty()) {
+                    return;
+                }
+
+                auto &session = it->second;
+                const auto nowSteady = std::chrono::steady_clock::now();
+                if (session.chunkResyncRateWindowStart == std::chrono::steady_clock::time_point::min() ||
+                    (nowSteady - session.chunkResyncRateWindowStart) >= kChunkResyncRateWindow) {
+                    session.chunkResyncRateWindowStart = nowSteady;
+                    session.chunkResyncRequestsInWindow = 0;
+                }
+
+                if (session.chunkResyncRequestsInWindow >= kMaxChunkResyncRequestsPerWindow) {
+                    rateLimited = true;
+                    return;
+                }
+
+                bool plausibleChunk =
+                    (session.pendingChunkData.find(coord) != session.pendingChunkData.end()) ||
+                    (session.streamedChunks.find(coord) != session.streamedChunks.end());
+
+                if (!plausibleChunk && session.hasChunkInterest) {
+                    const int radius = std::max<int>(2, static_cast<int>(session.viewDistance));
+                    const int64_t dx = static_cast<int64_t>(coord.x - session.interestCenterChunk.x);
+                    const int64_t dz = static_cast<int64_t>(coord.z - session.interestCenterChunk.z);
+                    const int64_t radius2 = static_cast<int64_t>(radius) * static_cast<int64_t>(radius);
+                    plausibleChunk = (dx * dx + dz * dz) <= radius2;
+                }
+
+                if (!plausibleChunk) {
+                    return;
+                }
+
+                ++session.chunkResyncRequestsInWindow;
+                session.streamedChunks.erase(coord);
+                session.pendingChunkData[coord] = nowSteady - std::chrono::milliseconds(600);
+                session.chunkInterestDirty = true;
+                session.nextChunkInterestUpdateAt = std::chrono::steady_clock::time_point::min();
+                allowResync = true;
+            });
+
+            if (rateLimited) {
+                std::cerr << "[chunk/resync] rate limited conn=" << incoming << " chunk=("
+                          << cx << "," << cy << "," << cz << ")\n";
+                return;
             }
-            if (m_hooks.sendChunkData(incoming, coord)) {
-                m_sessionState.WithLock([&](ClientSessionManager &sessions) {
-                    auto it = sessions.find(incoming);
-                    if (it != sessions.end()) {
-                        it->second.pendingChunkData.erase(coord);
-                        it->second.streamedChunks.insert(coord);
-                    }
-                });
-            } 
+            if (!allowResync) {
+                return;
+            }
+
+            if (m_hooks.queueChunkPreparation) {
+                (void)m_hooks.queueChunkPreparation(incoming, coord);
+            }
             return;
         }
 

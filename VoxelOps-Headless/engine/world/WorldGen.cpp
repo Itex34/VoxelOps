@@ -134,16 +134,14 @@ void WorldGen::generateChunkAt(ChunkManager &cm, const glm::ivec3 &pos) {
     ServerChunk *existingChunk = nullptr;
     {
         std::lock_guard<std::shared_mutex> lk(cm.mapMutex);
-        auto it = cm.chunkMap.find(pos);
-        if (it == cm.chunkMap.end()) {
-            auto [insertedIt, inserted] = cm.chunkMap.emplace(pos, std::move(chunk));
-            (void)inserted;
-            insertedIt->second->markDirty();
+        auto [insertedChunk, inserted] = cm.m_chunks.emplaceIfEmpty(pos, std::move(chunk));
+        if (inserted) {
+            insertedChunk->markDirty();
             cm.decoratedChunks.insert(pos);
             return;
         }
 
-        existingChunk = it->second.get();
+        existingChunk = insertedChunk;
         shouldDecorateExisting = (cm.decoratedChunks.find(pos) == cm.decoratedChunks.end());
     }
 
@@ -202,14 +200,14 @@ void WorldGen::generateTerrainChunkAt(ChunkManager &cm, const glm::ivec3 &pos) {
 
     {
         std::lock_guard<std::shared_mutex> lk(cm.mapMutex);
-        auto it = cm.chunkMap.find(pos);
-        if (it != cm.chunkMap.end()) {
+        if (cm.m_chunks.containsLoaded(pos)) {
             return;
         }
 
-        auto [insertedIt, inserted] = cm.chunkMap.emplace(pos, std::move(chunk));
-        (void)inserted;
-        insertedIt->second->markDirty();
+        auto [insertedChunk, inserted] = cm.m_chunks.emplaceIfEmpty(pos, std::move(chunk));
+        if (insertedChunk != nullptr) {
+            insertedChunk->markDirty();
+        }
         cm.decoratedChunks.erase(pos);
     }
 }
@@ -218,10 +216,7 @@ void WorldGen::decorateChunkAt(ChunkManager &cm, const glm::ivec3 &pos) {
     ServerChunk *chunkPtr = nullptr;
     {
         std::lock_guard<std::shared_mutex> lk(cm.mapMutex);
-        auto it = cm.chunkMap.find(pos);
-        if (it != cm.chunkMap.end()) {
-            chunkPtr = it->second.get();
-        }
+        chunkPtr = cm.m_chunks.get(pos);
     }
     if (!chunkPtr)
         return;

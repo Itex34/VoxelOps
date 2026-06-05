@@ -21,7 +21,7 @@ namespace {
         return value;
     }
 
-    bool tryParseBoolEnv(const char *name, bool &outValue) {
+    bool tryParseBoolEnv(const char *name, bool &outValue) {    
         const char *raw = std::getenv(name);
         if (raw == nullptr) {
             return false;

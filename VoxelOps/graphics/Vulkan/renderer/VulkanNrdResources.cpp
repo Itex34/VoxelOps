@@ -945,6 +945,9 @@ void VulkanRenderer::dispatchNrdPass(
     uint32_t constantSetIndex = 0;
     bool loggedResourceSetOverflow = false;
     bool dispatchedAll = true;
+
+    const vk::PipelineLayout pipelineLayout = *m_nrdPipelineLayout;
+
     for (uint32_t i = 0; i < dispatchCount; ++i) {
         if (i >= runtimeFrame.resourcesSets.size()) {
             if (!loggedResourceSetOverflow) {
@@ -1068,20 +1071,7 @@ void VulkanRenderer::dispatchNrdPass(
             dynamicOffsets
         );
         commandBuffer.dispatch(dispatch.gridWidth, dispatch.gridHeight, 1u);
-
-        vk::MemoryBarrier barrier{};
-        barrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
-        barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
-        commandBuffer.pipelineBarrier(
-            vk::PipelineStageFlagBits::eComputeShader,
-            vk::PipelineStageFlagBits::eComputeShader,
-            {},
-            barrier,
-            {},
-            {}
-        );
     }
-
     setNrdValidForImage(dispatchedAll);
 }
 #endif
@@ -1097,7 +1087,7 @@ void VulkanRenderer::barrierNrdSignalsForCompute(
     const NrdPerImageResources &nrd = m_nrdPerImage[resourceIndex];
     const vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
 
-    auto makeInputBarrier = [&](vk::Image image) {
+auto makeInputBarrier = [&](vk::Image image) {
         vk::ImageMemoryBarrier barrier{};
         barrier.oldLayout = vk::ImageLayout::eGeneral;
         barrier.newLayout = vk::ImageLayout::eGeneral;
@@ -1105,11 +1095,14 @@ void VulkanRenderer::barrierNrdSignalsForCompute(
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.image = image;
         barrier.subresourceRange = range;
-        barrier.srcAccessMask =
-            vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eShaderWrite;
+
+        barrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead;
+
         barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
+
         return barrier;
     };
+
     auto makeHistoryBarrier = [&](vk::Image image) {
         vk::ImageMemoryBarrier barrier{};
         barrier.oldLayout = vk::ImageLayout::eGeneral;
@@ -1131,9 +1124,7 @@ void VulkanRenderer::barrierNrdSignalsForCompute(
         makeHistoryBarrier(*nrd.diffOut.image),
     };
     commandBuffer.pipelineBarrier(
-        vk::PipelineStageFlagBits::eColorAttachmentOutput |
-            vk::PipelineStageFlagBits::eComputeShader |
-            vk::PipelineStageFlagBits::eFragmentShader,
+        vk::PipelineStageFlagBits::eComputeShader,
         vk::PipelineStageFlagBits::eComputeShader,
         {},
         {},

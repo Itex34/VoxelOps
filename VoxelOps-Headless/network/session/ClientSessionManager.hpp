@@ -59,6 +59,9 @@ public:
         uint32_t inboundBytesInWindow = 0;
         uint32_t inboundPlayerInputsInWindow = 0;
         uint32_t inboundChunkRequestsInWindow = 0;
+        std::chrono::steady_clock::time_point chunkResyncRateWindowStart =
+            std::chrono::steady_clock::time_point::min();
+        uint32_t chunkResyncRequestsInWindow = 0;
         std::chrono::steady_clock::time_point lastAcceptedShootTime =
             std::chrono::steady_clock::time_point::min();
         uint32_t lastShootClientShotId = 0;

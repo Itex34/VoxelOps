@@ -4,6 +4,8 @@
 #include <sstream>
 #include <string_view>
 #include <vector>
+#include <filesystem>
+
 
 namespace Shared::RuntimePaths {
     namespace {
@@ -14,8 +16,7 @@ namespace Shared::RuntimePaths {
             std::filesystem::path voxelOpsBase;
             std::filesystem::path modelsBase;
             std::filesystem::path sharedBase;
-        };
-
+        }; 
         RuntimePathState g_state;
 
         std::filesystem::path NormalizePath(const std::filesystem::path &path) {

@@ -28,20 +28,14 @@ namespace {
 } // namespace
 
 ChunkManager::ChunkManager(uint64_t seed)
-    : worldSeed(seed) {
+    : worldSeed(seed)
+    , m_chunks(GetChunkWorldBounds(GameMode::Ffa, CHUNK_SIZE)) {
     noise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
     noise.SetFrequency(0.009f); // hilliness
     // seed noise deterministically from worldSeed
     noise.SetSeed(static_cast<int>(worldSeed & 0x7FFFFFFF));
 
-    // Avoid costly hash-map rehashes while holding mapMutex on streaming spikes.
-    const int minChunkY = floorDiv(WORLD_MIN_Y, CHUNK_SIZE);
-    const int maxChunkY = floorDiv(WORLD_MAX_Y, CHUNK_SIZE);
-    const size_t expectedChunkCount = static_cast<size_t>(WORLD_MAX_X - WORLD_MIN_X + 1) *
-                                      static_cast<size_t>(maxChunkY - minChunkY + 1) *
-                                      static_cast<size_t>(WORLD_MAX_Z - WORLD_MIN_Z + 1);
-    chunkMap.reserve(expectedChunkCount);
-    decoratedChunks.reserve(expectedChunkCount);
+    decoratedChunks.reserve(m_chunks.slotCount());
 }
 
 void ChunkManager::generateInitialChunks(int numChunks) {
@@ -64,10 +58,10 @@ void ChunkManager::updateDirtyChunks() {
     std::vector<ServerChunk *> toUpdate;
     {
         std::shared_lock<std::shared_mutex> lk(mapMutex);
-        for (auto &[pos, chunk] : chunkMap) {
-            if (chunk->dirty())
-                toUpdate.push_back(chunk.get());
-        }
+        m_chunks.forEachLoaded([&](const glm::ivec3 &, ServerChunk &chunk) {
+            if (chunk.dirty())
+                toUpdate.push_back(&chunk);
+        });
     }
 
     for (auto *c : toUpdate) {
@@ -107,11 +101,12 @@ void ChunkManager::updateChunks(const glm::ivec3 &playerWorldPos, int renderDist
     std::vector<glm::ivec3> toErase;
     {
         std::lock_guard<std::shared_mutex> lk(mapMutex);
-        for (auto &[pos, chunk] : chunkMap)
+        m_chunks.forEachLoaded([&](const glm::ivec3 &pos, ServerChunk &) {
             if (desired.find(pos) == desired.end())
                 toErase.push_back(pos);
+        });
         for (auto &pos : toErase) {
-            chunkMap.erase(pos);
+            m_chunks.erase(pos);
             decoratedChunks.erase(pos);
         }
     }
@@ -121,7 +116,7 @@ void ChunkManager::updateChunks(const glm::ivec3 &playerWorldPos, int renderDist
         // quick check with map lock
         {
             std::shared_lock<std::shared_mutex> lk(mapMutex);
-            if (chunkMap.find(pos) != chunkMap.end())
+            if (m_chunks.containsLoaded(pos))
                 continue;
         }
         // not present -> generate synchronously (could be made async)
@@ -139,9 +134,7 @@ void ChunkManager::setBlockInWorld(const glm::ivec3 &worldPos, BlockID id) {
     ServerChunk *chunkPtr = nullptr;
     {
         std::shared_lock<std::shared_mutex> lk(mapMutex);
-        auto it = chunkMap.find(cPos);
-        if (it != chunkMap.end())
-            chunkPtr = it->second.get();
+        chunkPtr = m_chunks.get(cPos);
     }
     if (!chunkPtr)
         return;
@@ -175,18 +168,14 @@ void ChunkManager::setBlockGlobal(int worldX, int worldY, int worldZ, BlockID id
     ServerChunk *chunkPtr = nullptr;
     {
         std::shared_lock<std::shared_mutex> lk(mapMutex);
-        auto it = chunkMap.find(chunkPos);
-        if (it != chunkMap.end())
-            chunkPtr = it->second.get();
+        chunkPtr = m_chunks.get(chunkPos);
     }
 
     // For cross-chunk edits during generation (tree borders), materialize terrain if absent.
     if (!chunkPtr) {
         generateTerrainChunkAt(chunkPos);
         std::shared_lock<std::shared_mutex> lk(mapMutex);
-        auto it = chunkMap.find(chunkPos);
-        if (it != chunkMap.end())
-            chunkPtr = it->second.get();
+        chunkPtr = m_chunks.get(chunkPos);
     }
 
     if (!chunkPtr)
@@ -211,9 +200,7 @@ BlockID ChunkManager::getBlockGlobal(int worldX, int worldY, int worldZ) {
         )
                                 .count();
         MaybeLogSlowChunkMapLock("getBlockGlobal.lookup", waitUs);
-        auto it = chunkMap.find(cp);
-        if (it != chunkMap.end())
-            chunkPtr = it->second.get();
+        chunkPtr = m_chunks.get(cp);
     }
 
     // Mirror write path behavior so neighbor reads during border decoration see real terrain.
@@ -226,9 +213,7 @@ BlockID ChunkManager::getBlockGlobal(int worldX, int worldY, int worldZ) {
         )
                                 .count();
         MaybeLogSlowChunkMapLock("getBlockGlobal.postGenerateLookup", waitUs);
-        auto it = chunkMap.find(cp);
-        if (it != chunkMap.end())
-            chunkPtr = it->second.get();
+        chunkPtr = m_chunks.get(cp);
     }
 
     if (!chunkPtr)
@@ -244,7 +229,7 @@ bool ChunkManager::hasChunkLoaded(const glm::ivec3 &chunkPos) const {
     )
                             .count();
     MaybeLogSlowChunkMapLock("hasChunkLoaded", waitUs);
-    return chunkMap.find(chunkPos) != chunkMap.end();
+    return m_chunks.containsLoaded(chunkPos);
 }
 
 ChunkManager::AabbCollisionQueryResult ChunkManager::queryAabbCollision(
@@ -286,10 +271,7 @@ glm::ivec3 ChunkManager::worldToLocalPos(const glm::ivec3 &wp) const {
 }
 
 bool ChunkManager::inBounds(const glm::ivec3 &pos) const {
-    const int minChunkY = floorDiv(WORLD_MIN_Y, CHUNK_SIZE);
-    const int maxChunkY = floorDiv(WORLD_MAX_Y, CHUNK_SIZE);
-    return pos.x >= WORLD_MIN_X && pos.x <= WORLD_MAX_X && pos.y >= minChunkY &&
-           pos.y <= maxChunkY && pos.z >= WORLD_MIN_Z && pos.z <= WORLD_MAX_Z;
+    return m_chunks.containsPosition(pos);
 }
 
 void ChunkManager::markChunkDirty(const glm::ivec3 &pos) {
@@ -298,9 +280,7 @@ void ChunkManager::markChunkDirty(const glm::ivec3 &pos) {
     ServerChunk *chunkPtr = nullptr;
     {
         std::shared_lock<std::shared_mutex> lk(mapMutex);
-        auto it = chunkMap.find(pos);
-        if (it != chunkMap.end())
-            chunkPtr = it->second.get();
+        chunkPtr = m_chunks.get(pos);
     }
     if (chunkPtr)
         chunkPtr->markDirty();
@@ -310,8 +290,10 @@ std::unordered_map<glm::ivec3, ServerChunk *, IVec3Hash, IVec3Eq>
 ChunkManager::snapshotChunkMap() const {
     std::unordered_map<glm::ivec3, ServerChunk *, IVec3Hash, IVec3Eq> snap;
     std::shared_lock<std::shared_mutex> lk(mapMutex);
-    for (const auto &kv : chunkMap)
-        snap[kv.first] = kv.second.get();
+    snap.reserve(m_chunks.loadedCount());
+    m_chunks.forEachLoaded([&](const glm::ivec3 &pos, ServerChunk &chunk) {
+        snap[pos] = &chunk;
+    });
     return snap;
 }
 
@@ -323,8 +305,7 @@ ServerChunk *ChunkManager::getChunkIfExists(const glm::ivec3 &chunkPos) const {
     )
                             .count();
     MaybeLogSlowChunkMapLock("getChunkIfExists", waitUs);
-    auto it = chunkMap.find(chunkPos);
-    return (it != chunkMap.end()) ? it->second.get() : nullptr;
+    return m_chunks.get(chunkPos);
 }
 
 ServerChunk *ChunkManager::loadOrGenerateChunk(const glm::ivec3 &chunkPos) {
@@ -341,11 +322,11 @@ ServerChunk *ChunkManager::loadOrGenerateChunk(const glm::ivec3 &chunkPos) {
         )
                                 .count();
         MaybeLogSlowChunkMapLock("loadOrGenerateChunk.initialLookup", waitUs);
-        auto it = chunkMap.find(chunkPos);
-        if (it != chunkMap.end()) {
+        ServerChunk *chunk = m_chunks.get(chunkPos);
+        if (chunk != nullptr) {
             needsDecoration = (decoratedChunks.find(chunkPos) == decoratedChunks.end());
             if (!needsDecoration) {
-                return it->second.get();
+                return chunk;
             }
         }
     }
@@ -360,8 +341,7 @@ ServerChunk *ChunkManager::loadOrGenerateChunk(const glm::ivec3 &chunkPos) {
         )
                                 .count();
         MaybeLogSlowChunkMapLock("loadOrGenerateChunk.postDecorateLookup", waitUs);
-        auto it = chunkMap.find(chunkPos);
-        return (it != chunkMap.end()) ? it->second.get() : nullptr;
+        return m_chunks.get(chunkPos);
     }
 
     // Streamed chunks should include the same decoration behavior as client world generation.
@@ -376,8 +356,8 @@ ServerChunk *ChunkManager::loadOrGenerateChunk(const glm::ivec3 &chunkPos) {
         )
                                 .count();
         MaybeLogSlowChunkMapLock("loadOrGenerateChunk.postGenerateLookup", waitUs);
-        auto it = chunkMap.find(chunkPos);
-        if (it == chunkMap.end()) {
+        ServerChunk *chunk = m_chunks.get(chunkPos);
+        if (chunk == nullptr) {
             return nullptr;
         }
         needsPostGenerateDecoration = (decoratedChunks.find(chunkPos) == decoratedChunks.end());
@@ -395,7 +375,6 @@ ServerChunk *ChunkManager::loadOrGenerateChunk(const glm::ivec3 &chunkPos) {
         )
                                 .count();
         MaybeLogSlowChunkMapLock("loadOrGenerateChunk.finalLookup", waitUs);
-        auto it = chunkMap.find(chunkPos);
-        return (it != chunkMap.end()) ? it->second.get() : nullptr;
+        return m_chunks.get(chunkPos);
     }
 }
