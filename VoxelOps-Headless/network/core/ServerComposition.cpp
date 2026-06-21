@@ -115,7 +115,9 @@ ServerComposition::ServerComposition(std::atomic<bool> &quit, HSteamNetPollGroup
           m_chunkInterestPhase,
           m_chunkSendPhase,
           m_collisionPrewarmPhase
-      ) {}
+      ) {
+
+    }
 
 void ServerComposition::ResetRuntimeState() {
     m_serverTick.store(0, std::memory_order_release);

@@ -478,7 +478,7 @@ void VulkanRenderer::handleWindowResize(uint32_t windowWidth, uint32_t windowHei
         return;
     }
 
-    const vk::Extent2D extent = m_context.getSwapchainExtent();
+    const vk::Extent2D& extent = m_context.getSwapchainExtent();
     if (extent.width == 0 || extent.height == 0) {
         return;
     }

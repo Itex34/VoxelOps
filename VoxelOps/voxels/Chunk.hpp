@@ -6,8 +6,8 @@
 #include "Voxel.hpp"
 #include <glm/vec3.hpp>
 
-constexpr int CHUNK_SIZE = 16;
-constexpr int CHUNK_VOLUME = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
+#include "../../../Shared/world/Constants.hpp"
+
 
 struct AABB {
     glm::vec3 min;

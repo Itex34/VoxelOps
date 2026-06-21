@@ -39,7 +39,7 @@ class ChunkManager {
 public:
     using AabbCollisionQueryResult = WorldCollision::QueryResult;
 
-    ChunkManager(uint64_t seed = 1337u);
+    ChunkManager(GameMode gameMode = GameMode::FFA, uint64_t seed = 1337u);
     ~ChunkManager() = default;
 
     // Non-copyable

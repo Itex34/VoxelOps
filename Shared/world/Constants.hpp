@@ -1,5 +1,10 @@
 #pragma once
 
+
+constexpr int CHUNK_SIZE = 16; //blocks
+constexpr int CHUNK_VOLUME = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
+
+
 //--IN CHUNKS--
 constexpr int WORLD_MIN_X = -20;
 constexpr int WORLD_MAX_X = 20;

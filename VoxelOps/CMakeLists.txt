@@ -126,7 +126,7 @@ add_executable(VoxelOps
     "ui/player/SettingsUI.cpp"
     "ui/player/MainMenu.cpp"
     "runtime/ClientPrediction.cpp" 
-    "graphics/Vulkan/vulkan/VmaImpl.cpp" "graphics/OpenGL/debug_render/RenderLine.cpp")
+    "graphics/Vulkan/vulkan/VmaImpl.cpp" "graphics/OpenGL/debug_render/RenderLine.cpp" "ui/widgets/UIContext.cpp" "ui/text/FontManager.cpp" "ui/text/Font.cpp" "ui/text/FontAtlasBuilder.cpp" "render/ITextureFactory.cpp")
 
 find_package(SDL3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
@@ -140,7 +140,7 @@ find_package(RmlUi REQUIRED)
 find_package(Vulkan REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
-
+find_package(Freetype CONFIG REQUIRED)
 
 
 target_link_libraries(VoxelOps PRIVATE SDL3::SDL3)
@@ -153,6 +153,8 @@ target_link_libraries(VoxelOps PRIVATE Shared)
 target_link_libraries(VoxelOps PRIVATE lz4::lz4)
 target_link_libraries(VoxelOps PRIVATE imgui::imgui)
 target_link_libraries(VoxelOps PRIVATE RmlUi::RmlUi)
+target_link_libraries(VoxelOps PRIVATE Freetype::Freetype)
+
 
 target_link_libraries(VoxelOps PRIVATE Vulkan::Vulkan)
 target_link_libraries(VoxelOps PRIVATE nlohmann_json::nlohmann_json)

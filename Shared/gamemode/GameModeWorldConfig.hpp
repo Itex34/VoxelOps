@@ -48,7 +48,7 @@ inline ChunkWorldBounds GetChunkWorldBounds(GameMode mode, int chunkSize) noexce
     const int maxChunkY = ChunkFloorDiv(WORLD_MAX_Y, chunkSize);
 
     switch (mode) {
-    case GameMode::Ffa:
+    case GameMode::FFA:
         return {{WORLD_MIN_X, minChunkY, WORLD_MIN_Z}, {WORLD_MAX_X, maxChunkY, WORLD_MAX_Z}};
     case GameMode::BattleRoyale:
         return {{-41, minChunkY, -41}, {40, maxChunkY, 40}};

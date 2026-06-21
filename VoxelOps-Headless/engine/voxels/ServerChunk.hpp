@@ -16,9 +16,8 @@
 #include "Voxel.hpp"
 #include <glm/vec3.hpp>
 
-// keep same constants to stay compatible with client
-constexpr int CHUNK_SIZE = 16;
-constexpr int CHUNK_VOLUME = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
+#include "../../../Shared/world/Constants.hpp"
+
 
 // small edit op used in server edit log and diffs
 struct EditOp {

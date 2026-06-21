@@ -27,11 +27,13 @@ namespace {
     }
 } // namespace
 
-ChunkManager::ChunkManager(uint64_t seed)
+ChunkManager::ChunkManager(GameMode gameMode, uint64_t seed)
     : worldSeed(seed)
-    , m_chunks(GetChunkWorldBounds(GameMode::Ffa, CHUNK_SIZE)) {
+    , m_chunks(GetChunkWorldBounds(gameMode, CHUNK_SIZE)) {
+
     noise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
     noise.SetFrequency(0.009f); // hilliness
+
     // seed noise deterministically from worldSeed
     noise.SetSeed(static_cast<int>(worldSeed & 0x7FFFFFFF));
 
