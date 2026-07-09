@@ -51,6 +51,19 @@ void SnapshotInterpolator::PushFrame(const PlayerSnapshotFrame &frame) {
         remote.serverTimeSeconds = frameServerTimeSeconds;
         AddSnapshot(snapshot.id, remote);
     }
+
+    for (auto it = m_history.begin(); it != m_history.end();) {
+        if (it->second.empty()) {
+            it = m_history.erase(it);
+            continue;
+        }
+        const double ageSeconds = m_latestServerTimeSeconds - it->second.back().serverTimeSeconds;
+        if (ageSeconds > m_remoteSnapshotExpirySeconds) {
+            it = m_history.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 bool SnapshotInterpolator::GetRenderTime(double &outRenderTime) const {

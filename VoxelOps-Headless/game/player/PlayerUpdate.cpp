@@ -20,6 +20,7 @@ namespace {
         player.jumpPressedLastTick = false;
         player.timeSinceGrounded = 0.0f;
         player.jumpBufferTimer = 0.0f;
+        player.stepCooldownTimer = 0.0f;
     }
 } // namespace
 

@@ -30,7 +30,6 @@ namespace {
 ChunkManager::ChunkManager(GameMode gameMode, uint64_t seed)
     : worldSeed(seed)
     , m_chunks(GetChunkWorldBounds(gameMode, CHUNK_SIZE)) {
-
     noise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
     noise.SetFrequency(0.009f); // hilliness
 
@@ -69,60 +68,6 @@ void ChunkManager::updateDirtyChunks() {
     for (auto *c : toUpdate) {
         // placeholder server-side work (lighting, visibility caches, saving, etc)
         c->clearDirty();
-    }
-}
-
-void ChunkManager::updateChunks(const glm::ivec3 &playerWorldPos, int renderDistance) {
-    glm::ivec3 playerChunk = worldToChunkPos(playerWorldPos);
-    std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> desired;
-    const int64_t radius2 =
-        static_cast<int64_t>(renderDistance) * static_cast<int64_t>(renderDistance);
-
-    const int minY = floorDiv(WORLD_MIN_Y, CHUNK_SIZE);
-    const int maxY = floorDiv(WORLD_MAX_Y, CHUNK_SIZE);
-
-    for (int x = playerChunk.x - renderDistance; x <= playerChunk.x + renderDistance; ++x) {
-        const int64_t dx = static_cast<int64_t>(x - playerChunk.x);
-        const int64_t dx2 = dx * dx;
-        for (int z = playerChunk.z - renderDistance; z <= playerChunk.z + renderDistance; ++z) {
-            const int64_t dz = static_cast<int64_t>(z - playerChunk.z);
-            if (dx2 + dz * dz > radius2) {
-                continue;
-            }
-            for (int y = minY; y <= maxY; ++y) {
-                const glm::ivec3 pos(x, y, z);
-                if (!inBounds(pos)) {
-                    continue;
-                }
-                desired.insert(pos);
-            }
-        }
-    }
-
-    // unload chunks not desired
-    std::vector<glm::ivec3> toErase;
-    {
-        std::lock_guard<std::shared_mutex> lk(mapMutex);
-        m_chunks.forEachLoaded([&](const glm::ivec3 &pos, ServerChunk &) {
-            if (desired.find(pos) == desired.end())
-                toErase.push_back(pos);
-        });
-        for (auto &pos : toErase) {
-            m_chunks.erase(pos);
-            decoratedChunks.erase(pos);
-        }
-    }
-
-    // load missing chunks (generate off-map then insert)
-    for (const auto &pos : desired) {
-        // quick check with map lock
-        {
-            std::shared_lock<std::shared_mutex> lk(mapMutex);
-            if (m_chunks.containsLoaded(pos))
-                continue;
-        }
-        // not present -> generate synchronously (could be made async)
-        generateChunkAt(pos);
     }
 }
 
@@ -276,6 +221,19 @@ bool ChunkManager::inBounds(const glm::ivec3 &pos) const {
     return m_chunks.containsPosition(pos);
 }
 
+const ChunkWorldBounds &ChunkManager::chunkWorldBounds() const noexcept {
+    return m_chunks.bounds();
+}
+
+bool ChunkManager::isChunkStreamReady(const glm::ivec3 &chunkPos) const {
+    std::shared_lock<std::shared_mutex> lk(mapMutex, std::try_to_lock);
+    if (!lk.owns_lock()) {
+        return false;
+    }
+    return m_chunks.get(chunkPos) != nullptr &&
+           decoratedChunks.find(chunkPos) != decoratedChunks.end();
+}
+
 void ChunkManager::markChunkDirty(const glm::ivec3 &pos) {
     if (!inBounds(pos))
         return;
@@ -293,9 +251,7 @@ ChunkManager::snapshotChunkMap() const {
     std::unordered_map<glm::ivec3, ServerChunk *, IVec3Hash, IVec3Eq> snap;
     std::shared_lock<std::shared_mutex> lk(mapMutex);
     snap.reserve(m_chunks.loadedCount());
-    m_chunks.forEachLoaded([&](const glm::ivec3 &pos, ServerChunk &chunk) {
-        snap[pos] = &chunk;
-    });
+    m_chunks.forEachLoaded([&](const glm::ivec3 &pos, ServerChunk &chunk) { snap[pos] = &chunk; });
     return snap;
 }
 

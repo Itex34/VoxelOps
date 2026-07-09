@@ -205,7 +205,7 @@ namespace {
         vk::raii::Sampler &sampler,
         vk::raii::DescriptorSetLayout &descriptorSetLayout,
         vk::raii::DescriptorPool &descriptorPool,
-        std::vector<vk::raii::DescriptorSet> &descriptorSets
+        vk::DescriptorSet &descriptorSet
     ) {
         vk::DescriptorSetLayoutBinding samplerBinding{};
         samplerBinding.binding = 0;
@@ -234,7 +234,12 @@ namespace {
         setAllocInfo.descriptorPool = *descriptorPool;
         setAllocInfo.descriptorSetCount = 1;
         setAllocInfo.pSetLayouts = &setLayout;
-        descriptorSets = device.allocateDescriptorSets(setAllocInfo);
+        std::vector<vk::raii::DescriptorSet> descriptorSets =
+            device.allocateDescriptorSets(setAllocInfo);
+        if (descriptorSets.empty()) {
+            throw std::runtime_error("Failed to allocate texture descriptor set.");
+        }
+        descriptorSet = descriptorSets[0].release();
 
         vk::DescriptorImageInfo descriptorImageInfo{};
         descriptorImageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
@@ -242,7 +247,7 @@ namespace {
         descriptorImageInfo.sampler = *sampler;
 
         vk::WriteDescriptorSet write{};
-        write.dstSet = *descriptorSets[0];
+        write.dstSet = descriptorSet;
         write.dstBinding = 0;
         write.descriptorType = vk::DescriptorType::eCombinedImageSampler;
         write.descriptorCount = 1;
@@ -262,12 +267,13 @@ void VkTexture::initFromFile(
     float maxSamplerAnisotropy
 ) {
     cleanup();
+    (void)physicalDevice;
     const TextureData textureData = loadTextureFromFile(texturePath);
 
     const vk::DeviceSize imageSize = static_cast<vk::DeviceSize>(textureData.pixels.size());
 
     UploadContext::StagingBuffer stagingBuffer =
-        uploadContext.createStagingBuffer(physicalDevice, textureData.pixels.data(), imageSize);
+        uploadContext.createStagingBuffer(textureData.pixels.data(), imageSize);
 
     vk::ImageCreateInfo imageInfo{};
     imageInfo.imageType = vk::ImageType::e2D;
@@ -281,16 +287,12 @@ void VkTexture::initFromFile(
     imageInfo.samples = vk::SampleCountFlagBits::e1;
     imageInfo.sharingMode = vk::SharingMode::eExclusive;
 
-    m_image = vk::raii::Image(device, imageInfo);
-    const vk::MemoryRequirements memoryRequirements = m_image.getMemoryRequirements();
-
-    vk::MemoryAllocateInfo allocInfo{};
-    allocInfo.allocationSize = memoryRequirements.size;
-    allocInfo.memoryTypeIndex = VulkanUtils::findMemoryType(
-        physicalDevice, memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal
+    VulkanUtils::createImage(
+        uploadContext.allocator(),
+        imageInfo,
+        vk::MemoryPropertyFlagBits::eDeviceLocal,
+        m_image
     );
-    m_imageMemory = vk::raii::DeviceMemory(device, allocInfo);
-    m_image.bindMemory(*m_imageMemory, 0);
 
     uploadContext.submitImageUpload(
         std::move(stagingBuffer), *m_image, textureData.width, textureData.height
@@ -322,7 +324,7 @@ void VkTexture::initFromFile(
     m_sampler = vk::raii::Sampler(device, samplerInfo);
 
     createDescriptorResources(
-        device, m_imageView, m_sampler, m_descriptorSetLayout, m_descriptorPool, m_descriptorSets
+        device, m_imageView, m_sampler, m_descriptorSetLayout, m_descriptorPool, m_descriptorSet
     );
 }
 
@@ -336,11 +338,12 @@ void VkTexture::initFromAtlasFileAsArray(
     float maxSamplerAnisotropy
 ) {
     cleanup();
+    (void)physicalDevice;
     const TextureArrayData textureArray = loadAtlasArrayFromFile(texturePath, tilesPerAxis);
     const vk::DeviceSize imageSize = static_cast<vk::DeviceSize>(textureArray.pixels.size());
 
     UploadContext::StagingBuffer stagingBuffer =
-        uploadContext.createStagingBuffer(physicalDevice, textureArray.pixels.data(), imageSize);
+        uploadContext.createStagingBuffer(textureArray.pixels.data(), imageSize);
 
     vk::ImageCreateInfo imageInfo{};
     imageInfo.imageType = vk::ImageType::e2D;
@@ -354,16 +357,12 @@ void VkTexture::initFromAtlasFileAsArray(
     imageInfo.samples = vk::SampleCountFlagBits::e1;
     imageInfo.sharingMode = vk::SharingMode::eExclusive;
 
-    m_image = vk::raii::Image(device, imageInfo);
-    const vk::MemoryRequirements memoryRequirements = m_image.getMemoryRequirements();
-
-    vk::MemoryAllocateInfo allocInfo{};
-    allocInfo.allocationSize = memoryRequirements.size;
-    allocInfo.memoryTypeIndex = VulkanUtils::findMemoryType(
-        physicalDevice, memoryRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal
+    VulkanUtils::createImage(
+        uploadContext.allocator(),
+        imageInfo,
+        vk::MemoryPropertyFlagBits::eDeviceLocal,
+        m_image
     );
-    m_imageMemory = vk::raii::DeviceMemory(device, allocInfo);
-    m_image.bindMemory(*m_imageMemory, 0);
 
     uploadContext.submitImageUploadArray(
         std::move(stagingBuffer),
@@ -399,17 +398,16 @@ void VkTexture::initFromAtlasFileAsArray(
     m_sampler = vk::raii::Sampler(device, samplerInfo);
 
     createDescriptorResources(
-        device, m_imageView, m_sampler, m_descriptorSetLayout, m_descriptorPool, m_descriptorSets
+        device, m_imageView, m_sampler, m_descriptorSetLayout, m_descriptorPool, m_descriptorSet
     );
 }
 
 void VkTexture::cleanup() {
-    m_descriptorSets.clear();
+    m_descriptorSet = VK_NULL_HANDLE;
     m_descriptorPool.clear();
     m_descriptorSetLayout.clear();
 
     m_sampler.clear();
     m_imageView.clear();
-    m_image.clear();
-    m_imageMemory.clear();
+    VulkanUtils::destroyImage(m_image);
 }

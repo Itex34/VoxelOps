@@ -1,6 +1,9 @@
 #pragma once
 
+#include "graphics/Vulkan/vulkan/VulkanResource.hpp"
+
 #include <vulkan/vulkan_raii.hpp>
+#include <vk_mem_alloc.h>
 
 #include <cstdint>
 #include <vector>
@@ -8,21 +11,27 @@
 class UploadContext {
 public:
     struct StagingBuffer {
-        vk::raii::Buffer buffer{nullptr};
-        vk::raii::DeviceMemory memory{nullptr};
+        VulkanBuffer buffer;
         vk::DeviceSize capacity = 0;
     };
 
     void
-    init(const vk::raii::Device &device, uint32_t queueFamilyIndex, const vk::raii::Queue &queue);
+    init(
+        const vk::raii::Device &device,
+        VmaAllocator allocator,
+        uint32_t queueFamilyIndex,
+        const vk::raii::Queue &queue
+    );
     void cleanup();
 
     void poll();
     void waitIdle();
 
-    StagingBuffer createStagingBuffer(
-        const vk::raii::PhysicalDevice &physicalDevice, const void *data, vk::DeviceSize size
-    );
+    VmaAllocator allocator() const noexcept {
+        return m_allocator;
+    }
+
+    StagingBuffer createStagingBuffer(const void *data, vk::DeviceSize size);
 
     struct BufferCopyUpload {
         StagingBuffer stagingBuffer{};
@@ -52,6 +61,7 @@ private:
 
     const vk::raii::Device *m_device = nullptr;
     const vk::raii::Queue *m_queue = nullptr;
+    VmaAllocator m_allocator = VK_NULL_HANDLE;
     vk::raii::CommandPool m_commandPool{nullptr};
     std::vector<PendingUpload> m_pendingUploads;
     std::vector<StagingBuffer> m_reusableStagingBuffers;

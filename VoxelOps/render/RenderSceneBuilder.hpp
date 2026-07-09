@@ -16,6 +16,7 @@ struct RenderSceneBuilderInput {
     bool sunShadowFrontFaceCullAtLowSun = false;
     float sunShadowFrontFaceCullGrazingThreshold = 0.78f;
     ImDrawData *uiDrawData = nullptr;
+    const NativeUiDrawData *nativeUiDrawData = nullptr;
     std::function<void()> renderOpaqueOverlayPasses;
 };
 

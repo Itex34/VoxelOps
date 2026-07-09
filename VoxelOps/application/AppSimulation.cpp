@@ -27,13 +27,17 @@ FrameOrchestratorContext App::buildFrameOrchestratorContext() {
     context.ui.requestSwitchToVulkan = &m_RequestSwitchToVulkan;
     context.ui.renderApiPreference = &m_RenderApiPreference;
     context.simulation.forceCursorEnabled = &m_ForceCursorEnabled;
+    context.simulation.botMode = &m_BotMode;
+    context.simulation.botSeed = &m_BotSeed;
+    context.simulation.botShootRate = &m_BotShootRate;
     context.ui.enableRawMouseInput = &m_EnableRawMouseInput;
     context.render.skyExposure = &m_SkyExposure;
     context.render.sunDirection = &m_SunDirection;
     context.render.sunShadowDirectionalBias = &m_SunShadowDirectionalBias;
     context.render.sunShadowLowSunBiasBoost = &m_SunShadowLowSunBiasBoost;
     context.render.sunShadowFrontFaceCullAtLowSun = &m_SunShadowFrontFaceCullAtLowSun;
-    context.render.sunShadowFrontFaceCullGrazingThreshold = &m_SunShadowFrontFaceCullGrazingThreshold;
+    context.render.sunShadowFrontFaceCullGrazingThreshold =
+        &m_SunShadowFrontFaceCullGrazingThreshold;
     context.simulation.wasWorldInteractPressed = &m_WasWorldInteractPressed;
 
     return context;

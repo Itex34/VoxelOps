@@ -40,5 +40,6 @@ uint sampleVoxelMaterialId(ivec3 voxel) {
 
     uint linear = uint(local.x) +
         giParams.shadowOccupancyDims.x * (uint(local.y) + (giParams.shadowOccupancyDims.y * uint(local.z)));
-    return traceMaterials.ids[linear];
+    uint word = traceMaterials.ids[linear >> 2u];
+    return (word >> ((linear & 3u) * 8u)) & 0xFFu;
 }

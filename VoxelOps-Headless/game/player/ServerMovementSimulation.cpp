@@ -115,6 +115,7 @@ namespace ServerMovementSimulation {
         simState.jumpPressedLastTick = p.jumpPressedLastTick;
         simState.timeSinceGrounded = p.timeSinceGrounded;
         simState.jumpBufferTimer = p.jumpBufferTimer;
+        simState.stepCooldownTimer = p.stepCooldownTimer;
         if (!simState.flyMode && p.grappleState.active) {
             const double nowSeconds = std::chrono::duration<double>(
                                           std::chrono::steady_clock::now().time_since_epoch()
@@ -173,6 +174,7 @@ namespace ServerMovementSimulation {
         p.jumpPressedLastTick = simState.jumpPressedLastTick;
         p.timeSinceGrounded = simState.timeSinceGrounded;
         p.jumpBufferTimer = simState.jumpBufferTimer;
+        p.stepCooldownTimer = simState.stepCooldownTimer;
     }
 
     void simulatePhysicsForPlayer(ServerPlayer &p, double dt, ChunkManager &chunkManager) {

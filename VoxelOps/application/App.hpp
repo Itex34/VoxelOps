@@ -46,6 +46,8 @@ private:
     void pollEvents(Runtime &runtime);
     void renderWorldItems(Runtime &runtime, const Camera &activeCamera);
     bool beginConnectionAttempt(Runtime &runtime);
+    std::string buildBotIdentity() const;
+    void leaveGame(Runtime &runtime);
     void updateFPSCounter();
     void toggleFullscreen(SDL_Window *window);
 
@@ -83,6 +85,13 @@ private:
     std::string m_ServerIp = "variety-reduction.gl.at.ply.gg:20047";
     uint16_t m_ServerPort = 27015;
     std::string m_RequestedUsername;
+    bool m_BotMode = false;
+    bool m_BotMinimizeWindow = true;
+    double m_BotDurationSeconds = 0.0;
+    uint32_t m_BotSeed = 0;
+    float m_BotShootRate = 1.5f;
+    uint16_t m_BotRenderDistance = 6;
+    double m_BotStartTime = 0.0;
 
     bool m_WasF1Pressed = false;
     bool m_WasTPressed = false;

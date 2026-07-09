@@ -45,6 +45,7 @@ private:
     double m_latestServerTimeSeconds = 0.0;
     bool m_hasLatestServerTimeSeconds = false;
     double m_interpolationDelaySeconds = 0.100;
+    double m_remoteSnapshotExpirySeconds = 1.0;
     size_t m_maxSnapshotsPerPlayer = 32;
 
     void AddSnapshot(PlayerID id, const RemoteSnapshot &snapshot);

@@ -48,6 +48,53 @@ bool ServerChunk::isCompletelyAir() const noexcept {
     return m_nonAirCount == 0;
 }
 
+bool ServerChunk::anySolidInLocalRange(
+    int minX, int minY, int minZ, int maxX, int maxY, int maxZ
+) const noexcept {
+    minX = std::clamp(minX, 0, CHUNK_SIZE - 1);
+    minY = std::clamp(minY, 0, CHUNK_SIZE - 1);
+    minZ = std::clamp(minZ, 0, CHUNK_SIZE - 1);
+    maxX = std::clamp(maxX, 0, CHUNK_SIZE - 1);
+    maxY = std::clamp(maxY, 0, CHUNK_SIZE - 1);
+    maxZ = std::clamp(maxZ, 0, CHUNK_SIZE - 1);
+    if (minX > maxX || minY > maxY || minZ > maxZ) {
+        return false;
+    }
+
+    std::shared_lock<std::shared_mutex> lk(m_mutex);
+    if (m_nonAirCount == 0) {
+        return false;
+    }
+
+    for (int x = minX; x <= maxX; ++x) {
+        for (int y = minY; y <= maxY; ++y) {
+            for (int z = minZ; z <= maxZ; ++z) {
+                if (m_blocks[idx(x, y, z)] != BlockID::Air) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+void ServerChunk::replaceAllBlocks(const std::array<BlockID, CHUNK_VOLUME> &blocks) {
+    std::unique_lock<std::shared_mutex> lk(m_mutex);
+    m_blocks = blocks;
+
+    uint16_t count = 0;
+    for (BlockID block : m_blocks) {
+        if (block != BlockID::Air) {
+            ++count;
+        }
+    }
+    m_nonAirCount = count;
+    m_editLog.clear();
+    m_version.store(0, std::memory_order_release);
+    touchLockedAtomic();
+    m_dirty.store(true, std::memory_order_relaxed);
+}
+
 // ---- edit application -----------------------------------------------------------
 int64_t ServerChunk::applyEdit(int x, int y, int z, BlockID id) {
     if (!inBounds(x, y, z))

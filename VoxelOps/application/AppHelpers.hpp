@@ -61,6 +61,12 @@ namespace AppHelpers {
         std::string serverIp = "127.0.0.1";
         uint16_t serverPort = 27015;
         std::string requestedUsername;
+        bool botMode = false;
+        double botDurationSeconds = 0.0;
+        uint32_t botSeed = 0;
+        float botShootRate = 1.5f;
+        uint16_t botRenderDistance = 6;
+        bool botMinimizeWindow = true;
         bool showHelp = false;
     };
 

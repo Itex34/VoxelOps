@@ -86,6 +86,7 @@ void Player::moveAndCollide(const glm::vec3 &delta, bool allowStepUp, float *out
     state.jumpPressedLastTick = m_jumpPressedLastTick;
     state.timeSinceGrounded = m_timeSinceGrounded;
     state.jumpBufferTimer = m_jumpBufferTimer;
+    state.stepCooldownTimer = m_stepCooldownTimer;
 
     const float stepUpHeight = Shared::Movement::MoveAndCollide(
         state,
@@ -98,6 +99,7 @@ void Player::moveAndCollide(const glm::vec3 &delta, bool allowStepUp, float *out
     position = state.position;
     velocity = state.velocity;
     onGround = state.onGround;
+    m_stepCooldownTimer = state.stepCooldownTimer;
 
     if (outStepUpHeight != nullptr) {
         *outStepUpHeight = stepUpHeight;
@@ -116,6 +118,7 @@ Player::SimulationState Player::captureSimulationState() const noexcept {
     state.jumpPressedLastTick = m_jumpPressedLastTick;
     state.timeSinceGrounded = m_timeSinceGrounded;
     state.jumpBufferTimer = m_jumpBufferTimer;
+    state.stepCooldownTimer = m_stepCooldownTimer;
     return state;
 }
 
@@ -130,6 +133,7 @@ void Player::restoreSimulationState(const SimulationState &state) noexcept {
     m_jumpPressedLastTick = state.jumpPressedLastTick;
     m_timeSinceGrounded = state.timeSinceGrounded;
     m_jumpBufferTimer = state.jumpBufferTimer;
+    m_stepCooldownTimer = state.stepCooldownTimer;
 
     camera.updateRotation(static_cast<float>(yaw), pitch);
     front = camera.front;
@@ -170,6 +174,7 @@ void Player::setFlyModeEnabled(bool enabled) noexcept {
     m_jumpPressedLastTick = false;
     m_timeSinceGrounded = 0.0f;
     m_jumpBufferTimer = 0.0f;
+    m_stepCooldownTimer = 0.0f;
 }
 
 void Player::setTreatMissingCollisionAsSolid(bool enabled) noexcept {
@@ -223,6 +228,7 @@ void Player::simulateMovement(
     state.jumpPressedLastTick = m_jumpPressedLastTick;
     state.timeSinceGrounded = m_timeSinceGrounded;
     state.jumpBufferTimer = m_jumpBufferTimer;
+    state.stepCooldownTimer = m_stepCooldownTimer;
     if (!state.flyMode && grappleConstraint != nullptr && grappleConstraint->active) {
         Shared::Grapple::ApplyRopeConstraint(
             grappleConstraint->anchor,
@@ -264,6 +270,7 @@ void Player::simulateMovement(
     m_jumpPressedLastTick = state.jumpPressedLastTick;
     m_timeSinceGrounded = state.timeSinceGrounded;
     m_jumpBufferTimer = state.jumpBufferTimer;
+    m_stepCooldownTimer = state.stepCooldownTimer;
 
     if (steppedHeight > 0.0f) {
         const float visualStep = std::min(steppedHeight * m_stepUpVisualScale, m_stepUpOffsetMax);

@@ -2,13 +2,7 @@
 
 #include "../../application/AppHelpers.hpp"
 #include "../../data/GameData.hpp"
-#include "../../../Shared/runtime/Paths.hpp"
-
-#include <RmlUi/Core.h>
-#include <RmlUi/Core/Elements/ElementFormControlInput.h>
-#include <RmlUi/Core/Event.h>
-#include <RmlUi/Core/EventListener.h>
-#include <RmlUi/Core/Input.h>
+#include "../widgets/UIContext.hpp"
 
 #include <imgui.h>
 
@@ -34,31 +28,17 @@ namespace {
         const size_t copyLen = std::min(text.size(), target.size() - 1);
         std::memcpy(target.data(), text.data(), copyLen);
     }
-} // namespace
 
-class MainMenu::RmlMenuListener final : public Rml::EventListener {
-public:
-    explicit RmlMenuListener(MainMenu *owner)
-        : m_owner(owner) {}
-
-
-    void setFrameContext(Runtime *runtime, const MainMenuContext &ctx) {
-        m_runtime = runtime;
-        m_ctx = ctx;
-    }
-
-    void ProcessEvent(Rml::Event &event) override {
-        if (m_owner == nullptr || m_runtime == nullptr) {
-            return;
+    std::string Ellipsize(std::string text, size_t maxChars) {
+        if (text.size() <= maxChars) {
+            return text;
         }
-        m_owner->handleRmlEvent(*m_runtime, m_ctx, event);
+        if (maxChars <= 3) {
+            return text.substr(0, maxChars);
+        }
+        return text.substr(0, maxChars - 3) + "...";
     }
-
-private:
-    MainMenu *m_owner = nullptr;
-    Runtime *m_runtime = nullptr;
-    MainMenuContext m_ctx{};
-};
+} // namespace
 
 MainMenu::MainMenu() = default;
 MainMenu::~MainMenu() = default;
@@ -71,173 +51,94 @@ void MainMenu::draw(Runtime &runtime, const MainMenuContext &ctx) {
 
     GameData::cursorEnabled = true;
 
-    if (runtime.ui.rmlUi && runtime.ui.rmlUi->isUsingOpenGlBackend()) {
-        drawRml(runtime, ctx);
+    if (runtime.ui.nativeUi && runtime.ui.nativeUi->hasBackendRenderer()) {
+        drawNative(runtime, ctx);
         return;
     }
-
-    drawImGui(runtime, ctx);
 }
 
-bool MainMenu::bindRmlContext(Runtime &runtime) {
-    if (!runtime.ui.rmlUi || !runtime.ui.rmlUi->isUsingOpenGlBackend()) {
-        if (m_rmlDocument) {
-            resetRmlDocument();
-        } else {
-            forgetRmlState();
-        }
-        return false;
-    }
+void MainMenu::drawNative(Runtime &runtime, const MainMenuContext &ctx) {
 
-    Rml::Context *context = runtime.ui.rmlUi->context();
-    if (context == nullptr) {
-        forgetRmlState();
-        return false;
-    }
-
-    if (m_rmlContext == context && m_rmlDocument != nullptr) {
-        return true;
-    }
-
-    if (m_rmlContext != nullptr && m_rmlContext != context) {
-        forgetRmlState();
-    } else {
-        resetRmlDocument();
-    }
-    m_rmlContext = context;
-
-    const std::string mainMenuPath =
-        Shared::RuntimePaths::ResolveVoxelOpsPath("ui/rml/documents/main_menu.rml").generic_string();
-    m_rmlDocument = m_rmlContext->LoadDocument(mainMenuPath);
-    if (m_rmlDocument == nullptr) {
-        return false;
-    }
-
-    m_endpointInput = m_rmlDocument->GetElementById("endpoint_input");
-    m_usernameInput = m_rmlDocument->GetElementById("username_input");
-    m_connectButton = m_rmlDocument->GetElementById("connect_button");
-    m_pasteButton = m_rmlDocument->GetElementById("paste_button");
-    m_errorText = m_rmlDocument->GetElementById("error_text");
-    m_statusText = m_rmlDocument->GetElementById("status_text");
-    Rml::Element *panel = m_rmlDocument->GetElementById("panel");
-    Rml::Element *title = m_rmlDocument->GetElementById("title");
-    Rml::Element *hint = m_rmlDocument->GetElementById("hint_text");
-
-    if (!m_endpointInput || !m_usernameInput || !m_connectButton || !m_pasteButton || !m_errorText ||
-        !m_statusText) {
-        resetRmlDocument();
-        return false;
-    }
-
-    const std::array<Rml::Element *, 9> fontTargets{
-        m_rmlDocument,
-        panel,
-        title,
-        hint,
-        m_endpointInput,
-        m_usernameInput,
-        m_connectButton,
-        m_pasteButton,
-        m_statusText
-    };
-    for (Rml::Element *element : fontTargets) {
-        if (!element) {
-            continue;
-        }
-        element->SetProperty("font-family", "\"SF Pro Text\"");
-        element->SetProperty("font-size", "16px");
-    }
-
-    m_rmlListener = std::make_unique<RmlMenuListener>(this);
-    m_connectButton->AddEventListener("click", m_rmlListener.get());
-    m_pasteButton->AddEventListener("click", m_rmlListener.get());
-    m_endpointInput->AddEventListener("keydown", m_rmlListener.get());
-    m_usernameInput->AddEventListener("keydown", m_rmlListener.get());
-    m_rmlDocument->Show();
-    m_rmlDocumentVisible = true;
-    m_rmlInputsInitialized = false;
-    return true;
-}
-
-void MainMenu::resetRmlDocument() {
-    if (m_connectButton && m_rmlListener) {
-        m_connectButton->RemoveEventListener("click", m_rmlListener.get());
-    }
-    if (m_pasteButton && m_rmlListener) {
-        m_pasteButton->RemoveEventListener("click", m_rmlListener.get());
-    }
-    if (m_endpointInput && m_rmlListener) {
-        m_endpointInput->RemoveEventListener("keydown", m_rmlListener.get());
-    }
-    if (m_usernameInput && m_rmlListener) {
-        m_usernameInput->RemoveEventListener("keydown", m_rmlListener.get());
-    }
-
-    if (m_rmlDocument) {
-        m_rmlDocument->Close();
-    }
-
-    forgetRmlState();
-}
-
-void MainMenu::forgetRmlState() {
-    m_rmlListener.reset();
-    m_endpointInput = nullptr;
-    m_usernameInput = nullptr;
-    m_connectButton = nullptr;
-    m_pasteButton = nullptr;
-    m_errorText = nullptr;
-    m_statusText = nullptr;
-    m_rmlDocument = nullptr;
-    m_rmlContext = nullptr;
-    m_rmlDocumentVisible = false;
-    m_rmlInputsInitialized = false;
-}
-
-void MainMenu::syncRmlState(Runtime &runtime) {
-    if (!m_rmlDocument || !m_endpointInput || !m_usernameInput || !m_connectButton || !m_pasteButton) {
-        return;
-    }
+    UIContext &ui = runtime.ui.nativeUi->context();
+    const glm::vec2 screen = ui.screenSize();
+    const float panelWidth = std::min(500.0f, std::max(360.0f, screen.x - 48.0f));
+    const float panelHeight = 292.0f;
+    const float x = (screen.x - panelWidth) * 0.5f;
+    const float y = std::max(36.0f, (screen.y - panelHeight) * 0.5f);
 
     const ClientNetwork::ConnectionState connState = runtime.network.clientNet.GetConnectionState();
     const bool isConnecting = (connState == ClientNetwork::ConnectionState::Connecting);
 
-    auto *endpointInput = static_cast<Rml::ElementFormControlInput *>(m_endpointInput);
-    auto *usernameInput = static_cast<Rml::ElementFormControlInput *>(m_usernameInput);
+    ui.panel(Rect{x, y, panelWidth, panelHeight}, Color{0.035f, 0.038f, 0.043f, 0.92f});
+    ui.panel(Rect{x, y, panelWidth, 2.0f}, Color{1.0f, 0.63f, 0.22f, 1.0f});
+    ui.label("Connect", glm::vec2(x + 24.0f, y + 20.0f), Color{0.98f, 0.98f, 0.98f, 1.0f});
+    ui.label(
+        "Server (host:port)",
+        glm::vec2(x + 24.0f, y + 62.0f),
+        Color{0.74f, 0.76f, 0.79f, 1.0f}
+    );
 
-    if (endpointInput && usernameInput) {
-        if (!m_rmlInputsInitialized) {
-            endpointInput->SetValue(runtime.app.connection.pendingServerEndpointInput.data());
-            usernameInput->SetValue(runtime.app.connection.pendingUsernameInput.data());
-            m_rmlInputsInitialized = true;
-        }
+    bool submit = false;
+    const float fieldHeight = 38.0f;
+    const float pasteWidth = fieldHeight;
+    const float endpointY = y + 84.0f;
+    const float fieldWidth = panelWidth - pasteWidth - 58.0f;
+    submit = ui.inputText(
+        "main_menu_endpoint",
+        runtime.app.connection.pendingServerEndpointInput.data(),
+        runtime.app.connection.pendingServerEndpointInput.size(),
+        Rect{x + 24.0f, endpointY, fieldWidth, fieldHeight},
+        !isConnecting
+    ) || submit;
 
-        CopyStringToArray(endpointInput->GetValue(), runtime.app.connection.pendingServerEndpointInput);
-        CopyStringToArray(usernameInput->GetValue(), runtime.app.connection.pendingUsernameInput);
+    const TextureHandle pasteIcon = runtime.ui.nativeUi->icon(NativeUiIcon::Paste);
+    const TextureHandle connectIcon = runtime.ui.nativeUi->icon(NativeUiIcon::Connect);
+
+    if (ui.iconButton(
+            "paste_endpoint",
+            pasteIcon,
+            Rect{x + 34.0f + fieldWidth, endpointY, pasteWidth, fieldHeight},
+            !isConnecting
+        )) {
+        handlePaste(runtime);
     }
 
-    auto setDisabled = [isConnecting](Rml::Element *element) {
-        if (!element) {
-            return;
-        }
-        if (isConnecting) {
-            element->SetAttribute("disabled", "");
-        } else {
-            element->RemoveAttribute("disabled");
-        }
-    };
+    ui.label("Username", glm::vec2(x + 24.0f, y + 136.0f), Color{0.74f, 0.76f, 0.79f, 1.0f});
+    submit = ui.inputText(
+        "main_menu_username",
+        runtime.app.connection.pendingUsernameInput.data(),
+        runtime.app.connection.pendingUsernameInput.size(),
+        Rect{x + 24.0f, y + 158.0f, panelWidth - 48.0f, fieldHeight},
+        !isConnecting
+    ) || submit;
 
-    setDisabled(m_endpointInput);
-    setDisabled(m_usernameInput);
-    setDisabled(m_pasteButton);
-    setDisabled(m_connectButton);
-    m_connectButton->SetInnerRML(isConnecting ? "Connecting..." : "Connect");
-
-    if (m_errorText) {
-        m_errorText->SetInnerRML(runtime.app.connection.usernamePromptError);
+    if (ui.iconButton(
+            "connect",
+            connectIcon,
+            Rect{x + 24.0f, y + 214.0f, panelWidth - 48.0f, 40.0f},
+            !isConnecting
+        )) {
+        submit = true;
     }
-    if (m_statusText) {
-        m_statusText->SetInnerRML("Status: " + runtime.network.clientNet.GetConnectionStatusText());
+
+    if (submit && !isConnecting) {
+        handleSubmit(runtime, ctx);
+    }
+
+    if (!runtime.app.connection.usernamePromptError.empty()) {
+        ui.label(
+            Ellipsize(runtime.app.connection.usernamePromptError, 58),
+            glm::vec2(x + 24.0f, y + 264.0f),
+            Color{1.0f, 0.42f, 0.34f, 1.0f}
+        );
+    } else {
+        const std::string status =
+            "Status: " + Ellipsize(runtime.network.clientNet.GetConnectionStatusText(), 44);
+        ui.label(status, glm::vec2(x + 24.0f, y + 264.0f), Color{0.76f, 0.78f, 0.80f, 1.0f});
+    }
+
+    if (ctx.windowHost != nullptr) {
+        ctx.windowHost->applyMouseInputModes();
     }
 }
 
@@ -259,10 +160,6 @@ void MainMenu::handlePaste(Runtime &runtime) {
     }
 
     CopyStringToArray(endpoint, runtime.app.connection.pendingServerEndpointInput);
-    if (m_endpointInput != nullptr) {
-        auto *endpointInput = static_cast<Rml::ElementFormControlInput *>(m_endpointInput);
-        endpointInput->SetValue(endpoint);
-    }
 }
 
 void MainMenu::handleSubmit(Runtime &runtime, const MainMenuContext &ctx) {
@@ -329,199 +226,5 @@ void MainMenu::handleSubmit(Runtime &runtime, const MainMenuContext &ctx) {
     }
 }
 
-void MainMenu::handleRmlEvent(Runtime &runtime, const MainMenuContext &ctx, Rml::Event &event) {
-    const ClientNetwork::ConnectionState connState = runtime.network.clientNet.GetConnectionState();
-    const bool isConnecting = (connState == ClientNetwork::ConnectionState::Connecting);
 
-    if (event.GetType() == "click") {
-        const Rml::Element *source = event.GetCurrentElement();
-        if (source == m_pasteButton && !isConnecting) {
-            handlePaste(runtime);
-        } else if (source == m_connectButton && !isConnecting) {
-            handleSubmit(runtime, ctx);
-        }
-        return;
-    }
-
-    if (event.GetType() == "keydown" && !isConnecting) {
-        const int key = event.GetParameter<int>("key_identifier", 0);
-        if (static_cast<Rml::Input::KeyIdentifier>(key) == Rml::Input::KI_RETURN) {
-            handleSubmit(runtime, ctx);
-        }
-    }
-}
-
-void MainMenu::drawRml(Runtime &runtime, const MainMenuContext &ctx) {
-    if (!bindRmlContext(runtime)) {
-        drawImGui(runtime, ctx);
-        return;
-    }
-
-    if (m_rmlListener) {
-        m_rmlListener->setFrameContext(&runtime, ctx);
-    }
-
-    if (m_rmlDocument && !m_rmlDocumentVisible) {
-        m_rmlDocument->Show();
-        m_rmlDocumentVisible = true;
-    }
-
-    syncRmlState(runtime);
-    if (ctx.windowHost != nullptr) {
-        ctx.windowHost->applyMouseInputModes();
-    }
-}
-
-void MainMenu::drawImGui(Runtime &runtime, const MainMenuContext &ctx) {
-    if (!runtime.ui.debugUi) {
-        return;
-    }
-
-    ImGuiIO &io = ImGui::GetIO();
-    const ImVec2 windowSize(460.0f, 0.0f);
-    ImGui::SetNextWindowSize(windowSize, ImGuiCond_Always);
-    ImGui::SetNextWindowPos(
-        ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
-        ImGuiCond_Always,
-        ImVec2(0.5f, 0.5f)
-    );
-
-    constexpr ImGuiWindowFlags flags =
-        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
-
-    if (!ImGui::Begin("Connect", nullptr, flags)) {
-        ImGui::End();
-        return;
-    }
-
-    ImGui::TextUnformatted("Server (host:port)");
-    const float pasteButtonWidth =
-        ImGui::CalcTextSize("Paste").x + (ImGui::GetStyle().FramePadding.x * 2.0f);
-    const float endpointFieldWidth =
-        ImGui::GetContentRegionAvail().x - pasteButtonWidth - ImGui::GetStyle().ItemSpacing.x;
-    ImGui::SetNextItemWidth(endpointFieldWidth > 60.0f ? endpointFieldWidth : -1.0f);
-    const ClientNetwork::ConnectionState connState = runtime.network.clientNet.GetConnectionState();
-    const bool isConnecting = (connState == ClientNetwork::ConnectionState::Connecting);
-    const auto pasteEndpointFromClipboard = [&]() -> bool {
-        if (ctx.window == nullptr) {
-            return false;
-        }
-        char *clipboardText = SDL_GetClipboardText();
-        if (clipboardText == nullptr || clipboardText[0] == '\0') {
-            if (clipboardText != nullptr) {
-                SDL_free(clipboardText);
-            }
-            return false;
-        }
-        const std::string endpoint = TrimAscii(clipboardText);
-        SDL_free(clipboardText);
-        if (endpoint.empty()) {
-            return false;
-        }
-        CopyStringToArray(endpoint, runtime.app.connection.pendingServerEndpointInput);
-        return true;
-    };
-
-    bool submit = false;
-    if (isConnecting) {
-        ImGui::BeginDisabled();
-    }
-    if (ImGui::InputText(
-            "##server_endpoint_input",
-            runtime.app.connection.pendingServerEndpointInput.data(),
-            runtime.app.connection.pendingServerEndpointInput.size(),
-            ImGuiInputTextFlags_EnterReturnsTrue
-        )) {
-        submit = true;
-    }
-    const bool endpointFieldActive = ImGui::IsItemActive();
-    if (isConnecting) {
-        ImGui::EndDisabled();
-    }
-
-    bool pasteShortcutPressed = false;
-    if (endpointFieldActive && !isConnecting) {
-        const bool ctrlDown =
-            IsScancodeDown(SDL_SCANCODE_LCTRL) || IsScancodeDown(SDL_SCANCODE_RCTRL) ||
-            IsScancodeDown(SDL_SCANCODE_LGUI) || IsScancodeDown(SDL_SCANCODE_RGUI);
-        const bool shiftDown =
-            IsScancodeDown(SDL_SCANCODE_LSHIFT) || IsScancodeDown(SDL_SCANCODE_RSHIFT);
-        const bool pasteCtrlV = ctrlDown && IsScancodeDown(SDL_SCANCODE_V);
-        const bool pasteShiftInsert = shiftDown && IsScancodeDown(SDL_SCANCODE_INSERT);
-        pasteShortcutPressed = pasteCtrlV || pasteShiftInsert;
-        if (pasteShortcutPressed && !runtime.app.connection.wasEndpointPasteShortcutPressed) {
-            if (!pasteEndpointFromClipboard()) {
-                runtime.app.connection.usernamePromptError = "Clipboard is empty.";
-            }
-        }
-    }
-    runtime.app.connection.wasEndpointPasteShortcutPressed = pasteShortcutPressed;
-
-    ImGui::SameLine();
-    if (isConnecting) {
-        ImGui::BeginDisabled();
-    }
-    if (ImGui::Button("Paste")) {
-        if (!pasteEndpointFromClipboard()) {
-            runtime.app.connection.usernamePromptError = "Clipboard is empty.";
-        }
-    }
-    if (isConnecting) {
-        ImGui::EndDisabled();
-    }
-
-    ImGui::Spacing();
-    ImGui::TextUnformatted("Enter username");
-    ImGui::SetNextItemWidth(-1.0f);
-    if (isConnecting) {
-        ImGui::BeginDisabled();
-    }
-    if (ImGui::InputText(
-            "##username_input",
-            runtime.app.connection.pendingUsernameInput.data(),
-            runtime.app.connection.pendingUsernameInput.size(),
-            ImGuiInputTextFlags_EnterReturnsTrue
-        )) {
-        submit = true;
-    }
-    if (isConnecting) {
-        ImGui::EndDisabled();
-    }
-
-    if (!isConnecting) {
-        if (ImGui::Button("Connect")) {
-            submit = true;
-        }
-    } else {
-        ImGui::BeginDisabled();
-        ImGui::Button("Connecting...");
-        ImGui::EndDisabled();
-    }
-
-    if (submit) {
-        handleSubmit(runtime, ctx);
-    }
-
-    if (!runtime.app.connection.usernamePromptError.empty()) {
-        ImGui::Spacing();
-        ImGui::TextColored(
-            ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s", runtime.app.connection.usernamePromptError.c_str()
-        );
-    }
-
-    ImGui::Spacing();
-    ImGui::TextWrapped("If that username is already taken, enter a different username and retry.");
-    ImGui::Text("Status: %s", runtime.network.clientNet.GetConnectionStatusText().c_str());
-
-    ImGui::End();
-    if (ctx.windowHost != nullptr) {
-        ctx.windowHost->applyMouseInputModes();
-    }
-}
-
-void MainMenu::hide() {
-    if (m_rmlDocument && m_rmlDocumentVisible) {
-        m_rmlDocument->Hide();
-        m_rmlDocumentVisible = false;
-    }
-}
+void MainMenu::hide() {}

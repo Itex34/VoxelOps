@@ -24,7 +24,69 @@ ChunkPipelineState::QueuePrep(HSteamNetConnection conn, const ChunkCoord &coord,
     return QueuePrepResult::Queued;
 }
 
-bool ChunkPipelineState::WaitPopPrepTask(ChunkPrepTask &outTask, const std::atomic<bool> &quitFlag) {
+ChunkPipelineState::QueuePrepBatchResult ChunkPipelineState::QueuePrepBatch(
+    HSteamNetConnection conn,
+    const std::vector<ChunkCoord> &coords,
+    size_t maxQueue,
+    std::vector<ChunkCoord> &acceptedCoords
+) {
+    QueuePrepBatchResult result{};
+    std::lock_guard<std::mutex> lk(m_mutex);
+    for (const ChunkCoord &coord : coords) {
+        const ChunkPipelineKey key{conn, coord};
+        if (m_chunkPrepQueued.find(key) != m_chunkPrepQueued.end() ||
+            m_chunkSendQueued.find(key) != m_chunkSendQueued.end()) {
+            acceptedCoords.push_back(coord);
+            ++result.accepted;
+            continue;
+        }
+        if (m_chunkPrepQueue.size() >= maxQueue) {
+            result.queueFull = true;
+            break;
+        }
+        m_chunkPrepQueue.push_back(ChunkPrepTask{conn, coord});
+        m_chunkPrepQueued.insert(key);
+        acceptedCoords.push_back(coord);
+        ++result.accepted;
+    }
+    return result;
+}
+
+ChunkPipelineState::QueuePrepBatchResult ChunkPipelineState::QueuePreparedSendBatch(
+    HSteamNetConnection conn,
+    const std::vector<ChunkCoord> &coords,
+    size_t maxChunkSendQueuePerClient,
+    std::vector<ChunkCoord> &acceptedCoords
+) {
+    QueuePrepBatchResult result{};
+    std::lock_guard<std::mutex> lk(m_mutex);
+    auto &sendQ = m_chunkSendQueues[conn];
+    for (const ChunkCoord &coord : coords) {
+        const ChunkPipelineKey key{conn, coord};
+        if (m_chunkPrepQueued.find(key) != m_chunkPrepQueued.end() ||
+            m_chunkSendQueued.find(key) != m_chunkSendQueued.end()) {
+            acceptedCoords.push_back(coord);
+            ++result.accepted;
+            continue;
+        }
+        if (sendQ.size() >= maxChunkSendQueuePerClient) {
+            result.queueFull = true;
+            break;
+        }
+        sendQ.push_back(coord);
+        m_chunkSendQueued.insert(key);
+        acceptedCoords.push_back(coord);
+        ++result.accepted;
+    }
+    if (sendQ.empty()) {
+        m_chunkSendQueues.erase(conn);
+    }
+    return result;
+}
+
+bool ChunkPipelineState::WaitPopPrepTask(
+    ChunkPrepTask &outTask, const std::atomic<bool> &quitFlag
+) {
     std::unique_lock<std::mutex> lk(m_mutex);
     m_chunkPrepCv.wait(lk, [&]() {
         return quitFlag.load(std::memory_order_acquire) || !m_chunkPrepQueue.empty();
@@ -71,13 +133,41 @@ bool ChunkPipelineState::PopNextSendChunk(HSteamNetConnection conn, ChunkCoord &
     return true;
 }
 
+size_t ChunkPipelineState::PopNextSendChunks(
+    HSteamNetConnection conn, size_t maxChunks, std::vector<ChunkCoord> &outCoords
+) {
+    if (maxChunks == 0) {
+        return 0;
+    }
+
+    std::lock_guard<std::mutex> lk(m_mutex);
+    auto qIt = m_chunkSendQueues.find(conn);
+    if (qIt == m_chunkSendQueues.end() || qIt->second.empty()) {
+        return 0;
+    }
+
+    auto &sendQueue = qIt->second;
+    const size_t startSize = outCoords.size();
+    while (outCoords.size() - startSize < maxChunks && !sendQueue.empty()) {
+        ChunkCoord coord = sendQueue.front();
+        sendQueue.pop_front();
+        m_chunkSendQueued.erase(ChunkPipelineKey{conn, coord});
+        outCoords.push_back(coord);
+    }
+
+    if (sendQueue.empty()) {
+        m_chunkSendQueues.erase(qIt);
+    }
+    return outCoords.size() - startSize;
+}
+
 void ChunkPipelineState::PruneForClient(
-    HSteamNetConnection conn, const std::unordered_set<ChunkCoord, ChunkCoordHash> &desired
+    HSteamNetConnection conn, const ChunkInterestBounds &desired
 ) {
     std::lock_guard<std::mutex> lk(m_mutex);
 
     for (auto it = m_chunkPrepQueue.begin(); it != m_chunkPrepQueue.end();) {
-        if (it->conn == conn && desired.find(it->coord) == desired.end()) {
+        if (it->conn == conn && !desired.contains(it->coord)) {
             m_chunkPrepQueued.erase(ChunkPipelineKey{conn, it->coord});
             it = m_chunkPrepQueue.erase(it);
         } else {
@@ -89,7 +179,7 @@ void ChunkPipelineState::PruneForClient(
     if (sendIt != m_chunkSendQueues.end()) {
         auto &sendQueue = sendIt->second;
         for (auto it = sendQueue.begin(); it != sendQueue.end();) {
-            if (desired.find(*it) == desired.end()) {
+            if (!desired.contains(*it)) {
                 m_chunkSendQueued.erase(ChunkPipelineKey{conn, *it});
                 it = sendQueue.erase(it);
             } else {

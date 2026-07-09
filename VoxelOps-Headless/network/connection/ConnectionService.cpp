@@ -15,13 +15,14 @@
 
 namespace {
 
-constexpr auto kInboundRateWindow = std::chrono::seconds(1);
-constexpr uint32_t kMaxInboundPacketsPerWindow = 900u;
-constexpr uint32_t kMaxInboundBytesPerWindow = 256u * 1024u;
-constexpr uint32_t kMaxPlayerInputsPerWindow = 360u;
-constexpr uint32_t kMaxChunkRequestsPerWindow = 120u;
-constexpr auto kChunkResyncRateWindow = std::chrono::seconds(1);
-constexpr uint32_t kMaxChunkResyncRequestsPerWindow = 12u;
+    constexpr auto kInboundRateWindow = std::chrono::seconds(1);
+    constexpr uint32_t kMaxInboundPacketsPerWindow = 900u;
+    constexpr uint32_t kMaxInboundBytesPerWindow = 256u * 1024u;
+    constexpr uint32_t kMaxPlayerInputsPerWindow = 360u;
+    constexpr uint32_t kMaxChunkRequestsPerWindow = 120u;
+    constexpr auto kSoftInputRateLimitLogInterval = std::chrono::seconds(2);
+    constexpr auto kChunkResyncRateWindow = std::chrono::seconds(1);
+    constexpr uint32_t kMaxChunkResyncRequestsPerWindow = 12u;
 
 } // namespace
 
@@ -45,43 +46,84 @@ ConnectionService::ConnectionService(
 bool ConnectionService::IsInboundRateLimitExceeded(
     HSteamNetConnection incoming, PacketType packetType, uint32_t bytes
 ) {
-    const bool exceededRateLimit = m_sessionState.WithLock(
-        [&](ClientSessionManager &sessions) {
-            auto it = sessions.find(incoming);
-            if (it == sessions.end()) {
-                return false;
-            }
+    struct RateLimitSnapshot {
+        bool exceeded = false;
+        bool closeConnection = false;
+        bool log = true;
+        uint32_t packets = 0;
+        uint32_t bytes = 0;
+        uint32_t inputs = 0;
+        uint32_t chunkRequests = 0;
+    };
 
-            auto &session = it->second;
-            const auto now = std::chrono::steady_clock::now();
-            if (session.inboundRateWindowStart == std::chrono::steady_clock::time_point::min() ||
-                (now - session.inboundRateWindowStart) >= kInboundRateWindow) {
-                session.inboundRateWindowStart = now;
-                session.inboundPacketsInWindow = 0;
-                session.inboundBytesInWindow = 0;
-                session.inboundPlayerInputsInWindow = 0;
-                session.inboundChunkRequestsInWindow = 0;
-            }
-
-            ++session.inboundPacketsInWindow;
-            session.inboundBytesInWindow += bytes;
-            if (packetType == PacketType::PlayerInput) {
-                ++session.inboundPlayerInputsInWindow;
-            }
-            if (packetType == PacketType::ChunkRequest) {
-                ++session.inboundChunkRequestsInWindow;
-            }
-
-            return (session.inboundPacketsInWindow > kMaxInboundPacketsPerWindow) ||
-                   (session.inboundBytesInWindow > kMaxInboundBytesPerWindow) ||
-                   (session.inboundPlayerInputsInWindow > kMaxPlayerInputsPerWindow) ||
-                   (session.inboundChunkRequestsInWindow > kMaxChunkRequestsPerWindow);
+    RateLimitSnapshot snapshot{};
+    const bool exceededRateLimit = m_sessionState.WithLock([&](ClientSessionManager &sessions) {
+        auto it = sessions.find(incoming);
+        if (it == sessions.end()) {
+            return false;
         }
-    );
+
+        auto &session = it->second;
+        const auto now = std::chrono::steady_clock::now();
+        if (session.inboundRateWindowStart == std::chrono::steady_clock::time_point::min() ||
+            (now - session.inboundRateWindowStart) >= kInboundRateWindow) {
+            session.inboundRateWindowStart = now;
+            session.inboundPacketsInWindow = 0;
+            session.inboundBytesInWindow = 0;
+            session.inboundPlayerInputsInWindow = 0;
+            session.inboundChunkRequestsInWindow = 0;
+        }
+
+        ++session.inboundPacketsInWindow;
+        session.inboundBytesInWindow += bytes;
+        if (packetType == PacketType::PlayerInput) {
+            ++session.inboundPlayerInputsInWindow;
+        }
+        if (packetType == PacketType::ChunkRequest) {
+            ++session.inboundChunkRequestsInWindow;
+        }
+
+        snapshot.packets = session.inboundPacketsInWindow;
+        snapshot.bytes = session.inboundBytesInWindow;
+        snapshot.inputs = session.inboundPlayerInputsInWindow;
+        snapshot.chunkRequests = session.inboundChunkRequestsInWindow;
+        snapshot.exceeded = (session.inboundPacketsInWindow > kMaxInboundPacketsPerWindow) ||
+                            (session.inboundBytesInWindow > kMaxInboundBytesPerWindow) ||
+                            (session.inboundPlayerInputsInWindow > kMaxPlayerInputsPerWindow) ||
+                            (session.inboundChunkRequestsInWindow > kMaxChunkRequestsPerWindow);
+        const bool softBurstPacket =
+            packetType == PacketType::PlayerInput || packetType == PacketType::ChunkRequest;
+        snapshot.closeConnection =
+            snapshot.exceeded &&
+            (session.inboundBytesInWindow > kMaxInboundBytesPerWindow ||
+             session.inboundChunkRequestsInWindow > kMaxChunkRequestsPerWindow ||
+             (!softBurstPacket && session.inboundPacketsInWindow > kMaxInboundPacketsPerWindow));
+        if (snapshot.exceeded && !snapshot.closeConnection) {
+            snapshot.log =
+                session.lastInboundRateLimitLogTime == std::chrono::steady_clock::time_point::min(
+                                                       ) ||
+                (now - session.lastInboundRateLimitLogTime) >= kSoftInputRateLimitLogInterval;
+            if (snapshot.log) {
+                session.lastInboundRateLimitLogTime = now;
+            }
+        }
+        return snapshot.exceeded;
+    });
     if (exceededRateLimit) {
-        std::cerr << "[recv] inbound rate limit exceeded conn=" << incoming
-                  << " (closing connection)\n";
-        SteamNetworkingSockets()->CloseConnection(incoming, 0, "rate limit exceeded", false);
+        if (snapshot.log) {
+            std::cerr << "[recv] inbound rate limit exceeded conn=" << incoming
+                      << " type=" << static_cast<int>(packetType)
+                      << " packets=" << snapshot.packets << "/" << kMaxInboundPacketsPerWindow
+                      << " bytes=" << snapshot.bytes << "/" << kMaxInboundBytesPerWindow
+                      << " inputs=" << snapshot.inputs << "/" << kMaxPlayerInputsPerWindow
+                      << " chunkReq=" << snapshot.chunkRequests << "/" << kMaxChunkRequestsPerWindow
+                      << " lastBytes=" << bytes
+                      << (snapshot.closeConnection ? " (closing connection)" : " (dropping packet)")
+                      << "\n";
+        }
+        if (snapshot.closeConnection) {
+            SteamNetworkingSockets()->CloseConnection(incoming, 0, "rate limit exceeded", false);
+        }
         return true;
     }
     return false;
@@ -93,7 +135,38 @@ void ConnectionService::ReleasePendingRegistration(HSteamNetConnection conn) {
     });
 }
 
-void ConnectionService::HandleConnectRequest(HSteamNetConnection incoming, const void *data, uint32_t size) {
+void ConnectionService::EnsureSpawnCollisionChunksPrepared(const glm::vec3 &spawnPos) {
+    if (m_spawnCollisionChunksPrepared) {
+        return;
+    }
+
+    const glm::ivec3 spawnWorldPos(
+        static_cast<int>(std::floor(spawnPos.x)),
+        static_cast<int>(std::floor(spawnPos.y)),
+        static_cast<int>(std::floor(spawnPos.z))
+    );
+    const glm::ivec3 centerChunk = m_chunkManager.worldToChunkPos(spawnWorldPos);
+    constexpr int kSpawnCollisionRadiusXZ = 1;
+    constexpr int kSpawnCollisionRadiusY = 1;
+    for (int dx = -kSpawnCollisionRadiusXZ; dx <= kSpawnCollisionRadiusXZ; ++dx) {
+        for (int dz = -kSpawnCollisionRadiusXZ; dz <= kSpawnCollisionRadiusXZ; ++dz) {
+            for (int dy = -kSpawnCollisionRadiusY; dy <= kSpawnCollisionRadiusY; ++dy) {
+                const glm::ivec3 chunkPos(
+                    centerChunk.x + dx, centerChunk.y + dy, centerChunk.z + dz
+                );
+                if (!m_chunkManager.inBounds(chunkPos) || m_chunkManager.hasChunkLoaded(chunkPos)) {
+                    continue;
+                }
+                m_chunkManager.generateTerrainChunkAt(chunkPos);
+            }
+        }
+    }
+    m_spawnCollisionChunksPrepared = true;
+}
+
+void ConnectionService::HandleConnectRequest(
+    HSteamNetConnection incoming, const void *data, uint32_t size
+) {
     auto sendResponse = [&](const ConnectResponse &response) {
         const std::vector<uint8_t> payload = response.serialize();
         (void)SteamNetworkingSockets()->SendMessageToConnection(
@@ -196,8 +269,8 @@ void ConnectionService::HandleConnectRequest(HSteamNetConnection incoming, const
                 queueDeferredResponse(
                     ConnectRejectReason::IdentityInUse,
                     "identity already connected",
-                    "[register rejected] conn=" + std::to_string(incoming) + " identity=" +
-                        identity + " reason=identity_in_use",
+                    "[register rejected] conn=" + std::to_string(incoming) +
+                        " identity=" + identity + " reason=identity_in_use",
                     false
                 );
                 registrationRejected = true;
@@ -225,8 +298,8 @@ void ConnectionService::HandleConnectRequest(HSteamNetConnection incoming, const
                     queueDeferredResponse(
                         ConnectRejectReason::UsernameTaken,
                         "username already taken",
-                        "[register rejected] conn=" + std::to_string(incoming) + " requested=" +
-                            requestedUsername + " reason=username_taken",
+                        "[register rejected] conn=" + std::to_string(incoming) +
+                            " requested=" + requestedUsername + " reason=username_taken",
                         false
                     );
                     registrationRejected = true;
@@ -237,8 +310,8 @@ void ConnectionService::HandleConnectRequest(HSteamNetConnection incoming, const
                 queueDeferredResponse(
                     ConnectRejectReason::UsernameTaken,
                     "username currently registering",
-                    "[register rejected] conn=" + std::to_string(incoming) + " requested=" +
-                        requestedUsername + " reason=username_registering",
+                    "[register rejected] conn=" + std::to_string(incoming) +
+                        " requested=" + requestedUsername + " reason=username_registering",
                     false
                 );
                 registrationRejected = true;
@@ -272,9 +345,12 @@ void ConnectionService::HandleConnectRequest(HSteamNetConnection incoming, const
         return;
     }
 
+    constexpr glm::vec3 kSpawnPos(0.0f, 60.0f, 0.0f);
+    EnsureSpawnCollisionChunksPrepared(kSpawnPos);
+
     auto connHandle = std::make_shared<ConnectionHandle>();
     connHandle->socketFd = static_cast<int>(incoming);
-    const PlayerID playerId = m_playerManager.onPlayerConnect(connHandle, glm::vec3(0.0f, 60.0f, 0.0f));
+    const PlayerID playerId = m_playerManager.onPlayerConnect(connHandle, kSpawnPos);
     m_hooks.invalidateCombatSnapshotCache();
 
     bool attached = false;
@@ -344,7 +420,9 @@ void ConnectionService::HandleConnectRequest(HSteamNetConnection incoming, const
               << " identity=" << identity << " requested=" << requestedUsername << "\n";
 }
 
-void ConnectionService::HandleMessagePacket(HSteamNetConnection incoming, const void *data, uint32_t size) {
+void ConnectionService::HandleMessagePacket(
+    HSteamNetConnection incoming, const void *data, uint32_t size
+) {
     std::string msg = ReadStringFromPacket(data, size, 1);
     std::string username;
     PlayerID playerId = 0;
@@ -414,13 +492,15 @@ void ConnectionService::HandleMessagePacket(HSteamNetConnection incoming, const 
             bool rateLimited = false;
             m_sessionState.WithLock([&](ClientSessionManager &sessions) {
                 auto it = sessions.find(incoming);
-                if (it == sessions.end() || it->second.playerId == 0 || it->second.username.empty()) {
+                if (it == sessions.end() || it->second.playerId == 0 ||
+                    it->second.username.empty()) {
                     return;
                 }
 
                 auto &session = it->second;
                 const auto nowSteady = std::chrono::steady_clock::now();
-                if (session.chunkResyncRateWindowStart == std::chrono::steady_clock::time_point::min() ||
+                if (session.chunkResyncRateWindowStart ==
+                        std::chrono::steady_clock::time_point::min() ||
                     (nowSteady - session.chunkResyncRateWindowStart) >= kChunkResyncRateWindow) {
                     session.chunkResyncRateWindowStart = nowSteady;
                     session.chunkResyncRequestsInWindow = 0;
@@ -437,9 +517,12 @@ void ConnectionService::HandleMessagePacket(HSteamNetConnection incoming, const 
 
                 if (!plausibleChunk && session.hasChunkInterest) {
                     const int radius = std::max<int>(2, static_cast<int>(session.viewDistance));
-                    const int64_t dx = static_cast<int64_t>(coord.x - session.interestCenterChunk.x);
-                    const int64_t dz = static_cast<int64_t>(coord.z - session.interestCenterChunk.z);
-                    const int64_t radius2 = static_cast<int64_t>(radius) * static_cast<int64_t>(radius);
+                    const int64_t dx =
+                        static_cast<int64_t>(coord.x - session.interestCenterChunk.x);
+                    const int64_t dz =
+                        static_cast<int64_t>(coord.z - session.interestCenterChunk.z);
+                    const int64_t radius2 =
+                        static_cast<int64_t>(radius) * static_cast<int64_t>(radius);
                     plausibleChunk = (dx * dx + dz * dz) <= radius2;
                 }
 
@@ -456,8 +539,14 @@ void ConnectionService::HandleMessagePacket(HSteamNetConnection incoming, const 
             });
 
             if (rateLimited) {
-                std::cerr << "[chunk/resync] rate limited conn=" << incoming << " chunk=("
-                          << cx << "," << cy << "," << cz << ")\n";
+                static uint64_t s_chunkResyncRateLimitLogCount = 0;
+                ++s_chunkResyncRateLimitLogCount;
+                if (s_chunkResyncRateLimitLogCount <= 20 ||
+                    (s_chunkResyncRateLimitLogCount % 200) == 0) {
+                    std::cerr << "[chunk/resync] rate limited conn=" << incoming << " chunk=(" << cx
+                              << "," << cy << "," << cz << ")"
+                              << " count=" << s_chunkResyncRateLimitLogCount << "\n";
+                }
                 return;
             }
             if (!allowResync) {
@@ -483,7 +572,9 @@ void ConnectionService::HandleMessagePacket(HSteamNetConnection incoming, const 
     }
 }
 
-void ConnectionService::OnConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_t *pInfo) {
+void ConnectionService::OnConnectionStatusChanged(
+    SteamNetConnectionStatusChangedCallback_t *pInfo
+) {
     if (!pInfo) {
         return;
     }
@@ -525,10 +616,14 @@ void ConnectionService::OnConnectionStatusChanged(SteamNetConnectionStatusChange
     }
 }
 
-std::string ConnectionService::ReadStringFromPacket(const void *data, uint32_t size, size_t offset) {
-    if (size <= offset) {
+std::string
+ConnectionService::ReadStringFromPacket(const void *data, std::uint32_t size, std::size_t offset) {
+    assert(data != nullptr || size == 0);
+
+    if (data == nullptr || offset >= static_cast<std::size_t>(size)) {
         return {};
     }
-    const char *bytes = reinterpret_cast<const char *>(data);
-    return std::string(bytes + offset, size - offset);
+
+    const char *bytes = static_cast<const char *>(data);
+    return std::string(bytes + offset, static_cast<std::size_t>(size) - offset);
 }

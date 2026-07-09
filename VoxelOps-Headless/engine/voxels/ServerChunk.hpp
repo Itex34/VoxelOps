@@ -18,7 +18,6 @@
 
 #include "../../../Shared/world/Constants.hpp"
 
-
 // small edit op used in server edit log and diffs
 struct EditOp {
     // coordinates are local to chunk (0..CHUNK_SIZE-1) to keep edits compact
@@ -91,6 +90,10 @@ public:
     static inline constexpr bool inBounds(int x, int y, int z) noexcept {
         return (unsigned)x < CHUNK_SIZE && (unsigned)y < CHUNK_SIZE && (unsigned)z < CHUNK_SIZE;
     }
+
+    bool
+    anySolidInLocalRange(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) const noexcept;
+    void replaceAllBlocks(const std::array<BlockID, CHUNK_VOLUME> &blocks);
 
     void fillRawVoxelBytes(uint8_t *outBuf, size_t bufSize) const;
     void loadRawVoxelBytes(const uint8_t *data, size_t bufSize);

@@ -3,6 +3,7 @@
 #include "ReplicationPlayerState.hpp"
 
 #include <cstdint>
+#include <utility>
 #include <unordered_map>
 #include <vector>
 
@@ -15,6 +16,12 @@ namespace PlayerSnapshots {
 
     std::vector<std::vector<uint8_t>> buildSnapshotsForRecipients(
         const std::vector<PlayerID> &recipientIds,
+        uint32_t serverTick,
+        const std::unordered_map<PlayerID, ReplicationPlayerState> &playersById
+    );
+
+    std::vector<std::vector<uint8_t>> buildSnapshotsForRecipients(
+        const std::vector<std::pair<PlayerID, uint16_t>> &recipients,
         uint32_t serverTick,
         const std::unordered_map<PlayerID, ReplicationPlayerState> &playersById
     );

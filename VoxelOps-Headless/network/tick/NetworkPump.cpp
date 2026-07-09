@@ -59,8 +59,8 @@ void NetworkPump::PumpInbound(
     uint64_t &chunkRequestPacketsThisLoop,
     double &messageDrainUs
 ) {
-    constexpr size_t kMaxInboundMessagesPerLoop = 256;
-    constexpr int64_t kInboundMessageBudgetUs = 3000;
+    constexpr size_t kMaxInboundMessagesPerLoop = 64;
+    constexpr int64_t kInboundMessageBudgetUs = 1500;
 
     SteamNetworkingSockets()->RunCallbacks();
 

@@ -4,8 +4,11 @@
 #include "renderer/RenderFrameData.hpp"
 #include "../../misc/ThreadPool.hpp"
 
+#include "graphics/Vulkan/vulkan/VulkanResource.hpp"
+
 #include <glm/glm.hpp>
 #include <vulkan/vulkan_raii.hpp>
+#include <vk_mem_alloc.h>
 
 #include <array>
 #include <cstddef>
@@ -77,25 +80,21 @@ private:
         uint32_t wordCount = 0;
         uint32_t voxelCount = 0;
         std::vector<uint32_t> occupancyWords;
-        std::vector<uint32_t> materialIds;
+        std::vector<uint32_t> materialWords;
     };
 
     struct GiBufferSlot {
-        vk::raii::Buffer occupancyBuffer{nullptr};
-        vk::raii::DeviceMemory occupancyBufferMemory{nullptr};
+        VulkanBuffer occupancyBuffer;
         vk::DeviceSize occupancyCapacityBytes = 0;
-        vk::raii::Buffer traceMaterialBuffer{nullptr};
-        vk::raii::DeviceMemory traceMaterialBufferMemory{nullptr};
+        VulkanBuffer traceMaterialBuffer;
         vk::DeviceSize materialCapacityBytes = 0;
         uint64_t safeReuseAfterFrame = 0;
     };
 
     struct RetiredBuffers {
-        vk::raii::Buffer occupancyBuffer{nullptr};
-        vk::raii::DeviceMemory occupancyBufferMemory{nullptr};
+        VulkanBuffer occupancyBuffer;
         vk::DeviceSize occupancyCapacityBytes = 0;
-        vk::raii::Buffer traceMaterialBuffer{nullptr};
-        vk::raii::DeviceMemory traceMaterialBufferMemory{nullptr};
+        VulkanBuffer traceMaterialBuffer;
         vk::DeviceSize materialCapacityBytes = 0;
         uint64_t retireFrame = 0;
     };
@@ -131,7 +130,7 @@ private:
     std::vector<RetiredBuffers> m_retiredBuffers;
     std::unordered_map<glm::ivec3, CachedChunkSnapshot, IVec3Hash> m_chunkSnapshotCache;
     std::vector<uint32_t> m_hostOccupancyWords;
-    std::vector<uint32_t> m_hostMaterialIds;
+    std::vector<uint32_t> m_hostMaterialWords;
 
     mutable std::mutex m_buildStateMutex;
     std::deque<GiBuildResult> m_completedBuilds;

@@ -1,6 +1,9 @@
 #pragma once
 
+#include "graphics/Vulkan/vulkan/VulkanResource.hpp"
+
 #include <vulkan/vulkan_raii.hpp>
+#include <vk_mem_alloc.h>
 
 #include <string>
 #include <vector>
@@ -33,7 +36,7 @@ public:
         return m_descriptorSetLayout;
     }
     vk::DescriptorSet getDescriptorSet() const {
-        return m_descriptorSets.empty() ? VK_NULL_HANDLE : *m_descriptorSets[0];
+        return m_descriptorSet;
     }
     vk::ImageView getImageView() const {
         return (m_imageView != nullptr) ? *m_imageView : VK_NULL_HANDLE;
@@ -43,12 +46,11 @@ public:
     }
 
 private:
-    vk::raii::Image m_image{nullptr};
-    vk::raii::DeviceMemory m_imageMemory{nullptr};
+    VulkanImage m_image;
     vk::raii::ImageView m_imageView{nullptr};
     vk::raii::Sampler m_sampler{nullptr};
 
     vk::raii::DescriptorSetLayout m_descriptorSetLayout{nullptr};
     vk::raii::DescriptorPool m_descriptorPool{nullptr};
-    std::vector<vk::raii::DescriptorSet> m_descriptorSets;
+    vk::DescriptorSet m_descriptorSet = VK_NULL_HANDLE;
 };

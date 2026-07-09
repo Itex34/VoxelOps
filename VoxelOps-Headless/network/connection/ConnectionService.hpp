@@ -44,15 +44,15 @@ public:
         Hooks hooks
     );
 
-    bool IsInboundRateLimitExceeded(
-        HSteamNetConnection incoming, PacketType packetType, uint32_t bytes
-    );
+    bool
+    IsInboundRateLimitExceeded(HSteamNetConnection incoming, PacketType packetType, uint32_t bytes);
     void ReleasePendingRegistration(HSteamNetConnection conn);
     void HandleConnectRequest(HSteamNetConnection incoming, const void *data, uint32_t size);
     void HandleMessagePacket(HSteamNetConnection incoming, const void *data, uint32_t size);
     void OnConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_t *pInfo);
 
 private:
+    void EnsureSpawnCollisionChunksPrepared(const glm::vec3 &spawnPos);
     static std::string ReadStringFromPacket(const void *data, uint32_t size, size_t offset = 1);
 
 private:
@@ -63,4 +63,5 @@ private:
     AdminService &m_adminService;
     HSteamNetPollGroup &m_pollGroup;
     Hooks m_hooks;
+    bool m_spawnCollisionChunksPrepared = false;
 };

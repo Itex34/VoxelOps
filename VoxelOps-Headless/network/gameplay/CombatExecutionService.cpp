@@ -16,24 +16,25 @@
 #include <vector>
 
 namespace {
-constexpr float kShootMaxDistance = 128.0f;
-constexpr float kShootMinIntervalSeconds = 1.0f / 8.0f;
-constexpr float kShootHitboxPadXZ = 0.08f;
-constexpr float kShootHitboxPadY = 0.04f;
-constexpr float kShootBlockOcclusionEpsilon = 0.06f;
-constexpr float kShootOriginTolerance = 0.60f;
-constexpr float kShootOriginOcclusionEpsilon = 0.02f;
-constexpr float kShootMaxClientTickRewindSeconds = 0.150f;
-constexpr uint32_t kShootMaxClientTickRewindTicks = static_cast<uint32_t>(
-    kShootMaxClientTickRewindSeconds * static_cast<float>(LagCompensation::kServerTickRateHz) + 0.5f
-);
-constexpr bool kEnableShootValidationLogs = false;
-std::atomic<uint64_t> g_staleShootTickClampLogCount{0};
-std::atomic<uint64_t> g_unmappedShootInputTickLogCount{0};
+    constexpr float kShootMaxDistance = 128.0f;
+    constexpr float kShootMinIntervalSeconds = 1.0f / 8.0f;
+    constexpr float kShootHitboxPadXZ = 0.08f;
+    constexpr float kShootHitboxPadY = 0.04f;
+    constexpr float kShootBlockOcclusionEpsilon = 0.06f;
+    constexpr float kShootOriginTolerance = 0.60f;
+    constexpr float kShootOriginOcclusionEpsilon = 0.02f;
+    constexpr float kShootMaxClientTickRewindSeconds = 0.150f;
+    constexpr uint32_t kShootMaxClientTickRewindTicks = static_cast<uint32_t>(
+        kShootMaxClientTickRewindSeconds * static_cast<float>(LagCompensation::kServerTickRateHz) +
+        0.5f
+    );
+    constexpr bool kEnableShootValidationLogs = false;
+    std::atomic<uint64_t> g_staleShootTickClampLogCount{0};
+    std::atomic<uint64_t> g_unmappedShootInputTickLogCount{0};
 
-inline const Shared::PlayerData::MovementSettings &movementSettings() {
-    return Shared::PlayerData::GetMovementSettings();
-}
+    inline const Shared::PlayerData::MovementSettings &movementSettings() {
+        return Shared::PlayerData::GetMovementSettings();
+    }
 } // namespace
 
 CombatExecutionService::CombatExecutionService(
@@ -112,9 +113,8 @@ std::optional<uint32_t> CombatExecutionService::MapClientInputTickToServerTick(
     return std::nullopt;
 }
 
-ShootResult CombatExecutionService::ExecuteShootRequest(
-    HSteamNetConnection incoming, const ShootRequest &req
-) {
+ShootResult
+CombatExecutionService::ExecuteShootRequest(HSteamNetConnection incoming, const ShootRequest &req) {
     if (kEnableShootValidationLogs) {
         std::cout << "[shoot/validate] recv conn=" << incoming << " shotId=" << req.clientShotId
                   << " tick=" << req.clientTick << " weapon=" << req.weaponId << " pos=("
@@ -130,8 +130,9 @@ ShootResult CombatExecutionService::ExecuteShootRequest(
     bool sessionMissing = false;
     bool unregisteredSession = false;
     {
-        auto lk =
-            LockWaitTelemetry::AcquireSessionLock(m_mutex, "CombatExecutionService::ExecuteShootRequest");
+        auto lk = LockWaitTelemetry::AcquireSessionLock(
+            m_mutex, "CombatExecutionService::ExecuteShootRequest"
+        );
         const auto it = m_sessions.find(incoming);
         if (it == m_sessions.end()) {
             sessionMissing = true;
@@ -193,15 +194,14 @@ ShootResult CombatExecutionService::ExecuteShootRequest(
         mappedTick.has_value()) {
         lagCompClientTick = *mappedTick;
         mappedClientInputTick = true;
-    } else if (req.clientTick != 0) {
+    } else if (kEnableShootValidationLogs && req.clientTick != 0) {
         const uint64_t logCount =
             g_unmappedShootInputTickLogCount.fetch_add(1, std::memory_order_relaxed) + 1;
         if (logCount <= 40 || (logCount % 200) == 0) {
             std::cout << "[shoot/validate] reason=client_input_tick_unmapped"
-                      << " player=" << ctx.session.playerId
-                      << " shotId=" << req.clientShotId
-                      << " inputTick=" << req.clientTick
-                      << " serverTick=" << currentServerTick << "\n";
+                      << " player=" << ctx.session.playerId << " shotId=" << req.clientShotId
+                      << " inputTick=" << req.clientTick << " serverTick=" << currentServerTick
+                      << "\n";
         }
     }
     bool clampedStaleClientTick = false;
@@ -212,17 +212,18 @@ ShootResult CombatExecutionService::ExecuteShootRequest(
         if (rewindTicks > kShootMaxClientTickRewindTicks) {
             lagCompClientTick = currentServerTick - kShootMaxClientTickRewindTicks;
             clampedStaleClientTick = true;
-            const uint64_t logCount =
-                g_staleShootTickClampLogCount.fetch_add(1, std::memory_order_relaxed) + 1;
-            if (logCount <= 40 || (logCount % 200) == 0) {
-                std::cout << "[shoot/validate] reason=stale_client_tick_clamped"
-                          << " player=" << ctx.session.playerId
-                          << " shotId=" << req.clientShotId
-                          << " reqTick=" << req.clientTick
-                          << " serverTick=" << currentServerTick
-                          << " rewindTicks=" << rewindTicks
-                          << " clampedToTick=" << lagCompClientTick
-                          << " maxRewindTicks=" << kShootMaxClientTickRewindTicks << "\n";
+            if (kEnableShootValidationLogs) {
+                const uint64_t logCount =
+                    g_staleShootTickClampLogCount.fetch_add(1, std::memory_order_relaxed) + 1;
+                if (logCount <= 40 || (logCount % 200) == 0) {
+                    std::cout << "[shoot/validate] reason=stale_client_tick_clamped"
+                              << " player=" << ctx.session.playerId
+                              << " shotId=" << req.clientShotId << " reqTick=" << req.clientTick
+                              << " serverTick=" << currentServerTick
+                              << " rewindTicks=" << rewindTicks
+                              << " clampedToTick=" << lagCompClientTick
+                              << " maxRewindTicks=" << kShootMaxClientTickRewindTicks << "\n";
+                }
             }
         }
     }
@@ -251,9 +252,8 @@ ShootResult CombatExecutionService::ExecuteShootRequest(
                   << (ctx.lagFrame ? static_cast<int64_t>(ctx.lagFrame->serverTick) : -1)
                   << " inputTickMapped=" << (mappedClientInputTick ? "yes" : "no")
                   << " clientTickUsed=" << lagCompClientTick
-                  << " staleClamp=" << (clampedStaleClientTick ? "yes" : "no")
-                  << " origin=(" << ctx.rayOrigin.x << "," << ctx.rayOrigin.y << ","
-                  << ctx.rayOrigin.z << ")"
+                  << " staleClamp=" << (clampedStaleClientTick ? "yes" : "no") << " origin=("
+                  << ctx.rayOrigin.x << "," << ctx.rayOrigin.y << "," << ctx.rayOrigin.z << ")"
                   << " requestedOriginAccepted=" << (ctx.requestedOriginAccepted ? "yes" : "no")
                   << " maxDistance=" << kShootMaxDistance << "\n";
     }
@@ -294,11 +294,11 @@ ShootResult CombatExecutionService::ExecuteShootRequest(
         if (!outcome.hit) {
             const char *reason =
                 (!hitResult.playerHit) ? "no_player_intersection" : "miss_or_occluded";
-            std::cout << "[shoot/validate] result=miss reason=" << reason
-                      << " blockDist="
+            std::cout << "[shoot/validate] result=miss reason=" << reason << " blockDist="
                       << (hitResult.worldRaycastResult.hit ? hitResult.worldRaycastResult.distance
                                                            : -1.0f)
-                      << " playerDist=" << (hitResult.playerHit ? hitResult.bestPlayerDistance : -1.0f)
+                      << " playerDist="
+                      << (hitResult.playerHit ? hitResult.bestPlayerDistance : -1.0f)
                       << " epsilon=" << kShootBlockOcclusionEpsilon << " endpoint=("
                       << outcome.hitPoint.x << "," << outcome.hitPoint.y << ","
                       << outcome.hitPoint.z << ")"
@@ -317,7 +317,9 @@ ShootResult CombatExecutionService::ExecuteShootRequest(
     }
 
     if (outcome.hit && outcome.killed) {
-        m_hooks.onConfirmedKill(ctx.session.playerId, ctx.session.username, outcome.hitPlayerId, req.weaponId);
+        m_hooks.onConfirmedKill(
+            ctx.session.playerId, ctx.session.username, outcome.hitPlayerId, req.weaponId
+        );
     }
 
     return ctx.result;
@@ -352,14 +354,11 @@ GrappleResult CombatExecutionService::ExecuteGrappleRequest(
     m_playerManager.touchHeartbeat(playerId);
 
     const glm::vec3 requestedDirection(req.dirX, req.dirY, req.dirZ);
-    const float dirLenSq =
-        (requestedDirection.x * requestedDirection.x) +
-        (requestedDirection.y * requestedDirection.y) +
-        (requestedDirection.z * requestedDirection.z);
-    const double nowSeconds = std::chrono::duration<double>(
-                                  std::chrono::steady_clock::now().time_since_epoch()
-    )
-                                  .count();
+    const float dirLenSq = (requestedDirection.x * requestedDirection.x) +
+                           (requestedDirection.y * requestedDirection.y) +
+                           (requestedDirection.z * requestedDirection.z);
+    const double nowSeconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
 
     if (!std::isfinite(dirLenSq) || dirLenSq < 1e-8f) {
         if (m_playerManager.releaseGrapple(playerId)) {

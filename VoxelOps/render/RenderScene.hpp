@@ -14,6 +14,7 @@
 
 class Camera;
 struct ImDrawData;
+struct NativeUiDrawData;
 
 struct RenderRemotePlayerState {
     glm::vec3 position{0.0f};
@@ -46,6 +47,7 @@ struct RenderScene {
     bool sunShadowFrontFaceCullAtLowSun = false;
     float sunShadowFrontFaceCullGrazingThreshold = 0.78f;
     ImDrawData *uiDrawData = nullptr;
+    const NativeUiDrawData *nativeUiDrawData = nullptr;
     std::function<void()> renderOpaqueOverlayPasses;
     bool useDebugCamera = false;
 };

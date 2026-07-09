@@ -23,5 +23,6 @@ struct ReplicationPlayerState {
     bool jumpPressedLastTick = false;
     float timeSinceGrounded = 0.0f;
     float jumpBufferTimer = 0.0f;
+    float stepCooldownTimer = 0.0f;
     uint32_t lastProcessedInputTick = 0;
 };

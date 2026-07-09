@@ -30,105 +30,107 @@
 
 namespace {
 
-constexpr const char *kClientIdentityFileName = "client_identity.txt";
+    constexpr const char *kClientIdentityFileName = "client_identity.txt";
 
-std::string NormalizeIdentity(std::string identity) {
-    return Shared::NetValidation::NormalizeIdentity(identity);
-}
-
-bool IsValidIdentity(const std::string &identity) {
-    return Shared::NetValidation::IsValidIdentity(identity);
-}
-
-std::filesystem::path ResolveIdentityFilePath() {
-    const char *localAppData = std::getenv("LOCALAPPDATA");
-    if (localAppData != nullptr && localAppData[0] != '\0') {
-        return std::filesystem::path(localAppData) / "VoxelOps" / kClientIdentityFileName;
-    }
-    return std::filesystem::current_path() / kClientIdentityFileName;
-}
-
-std::string GenerateIdentityToken() {
-    std::random_device rd;
-    std::mt19937_64 rng(rd());
-    std::uniform_int_distribution<uint32_t> dist(0u, 0xFFFFFFFFu);
-    std::ostringstream out;
-    out << "id-";
-    for (int i = 0; i < 5; ++i) {
-        const uint32_t part = dist(rng);
-        out.width(8);
-        out.fill('0');
-        out << std::hex << std::nouppercase << part;
-    }
-    std::string token = out.str();
-    if (token.size() > kMaxConnectIdentityChars) {
-        token.resize(kMaxConnectIdentityChars);
-    }
-    return token;
-}
-
-bool ResolveHostToAddress(std::string_view host, uint16_t port, SteamNetworkingIPAddr &outAddr) {
-    if (host.empty()) {
-        return false;
+    std::string NormalizeIdentity(std::string identity) {
+        return Shared::NetValidation::NormalizeIdentity(identity);
     }
 
-    std::string hostStr(host);
-
-    SteamNetworkingIPAddr parsedAddr;
-    parsedAddr.Clear();
-    if (parsedAddr.ParseString(hostStr.c_str())) {
-        parsedAddr.m_port = port;
-        outAddr = parsedAddr;
-        return true;
+    bool IsValidIdentity(const std::string &identity) {
+        return Shared::NetValidation::IsValidIdentity(identity);
     }
 
-    addrinfo hints{};
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_DGRAM;
-    hints.ai_protocol = IPPROTO_UDP;
-
-    addrinfo *results = nullptr;
-    const int gaiError = getaddrinfo(hostStr.c_str(), nullptr, &hints, &results);
-    if (gaiError != 0 || results == nullptr) {
-        if (results != nullptr) {
-            freeaddrinfo(results);
+    std::filesystem::path ResolveIdentityFilePath() {
+        const char *localAppData = std::getenv("LOCALAPPDATA");
+        if (localAppData != nullptr && localAppData[0] != '\0') {
+            return std::filesystem::path(localAppData) / "VoxelOps" / kClientIdentityFileName;
         }
-        return false;
+        return std::filesystem::current_path() / kClientIdentityFileName;
     }
 
-    bool found = false;
-    char addressBuffer[INET6_ADDRSTRLEN] = {};
-    for (addrinfo *it = results; it != nullptr; it = it->ai_next) {
-        const void *rawAddress = nullptr;
-        if (it->ai_family == AF_INET) {
-            const sockaddr_in *addr4 = reinterpret_cast<const sockaddr_in *>(it->ai_addr);
-            rawAddress = &addr4->sin_addr;
-        } else if (it->ai_family == AF_INET6) {
-            const sockaddr_in6 *addr6 = reinterpret_cast<const sockaddr_in6 *>(it->ai_addr);
-            rawAddress = &addr6->sin6_addr;
-        } else {
-            continue;
+    std::string GenerateIdentityToken() {
+        std::random_device rd;
+        std::mt19937_64 rng(rd());
+        std::uniform_int_distribution<uint32_t> dist(0u, 0xFFFFFFFFu);
+        std::ostringstream out;
+        out << "id-";
+        for (int i = 0; i < 5; ++i) {
+            const uint32_t part = dist(rng);
+            out.width(8);
+            out.fill('0');
+            out << std::hex << std::nouppercase << part;
+        }
+        std::string token = out.str();
+        if (token.size() > kMaxConnectIdentityChars) {
+            token.resize(kMaxConnectIdentityChars);
+        }
+        return token;
+    }
+
+    bool
+    ResolveHostToAddress(std::string_view host, uint16_t port, SteamNetworkingIPAddr &outAddr) {
+        if (host.empty()) {
+            return false;
         }
 
-        if (inet_ntop(it->ai_family, rawAddress, addressBuffer, sizeof(addressBuffer)) == nullptr) {
-            continue;
+        std::string hostStr(host);
+
+        SteamNetworkingIPAddr parsedAddr;
+        parsedAddr.Clear();
+        if (parsedAddr.ParseString(hostStr.c_str())) {
+            parsedAddr.m_port = port;
+            outAddr = parsedAddr;
+            return true;
         }
 
-        SteamNetworkingIPAddr addr;
-        addr.Clear();
-        if (!addr.ParseString(addressBuffer)) {
-            continue;
+        addrinfo hints{};
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_DGRAM;
+        hints.ai_protocol = IPPROTO_UDP;
+
+        addrinfo *results = nullptr;
+        const int gaiError = getaddrinfo(hostStr.c_str(), nullptr, &hints, &results);
+        if (gaiError != 0 || results == nullptr) {
+            if (results != nullptr) {
+                freeaddrinfo(results);
+            }
+            return false;
         }
 
-        addr.m_port = port;
-        outAddr = addr;
-        found = true;
-        break;
+        bool found = false;
+        char addressBuffer[INET6_ADDRSTRLEN] = {};
+        for (addrinfo *it = results; it != nullptr; it = it->ai_next) {
+            const void *rawAddress = nullptr;
+            if (it->ai_family == AF_INET) {
+                const sockaddr_in *addr4 = reinterpret_cast<const sockaddr_in *>(it->ai_addr);
+                rawAddress = &addr4->sin_addr;
+            } else if (it->ai_family == AF_INET6) {
+                const sockaddr_in6 *addr6 = reinterpret_cast<const sockaddr_in6 *>(it->ai_addr);
+                rawAddress = &addr6->sin6_addr;
+            } else {
+                continue;
+            }
+
+            if (inet_ntop(it->ai_family, rawAddress, addressBuffer, sizeof(addressBuffer)) ==
+                nullptr) {
+                continue;
+            }
+
+            SteamNetworkingIPAddr addr;
+            addr.Clear();
+            if (!addr.ParseString(addressBuffer)) {
+                continue;
+            }
+
+            addr.m_port = port;
+            outAddr = addr;
+            found = true;
+            break;
+        }
+
+        freeaddrinfo(results);
+        return found;
     }
-
-    freeaddrinfo(results);
-    return found;
-}
 
 } // namespace
 
@@ -202,6 +204,17 @@ bool ClientNetwork::ConnectTo(std::string_view host, uint16_t port) {
     return true;
 }
 
+bool ClientNetwork::SetClientIdentityOverride(std::string_view identity) {
+    std::string normalized = NormalizeIdentity(std::string(identity));
+    if (!IsValidIdentity(normalized)) {
+        return false;
+    }
+
+    m_clientIdentity = std::move(normalized);
+    m_useTransientIdentity = true;
+    return true;
+}
+
 void ClientNetwork::Shutdown() {
     if (m_conn != k_HSteamNetConnection_Invalid) {
         SteamNetworkingSockets()->CloseConnection(m_conn, 0, "client shutdown", false);
@@ -217,6 +230,36 @@ void ClientNetwork::Shutdown() {
     m_retryWithAutoAssignedUsername = false;
     m_chunkResyncOverflowCooldownUntil.clear();
     SetConnectionStatus(ConnectionState::Disconnected, "disconnected");
+
+    {
+        std::lock_guard<std::mutex> lk(m_inboundMutex);
+        m_chunkDataQueue.clear();
+        m_chunkDeltaQueue.clear();
+        m_chunkUnloadQueue.clear();
+        m_playerSnapshotQueue.clear();
+        m_shootResultQueue.clear();
+        m_inventoryActionResultQueue.clear();
+        m_inventorySnapshotQueue.clear();
+        m_worldItemSnapshotQueue.clear();
+        m_blockPlaceResultQueue.clear();
+        m_blockBreakResultQueue.clear();
+        m_killFeedQueue.clear();
+        m_scoreboardQueue.clear();
+    }
+}
+
+void ClientNetwork::DisconnectFromServer() {
+    if (m_conn != k_HSteamNetConnection_Invalid) {
+        SteamNetworkingSockets()->CloseConnection(m_conn, 0, "leave game", false);
+        m_conn = k_HSteamNetConnection_Invalid;
+    }
+    m_registered = false;
+    m_assignedUsername.clear();
+    m_hasEverConnectedSuccessfully = false;
+    m_retryWithAutoAssignedUsername = false;
+    m_allowAutoReconnect = false;
+    m_chunkResyncOverflowCooldownUntil.clear();
+    SetConnectionStatus(ConnectionState::Disconnected, "disconnected", false);
 
     {
         std::lock_guard<std::mutex> lk(m_inboundMutex);

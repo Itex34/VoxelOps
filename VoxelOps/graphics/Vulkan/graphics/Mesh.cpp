@@ -1,6 +1,7 @@
 #include "graphics/Vulkan/graphics/Mesh.hpp"
 
 #include "graphics/Vulkan/vulkan/UploadContext.hpp"
+#include "graphics/Vulkan/vulkan/VulkanUtils.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -16,36 +17,6 @@ namespace {
             capacity *= 2;
         }
         return capacity;
-    }
-
-    void createVmaBuffer(
-        VmaAllocator allocator,
-        vk::DeviceSize size,
-        vk::BufferUsageFlags usage,
-        VkBuffer &outBuffer,
-        VmaAllocation &outAllocation
-    ) {
-        if (allocator == VK_NULL_HANDLE) {
-            throw std::runtime_error("VkMesh::init requires a valid VMA allocator.");
-        }
-
-        VkBufferCreateInfo bufferInfo{};
-        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = std::max<vk::DeviceSize>(size, 4u);
-        bufferInfo.usage = static_cast<VkBufferUsageFlags>(usage);
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        VmaAllocationCreateInfo allocInfo{};
-        allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-        allocInfo.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-
-        const VkResult result =
-            vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &outBuffer, &outAllocation, nullptr);
-        if (result != VK_SUCCESS) {
-            outBuffer = VK_NULL_HANDLE;
-            outAllocation = VK_NULL_HANDLE;
-            throw std::runtime_error("VkMesh::init failed to create VMA buffer.");
-        }
     }
 } // namespace
 
@@ -122,22 +93,14 @@ void VkMesh::moveFrom(VkMesh &&other) noexcept {
     m_packedVertices = std::move(other.m_packedVertices);
     m_packedIndices = std::move(other.m_packedIndices);
 
-    m_allocator = other.m_allocator;
-    m_vertexBuffer = other.m_vertexBuffer;
-    m_vertexAllocation = other.m_vertexAllocation;
+    m_vertexBuffer = std::move(other.m_vertexBuffer);
     m_vertexCapacityBytes = other.m_vertexCapacityBytes;
-    m_indexBuffer = other.m_indexBuffer;
-    m_indexAllocation = other.m_indexAllocation;
+    m_indexBuffer = std::move(other.m_indexBuffer);
     m_indexCapacityBytes = other.m_indexCapacityBytes;
     m_indexType = other.m_indexType;
     m_indexCount = other.m_indexCount;
 
-    other.m_allocator = VK_NULL_HANDLE;
-    other.m_vertexBuffer = VK_NULL_HANDLE;
-    other.m_vertexAllocation = VK_NULL_HANDLE;
     other.m_vertexCapacityBytes = 0;
-    other.m_indexBuffer = VK_NULL_HANDLE;
-    other.m_indexAllocation = VK_NULL_HANDLE;
     other.m_indexCapacityBytes = 0;
     other.m_indexType = vk::IndexType::eUint32;
     other.m_indexCount = 0;
@@ -179,13 +142,7 @@ void VkMesh::init(
     UploadContext &uploadContext
 ) {
     (void)device;
-    if (m_allocator != VK_NULL_HANDLE && allocator != m_allocator) {
-        destroyGpuBuffers();
-        m_allocator = VK_NULL_HANDLE;
-    }
-    if (m_allocator == VK_NULL_HANDLE) {
-        m_allocator = allocator;
-    }
+    (void)physicalDevice;
 
     if (m_geometryFormat == GeometryFormat::Float32 && (m_vertices.empty() || m_indices.empty())) {
         m_vertices = createDefaultCubeVertices();
@@ -226,42 +183,28 @@ void VkMesh::init(
     const vk::DeviceSize vertexBufferSize = vertexStride * static_cast<vk::DeviceSize>(vertexCount);
     const vk::DeviceSize indexBufferSize = indexStride * static_cast<vk::DeviceSize>(indexCount);
 
-    if (m_vertexBuffer == VK_NULL_HANDLE || m_vertexAllocation == VK_NULL_HANDLE ||
-        vertexBufferSize > m_vertexCapacityBytes) {
-        if (m_vertexBuffer != VK_NULL_HANDLE && m_vertexAllocation != VK_NULL_HANDLE) {
-            vmaDestroyBuffer(m_allocator, m_vertexBuffer, m_vertexAllocation);
-            m_vertexBuffer = VK_NULL_HANDLE;
-            m_vertexAllocation = VK_NULL_HANDLE;
-            m_vertexCapacityBytes = 0;
-        }
+    if (m_vertexBuffer == nullptr || vertexBufferSize > m_vertexCapacityBytes) {
         const vk::DeviceSize newVertexCapacity =
             growBufferCapacity(vertexBufferSize, m_vertexCapacityBytes);
-        createVmaBuffer(
-            m_allocator,
+        VulkanUtils::createBuffer(
+            allocator,
             newVertexCapacity,
             vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
-            m_vertexBuffer,
-            m_vertexAllocation
+            vk::MemoryPropertyFlagBits::eDeviceLocal,
+            m_vertexBuffer
         );
         m_vertexCapacityBytes = newVertexCapacity;
     }
 
-    if (m_indexBuffer == VK_NULL_HANDLE || m_indexAllocation == VK_NULL_HANDLE ||
-        indexBufferSize > m_indexCapacityBytes) {
-        if (m_indexBuffer != VK_NULL_HANDLE && m_indexAllocation != VK_NULL_HANDLE) {
-            vmaDestroyBuffer(m_allocator, m_indexBuffer, m_indexAllocation);
-            m_indexBuffer = VK_NULL_HANDLE;
-            m_indexAllocation = VK_NULL_HANDLE;
-            m_indexCapacityBytes = 0;
-        }
+    if (m_indexBuffer == nullptr || indexBufferSize > m_indexCapacityBytes) {
         const vk::DeviceSize newIndexCapacity =
             growBufferCapacity(indexBufferSize, m_indexCapacityBytes);
-        createVmaBuffer(
-            m_allocator,
+        VulkanUtils::createBuffer(
+            allocator,
             newIndexCapacity,
             vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
-            m_indexBuffer,
-            m_indexAllocation
+            vk::MemoryPropertyFlagBits::eDeviceLocal,
+            m_indexBuffer
         );
         m_indexCapacityBytes = newIndexCapacity;
     }
@@ -270,15 +213,15 @@ void VkMesh::init(
     uploads.reserve(2);
     uploads.push_back(
         UploadContext::BufferCopyUpload{
-            uploadContext.createStagingBuffer(physicalDevice, vertexData, vertexBufferSize),
-            m_vertexBuffer,
+            uploadContext.createStagingBuffer(vertexData, vertexBufferSize),
+            *m_vertexBuffer,
             vertexBufferSize
         }
     );
     uploads.push_back(
         UploadContext::BufferCopyUpload{
-            uploadContext.createStagingBuffer(physicalDevice, indexData, indexBufferSize),
-            m_indexBuffer,
+            uploadContext.createStagingBuffer(indexData, indexBufferSize),
+            *m_indexBuffer,
             indexBufferSize
         }
     );
@@ -289,32 +232,21 @@ void VkMesh::init(
 
 void VkMesh::cleanup() {
     destroyGpuBuffers();
-    m_allocator = VK_NULL_HANDLE;
     m_indexCount = 0;
 }
 
 void VkMesh::destroyGpuBuffers() {
-    if (m_allocator != VK_NULL_HANDLE && m_vertexBuffer != VK_NULL_HANDLE &&
-        m_vertexAllocation != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(m_allocator, m_vertexBuffer, m_vertexAllocation);
-    }
-    if (m_allocator != VK_NULL_HANDLE && m_indexBuffer != VK_NULL_HANDLE &&
-        m_indexAllocation != VK_NULL_HANDLE) {
-        vmaDestroyBuffer(m_allocator, m_indexBuffer, m_indexAllocation);
-    }
-    m_vertexBuffer = VK_NULL_HANDLE;
-    m_vertexAllocation = VK_NULL_HANDLE;
+    VulkanUtils::destroyBuffer(m_vertexBuffer);
     m_vertexCapacityBytes = 0;
-    m_indexBuffer = VK_NULL_HANDLE;
-    m_indexAllocation = VK_NULL_HANDLE;
+    VulkanUtils::destroyBuffer(m_indexBuffer);
     m_indexCapacityBytes = 0;
 }
 
 void VkMesh::bind(const vk::raii::CommandBuffer &commandBuffer) const {
-    const std::array<vk::Buffer, 1> vertexBuffers = {static_cast<vk::Buffer>(m_vertexBuffer)};
+    const std::array<vk::Buffer, 1> vertexBuffers = {*m_vertexBuffer};
     const std::array<vk::DeviceSize, 1> offsets = {0};
     commandBuffer.bindVertexBuffers(0, vertexBuffers, offsets);
-    commandBuffer.bindIndexBuffer(static_cast<vk::Buffer>(m_indexBuffer), 0, m_indexType);
+    commandBuffer.bindIndexBuffer(*m_indexBuffer, 0, m_indexType);
 }
 
 std::vector<VkMesh::Vertex> VkMesh::createDefaultCubeVertices() {

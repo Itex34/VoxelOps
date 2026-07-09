@@ -13,96 +13,95 @@
 
 namespace {
 
-constexpr size_t kMaxChunkDataQueueDepth = 128;
-constexpr size_t kMaxChunkDeltaQueueDepth = 512;
-constexpr size_t kMaxChunkUnloadQueueDepth = 256;
-constexpr size_t kMaxKillFeedQueueDepth = 64;
-constexpr size_t kMaxScoreboardQueueDepth = 16;
-constexpr size_t kMaxWorldItemSnapshotQueueDepth = 8;
-constexpr size_t kMaxBlockPlaceResultQueueDepth = 128;
-constexpr size_t kMaxBlockBreakResultQueueDepth = 128;
-constexpr size_t kMaxGrappleResultQueueDepth = 32;
-constexpr size_t kMaxMessagesPerPoll = 128;
-constexpr int64_t kMessagePollBudgetUs = 2000;
-constexpr bool kEnableClientNetProfiling = false;
+    constexpr size_t kMaxChunkDataQueueDepth = 4096;
+    constexpr size_t kMaxChunkDeltaQueueDepth = 512;
+    constexpr size_t kMaxChunkUnloadQueueDepth = 256;
+    constexpr size_t kMaxKillFeedQueueDepth = 64;
+    constexpr size_t kMaxScoreboardQueueDepth = 16;
+    constexpr size_t kMaxWorldItemSnapshotQueueDepth = 8;
+    constexpr size_t kMaxBlockPlaceResultQueueDepth = 128;
+    constexpr size_t kMaxBlockBreakResultQueueDepth = 128;
+    constexpr size_t kMaxGrappleResultQueueDepth = 32;
+    constexpr size_t kMaxMessagesPerPoll = 128;
+    constexpr int64_t kMessagePollBudgetUs = 2000;
+    constexpr bool kEnableClientNetProfiling = false;
 
-struct ClientNetProfileState {
-    std::chrono::steady_clock::time_point lastLog = std::chrono::steady_clock::now();
-    uint64_t polls = 0;
-    uint64_t messages = 0;
-    uint64_t bytes = 0;
-    int64_t totalPollUs = 0;
-    int64_t totalCallbackUs = 0;
-    int64_t totalRecvUs = 0;
-    int64_t maxPollUs = 0;
-};
+    struct ClientNetProfileState {
+        std::chrono::steady_clock::time_point lastLog = std::chrono::steady_clock::now();
+        uint64_t polls = 0;
+        uint64_t messages = 0;
+        uint64_t bytes = 0;
+        int64_t totalPollUs = 0;
+        int64_t totalCallbackUs = 0;
+        int64_t totalRecvUs = 0;
+        int64_t maxPollUs = 0;
+    };
 
-ClientNetProfileState &GetClientNetProfileState() {
-    static ClientNetProfileState state;
-    return state;
-}
-
-void RecordClientNetProfile(
-    ClientNetwork *net,
-    int64_t pollUs,
-    int64_t callbackUs,
-    int64_t recvUs,
-    uint64_t messages,
-    uint64_t bytes
-) {
-    if (!kEnableClientNetProfiling || net == nullptr) {
-        return;
+    ClientNetProfileState &GetClientNetProfileState() {
+        static ClientNetProfileState state;
+        return state;
     }
 
-    ClientNetProfileState &state = GetClientNetProfileState();
-    state.polls += 1;
-    state.messages += messages;
-    state.bytes += bytes;
-    state.totalPollUs += pollUs;
-    state.totalCallbackUs += callbackUs;
-    state.totalRecvUs += recvUs;
-    state.maxPollUs = std::max(state.maxPollUs, pollUs);
+    void RecordClientNetProfile(
+        ClientNetwork *net,
+        int64_t pollUs,
+        int64_t callbackUs,
+        int64_t recvUs,
+        uint64_t messages,
+        uint64_t bytes
+    ) {
+        if (!kEnableClientNetProfiling || net == nullptr) {
+            return;
+        }
 
-    const auto now = std::chrono::steady_clock::now();
-    const double elapsedSec =
-        std::chrono::duration_cast<std::chrono::duration<double>>(now - state.lastLog).count();
-    if (elapsedSec < 1.0) {
-        return;
+        ClientNetProfileState &state = GetClientNetProfileState();
+        state.polls += 1;
+        state.messages += messages;
+        state.bytes += bytes;
+        state.totalPollUs += pollUs;
+        state.totalCallbackUs += callbackUs;
+        state.totalRecvUs += recvUs;
+        state.maxPollUs = std::max(state.maxPollUs, pollUs);
+
+        const auto now = std::chrono::steady_clock::now();
+        const double elapsedSec =
+            std::chrono::duration_cast<std::chrono::duration<double>>(now - state.lastLog).count();
+        if (elapsedSec < 1.0) {
+            return;
+        }
+
+        const double polls = (state.polls > 0) ? static_cast<double>(state.polls) : 1.0;
+        const double msgs = static_cast<double>(state.messages);
+        const double avgPollMs = static_cast<double>(state.totalPollUs) / (polls * 1000.0);
+        const double avgCallbackMs = static_cast<double>(state.totalCallbackUs) / (polls * 1000.0);
+        const double avgRecvMs = static_cast<double>(state.totalRecvUs) / (polls * 1000.0);
+        const double maxPollMs = static_cast<double>(state.maxPollUs) / 1000.0;
+        const double avgMsgUs =
+            (state.messages > 0) ? (static_cast<double>(state.totalRecvUs) / msgs) : 0.0;
+
+        const ClientNetwork::ChunkQueueDepths queueDepths = net->GetChunkQueueDepths();
+        std::cerr << "[net/profile] polls=" << state.polls << " msgs=" << state.messages
+                  << " bytes=" << state.bytes << " pollAvgMs=" << std::fixed << std::setprecision(3)
+                  << avgPollMs << " pollMaxMs=" << maxPollMs << " cbAvgMs=" << avgCallbackMs
+                  << " recvAvgMs=" << avgRecvMs << " msgAvgUs=" << avgMsgUs
+                  << " queue(data/delta/unload)=(" << queueDepths.chunkData << "/"
+                  << queueDepths.chunkDelta << "/" << queueDepths.chunkUnload << ")\n";
+
+        state.lastLog = now;
+        state.polls = 0;
+        state.messages = 0;
+        state.bytes = 0;
+        state.totalPollUs = 0;
+        state.totalCallbackUs = 0;
+        state.totalRecvUs = 0;
+        state.maxPollUs = 0;
     }
 
-    const double polls = (state.polls > 0) ? static_cast<double>(state.polls) : 1.0;
-    const double msgs = static_cast<double>(state.messages);
-    const double avgPollMs = static_cast<double>(state.totalPollUs) / (polls * 1000.0);
-    const double avgCallbackMs = static_cast<double>(state.totalCallbackUs) / (polls * 1000.0);
-    const double avgRecvMs = static_cast<double>(state.totalRecvUs) / (polls * 1000.0);
-    const double maxPollMs = static_cast<double>(state.maxPollUs) / 1000.0;
-    const double avgMsgUs =
-        (state.messages > 0) ? (static_cast<double>(state.totalRecvUs) / msgs) : 0.0;
-
-    const ClientNetwork::ChunkQueueDepths queueDepths = net->GetChunkQueueDepths();
-    std::cerr << "[net/profile] polls=" << state.polls << " msgs=" << state.messages
-              << " bytes=" << state.bytes << " pollAvgMs=" << std::fixed << std::setprecision(3)
-              << avgPollMs << " pollMaxMs=" << maxPollMs << " cbAvgMs=" << avgCallbackMs
-              << " recvAvgMs=" << avgRecvMs << " msgAvgUs=" << avgMsgUs
-              << " queue(data/delta/unload)=(" << queueDepths.chunkData << "/"
-              << queueDepths.chunkDelta << "/" << queueDepths.chunkUnload << ")\n";
-
-    state.lastLog = now;
-    state.polls = 0;
-    state.messages = 0;
-    state.bytes = 0;
-    state.totalPollUs = 0;
-    state.totalCallbackUs = 0;
-    state.totalRecvUs = 0;
-    state.maxPollUs = 0;
-}
-
-template <typename T>
-void TrimQueueToDepth(std::deque<T> &queue, size_t maxDepth) {
-    while (queue.size() > maxDepth) {
-        queue.pop_front();
+    template <typename T> void TrimQueueToDepth(std::deque<T> &queue, size_t maxDepth) {
+        while (queue.size() > maxDepth) {
+            queue.pop_front();
+        }
     }
-}
 
 } // namespace
 
@@ -137,13 +136,14 @@ void ClientNetwork::Poll() {
                     ConnectionState::Connected, std::string("connected as ") + m_assignedUsername
                 );
             }
-        } else if (info.m_eState == k_ESteamNetworkingConnectionState_Connecting &&
-                   !m_registered) {
+        } else if (info.m_eState == k_ESteamNetworkingConnectionState_Connecting && !m_registered) {
             if (m_connectionState != ConnectionState::Connecting) {
                 SetConnectionStatus(ConnectionState::Connecting, "connecting");
             }
-        } else if (info.m_eState == k_ESteamNetworkingConnectionState_ClosedByPeer ||
-                   info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally) {
+        } else if (
+            info.m_eState == k_ESteamNetworkingConnectionState_ClosedByPeer ||
+            info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally
+        ) {
             std::string reason = "connection closed";
             if (info.m_szEndDebug[0] != '\0') {
                 reason = info.m_szEndDebug;
@@ -155,10 +155,9 @@ void ClientNetwork::Poll() {
             m_chunkResyncOverflowCooldownUntil.clear();
             SetConnectionStatus(ConnectionState::Disconnected, reason);
             const auto pollTotalEnd = std::chrono::steady_clock::now();
-            const int64_t pollUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                                       pollTotalEnd - pollTotalStart
-                                   )
-                                       .count();
+            const int64_t pollUs =
+                std::chrono::duration_cast<std::chrono::microseconds>(pollTotalEnd - pollTotalStart)
+                    .count();
             RecordClientNetProfile(this, pollUs, callbackUs, 0, 0, 0);
             return;
         }
@@ -175,9 +174,9 @@ void ClientNetwork::Poll() {
 
         if (cb >= 1) {
             const PacketType type = static_cast<PacketType>(data[0]);
-            const bool highPriority =
-                (type == PacketType::PlayerSnapshot) || (type == PacketType::ShootResult) ||
-                (type == PacketType::GrappleResult);
+            const bool highPriority = (type == PacketType::PlayerSnapshot) ||
+                                      (type == PacketType::ShootResult) ||
+                                      (type == PacketType::GrappleResult);
 
             OnMessage(data, cb);
 
@@ -187,7 +186,7 @@ void ClientNetwork::Poll() {
             if (!highPriority) {
                 const int64_t elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
                                               std::chrono::steady_clock::now() - pollBudgetStart
-                                          )
+                )
                                               .count();
 
                 if (elapsedUs >= kMessagePollBudgetUs) {
@@ -232,9 +231,9 @@ void ClientNetwork::OnMessage(const uint8_t *data, uint32_t size) {
             m_hasEverConnectedSuccessfully = true;
             m_retryWithAutoAssignedUsername = false;
             m_assignedUsername = resp.assignedUsername;
-            const std::string displayName =
-                m_assignedUsername.empty() ? std::string("connected")
-                                           : ("connected as " + m_assignedUsername);
+            const std::string displayName = m_assignedUsername.empty()
+                                                ? std::string("connected")
+                                                : ("connected as " + m_assignedUsername);
             SetConnectionStatus(ConnectionState::Connected, displayName);
             std::cout << "[net] registered by server";
             if (!m_assignedUsername.empty()) {
@@ -420,7 +419,9 @@ void ClientNetwork::OnMessage(const uint8_t *data, uint32_t size) {
 
     if (static_cast<PacketType>(t) == PacketType::InventoryActionResult) {
         InventoryActionResult result;
-        if (!ClientPackets::ParseInventoryActionResult(std::span<const uint8_t>(data, size), result)) {
+        if (!ClientPackets::ParseInventoryActionResult(
+                std::span<const uint8_t>(data, size), result
+            )) {
             std::cerr << "[net] malformed InventoryActionResult\n";
             return;
         }
@@ -436,7 +437,9 @@ void ClientNetwork::OnMessage(const uint8_t *data, uint32_t size) {
 
     if (static_cast<PacketType>(t) == PacketType::InventorySnapshot) {
         InventorySnapshot snapshot;
-        if (!ClientPackets::ParseInventorySnapshot(std::span<const uint8_t>(data, size), snapshot)) {
+        if (!ClientPackets::ParseInventorySnapshot(
+                std::span<const uint8_t>(data, size), snapshot
+            )) {
             std::cerr << "[net] malformed InventorySnapshot\n";
             return;
         }
@@ -452,7 +455,9 @@ void ClientNetwork::OnMessage(const uint8_t *data, uint32_t size) {
 
     if (static_cast<PacketType>(t) == PacketType::WorldItemSnapshot) {
         WorldItemSnapshot snapshot;
-        if (!ClientPackets::ParseWorldItemSnapshot(std::span<const uint8_t>(data, size), snapshot)) {
+        if (!ClientPackets::ParseWorldItemSnapshot(
+                std::span<const uint8_t>(data, size), snapshot
+            )) {
             std::cerr << "[net] malformed WorldItemSnapshot\n";
             return;
         }

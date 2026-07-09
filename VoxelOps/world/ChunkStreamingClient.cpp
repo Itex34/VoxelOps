@@ -13,41 +13,49 @@ using namespace AppHelpers;
 
 namespace {
 
-void MarkChunkAndEdgeNeighborsDirty(ChunkManager &chunkManager, const glm::ivec3 &worldPos) {
-    const glm::ivec3 chunkPos = chunkManager.worldToChunkPos(worldPos);
-    const glm::ivec3 localPos = chunkManager.worldToLocalPos(worldPos);
-    chunkManager.markChunkDirtyHighPriority(chunkPos);
-    if (localPos.x == 0) {
-        chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(-1, 0, 0));
+    void MarkChunkAndEdgeNeighborsDirty(ChunkManager &chunkManager, const glm::ivec3 &worldPos) {
+        const glm::ivec3 chunkPos = chunkManager.worldToChunkPos(worldPos);
+        const glm::ivec3 localPos = chunkManager.worldToLocalPos(worldPos);
+        chunkManager.markChunkDirtyHighPriority(chunkPos);
+        if (localPos.x == 0) {
+            chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(-1, 0, 0));
+        }
+        if (localPos.x == CHUNK_SIZE - 1) {
+            chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(1, 0, 0));
+        }
+        if (localPos.y == 0) {
+            chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(0, -1, 0));
+        }
+        if (localPos.y == CHUNK_SIZE - 1) {
+            chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(0, 1, 0));
+        }
+        if (localPos.z == 0) {
+            chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(0, 0, -1));
+        }
+        if (localPos.z == CHUNK_SIZE - 1) {
+            chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(0, 0, 1));
+        }
     }
-    if (localPos.x == CHUNK_SIZE - 1) {
-        chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(1, 0, 0));
-    }
-    if (localPos.y == 0) {
-        chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(0, -1, 0));
-    }
-    if (localPos.y == CHUNK_SIZE - 1) {
-        chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(0, 1, 0));
-    }
-    if (localPos.z == 0) {
-        chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(0, 0, -1));
-    }
-    if (localPos.z == CHUNK_SIZE - 1) {
-        chunkManager.markChunkDirtyHighPriority(chunkPos + glm::ivec3(0, 0, 1));
-    }
-}
 
 } // namespace
 
 void ChunkStreamingClient::update(Runtime &runtime, bool prioritizeMovement) {
-    constexpr double kChunkResyncCooldownSec = 0.25;
+    constexpr double kChunkResyncCooldownSec = 2.0;
+    constexpr double kChunkResyncGlobalIntervalSec = 0.25;
 
     const auto requestChunkResync = [&](const glm::ivec3 &chunkPos, bool force) {
         const double nowSec = GetTimeSeconds();
+        if (nowSec < m_nextChunkResyncSendAt) {
+            return;
+        }
         auto it = m_chunkResyncCooldownUntil.find(chunkPos);
         if (!force && it != m_chunkResyncCooldownUntil.end() && nowSec < it->second) {
             return;
         }
+        if (force && it != m_chunkResyncCooldownUntil.end() && nowSec < it->second) {
+            return;
+        }
+        m_nextChunkResyncSendAt = nowSec + kChunkResyncGlobalIntervalSec;
         m_chunkResyncCooldownUntil[chunkPos] = nowSec + kChunkResyncCooldownSec;
         if (!runtime.network.clientNet.SendChunkResyncRequest(chunkPos)) {
             std::cerr << "[chunk/resync] failed to request full chunk (" << chunkPos.x << ","
@@ -55,9 +63,19 @@ void ChunkStreamingClient::update(Runtime &runtime, bool prioritizeMovement) {
         }
     };
 
-    const int64_t chunkApplyBudgetUs = prioritizeMovement
-                                           ? RuntimeWorldState::ChunkApplyBudgetUsUnderInputPressure
-                                           : RuntimeWorldState::ChunkApplyBudgetUs;
+    const ClientNetwork::ChunkQueueDepths initialQueueDepths =
+        runtime.network.clientNet.GetChunkQueueDepths();
+    const bool chunkDataBacklog = initialQueueDepths.chunkData > 256;
+    const int64_t chunkApplyBudgetUs =
+        chunkDataBacklog
+            ? (prioritizeMovement ? RuntimeWorldState::ChunkApplyBudgetUsUnderInputPressure * 2
+                                  : RuntimeWorldState::ChunkApplyBudgetUs * 2)
+            : (prioritizeMovement ? RuntimeWorldState::ChunkApplyBudgetUsUnderInputPressure
+                                  : RuntimeWorldState::ChunkApplyBudgetUs);
+    const size_t maxChunkDataApplyThisFrame =
+        chunkDataBacklog ? (prioritizeMovement ? RuntimeWorldState::MaxChunkDataApplyPerFrame
+                                               : RuntimeWorldState::MaxChunkDataApplyPerFrame * 3)
+                         : RuntimeWorldState::MaxChunkDataApplyPerFrame;
     const auto chunkApplyStart = std::chrono::steady_clock::now();
     const auto withinChunkApplyBudget = [&]() -> bool {
         const auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -69,8 +87,7 @@ void ChunkStreamingClient::update(Runtime &runtime, bool prioritizeMovement) {
     size_t chunkDataApplied = 0;
 
     ChunkData chunkData;
-    while (chunkDataApplied < RuntimeWorldState::MaxChunkDataApplyPerFrame &&
-           withinChunkApplyBudget() &&
+    while (chunkDataApplied < maxChunkDataApplyThisFrame && withinChunkApplyBudget() &&
            runtime.network.clientNet.PopChunkData(chunkData)) {
         runtime.gameplay.chunkManager->applyNetworkChunkData(chunkData);
         ++chunkDataApplied;
@@ -79,8 +96,7 @@ void ChunkStreamingClient::update(Runtime &runtime, bool prioritizeMovement) {
     ChunkDelta chunkDelta;
     size_t chunkDeltaApplied = 0;
     while (chunkDeltaApplied < RuntimeWorldState::MaxChunkDeltaApplyPerFrame &&
-           withinChunkApplyBudget() &&
-           runtime.network.clientNet.PopChunkDelta(chunkDelta)) {
+           withinChunkApplyBudget() && runtime.network.clientNet.PopChunkDelta(chunkDelta)) {
         const NetworkChunkDeltaApplyResult deltaResult =
             runtime.gameplay.chunkManager->applyNetworkChunkDelta(chunkDelta);
         if (deltaResult == NetworkChunkDeltaApplyResult::MissingBaseChunk ||
@@ -95,8 +111,7 @@ void ChunkStreamingClient::update(Runtime &runtime, bool prioritizeMovement) {
     ChunkUnload chunkUnload;
     size_t chunkUnloadApplied = 0;
     while (chunkUnloadApplied < RuntimeWorldState::MaxChunkUnloadApplyPerFrame &&
-           withinChunkApplyBudget() &&
-           runtime.network.clientNet.PopChunkUnload(chunkUnload)) {
+           withinChunkApplyBudget() && runtime.network.clientNet.PopChunkUnload(chunkUnload)) {
         runtime.gameplay.chunkManager->applyNetworkChunkUnload(chunkUnload);
         ++chunkUnloadApplied;
     }
@@ -108,7 +123,8 @@ void ChunkStreamingClient::update(Runtime &runtime, bool prioritizeMovement) {
         auto pendingIt = runtime.world.pendingBlockPlaceRequests.find(blockPlaceResult.requestId);
         if (blockPlaceResult.accepted == 0) {
             if (pendingIt != runtime.world.pendingBlockPlaceRequests.end()) {
-                for (const RuntimeWorldState::PendingBlockPlaceEdit &edit : pendingIt->second.edits) {
+                for (const RuntimeWorldState::PendingBlockPlaceEdit &edit :
+                     pendingIt->second.edits) {
                     const BlockID predictedId = static_cast<BlockID>(edit.newBlockId);
                     const BlockID rollbackId = static_cast<BlockID>(edit.oldBlockId);
                     if (runtime.gameplay.chunkManager->getBlockGlobal(
@@ -117,7 +133,9 @@ void ChunkStreamingClient::update(Runtime &runtime, bool prioritizeMovement) {
                         runtime.gameplay.chunkManager->setBlockGlobal(
                             edit.worldPos.x, edit.worldPos.y, edit.worldPos.z, rollbackId
                         );
-                        MarkChunkAndEdgeNeighborsDirty(*runtime.gameplay.chunkManager, edit.worldPos);
+                        MarkChunkAndEdgeNeighborsDirty(
+                            *runtime.gameplay.chunkManager, edit.worldPos
+                        );
                     }
                 }
             }
@@ -164,7 +182,8 @@ void ChunkStreamingClient::update(Runtime &runtime, bool prioritizeMovement) {
         auto pendingIt = runtime.world.pendingBlockBreakRequests.find(blockBreakResult.requestId);
         if (blockBreakResult.accepted == 0) {
             if (pendingIt != runtime.world.pendingBlockBreakRequests.end()) {
-                for (const RuntimeWorldState::PendingBlockBreakEdit &edit : pendingIt->second.edits) {
+                for (const RuntimeWorldState::PendingBlockBreakEdit &edit :
+                     pendingIt->second.edits) {
                     if (runtime.gameplay.chunkManager->getBlockGlobal(
                             edit.worldPos.x, edit.worldPos.y, edit.worldPos.z
                         ) == BlockID::Air) {
@@ -174,7 +193,9 @@ void ChunkStreamingClient::update(Runtime &runtime, bool prioritizeMovement) {
                             edit.worldPos.z,
                             static_cast<BlockID>(edit.oldBlockId)
                         );
-                        MarkChunkAndEdgeNeighborsDirty(*runtime.gameplay.chunkManager, edit.worldPos);
+                        MarkChunkAndEdgeNeighborsDirty(
+                            *runtime.gameplay.chunkManager, edit.worldPos
+                        );
                     }
                 }
             }
@@ -213,10 +234,9 @@ void ChunkStreamingClient::update(Runtime &runtime, bool prioritizeMovement) {
         }
     }
 
-    const size_t maxChunkMeshBuilds = prioritizeMovement
-                                          ? RuntimeWorldState::
-                                                MaxChunkMeshBuildsPerFrameUnderInputPressure
-                                          : RuntimeWorldState::MaxChunkMeshBuildsPerFrame;
+    const size_t maxChunkMeshBuilds =
+        prioritizeMovement ? RuntimeWorldState::MaxChunkMeshBuildsPerFrameUnderInputPressure
+                           : RuntimeWorldState::MaxChunkMeshBuildsPerFrame;
     const int64_t chunkMeshBuildBudgetUs =
         prioritizeMovement ? RuntimeWorldState::ChunkMeshBuildBudgetUsUnderInputPressure
                            : RuntimeWorldState::ChunkMeshBuildBudgetUs;
@@ -275,8 +295,8 @@ void ChunkStreamingClient::update(Runtime &runtime, bool prioritizeMovement) {
                   << " missing=" << (desired - loaded) << " queue(data/delta/unload)=("
                   << queueDepths.chunkData << "/" << queueDepths.chunkDelta << "/"
                   << queueDepths.chunkUnload << ")"
-                  << " applied(data/delta/unload)=(" << chunkDataApplied << "/"
-                  << chunkDeltaApplied << "/" << chunkUnloadApplied << ")\n";
+                  << " applied(data/delta/unload)=(" << chunkDataApplied << "/" << chunkDeltaApplied
+                  << "/" << chunkUnloadApplied << ")\n";
 
         if (!missingSamples.empty()) {
             std::cerr << "[chunk/client] missing samples:";

@@ -1,0 +1,1 @@
+block icons for the inventory and hotbar are extracted directly from the texture atlas

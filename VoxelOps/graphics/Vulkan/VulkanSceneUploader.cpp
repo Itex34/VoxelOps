@@ -31,22 +31,36 @@ void VulkanSceneUploader::syncChunkCache(
     const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuChunkMeshes,
     const glm::ivec3 &cullingChunk,
     size_t maxChunkUploadsPerFrame,
+    float uploadBudgetMs,
+    int rtActiveRadiusChunks,
     uint64_t frameCounter,
     VulkanContext &context,
     UploadContext &uploadContext,
     VulkanRayTracingScene &rtScene
 ) {
+    const auto withinRtRadius = [&cullingChunk, rtActiveRadiusChunks](const glm::ivec3 &chunkPos) {
+        if (rtActiveRadiusChunks < 0) {
+            return true;
+        }
+        const glm::ivec3 d = chunkPos - cullingChunk;
+        const int64_t radius = static_cast<int64_t>(rtActiveRadiusChunks);
+        return static_cast<int64_t>(d.x) * static_cast<int64_t>(d.x) +
+                   static_cast<int64_t>(d.z) * static_cast<int64_t>(d.z) <=
+               radius * radius;
+    };
+
     m_chunkRenderCache.syncFromCpuChunkMeshes(
         cpuChunkMeshes,
         cullingChunk,
         maxChunkUploadsPerFrame,
+        uploadBudgetMs,
         frameCounter,
         context,
         uploadContext,
         [&rtScene, frameCounter](const glm::ivec3 &chunkPos) {
             rtScene.removeChunkGeometry(frameCounter, chunkPos);
         },
-        [&rtScene, &context, &uploadContext, frameCounter](
+        [&rtScene, &context, &uploadContext, frameCounter, &withinRtRadius](
             const glm::ivec3 &chunkPos, const CpuChunkMesh &cpuMesh
         ) {
             if (context.isHardwareRayTracingSupported()) {
@@ -56,11 +70,15 @@ void VulkanSceneUploader::syncChunkCache(
                     frameCounter,
                     chunkPos,
                     cpuMesh,
-                    cpuMesh.highPriorityRtBuild
+                    cpuMesh.highPriorityRtBuild,
+                    withinRtRadius(chunkPos)
                 );
             }
         }
     );
+    if (context.isHardwareRayTracingSupported()) {
+        rtScene.updateActiveChunkRadius(frameCounter, cullingChunk, rtActiveRadiusChunks);
+    }
 }
 
 void VulkanSceneUploader::cleanupChunkMeshes() {

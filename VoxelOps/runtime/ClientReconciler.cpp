@@ -1,5 +1,6 @@
 #include "ClientReconciler.hpp"
 
+#include "../../Shared/network/Packets.hpp"
 #include "../application/AppHelpers.hpp"
 #include "Runtime.hpp"
 
@@ -13,31 +14,15 @@ namespace {
         return static_cast<int32_t>(a - b) > 0;
     }
 
-    inline bool IsMoveInputActive(const NetworkInputState &input) {
-        constexpr float kMoveDeadzone = 0.01f;
-        const bool axisActive =
-            (std::abs(input.moveX) > kMoveDeadzone) || (std::abs(input.moveZ) > kMoveDeadzone);
-        const uint8_t moveFlags = kPlayerInputFlagForward | kPlayerInputFlagBackward |
-                                  kPlayerInputFlagLeft | kPlayerInputFlagRight |
-                                  kPlayerInputFlagJump | kPlayerInputFlagFlyUp |
-                                  kPlayerInputFlagFlyDown;
-        const bool flagActive = (input.flags & moveFlags) != 0;
-        return axisActive || flagActive;
+    inline bool HasMoveIntent(const NetworkInputState &input) {
+        constexpr uint8_t kMoveFlags = kPlayerInputFlagForward | kPlayerInputFlagBackward |
+                                      kPlayerInputFlagLeft | kPlayerInputFlagRight |
+                                      kPlayerInputFlagFlyUp | kPlayerInputFlagFlyDown;
+        constexpr float kMoveAxisEps = 0.001f;
+        return (input.flags & kMoveFlags) != 0 || std::abs(input.moveX) > kMoveAxisEps ||
+               std::abs(input.moveZ) > kMoveAxisEps;
     }
 
-    inline bool HasActiveReplayInput(const Runtime &runtime) {
-        for (const RuntimePredictionState::PendingInputEntry &pending : runtime.prediction.pendingInputs) {
-            NetworkInputState replayInput{};
-            replayInput.moveX = pending.packet.moveX;
-            replayInput.moveZ = pending.packet.moveZ;
-            replayInput.flags = pending.packet.inputFlags;
-            replayInput.flyMode = (pending.packet.flyMode != 0);
-            if (IsMoveInputActive(replayInput)) {
-                return true;
-            }
-        }
-        return false;
-    }
 } // namespace
 
 bool ClientReconciler::Apply(Runtime &runtime, const ServerSnapshot &snapshot) {
@@ -86,6 +71,7 @@ bool ClientReconciler::Apply(Runtime &runtime, const ServerSnapshot &snapshot) {
     serverBaseState.jumpPressedLastTick = snapshot.jumpPressedLastTick;
     serverBaseState.timeSinceGrounded = std::max(0.0f, snapshot.timeSinceGrounded);
     serverBaseState.jumpBufferTimer = std::max(0.0f, snapshot.jumpBufferTimer);
+    serverBaseState.stepCooldownTimer = std::max(0.0f, snapshot.stepCooldownTimer);
     runtime.gameplay.player->restoreSimulationState(serverBaseState);
 
     constexpr size_t kMaxReplaySteps = 64;
@@ -112,9 +98,11 @@ bool ClientReconciler::Apply(Runtime &runtime, const ServerSnapshot &snapshot) {
         replayInput.pitch = pending.packet.pitch;
         replayInput.flags = pending.packet.inputFlags;
         replayInput.flyMode = snapshot.allowFlyMode && (pending.packet.flyMode != 0);
+        const double replayDeltaSeconds =
+            pending.deltaSeconds > 0.0 ? pending.deltaSeconds : RuntimePredictionState::LocalPredictionStep;
         runtime.gameplay.player->simulateFromNetworkInput(
             replayInput,
-            RuntimePredictionState::LocalPredictionStep,
+            replayDeltaSeconds,
             false,
             runtime.combat.grapple.isAttached,
             &grappleConstraint
@@ -191,30 +179,57 @@ bool ClientReconciler::Apply(Runtime &runtime, const ServerSnapshot &snapshot) {
     const float microDeadzone =
         RuntimePredictionState::BasicAuthReconcileDeadzone * (0.60f + (0.40f * latencyBlend));
     const float microDeadzoneSq = microDeadzone * microDeadzone;
+    const NetworkInputState currentInput = runtime.gameplay.player->getNetworkInputState();
+    const bool currentMoveInputActive = HasMoveIntent(currentInput);
 
-    const bool allowIdleSnap = latencyBlend >= 0.25f;
-    constexpr float kIdleVelocityEps = 0.15f;
-    const bool inputIdle = !HasActiveReplayInput(runtime) &&
-                           !IsMoveInputActive(runtime.gameplay.player->getNetworkInputState());
-    const bool serverNearlyStopped = glm::length(snapshot.velocity) <= kIdleVelocityEps;
-    const float idleSnapDist = RuntimePredictionState::BasicAuthReconcileDeadzone * 2.0f + (0.7f * latencyCurve);
-    const float idleSnapDistSq = idleSnapDist * idleSnapDist;
-
-    if (allowIdleSnap && inputIdle && snapshot.onGround && serverNearlyStopped &&
-        effectiveCorrectionLenSq <= idleSnapDistSq) {
-        runtime.gameplay.player->restoreSimulationState(finalState);
-        runtime.world.renderStateNeedsResync = true;
-        return true;
-    }
+    const auto logCorrection = [&](const char *mode,
+                                   const glm::vec3 &appliedCorrection,
+                                   float posBlend,
+                                   float velBlend,
+                                   bool forceLog) {
+        (void)mode;
+        (void)appliedCorrection;
+        (void)posBlend;
+        (void)velBlend;
+        (void)forceLog;
+    };
 
     if (effectiveCorrectionLenSq <= microDeadzoneSq) {
+        logCorrection("deadzone", glm::vec3(0.0f), 0.0f, 0.0f, false);
         // Tiny corrections create visible "buzz" if applied every snapshot.
         // Let them accumulate until they become meaningful.
         runtime.gameplay.player->restoreSimulationState(predictedState);
         return true;
     }
 
+    const glm::vec2 predictedHorizontalVel(predictedState.velocity.x, predictedState.velocity.z);
+    const glm::vec2 finalHorizontalVel(finalState.velocity.x, finalState.velocity.z);
+    const glm::vec2 serverHorizontalVel(snapshot.velocity.x, snapshot.velocity.z);
+    constexpr float kStoppedVelocityEps = 0.05f;
+    const bool groundedIdleStopped =
+        !currentMoveInputActive && snapshot.onGround && predictedState.onGround && finalState.onGround &&
+        glm::dot(predictedHorizontalVel, predictedHorizontalVel) <=
+            kStoppedVelocityEps * kStoppedVelocityEps &&
+        glm::dot(finalHorizontalVel, finalHorizontalVel) <=
+            kStoppedVelocityEps * kStoppedVelocityEps &&
+        glm::dot(serverHorizontalVel, serverHorizontalVel) <=
+            kStoppedVelocityEps * kStoppedVelocityEps;
+    if (groundedIdleStopped) {
+        constexpr float kIdleHoldCorrectionDist = 0.12f;
+        const float correctionLen = std::sqrt(effectiveCorrectionLenSq);
+        if (correctionLen <= kIdleHoldCorrectionDist) {
+            runtime.gameplay.player->restoreSimulationState(predictedState);
+            return true;
+        }
+
+        logCorrection("idle-snap", effectiveCorrection, 1.0f, 1.0f, false);
+        runtime.gameplay.player->restoreSimulationState(finalState);
+        runtime.world.renderStateNeedsResync = true;
+        return true;
+    }
+
     if (effectiveCorrectionLenSq > hardSnapDistSq) {
+        logCorrection("snap", effectiveCorrection, 1.0f, 1.0f, false);
         runtime.gameplay.player->restoreSimulationState(finalState);
         runtime.world.renderStateNeedsResync = true;
     } else {
@@ -222,14 +237,23 @@ bool ClientReconciler::Apply(Runtime &runtime, const ServerSnapshot &snapshot) {
         const float correctionLen = std::sqrt(effectiveCorrectionLenSq);
         const float correctionT =
             std::clamp(correctionLen / std::max(softTeleportDist, 1e-4f), 0.0f, 1.0f);
-        const float basePosBlend = finalState.onGround ? 0.24f : 0.16f;
+        const glm::vec2 predictedHorizontalVel(predictedState.velocity.x, predictedState.velocity.z);
+        const glm::vec2 finalHorizontalVel(finalState.velocity.x, finalState.velocity.z);
+        const glm::vec2 horizontalVelDelta = finalHorizontalVel - predictedHorizontalVel;
+        const bool groundedMovingWithStableVelocity =
+            currentMoveInputActive && predictedState.onGround && finalState.onGround &&
+            glm::dot(horizontalVelDelta, horizontalVelDelta) <= 0.25f;
+        const float basePosBlend =
+            groundedMovingWithStableVelocity ? 0.68f : (finalState.onGround ? 0.24f : 0.16f);
+        const float maxPosBlend = groundedMovingWithStableVelocity ? 0.90f : 0.78f;
         const float posBlend =
-            std::clamp(basePosBlend + (0.36f * correctionT), basePosBlend, 0.78f);
+            std::clamp(basePosBlend + (0.36f * correctionT), basePosBlend, maxPosBlend);
         const float velBlend = std::clamp(0.30f + (0.45f * correctionT), 0.30f, 0.85f);
 
         Player::SimulationState blendedState = finalState;
         blendedState.position = predictedState.position + (effectiveCorrection * posBlend);
         blendedState.velocity = glm::mix(predictedState.velocity, finalState.velocity, velBlend);
+        logCorrection("blend", blendedState.position - predictedPos, posBlend, velBlend, false);
         runtime.gameplay.player->restoreSimulationState(blendedState);
 
         // Only trigger resync for large corrections to avoid visual stutter
@@ -240,6 +264,3 @@ bool ClientReconciler::Apply(Runtime &runtime, const ServerSnapshot &snapshot) {
 
     return true;
 }
-
-
-

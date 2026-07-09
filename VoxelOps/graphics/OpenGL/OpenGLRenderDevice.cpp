@@ -19,8 +19,10 @@ RenderDeviceCapabilities OpenGLRenderDevice::getCapabilities() const noexcept {
 }
 
 bool OpenGLRenderDevice::initialize(SDL_Window *window) {
-    (void)window;
     if (!m_renderer.initializeFrameResources()) {
+        return false;
+    }
+    if (!m_nativeUiRenderer.initialize(window)) {
         return false;
     }
 
@@ -33,6 +35,13 @@ bool OpenGLRenderDevice::initialize(SDL_Window *window) {
 
 void OpenGLRenderDevice::renderFrame(RenderScene &scene) {
     m_renderer.renderFrame(scene);
+    if (scene.nativeUiDrawData != nullptr) {
+        m_nativeUiRenderer.render(*scene.nativeUiDrawData);
+    }
+}
+
+void OpenGLRenderDevice::onWindowResized(int width, int height) {
+    m_nativeUiRenderer.onWindowResized(width, height);
 }
 
 bool OpenGLRenderDevice::initializeDebugUi(
@@ -49,5 +58,6 @@ void OpenGLRenderDevice::present(SDL_Window *window) {
 }
 
 void OpenGLRenderDevice::shutdown() {
+    m_nativeUiRenderer.shutdown();
     m_renderer.shutdown();
 }

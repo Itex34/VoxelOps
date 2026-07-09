@@ -16,13 +16,12 @@ struct RuntimePredictionState {
     };
 
     static constexpr size_t MaxPendingInputs = 256;
-    static constexpr double InputSendInterval = 1.0 / 60.0;
     static constexpr double LocalPredictionStep = 1.0 / 60.0;
     static constexpr size_t MaxLocalPredictionStepsPerFrame = 8;
     static constexpr float BasicAuthReconcileDeadzone = 0.08f;
     static constexpr float BasicAuthReconcileTeleportDistance = 2.0f;
     static constexpr float RenderLeadMaxDistance = 0.40f;
-    static constexpr size_t InputRedundancyCopies = 1;
+    static constexpr size_t InputRedundancyCopies = 0;
 
     uint32_t inputTickCounter = 1;
     uint64_t localPlayerId = 0;

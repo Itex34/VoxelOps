@@ -25,7 +25,6 @@
     "vulkan",
     "rapidjson",
     "nlohmann-json",
-    "rmlui",
     "vulkan-memory-allocator",
     "freetype"
   ]

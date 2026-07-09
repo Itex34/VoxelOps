@@ -1,24 +1,37 @@
 #pragma once
 
+#include "graphics/Vulkan/vulkan/VulkanResource.hpp"
+
 #include <vulkan/vulkan_raii.hpp>
+#include <vk_mem_alloc.h>
 
 namespace VulkanUtils {
 
-    uint32_t findMemoryType(
-        const vk::raii::PhysicalDevice &physicalDevice,
-        uint32_t typeFilter,
-        vk::MemoryPropertyFlags properties
-    );
-
     void createBuffer(
-        const vk::raii::Device &device,
-        const vk::raii::PhysicalDevice &physicalDevice,
+        VmaAllocator allocator,
         vk::DeviceSize size,
         vk::BufferUsageFlags usage,
         vk::MemoryPropertyFlags properties,
-        vk::raii::Buffer &buffer,
-        vk::raii::DeviceMemory &bufferMemory
+        VulkanBuffer &buffer,
+        VmaAllocationCreateFlags allocationFlags = 0,
+        const uint32_t *queueFamilyIndices = nullptr,
+        uint32_t queueFamilyIndexCount = 0
     );
+
+    void destroyBuffer(VulkanBuffer &buffer);
+
+    void createImage(
+        VmaAllocator allocator,
+        const vk::ImageCreateInfo &imageInfo,
+        vk::MemoryPropertyFlags properties,
+        VulkanImage &image,
+        VmaAllocationCreateFlags allocationFlags = 0
+    );
+
+    void destroyImage(VulkanImage &image);
+
+    void *mapAllocation(VulkanBuffer &buffer);
+    void unmapAllocation(VulkanBuffer &buffer);
 
     vk::raii::CommandBuffer beginSingleTimeCommands(
         const vk::raii::Device &device, const vk::raii::CommandPool &commandPool

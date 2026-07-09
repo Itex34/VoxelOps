@@ -52,6 +52,7 @@ VulkanFrameBuildResult VulkanFrameBuilder::buildFrameData(
     uint16_t chunkRenderDistance,
     const std::vector<RenderRemotePlayerState> &remotePlayers,
     ImDrawData *uiDrawData,
+    const NativeUiDrawData *nativeUiDrawData,
     int width,
     int height,
     const VkModel *remotePlayerModel,
@@ -83,6 +84,7 @@ VulkanFrameBuildResult VulkanFrameBuilder::buildFrameData(
     const auto frameBuildStart = std::chrono::steady_clock::now();
 
     frameData.uiDrawData = uiDrawData;
+    frameData.nativeUiDrawData = nativeUiDrawData;
 
     struct VisibleChunkPacket {
         const VkMesh *mesh = nullptr;

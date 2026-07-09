@@ -110,6 +110,7 @@ namespace Respawning {
             player.jumpPressedLastTick = false;
             player.timeSinceGrounded = 0.0f;
             player.jumpBufferTimer = 0.0f;
+            player.stepCooldownTimer = 0.0f;
             player.inputBuffer.reset();
             player.health = player.maxHealth;
             player.isAlive = true;
@@ -135,6 +136,7 @@ namespace Respawning {
         player.jumpPressedLastTick = false;
         player.timeSinceGrounded = 0.0f;
         player.jumpBufferTimer = 0.0f;
+        player.stepCooldownTimer = 0.0f;
         player.inputBuffer.reset();
         ++player.movementRevision;
     }

@@ -11,6 +11,7 @@ class Camera;
 class VkModel;
 class VkTexture;
 struct ImDrawData;
+struct NativeUiDrawData;
 
 struct VulkanFrameBuildResult {
     glm::mat4 view{1.0f};
@@ -31,6 +32,7 @@ public:
         uint16_t chunkRenderDistance,
         const std::vector<RenderRemotePlayerState> &remotePlayers,
         ImDrawData *uiDrawData,
+        const NativeUiDrawData *nativeUiDrawData,
         int width,
         int height,
         const VkModel *remotePlayerModel,

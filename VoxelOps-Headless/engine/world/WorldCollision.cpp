@@ -83,8 +83,7 @@ namespace WorldCollision {
                     const int localMaxY = std::min(iy1, chunkWorldMaxY) - chunkWorldMinY;
                     const int localMaxZ = std::min(iz1, chunkWorldMaxZ) - chunkWorldMinZ;
 
-                    std::array<BlockID, CHUNK_VOLUME> chunkBlocks{};
-                    bool haveChunk = false;
+                    const ServerChunk *chunk = nullptr;
                     {
                         const auto lockStart = std::chrono::steady_clock::now();
                         std::shared_lock<std::shared_mutex> lk(manager.mapMutex);
@@ -93,17 +92,10 @@ namespace WorldCollision {
                         )
                                                 .count();
                         MaybeLogSlowChunkMapLock("queryAabbCollision.chunkFetch", waitUs);
-                        const ServerChunk *chunk = manager.m_chunks.get(chunkPos);
-                        if (chunk != nullptr) {
-                            chunk->fillRawVoxelBytes(
-                                reinterpret_cast<uint8_t *>(chunkBlocks.data()),
-                                chunkBlocks.size() * sizeof(BlockID)
-                            );
-                            haveChunk = true;
-                        }
+                        chunk = manager.m_chunks.get(chunkPos);
                     }
 
-                    if (!haveChunk) {
+                    if (chunk == nullptr) {
                         if (!result.missingChunk) {
                             result.missingChunk = true;
                             result.firstMissingChunk = chunkPos;
@@ -115,17 +107,12 @@ namespace WorldCollision {
                         continue;
                     }
 
-                    for (int lx = localMinX; lx <= localMaxX; ++lx) {
-                        for (int ly = localMinY; ly <= localMaxY; ++ly) {
-                            for (int lz = localMinZ; lz <= localMaxZ; ++lz) {
-                                const size_t idx = static_cast<size_t>(lx + ly * CHUNK_SIZE +
-                                                                       lz * CHUNK_SIZE * CHUNK_SIZE);
-                                if (chunkBlocks[idx] != BlockID::Air) {
-                                    result.collided = true;
-                                    return result;
-                                }
-                            }
-                        }
+                    const bool hasSolid = chunk->anySolidInLocalRange(
+                        localMinX, localMinY, localMinZ, localMaxX, localMaxY, localMaxZ
+                    );
+                    if (hasSolid) {
+                        result.collided = true;
+                        return result;
                     }
                 }
             }

@@ -4,10 +4,22 @@
 #include "../data/GameData.hpp"
 #include "../runtime/Runtime.hpp"
 
+#include "../../Shared/network/Packets.hpp"
 #include "../../Shared/player/PlayerData.hpp"
 
 #include <algorithm>
 #include <cmath>
+
+namespace {
+    bool HasMoveIntent(const NetworkInputState &input) {
+        constexpr uint8_t kMoveFlags = kPlayerInputFlagForward | kPlayerInputFlagBackward |
+                                      kPlayerInputFlagLeft | kPlayerInputFlagRight |
+                                      kPlayerInputFlagFlyUp | kPlayerInputFlagFlyDown;
+        constexpr float kMoveAxisEps = 0.001f;
+        return (input.flags & kMoveFlags) != 0 || std::abs(input.moveX) > kMoveAxisEps ||
+               std::abs(input.moveZ) > kMoveAxisEps;
+    }
+} // namespace
 
 RenderScene RenderSceneBuilder::build(Runtime &runtime, const RenderSceneBuilderInput &input) const {
     const Player::SimulationState simStateAfterPrediction =
@@ -47,6 +59,13 @@ RenderScene RenderSceneBuilder::build(Runtime &runtime, const RenderSceneBuilder
     const float renderExtrapolationBlend = 0.0f;
     glm::vec3 targetBodyPos =
         glm::mix(interpolatedBodyPos, extrapolatedBodyPos, renderExtrapolationBlend);
+    const bool localMoveInputActive =
+        HasMoveIntent(runtime.gameplay.player->getNetworkInputState());
+    const bool preferLatestLocalBodyPos =
+        !localMoveInputActive && simStateAfterPrediction.onGround;
+    if (preferLatestLocalBodyPos) {
+        targetBodyPos = simStateAfterPrediction.position;
+    }
     const glm::vec3 renderLead = targetBodyPos - runtime.prediction.renderCurrSimState.position;
     const float renderLeadLenSq = glm::dot(renderLead, renderLead);
     const float renderLeadMaxSq = RuntimePredictionState::RenderLeadMaxDistance *
@@ -62,9 +81,13 @@ RenderScene RenderSceneBuilder::build(Runtime &runtime, const RenderSceneBuilder
         runtime.prediction.renderCurrPresentationState.stepUpVisualOffset,
         simAlpha
     );
+    const float cameraStepOffset =
+        preferLatestLocalBodyPos
+            ? runtime.gameplay.player->capturePresentationState().stepUpVisualOffset
+            : interpolatedStepOffset;
     const float eyeHeight = Shared::PlayerData::GetMovementSettings().eyeHeight;
     const glm::vec3 targetCameraPos =
-        targetBodyPos + glm::vec3(0.0f, eyeHeight - interpolatedStepOffset, 0.0f);
+        targetBodyPos + glm::vec3(0.0f, eyeHeight - cameraStepOffset, 0.0f);
     runtime.prediction.smoothedPlayerCameraPos = targetCameraPos;
     runtime.prediction.hasSmoothedPlayerCameraPos = true;
     runtime.render.interpolatedPlayerCamera.position = targetCameraPos;
@@ -122,6 +145,7 @@ RenderScene RenderSceneBuilder::build(Runtime &runtime, const RenderSceneBuilder
         .sunShadowFrontFaceCullAtLowSun = input.sunShadowFrontFaceCullAtLowSun,
         .sunShadowFrontFaceCullGrazingThreshold = input.sunShadowFrontFaceCullGrazingThreshold,
         .uiDrawData = input.uiDrawData,
+        .nativeUiDrawData = input.nativeUiDrawData,
         .renderOpaqueOverlayPasses = input.renderOpaqueOverlayPasses,
         .useDebugCamera = input.useDebugCamera
     };

@@ -17,8 +17,8 @@
 #include <limits>
 
 namespace {
-    constexpr float kStreamingBudgetEmaAlpha = 0.12f;
-    constexpr uint32_t kStreamingTierHoldFrames = 24u;
+    constexpr float kStreamingBudgetEmaAlpha = 0.20f;
+    constexpr uint32_t kStreamingTierHoldFrames = 12u;
     constexpr uint8_t kStreamingTierVeryFast = 0u;
     constexpr uint8_t kStreamingTierFast = 1u;
     constexpr uint8_t kStreamingTierMedium = 2u;
@@ -34,13 +34,13 @@ namespace {
     }
 
     uint8_t pickInitialStreamingTier(float frameMs) {
-        if (frameMs < 13.0f) {
+        if (frameMs < 9.5f) {
             return kStreamingTierVeryFast;
         }
-        if (frameMs < 16.0f) {
+        if (frameMs < 11.5f) {
             return kStreamingTierFast;
         }
-        if (frameMs < 20.0f) {
+        if (frameMs < 14.0f) {
             return kStreamingTierMedium;
         }
         return kStreamingTierSlow;
@@ -49,21 +49,68 @@ namespace {
     uint8_t updateStreamingTierWithHysteresis(uint8_t currentTier, float emaFrameMs) {
         switch (currentTier) {
         case kStreamingTierVeryFast:
-            return (emaFrameMs > 14.0f) ? kStreamingTierFast : currentTier;
+            return (emaFrameMs > 10.5f) ? kStreamingTierFast : currentTier;
         case kStreamingTierFast:
-            if (emaFrameMs < 12.2f) {
+            if (emaFrameMs < 8.8f) {
                 return kStreamingTierVeryFast;
             }
-            return (emaFrameMs > 17.0f) ? kStreamingTierMedium : currentTier;
+            return (emaFrameMs > 12.5f) ? kStreamingTierMedium : currentTier;
         case kStreamingTierMedium:
-            if (emaFrameMs < 15.0f) {
+            if (emaFrameMs < 10.8f) {
                 return kStreamingTierFast;
             }
-            return (emaFrameMs > 21.0f) ? kStreamingTierSlow : currentTier;
+            return (emaFrameMs > 15.0f) ? kStreamingTierSlow : currentTier;
         case kStreamingTierSlow:
-            return (emaFrameMs < 19.0f) ? kStreamingTierMedium : currentTier;
+            return (emaFrameMs < 13.0f) ? kStreamingTierMedium : currentTier;
         }
         return currentTier;
+    }
+
+    float chunkUploadBudgetMsForTier(uint8_t tier) {
+        switch (tier) {
+        case kStreamingTierVeryFast:
+            return 1.2f;
+        case kStreamingTierFast:
+            return 0.85f;
+        case kStreamingTierMedium:
+            return 0.55f;
+        case kStreamingTierSlow:
+            return 0.30f;
+        }
+        return 0.55f;
+    }
+
+    int rtActiveRadiusChunksForTier(uint8_t tier) {
+        (void)tier;
+        return 8;
+    }
+
+    uint32_t rtBuildPrimitiveBudgetForTier(uint8_t tier) {
+        switch (tier) {
+        case kStreamingTierVeryFast:
+            return 22000u;
+        case kStreamingTierFast:
+            return 14000u;
+        case kStreamingTierMedium:
+            return 8000u;
+        case kStreamingTierSlow:
+            return 4000u;
+        }
+        return 8000u;
+    }
+
+    VkDeviceSize rtBuildByteBudgetForTier(uint8_t tier) {
+        switch (tier) {
+        case kStreamingTierVeryFast:
+            return 2ull * 1024ull * 1024ull;
+        case kStreamingTierFast:
+            return 1280ull * 1024ull;
+        case kStreamingTierMedium:
+            return 768ull * 1024ull;
+        case kStreamingTierSlow:
+            return 512ull * 1024ull;
+        }
+        return 768ull * 1024ull;
     }
 
     bool parseBoolEnv(const char *name, bool defaultValue) {
@@ -132,6 +179,7 @@ bool VulkanRenderDevice::initialize(SDL_Window *window) {
 
         m_uploadContext.init(
             m_context->getDevice(),
+            m_context->getVmaAllocator(),
             m_context->getGraphicsQueueFamily(),
             m_context->getGraphicsQueue()
         );
@@ -403,6 +451,7 @@ void VulkanRenderDevice::renderFrame(RenderScene &scene) {
         scene.chunkRenderDistance,
         scene.remotePlayers,
         uiDrawData,
+        scene.nativeUiDrawData,
         width,
         height,
         m_sceneUploader.remotePlayerModel(),
@@ -510,8 +559,15 @@ void VulkanRenderDevice::renderFrame(RenderScene &scene) {
     const bool cullingChunkChanged =
         !m_lastSyncCullingChunkValid || (m_lastSyncCullingChunk != cullingChunk);
     const bool periodicSyncTick = ((m_frameCounter & 3u) == 0u);
+    const int rtActiveRadiusChunks = rtActiveRadiusChunksForTier(m_streamingBudgetTier);
+    const uint32_t rtBuildPrimitiveBudget = rtBuildPrimitiveBudgetForTier(m_streamingBudgetTier);
+    const VkDeviceSize rtBuildByteBudget = rtBuildByteBudgetForTier(m_streamingBudgetTier);
+    bool allowOversizedRtBuild = false;
+    size_t rtBlasUploadsSubmitted = 0u;
+    const char *rtTlasDecision = "no_context";
 
     if (m_context) {
+        rtTlasDecision = "clean";
         m_rtScene.pollFinishedBlasBuilds(*m_context, m_frameCounter);
         m_rtScene.pollFinishedTlasBuild(*m_context, m_frameCounter);
         const bool highPriorityRtWork = m_rtScene.hasHighPriorityBuildWork();
@@ -521,7 +577,7 @@ void VulkanRenderDevice::renderFrame(RenderScene &scene) {
             streamingSyncIntervalFrames = 1u;
         } else if (rtPendingBuildWork) {
             streamingSyncIntervalFrames =
-                (m_streamingBudgetTier == kStreamingTierVeryFast) ? 2u : 3u;
+                (m_streamingBudgetTier == kStreamingTierVeryFast) ? 2u : 4u;
         }
         const bool streamingSyncCadenceReached =
             (m_frameCounter >= (m_lastStreamingSyncFrame + streamingSyncIntervalFrames));
@@ -530,20 +586,17 @@ void VulkanRenderDevice::renderFrame(RenderScene &scene) {
                                           (rtPendingBuildWork && streamingSyncCadenceReached) ||
                                           periodicSyncTick;
         if (shouldSyncChunkCache) {
-            size_t maxChunkUploadsPerFrame = 2u;
-            if (m_streamingBudgetTier == kStreamingTierVeryFast) {
-                maxChunkUploadsPerFrame = 6u;
-            } else if (m_streamingBudgetTier == kStreamingTierFast) {
-                maxChunkUploadsPerFrame = 4u;
-            } else if (m_streamingBudgetTier == kStreamingTierMedium) {
-                maxChunkUploadsPerFrame = 3u;
-            } else {
-                maxChunkUploadsPerFrame = 1u;
-            }
+            size_t maxChunkUploadsPerFrame = 1u;
+            const float chunkUploadBudgetMs =
+                highPriorityRtWork
+                    ? std::max(chunkUploadBudgetMsForTier(m_streamingBudgetTier), 0.85f)
+                    : chunkUploadBudgetMsForTier(m_streamingBudgetTier);
             m_sceneUploader.syncChunkCache(
                 *scene.chunkWorld.cpuChunkMeshes,
                 cullingChunk,
                 maxChunkUploadsPerFrame,
+                chunkUploadBudgetMs,
+                rtActiveRadiusChunks,
                 m_frameCounter,
                 *m_context,
                 m_uploadContext,
@@ -551,36 +604,47 @@ void VulkanRenderDevice::renderFrame(RenderScene &scene) {
             );
             m_lastStreamingSyncFrame = m_frameCounter;
         }
-        size_t kRtBlasUploadsPerFrame = 1u;
+        size_t rtBlasUploadsPerFrame = 1u;
         if (m_streamingBudgetTier == kStreamingTierVeryFast) {
-            kRtBlasUploadsPerFrame = 2u;
+            rtBlasUploadsPerFrame = 1u;
         } else if (m_streamingBudgetTier == kStreamingTierFast) {
-            kRtBlasUploadsPerFrame = 2u;
+            rtBlasUploadsPerFrame = 1u;
         } else if (m_streamingBudgetTier == kStreamingTierMedium) {
-            kRtBlasUploadsPerFrame = 1u;
-        }
-        if (highPriorityRtWork) {
-            // Push urgent edits through quickly even in a slow frame.
-            kRtBlasUploadsPerFrame = std::max<size_t>(kRtBlasUploadsPerFrame, 3u);
+            rtBlasUploadsPerFrame = 1u;
         }
         if (shouldSyncChunkCache || rtPendingBuildWork) {
-            (void)m_rtScene.processPendingUploads(
+            allowOversizedRtBuild =
+                m_streamingBudgetTier <= kStreamingTierFast && m_streamingBudgetFrameMsEma < 11.5f;
+            rtBlasUploadsSubmitted = m_rtScene.processPendingUploads(
                 *m_context,
                 m_uploadContext,
                 m_frameCounter,
-                kRtBlasUploadsPerFrame,
+                rtBlasUploadsPerFrame,
+                rtBuildPrimitiveBudget,
+                rtBuildByteBudget,
+                allowOversizedRtBuild,
                 *scene.chunkWorld.cpuChunkMeshes
             );
         }
-    }
-    if (m_context && m_rtScene.isDirty()) {
-        const bool highPriorityRtWork = m_rtScene.hasHighPriorityBuildWork();
-        const bool streamingRtWork = m_rtScene.hasPendingBuildWork();
-        const uint64_t minTlasIntervalFrames =
-            highPriorityRtWork ? 1u : (streamingRtWork ? 2u : 1u);
-        if (m_frameCounter >= (m_lastRtTlasBuildFrame + minTlasIntervalFrames)) {
-            if (m_rtScene.rebuild(*m_context, m_frameCounter)) {
-                m_lastRtTlasBuildFrame = m_frameCounter;
+        if (m_rtScene.isDirty()) {
+            const bool rtWorkStillPending = m_rtScene.hasPendingBuildWork();
+            const bool submittedStreamingBlas = rtBlasUploadsSubmitted > 0u && !highPriorityRtWork;
+            const uint64_t minTlasIntervalFrames =
+                highPriorityRtWork ? 1u : (rtWorkStillPending ? 8u : 2u);
+            const bool canSubmitTlasThisFrame = !submittedStreamingBlas &&
+                                                m_frameCounter >=
+                                                    (m_lastRtTlasBuildFrame + minTlasIntervalFrames);
+            if (canSubmitTlasThisFrame) {
+                if (m_rtScene.rebuild(*m_context, m_frameCounter)) {
+                    m_lastRtTlasBuildFrame = m_frameCounter;
+                    rtTlasDecision = "submitted";
+                } else {
+                    rtTlasDecision = "rebuild_false";
+                }
+            } else if (submittedStreamingBlas) {
+                rtTlasDecision = "skip_same_frame_blas";
+            } else {
+                rtTlasDecision = "skip_cadence";
             }
         }
     }
@@ -598,11 +662,12 @@ void VulkanRenderDevice::renderFrame(RenderScene &scene) {
         } else if (giChunkCacheChanged) {
             // Streaming can touch chunk visibility/upload state every frame while moving.
             // Rebuild GI on cadence instead of every cache tick.
-            giRebuildIntervalFrames = 3u;
+            giRebuildIntervalFrames =
+                (m_streamingBudgetTier <= kStreamingTierFast) ? 4u : 8u;
             if (m_recentGiIntegrateMs > 24.0f) {
-                giRebuildIntervalFrames = 9u;
+                giRebuildIntervalFrames = 12u;
             } else if (m_recentGiIntegrateMs > 12.0f) {
-                giRebuildIntervalFrames = 6u;
+                giRebuildIntervalFrames = 8u;
             }
         } else if (giPendingBuildWork) {
             giRebuildIntervalFrames = 2u;
@@ -648,6 +713,7 @@ void VulkanRenderDevice::renderFrame(RenderScene &scene) {
     if (timingLogsEnabled()) {
         const uint32_t interval = timingLogInterval();
         if (interval > 0u && (m_frameCounter % interval) == 0u) {
+            const VulkanRayTracingScene::StreamingStats rtStats = m_rtScene.streamingStats();
             const auto frameEnd = std::chrono::steady_clock::now();
             const float frameTotalCpuMs = measureMs(frameStart, frameEnd);
             std::cout << "[Vulkan][Timing][Device] frame=" << m_frameCounter
@@ -705,6 +771,34 @@ void VulkanRenderDevice::renderFrame(RenderScene &scene) {
                               : "SoftwareDda")
                       << " giRays=" << m_lastTimingSnapshot.giRaysCast
                       << " rtSceneReady=" << (m_lastTimingSnapshot.giRtSceneReady ? "1" : "0")
+                      << " streamingTier=" << static_cast<uint32_t>(m_streamingBudgetTier)
+                      << " streamingEmaMs=" << m_streamingBudgetFrameMsEma
+                      << " rtRadius=" << rtActiveRadiusChunks
+                      << " rtPrimBudget=" << rtBuildPrimitiveBudget
+                      << " rtByteBudget=" << rtBuildByteBudget
+                      << " rtAllowOversized=" << (allowOversizedRtBuild ? 1 : 0)
+                      << " rtPendingNormal=" << rtStats.pendingNormalUploads
+                      << " rtPendingHigh=" << rtStats.pendingHighPriorityUploads
+                      << " rtPendingTracked=" << rtStats.pendingTrackedUploads
+                      << " rtPendingGpuBatches=" << rtStats.pendingGpuBuildBatches
+                      << " rtPendingTlas=" << (rtStats.pendingTlasBuild ? 1 : 0)
+                      << " rtCachedBlas=" << rtStats.cachedBlasCount
+                      << " rtActiveBlas=" << rtStats.activeBlasCount
+                      << " rtBlasSubmittedThisFrame=" << rtBlasUploadsSubmitted
+                      << " rtLastBuildFrame=" << rtStats.lastBuildFrame
+                      << " rtLastBuildSubmitted=" << rtStats.lastBuildSubmitted
+                      << " rtSelectedPrims=" << rtStats.lastBuildSelectedPrimitives
+                      << " rtSelectedBytes=" << rtStats.lastBuildSelectedBytes
+                      << " rtDeferredBudget=" << (rtStats.lastBuildDeferredBudget ? 1 : 0)
+                      << " rtDeferredOversized=" << (rtStats.lastBuildDeferredOversized ? 1 : 0)
+                      << " rtDeferredPrims=" << rtStats.lastBuildDeferredPrimitives
+                      << " rtDeferredBytes=" << rtStats.lastBuildDeferredBytes
+                      << " rtTlasDecision=" << rtTlasDecision
+                      << " rtLastTlasFrame=" << rtStats.lastTlasFrame
+                      << " rtLastTlasSubmitted=" << (rtStats.lastTlasSubmitted ? 1 : 0)
+                      << " rtLastTlasInstances=" << rtStats.lastTlasInstanceCount
+                      << " rtTlasSkippedPending=" << (rtStats.lastTlasSkippedPendingBuild ? 1 : 0)
+                      << " rtTlasSkippedEmpty=" << (rtStats.lastTlasSkippedEmpty ? 1 : 0)
                       << "\n";
         }
     }

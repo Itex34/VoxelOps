@@ -21,6 +21,7 @@ public:
         bool jumpPressedLastTick = false;
         float timeSinceGrounded = 0.0f;
         float jumpBufferTimer = 0.0f;
+        float stepCooldownTimer = 0.0f;
     };
 
     bool Apply(Runtime &runtime, const ServerSnapshot &snapshot);

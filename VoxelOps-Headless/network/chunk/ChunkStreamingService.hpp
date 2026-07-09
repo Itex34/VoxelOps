@@ -9,13 +9,16 @@
 #include <glm/ext/vector_int3.hpp>
 
 #include <atomic>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 class ChunkStreamingService {
 public:
@@ -43,7 +46,7 @@ public:
     size_t FlushChunkSendQueueForClient(HSteamNetConnection conn, size_t maxSends);
     size_t FlushChunkSendQueues(size_t globalBudget, size_t perClientBudget);
     void PruneChunkPipelineForClient(
-        HSteamNetConnection conn, const std::unordered_set<ChunkCoord, ChunkCoordHash> &desired
+        HSteamNetConnection conn, const ChunkPipelineState::ChunkInterestBounds &desired
     );
     size_t GetChunkSendQueueDepthForClient(HSteamNetConnection conn);
     void ClearChunkPipelineForConnection(HSteamNetConnection conn);
@@ -56,6 +59,13 @@ public:
 
 private:
     void ChunkPrepWorkerLoop();
+    bool IsConnectionSendable(HSteamNetConnection conn) const;
+    void ClearClientChunkState(HSteamNetConnection conn);
+    ChunkPipelineState::QueuePrepBatchResult QueueChunkPreparations(
+        HSteamNetConnection conn,
+        const std::vector<ChunkCoord> &coords,
+        std::vector<ChunkCoord> &acceptedCoords
+    );
 
 private:
     std::mutex &m_sessionMutex;
@@ -63,10 +73,21 @@ private:
     ChunkManager &m_chunkManager;
     ChunkPipelineState &m_pipelineState;
 
-    uint32_t m_nextAutoUsername = 0;
-    std::atomic<bool> m_chunkPrepQuit{false};
-    std::thread m_chunkPrepThread;
+    struct CachedChunkPacket {
+        uint64_t version = 0;
+        std::vector<uint8_t> bytes;
+    };
+    std::unordered_map<ChunkCoord, CachedChunkPacket, ChunkCoordHash> m_chunkPacketCache;
 
-    static constexpr size_t kMaxChunkPrepQueue = 2048;
-    static constexpr size_t kMaxChunkSendQueuePerClient = 256;
+    mutable std::mutex m_chunkPrepareMutex;
+    std::condition_variable m_chunkPrepareCv;
+    std::unordered_set<ChunkCoord, ChunkCoordHash> m_chunksBeingPrepared;
+
+    uint32_t m_nextAutoUsername = 0;
+    size_t m_nextChunkSendClientIndex = 0;
+    std::atomic<bool> m_chunkPrepQuit{false};
+    std::vector<std::thread> m_chunkPrepThreads;
+
+    static constexpr size_t kMaxChunkPrepQueue = 8192;
+    static constexpr size_t kMaxChunkSendQueuePerClient = 768;
 };

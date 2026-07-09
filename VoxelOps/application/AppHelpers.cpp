@@ -119,11 +119,18 @@ namespace AppHelpers {
     }
 
     void PrintUsage() {
-        std::cout << "VoxelOps client options:\n"
-                  << "  --server-ip <host>   (default: 127.0.0.1)\n"
-                  << "  --server-port <port> (default: 27015)\n"
-                  << "  --name <username>    (optional, max 32 chars)\n"
-                  << "  --help\n";
+        std::cout
+            << "VoxelOps client options:\n"
+            << "  --server-ip <host>   (default: 127.0.0.1)\n"
+            << "  --server-port <port> (default: 27015)\n"
+            << "  --name <username>    (optional, max 32 chars)\n"
+            << "  --bot                auto-connect and drive randomized input\n"
+            << "  --bot-duration <sec> exit after N seconds in bot mode (0 = run until stopped)\n"
+            << "  --bot-seed <n>       deterministic bot behavior seed\n"
+            << "  --bot-shoot-rate <n> average shots per second in bot mode\n"
+            << "  --bot-render-distance <n> chunk view distance for bot mode (default: 6)\n"
+            << "  --bot-visible        do not minimize the bot client window\n"
+            << "  --help\n";
     }
 
     bool ParsePort(std::string_view text, uint16_t &outPort) {
@@ -221,6 +228,61 @@ namespace AppHelpers {
         return true;
     }
 
+    bool ParseNonNegativeDouble(std::string_view text, double &outValue) {
+        if (text.empty()) {
+            return false;
+        }
+        try {
+            size_t consumed = 0;
+            const double value = std::stod(std::string(text), &consumed);
+            if (consumed != text.size() || !std::isfinite(value) || value < 0.0) {
+                return false;
+            }
+            outValue = value;
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    bool ParsePositiveFloat(std::string_view text, float &outValue) {
+        if (text.empty()) {
+            return false;
+        }
+        try {
+            size_t consumed = 0;
+            const float value = std::stof(std::string(text), &consumed);
+            if (consumed != text.size() || !std::isfinite(value) || value <= 0.0f) {
+                return false;
+            }
+            outValue = value;
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    bool ParseUint32(std::string_view text, uint32_t &outValue) {
+        if (text.empty()) {
+            return false;
+        }
+        for (char c : text) {
+            if (c < '0' || c > '9') {
+                return false;
+            }
+        }
+        try {
+            const unsigned long value = std::stoul(std::string(text));
+            if (value > 0xFFFFFFFFul) {
+                return false;
+            }
+            outValue = static_cast<uint32_t>(value);
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
     bool ParseLaunchOptions(int argc, char **argv, LaunchOptions &outOptions) {
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg =
@@ -267,6 +329,67 @@ namespace AppHelpers {
                     std::cerr << "Username too long (max 32 chars)\n";
                     return false;
                 }
+                continue;
+            }
+
+            if (arg == "--bot") {
+                outOptions.botMode = true;
+                continue;
+            }
+
+            if (arg == "--bot-visible") {
+                outOptions.botMinimizeWindow = false;
+                continue;
+            }
+
+            if (arg == "--bot-duration") {
+                if (i + 1 >= argc || argv[i + 1] == nullptr) {
+                    std::cerr << "Missing value for " << arg << "\n";
+                    return false;
+                }
+                if (!ParseNonNegativeDouble(argv[++i], outOptions.botDurationSeconds)) {
+                    std::cerr << "Invalid bot duration: " << argv[i] << "\n";
+                    return false;
+                }
+                continue;
+            }
+
+            if (arg == "--bot-seed") {
+                if (i + 1 >= argc || argv[i + 1] == nullptr) {
+                    std::cerr << "Missing value for " << arg << "\n";
+                    return false;
+                }
+                if (!ParseUint32(argv[++i], outOptions.botSeed)) {
+                    std::cerr << "Invalid bot seed: " << argv[i] << "\n";
+                    return false;
+                }
+                continue;
+            }
+
+            if (arg == "--bot-shoot-rate") {
+                if (i + 1 >= argc || argv[i + 1] == nullptr) {
+                    std::cerr << "Missing value for " << arg << "\n";
+                    return false;
+                }
+                if (!ParsePositiveFloat(argv[++i], outOptions.botShootRate)) {
+                    std::cerr << "Invalid bot shoot rate: " << argv[i] << "\n";
+                    return false;
+                }
+                continue;
+            }
+
+            if (arg == "--bot-render-distance") {
+                if (i + 1 >= argc || argv[i + 1] == nullptr) {
+                    std::cerr << "Missing value for " << arg << "\n";
+                    return false;
+                }
+                uint16_t parsedDistance = 0;
+                if (!ParsePort(argv[++i], parsedDistance)) {
+                    std::cerr << "Invalid bot render distance: " << argv[i] << "\n";
+                    return false;
+                }
+                outOptions.botRenderDistance =
+                    static_cast<uint16_t>(std::clamp<int>(static_cast<int>(parsedDistance), 2, 24));
                 continue;
             }
 

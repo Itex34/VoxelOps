@@ -56,10 +56,6 @@ float traceSunVisibilityNormalized(vec3 worldPos, vec3 normalWs, vec3 sunDir, fl
 }
 
 float computeSunShadow(vec3 worldPos, vec3 normal, vec3 sunDir) {
-    if (giParams.header.y == 0u) {
-        return 1.0;
-    }
-
     vec3 n = safeNormalize(normal);
     if (dot(n, sunDir) <= 0.0) {
         return 1.0;
@@ -78,7 +74,7 @@ float computeSunShadowNormalized(
     float ndl,
     float maxDistance
 ) {
-    if (giParams.header.y == 0u || ndl <= 0.0) {
+    if (ndl <= 0.0) {
         return 1.0;
     }
 
@@ -141,7 +137,7 @@ PathTraceResult tracePathTracedIndirect(vec3 worldPos, vec3 normal) {
         vec3 sampleRadiance = vec3(0.0);
 
         for (uint bounce = 0u; bounce < maxBounces; ++bounce) {
-            TraceResult hit = traceScene(rayOrigin, rayDir, maxDistance);
+            TraceResult hit = traceSceneNormalized(rayOrigin, rayDir, maxDistance);
             if (!hit.hit) {
                 sampleRadiance += throughput * skyRadiance(rayDir) * skyIntensity;
                 break;

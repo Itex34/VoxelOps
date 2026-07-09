@@ -24,6 +24,7 @@ struct FrameConnectionHost {
         : app(app) {}
 
     bool beginConnectionAttempt(Runtime &runtime);
+    void leaveGame(Runtime &runtime);
     bool equipGun(Runtime &runtime, GunType gunType);
 
     App &app;

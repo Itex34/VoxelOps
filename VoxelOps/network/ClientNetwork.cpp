@@ -25,13 +25,18 @@ bool ClientNetwork::ShouldAutoReconnect() const noexcept {
 }
 
 bool ClientNetwork::ShouldSendChunkResyncForOverflow(const glm::ivec3 &chunkPos) {
-    constexpr auto kOverflowResyncCooldown = std::chrono::milliseconds(400);
+    constexpr auto kOverflowResyncCooldown = std::chrono::seconds(3);
+    constexpr auto kOverflowResyncGlobalInterval = std::chrono::milliseconds(500);
     const auto now = std::chrono::steady_clock::now();
+    if (now < m_nextOverflowChunkResyncAt) {
+        return false;
+    }
     const ChunkCoordKey key{chunkPos.x, chunkPos.y, chunkPos.z};
     auto it = m_chunkResyncOverflowCooldownUntil.find(key);
     if (it != m_chunkResyncOverflowCooldownUntil.end() && now < it->second) {
         return false;
     }
+    m_nextOverflowChunkResyncAt = now + kOverflowResyncGlobalInterval;
     m_chunkResyncOverflowCooldownUntil[key] = now + kOverflowResyncCooldown;
     return true;
 }
@@ -55,4 +60,4 @@ void ClientNetwork::SetConnectionStatus(
     m_connectionState = state;
     m_connectionStatus = std::move(text);
     m_allowAutoReconnect = allowReconnect;
-} 
+}

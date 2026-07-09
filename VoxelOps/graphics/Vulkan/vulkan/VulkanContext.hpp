@@ -1,4 +1,7 @@
 #pragma once
+
+#include "graphics/Vulkan/vulkan/VulkanResource.hpp"
+
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
@@ -129,8 +132,7 @@ private:
     std::vector<vk::raii::ImageView> swapchainImageViews;
     vk::Format swapchainImageFormat;
     vk::Extent2D swapchainExtent;
-    vk::raii::Image depthImage{nullptr};
-    vk::raii::DeviceMemory depthImageMemory{nullptr};
+    VulkanImage depthImage;
     vk::raii::ImageView depthImageView{nullptr};
     vk::Format depthFormat = vk::Format::eUndefined;
 
@@ -169,10 +171,8 @@ private:
         vk::ImageTiling tiling,
         vk::ImageUsageFlags usage,
         vk::MemoryPropertyFlags properties,
-        vk::raii::Image &image,
-        vk::raii::DeviceMemory &imageMemory
+        VulkanImage &image
     );
-    uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const;
     vk::Format findSupportedFormat(
         const std::vector<vk::Format> &candidates,
         vk::ImageTiling tiling,

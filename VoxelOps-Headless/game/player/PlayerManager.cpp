@@ -260,23 +260,11 @@ void PlayerManager::update(double deltaSeconds, ChunkManager &chunkManager) {
             player.jumpPressedLastTick = task.workingPlayer.jumpPressedLastTick;
             player.timeSinceGrounded = task.workingPlayer.timeSinceGrounded;
             player.jumpBufferTimer = task.workingPlayer.jumpBufferTimer;
+            player.stepCooldownTimer = task.workingPlayer.stepCooldownTimer;
             player.grappleState = task.workingPlayer.grappleState;
             ++player.movementRevision;
             if (task.hasPreparedInput) {
                 player.inputBuffer.markProcessedUpTo(task.preparedInputTick);
-            } else {
-                const uint32_t expectedTick = player.inputBuffer.lastProcessedInputTick() + 1;
-                uint32_t nextPendingTick = 0;
-                PlayerInput ignored{};
-                if (player.inputBuffer.peekNext(ignored, nextPendingTick)) {
-                    const uint32_t gap = (nextPendingTick > expectedTick)
-                                             ? (nextPendingTick - expectedTick)
-                                             : 0;
-                    constexpr uint32_t kMaxInputGapTicks = 8;
-                    if (gap > kMaxInputGapTicks && nextPendingTick > 0) {
-                        player.inputBuffer.markProcessedUpTo(nextPendingTick - 1);
-                    }
-                }
             }
         }
 
@@ -327,6 +315,18 @@ std::vector<std::vector<uint8_t>> PlayerManager::buildSnapshotsForRecipients(
     return PlayerSnapshots::buildSnapshotsForRecipients(recipientIds, serverTick, *snapshot);
 }
 
+std::vector<std::vector<uint8_t>> PlayerManager::buildSnapshotsForRecipients(
+    const std::vector<std::pair<PlayerID, uint16_t>> &recipients, uint32_t serverTick
+) {
+    std::shared_ptr<const ReplicationSnapshot> snapshot;
+    {
+        auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
+        snapshot = m_replicationSnapshot;
+    }
+
+    return PlayerSnapshots::buildSnapshotsForRecipients(recipients, serverTick, *snapshot);
+}
+
 void PlayerManager::CaptureReplicationSnapshot(uint32_t serverTick) {
     auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     auto snapshot = std::make_shared<ReplicationSnapshot>();
@@ -348,6 +348,7 @@ void PlayerManager::CaptureReplicationSnapshot(uint32_t serverTick) {
         state.jumpPressedLastTick = player.jumpPressedLastTick;
         state.timeSinceGrounded = player.timeSinceGrounded;
         state.jumpBufferTimer = player.jumpBufferTimer;
+        state.stepCooldownTimer = player.stepCooldownTimer;
         state.lastProcessedInputTick = player.inputBuffer.lastProcessedInputTick();
         snapshot->emplace(id, state);
     }
@@ -455,4 +456,3 @@ bool PlayerManager::consumeItemsFromInventory(
     auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     return PlayerInventory::consumeItemsFromInventory(playersById, id, itemQuantities, outSnapshot);
 }
-

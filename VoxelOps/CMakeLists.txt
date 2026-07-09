@@ -58,11 +58,13 @@ add_executable(VoxelOps
     "graphics/Vulkan/VulkanChunkRenderCache.cpp"
     "graphics/Vulkan/vulkan/UploadContext.cpp"
     "graphics/Vulkan/vulkan/VulkanContext.cpp"
+    "graphics/Vulkan/vulkan/VulkanResource.cpp"
     
     "graphics/Vulkan/vulkan/VulkanUtils.cpp"
     "graphics/Vulkan/renderer/VulkanRendererTiming.cpp"
     "graphics/Vulkan/renderer/VulkanDrawResources.cpp"
     "graphics/Vulkan/renderer/VulkanNrdResources.cpp"
+    "graphics/Vulkan/renderer/VulkanNativeUiRenderer.cpp"
 
     "player/Player.cpp"
     "player/PlayerMovement.cpp"
@@ -118,12 +120,14 @@ add_executable(VoxelOps
     "graphics/OpenGL/ShaderSkyBackend.cpp"
     
     "ui/debug/DebugUi.cpp"
-    "ui/rml/RmlUiSystem.cpp"
+    "ui/native/NativeUiSystem.cpp"
+    "graphics/OpenGL/OpenGlNativeUiRenderer.cpp"
     "ui/player/InventoryUI.cpp"
+    "ui/player/PauseMenu.cpp"
     "ui/player/Crosshair.cpp"
     "ui/player/UiStateController.cpp"
     "commands/CommandParser.cpp"
-    "ui/player/SettingsUI.cpp"
+    "ui/player/SettingsMenu.cpp"
     "ui/player/MainMenu.cpp"
     "runtime/ClientPrediction.cpp" 
     "graphics/Vulkan/vulkan/VmaImpl.cpp" "graphics/OpenGL/debug_render/RenderLine.cpp" "ui/widgets/UIContext.cpp" "ui/text/FontManager.cpp" "ui/text/Font.cpp" "ui/text/FontAtlasBuilder.cpp" "render/ITextureFactory.cpp")
@@ -135,7 +139,6 @@ find_package(glad CONFIG REQUIRED)
 find_package(GameNetworkingSockets CONFIG REQUIRED)
 find_package(lz4 CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
-find_package(RmlUi REQUIRED)
 
 find_package(Vulkan REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
@@ -152,7 +155,6 @@ target_link_libraries(VoxelOps PRIVATE GameNetworkingSockets::GameNetworkingSock
 target_link_libraries(VoxelOps PRIVATE Shared)
 target_link_libraries(VoxelOps PRIVATE lz4::lz4)
 target_link_libraries(VoxelOps PRIVATE imgui::imgui)
-target_link_libraries(VoxelOps PRIVATE RmlUi::RmlUi)
 target_link_libraries(VoxelOps PRIVATE Freetype::Freetype)
 
 
@@ -211,6 +213,8 @@ if(NOT VOXELOPS_OPENGL_ONLY)
         ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/nrd_composite.frag
         ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/postprocess.vert
         ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/postprocess.frag
+        ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/native_ui.vert
+        ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/native_ui.frag
     )
 
     set(VK_SHADER_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders")

@@ -26,6 +26,7 @@ namespace Shared::Movement {
         bool jumpPressedLastTick = false;
         float timeSinceGrounded = 0.0f;
         float jumpBufferTimer = 0.0f;
+        float stepCooldownTimer = 0.0f;
     };
 
     struct Options {
@@ -58,59 +59,100 @@ namespace Shared::Movement {
         glm::vec3 tryPos = state.position;
         bool steppedDuringMove = false;
 
-        const glm::vec3 xBasePos = tryPos;
-        tryPos.x += delta.x;
-        if (collides(tryPos)) {
-            bool stepped = false;
-            if (allowStepUp && state.onGround && std::abs(delta.x) > 1e-6f) {
-                for (float step = movement.stepIncrement; step <= movement.maxStepHeight + 1e-6f;
-                     step += movement.stepIncrement) {
-                    glm::vec3 testPos = xBasePos;
-                    testPos.y += step;
-                    testPos.x += delta.x;
-                    if (!collides(testPos)) {
-                        tryPos.x = testPos.x;
-                        tryPos.y = std::max(tryPos.y, testPos.y);
-                        stepUpHeight = std::max(stepUpHeight, testPos.y - state.position.y);
-                        state.velocity.y = 0.0f;
-                        stepped = true;
-                        steppedDuringMove = true;
-                        break;
-                    }
+        const float horizontalSpeed = glm::length(glm::vec2(state.velocity.x, state.velocity.z));
+
+        const bool canStepUp = allowStepUp && wasGrounded && state.velocity.y <= 0.1f &&
+                               horizontalSpeed >= movement.stepMinHorizontalSpeed;
+
+        const auto tryStepUp = [&](const glm::vec3 &basePos, const glm::vec3 &horizontalDelta) {
+            if (!canStepUp ||
+                (std::abs(horizontalDelta.x) <= 1e-6f &&
+                 std::abs(horizontalDelta.z) <= 1e-6f)) {
+                return std::pair<bool, glm::vec3>{false, basePos};
+            }
+
+            for (float step = movement.stepIncrement; step <= movement.maxStepHeight + 1e-6f;
+                 step += movement.stepIncrement) {
+                glm::vec3 testPos = basePos;
+                testPos.y += step;
+                testPos.x += horizontalDelta.x;
+                testPos.z += horizontalDelta.z;
+                if (!collides(testPos)) {
+                    return std::pair<bool, glm::vec3>{true, testPos};
                 }
             }
 
-            if (!stepped) {
-                tryPos.x = state.position.x;
-                state.velocity.x = 0.0f;
+            return std::pair<bool, glm::vec3>{false, basePos};
+        };
+
+        const glm::vec3 horizontalDelta(delta.x, 0.0f, delta.z);
+        const bool hasHorizontalDelta =
+            std::abs(horizontalDelta.x) > 1e-6f || std::abs(horizontalDelta.z) > 1e-6f;
+        bool horizontalHandled = false;
+
+        if (hasHorizontalDelta) {
+            glm::vec3 horizontalTarget = tryPos + horizontalDelta;
+            if (!collides(horizontalTarget)) {
+                tryPos = horizontalTarget;
+                horizontalHandled = true;
+            } else {
+                const auto [stepped, steppedPos] = tryStepUp(state.position, horizontalDelta);
+                if (stepped) {
+                    tryPos = steppedPos;
+                    stepUpHeight = std::max(stepUpHeight, steppedPos.y - state.position.y);
+                    state.velocity.y = 0.0f;
+                    steppedDuringMove = true;
+                    horizontalHandled = true;
+                }
             }
         }
 
-        const glm::vec3 zBasePos = tryPos;
-        tryPos.z += delta.z;
-        if (collides(tryPos)) {
-            bool stepped = false;
-            if (allowStepUp && state.onGround && std::abs(delta.z) > 1e-6f) {
-                for (float step = movement.stepIncrement; step <= movement.maxStepHeight + 1e-6f;
-                     step += movement.stepIncrement) {
-                    glm::vec3 testPos = zBasePos;
-                    testPos.y += step;
-                    testPos.z += delta.z;
-                    if (!collides(testPos)) {
-                        tryPos.z = testPos.z;
-                        tryPos.y = std::max(tryPos.y, testPos.y);
-                        stepUpHeight = std::max(stepUpHeight, testPos.y - state.position.y);
+        if (!horizontalHandled) {
+            const glm::vec3 xBasePos = tryPos;
+            tryPos.x += delta.x;
+
+            if (collides(tryPos)) {
+                bool stepped = false;
+                if (canStepUp && std::abs(delta.x) > 1e-6f) {
+                    const auto [steppedOnX, steppedPos] =
+                        tryStepUp(xBasePos, glm::vec3(delta.x, 0.0f, 0.0f));
+                    if (steppedOnX) {
+                        tryPos.x = steppedPos.x;
+                        tryPos.y = std::max(tryPos.y, steppedPos.y);
+                        stepUpHeight = std::max(stepUpHeight, steppedPos.y - state.position.y);
                         state.velocity.y = 0.0f;
                         stepped = true;
                         steppedDuringMove = true;
-                        break;
                     }
+                }
+
+                if (!stepped) {
+                    tryPos.x = state.position.x;
+                    state.velocity.x = 0.0f;
                 }
             }
 
-            if (!stepped) {
-                tryPos.z = state.position.z;
-                state.velocity.z = 0.0f;
+            const glm::vec3 zBasePos = tryPos;
+            tryPos.z += delta.z;
+            if (collides(tryPos)) {
+                bool stepped = false;
+                if (canStepUp && std::abs(delta.z) > 1e-6f) {
+                    const auto [steppedOnZ, steppedPos] =
+                        tryStepUp(zBasePos, glm::vec3(0.0f, 0.0f, delta.z));
+                    if (steppedOnZ) {
+                        tryPos.z = steppedPos.z;
+                        tryPos.y = std::max(tryPos.y, steppedPos.y);
+                        stepUpHeight = std::max(stepUpHeight, steppedPos.y - state.position.y);
+                        state.velocity.y = 0.0f;
+                        stepped = true;
+                        steppedDuringMove = true;
+                    }
+                }
+
+                if (!stepped) {
+                    tryPos.z = state.position.z;
+                    state.velocity.z = 0.0f;
+                }
             }
         }
 
@@ -156,7 +198,7 @@ namespace Shared::Movement {
             const float heightRatio =
                 std::clamp(stepUpHeight / std::max(movement.maxStepHeight, 1e-4f), 0.0f, 1.0f);
             const float slowdown =
-                std::clamp(1.0f - movement.stepUpHorizontalSlowdown * heightRatio, 0.2f, 1.0f);
+                std::clamp(1.0f - movement.stepUpHorizontalSlowdown * heightRatio, 0.65f, 1.0f);
             // Apply slowdown to this frame's horizontal travel, not only velocity,
             // because ground acceleration can restore velocity immediately on next tick.
             tryPos.x = state.position.x + (tryPos.x - state.position.x) * slowdown;
@@ -182,6 +224,7 @@ namespace Shared::Movement {
         dt = std::max(0.0f, dt);
 
         state.flyMode = options.allowFlyMode && input.flyMode;
+        state.stepCooldownTimer = std::max(0.0f, state.stepCooldownTimer - dt);
 
         glm::vec2 moveInput(
             std::clamp(input.moveX, -1.0f, 1.0f), std::clamp(input.moveZ, -1.0f, 1.0f)
@@ -191,7 +234,14 @@ namespace Shared::Movement {
         }
 
         const bool sprint = (input.flags & kPlayerInputFlagSprint) != 0;
-        const float targetSpeed = sprint ? movement.sprintSpeed : movement.walkSpeed;
+        const float baseTargetSpeed = sprint ? movement.sprintSpeed : movement.walkSpeed;
+        const float stepRecoveryRatio =
+            movement.stepCooldownSec > 1e-6f
+                ? std::clamp(state.stepCooldownTimer / movement.stepCooldownSec, 0.0f, 1.0f)
+                : 0.0f;
+        const float stepRecoverySpeedScale =
+            Lerp(1.0f, movement.stepRecoverySpeedMultiplier, stepRecoveryRatio);
+        const float targetSpeed = baseTargetSpeed * stepRecoverySpeedScale;
         const glm::vec3 desiredHorizontal(
             moveInput.x * targetSpeed, 0.0f, moveInput.y * targetSpeed
         );
@@ -258,8 +308,12 @@ namespace Shared::Movement {
         }
         state.jumpPressedLastTick = effectiveJumpPressed;
 
-        const bool allowStepUpForTick =
-            options.allowStepUp && (!options.requireSprintForStepUp || sprint);
+        const float horizontalSpeed = glm::length(glm::vec2(state.velocity.x, state.velocity.z));
+
+        const bool allowStepUpForTick = options.allowStepUp && state.stepCooldownTimer <= 0.0f &&
+                                        horizontalSpeed >= movement.stepMinHorizontalSpeed &&
+                                        (!options.requireSprintForStepUp || sprint);
+
         const float steppedHeight = MoveAndCollide(
             state,
             state.velocity * dt,
@@ -267,6 +321,11 @@ namespace Shared::Movement {
             allowStepUpForTick,
             std::forward<CollisionFn>(collides)
         );
+
+        if (steppedHeight > 0.0f) {
+            state.stepCooldownTimer = movement.stepCooldownSec;
+        }
+
         if (outStepUpHeight != nullptr) {
             *outStepUpHeight = steppedHeight;
         }

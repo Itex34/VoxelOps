@@ -1,14 +1,16 @@
 #pragma once
 
 #include "Font.hpp"
-#include "../../render/ITextureFactory.hpp"
-
 
 #include <filesystem>
+#include <vector>
+
+struct BuiltFontAtlas {
+    Font font;
+    std::vector<std::uint8_t> pixelsR8;
+};
 
 class FontAtlasBuilder {
 public:
-    static Font buildFromFile(
-        const std::filesystem::path &path, uint32_t pixelSize, ITextureFactory &textureFactory
-    );
+    static BuiltFontAtlas buildFromFile(const std::filesystem::path &path, uint32_t pixelSize);
 };

@@ -80,10 +80,7 @@ ServerComposition::ServerComposition(std::atomic<bool> &quit, HSteamNetPollGroup
       )
     , m_chunkSendPhase(BuildChunkSendHooks())
     , m_collisionPrewarmPhase(
-          m_sessionState.MutexRef(),
-          m_sessionState.SessionsRef(),
-          m_playerManager,
-          m_chunkManager
+          m_sessionState.MutexRef(), m_sessionState.SessionsRef(), m_playerManager, m_chunkManager
       )
     , m_gameplayPhase(
           m_sessionState.MutexRef(),
@@ -115,9 +112,7 @@ ServerComposition::ServerComposition(std::atomic<bool> &quit, HSteamNetPollGroup
           m_chunkInterestPhase,
           m_chunkSendPhase,
           m_collisionPrewarmPhase
-      ) {
-
-    }
+      ) {}
 
 void ServerComposition::ResetRuntimeState() {
     m_serverTick.store(0, std::memory_order_release);
@@ -143,11 +138,15 @@ void ServerComposition::ShutdownClientSessions() {
     m_worldItemService.Reset();
 
     for (const auto &[conn, session] : sessions) {
-        m_sessionLifecycleService.TeardownClientSession(conn, session, "server shutting down", true);
+        m_sessionLifecycleService.TeardownClientSession(
+            conn, session, "server shutting down", true
+        );
     }
 }
 
-void ServerComposition::OnConnectionStatusChanged(SteamNetConnectionStatusChangedCallback_t *pInfo) {
+void ServerComposition::OnConnectionStatusChanged(
+    SteamNetConnectionStatusChangedCallback_t *pInfo
+) {
     m_connectionService.OnConnectionStatusChanged(pInfo);
 }
 
@@ -244,7 +243,7 @@ void ServerComposition::HandleChunkRequestPacket(
     }
 
     const glm::ivec3 centerChunk(req.chunkX, req.chunkY, req.chunkZ);
-    const uint16_t clampedViewDistance = ChunkStreamingService::ClampViewDistance(req.viewDistance);
+    uint16_t clampedViewDistance = ChunkStreamingService::ClampViewDistance(req.viewDistance);
     bool registered = false;
     m_sessionState.WithLock([&](ClientSessionManager &sessions) {
         auto it = sessions.find(incoming);
@@ -261,7 +260,7 @@ void ServerComposition::HandleChunkRequestPacket(
             it->second.viewDistance = clampedViewDistance;
             it->second.hasChunkInterest = true;
 
-            if (centerChanged || viewChanged || now >= it->second.nextChunkInterestUpdateAt) {
+            if (centerChanged || viewChanged) {
                 it->second.chunkInterestDirty = true;
                 it->second.nextChunkInterestUpdateAt = std::chrono::steady_clock::time_point::min();
             }
@@ -276,7 +275,9 @@ void ServerComposition::HandleChunkRequestPacket(
 
 CombatExecutionService::Hooks ServerComposition::BuildCombatExecutionHooks() {
     return CombatExecutionService::Hooks{
-        [this](PlayerID killerId, std::string_view killerUsername, PlayerID victimId, uint16_t weaponId) {
+        [this](
+            PlayerID killerId, std::string_view killerUsername, PlayerID victimId, uint16_t weaponId
+        ) {
             m_matchService.ApplyKillScore(killerId, victimId);
 
             std::string victimUsername;
@@ -327,7 +328,9 @@ CombatRequestService::Hooks ServerComposition::BuildCombatRequestHooks() {
 
 SessionLifecycleService::Hooks ServerComposition::BuildSessionLifecycleHooks() {
     return SessionLifecycleService::Hooks{
-        [this](HSteamNetConnection conn) { m_chunkStreamingService.ClearChunkPipelineForConnection(conn); },
+        [this](HSteamNetConnection conn) {
+            m_chunkStreamingService.ClearChunkPipelineForConnection(conn);
+        },
         [this](PlayerID playerId) { m_matchService.OnPlayerDetached(playerId); },
         [this]() { m_combatExecutionService.InvalidateCombatSnapshotCache(); },
         [this](const void *data, uint32_t len, HSteamNetConnection except) {
@@ -338,7 +341,11 @@ SessionLifecycleService::Hooks ServerComposition::BuildSessionLifecycleHooks() {
 
 ConnectionService::Hooks ServerComposition::BuildConnectionHooks() {
     return ConnectionService::Hooks{
-        [this](std::string_view identity, std::string_view requestedName, HSteamNetConnection incomingConn) {
+        [this](
+            std::string_view identity,
+            std::string_view requestedName,
+            HSteamNetConnection incomingConn
+        ) {
             return m_chunkStreamingService.BuildDisplayNameForIdentityLocked(
                 identity, requestedName, incomingConn
             );
@@ -359,11 +366,15 @@ ConnectionService::Hooks ServerComposition::BuildConnectionHooks() {
         [this](HSteamNetConnection conn, const ClientSessionManager::ChunkCoord &coord) {
             return m_chunkStreamingService.QueueChunkPreparation(conn, coord);
         },
-        [this](HSteamNetConnection conn,
-               const ClientSessionManager::ClientSession &session,
-               const char *closeReason,
-               bool closeConnection) {
-            m_sessionLifecycleService.TeardownClientSession(conn, session, closeReason, closeConnection);
+        [this](
+            HSteamNetConnection conn,
+            const ClientSessionManager::ClientSession &session,
+            const char *closeReason,
+            bool closeConnection
+        ) {
+            m_sessionLifecycleService.TeardownClientSession(
+                conn, session, closeReason, closeConnection
+            );
         },
     };
 }
@@ -379,18 +390,18 @@ TickNetworkPhase::Hooks ServerComposition::BuildTickNetworkHooks() {
         [this](HSteamNetConnection incoming, const void *data, uint32_t size) {
             m_connectionService.HandleMessagePacket(incoming, data, size);
         },
-        [this](HSteamNetConnection incoming,
-               const void *data,
-               uint32_t size,
-               uint64_t &playerInputPacketsThisLoop) {
-            HandlePlayerInputPacket(incoming, data, size, playerInputPacketsThisLoop);
-        },
-        [this](HSteamNetConnection incoming,
-               const void *data,
-               uint32_t size,
-               uint64_t &chunkRequestPacketsThisLoop) {
-            HandleChunkRequestPacket(incoming, data, size, chunkRequestPacketsThisLoop);
-        },
+        [this](
+            HSteamNetConnection incoming,
+            const void *data,
+            uint32_t size,
+            uint64_t &playerInputPacketsThisLoop
+        ) { HandlePlayerInputPacket(incoming, data, size, playerInputPacketsThisLoop); },
+        [this](
+            HSteamNetConnection incoming,
+            const void *data,
+            uint32_t size,
+            uint64_t &chunkRequestPacketsThisLoop
+        ) { HandleChunkRequestPacket(incoming, data, size, chunkRequestPacketsThisLoop); },
         [this](HSteamNetConnection incoming, const void *data, uint32_t size) {
             m_blockEditRequestService.HandleBlockPlaceRequestPacket(incoming, data, size);
         },
@@ -406,25 +417,34 @@ TickNetworkPhase::Hooks ServerComposition::BuildTickNetworkHooks() {
         [this](HSteamNetConnection incoming, const void *data, uint32_t size) {
             m_inventoryActionService.HandleInventoryActionRequestPacket(incoming, data, size);
         },
-        [this](HSteamNetConnection conn,
-               const ClientSessionManager::ClientSession &session,
-               const char *closeReason,
-               bool closeConnection) {
-            m_sessionLifecycleService.TeardownClientSession(conn, session, closeReason, closeConnection);
+        [this](
+            HSteamNetConnection conn,
+            const ClientSessionManager::ClientSession &session,
+            const char *closeReason,
+            bool closeConnection
+        ) {
+            m_sessionLifecycleService.TeardownClientSession(
+                conn, session, closeReason, closeConnection
+            );
         },
     };
 }
 
 ReplicationPhase::Hooks ServerComposition::BuildReplicationHooks() {
     return ReplicationPhase::Hooks{
-        [this](const std::vector<std::pair<HSteamNetConnection, PlayerID>> &recipients, uint32_t serverTick) {
-            m_worldItemService.SendWorldItemSnapshots(recipients, serverTick);
-        },
-        [this](HSteamNetConnection conn,
-               const ClientSessionManager::ClientSession &session,
-               const char *closeReason,
-               bool closeConnection) {
-            m_sessionLifecycleService.TeardownClientSession(conn, session, closeReason, closeConnection);
+        [this](
+            const std::vector<std::pair<HSteamNetConnection, PlayerID>> &recipients,
+            uint32_t serverTick
+        ) { m_worldItemService.SendWorldItemSnapshots(recipients, serverTick); },
+        [this](
+            HSteamNetConnection conn,
+            const ClientSessionManager::ClientSession &session,
+            const char *closeReason,
+            bool closeConnection
+        ) {
+            m_sessionLifecycleService.TeardownClientSession(
+                conn, session, closeReason, closeConnection
+            );
         },
     };
 }
@@ -458,7 +478,9 @@ GameplayPhase::Hooks ServerComposition::BuildGameplayHooks() {
 
 DiagnosticsPhase::Hooks ServerComposition::BuildDiagnosticsHooks() {
     return DiagnosticsPhase::Hooks{
-        [this](HSteamNetConnection conn) { m_chunkStreamingService.ClearChunkPipelineForConnection(conn); },
+        [this](HSteamNetConnection conn) {
+            m_chunkStreamingService.ClearChunkPipelineForConnection(conn);
+        },
         [this](HSteamNetConnection conn) {
             return m_chunkStreamingService.GetChunkSendQueueDepthForClient(conn);
         },

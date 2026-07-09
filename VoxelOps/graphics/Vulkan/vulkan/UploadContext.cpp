@@ -25,12 +25,16 @@ namespace {
 } // namespace
 
 void UploadContext::init(
-    const vk::raii::Device &device, uint32_t queueFamilyIndex, const vk::raii::Queue &queue
+    const vk::raii::Device &device,
+    VmaAllocator allocator,
+    uint32_t queueFamilyIndex,
+    const vk::raii::Queue &queue
 ) {
     cleanup();
 
     m_device = &device;
     m_queue = &queue;
+    m_allocator = allocator;
 
     vk::CommandPoolCreateInfo poolInfo{};
     poolInfo.flags = vk::CommandPoolCreateFlagBits::eTransient;
@@ -43,12 +47,16 @@ void UploadContext::cleanup() {
         waitIdle();
     }
 
+    for (StagingBuffer &staging : m_reusableStagingBuffers) {
+        VulkanUtils::destroyBuffer(staging.buffer);
+    }
     m_reusableStagingBuffers.clear();
     m_reusableStagingBytes = 0;
     m_pendingUploads.clear();
     m_commandPool.clear();
     m_queue = nullptr;
     m_device = nullptr;
+    m_allocator = VK_NULL_HANDLE;
 }
 
 void UploadContext::poll() {
@@ -97,7 +105,7 @@ void UploadContext::waitIdle() {
 }
 
 UploadContext::StagingBuffer UploadContext::createStagingBuffer(
-    const vk::raii::PhysicalDevice &physicalDevice, const void *data, vk::DeviceSize size
+    const void *data, vk::DeviceSize size
 ) {
     if (!m_device) {
         throw std::runtime_error("UploadContext::createStagingBuffer called before init.");
@@ -108,20 +116,18 @@ UploadContext::StagingBuffer UploadContext::createStagingBuffer(
     if (stagingBuffer.buffer == nullptr) {
         stagingBuffer.capacity = roundStagingCapacity(requestedSize);
         VulkanUtils::createBuffer(
-            *m_device,
-            physicalDevice,
+            m_allocator,
             stagingBuffer.capacity,
             vk::BufferUsageFlagBits::eTransferSrc,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            stagingBuffer.buffer,
-            stagingBuffer.memory
+            stagingBuffer.buffer
         );
     }
 
     if (data && size > 0) {
-        void *mapped = stagingBuffer.memory.mapMemory(0, size);
+        void *mapped = VulkanUtils::mapAllocation(stagingBuffer.buffer);
         std::memcpy(mapped, data, static_cast<size_t>(size));
-        stagingBuffer.memory.unmapMemory();
+        VulkanUtils::unmapAllocation(stagingBuffer.buffer);
     }
 
     return stagingBuffer;
@@ -333,7 +339,7 @@ UploadContext::StagingBuffer UploadContext::acquireReusableStagingBuffer(vk::Dev
 
     auto bestIt = m_reusableStagingBuffers.end();
     for (auto it = m_reusableStagingBuffers.begin(); it != m_reusableStagingBuffers.end(); ++it) {
-        if (it->buffer == nullptr || it->memory == nullptr || it->capacity < minimumSize) {
+        if (it->buffer == nullptr || it->capacity < minimumSize) {
             continue;
         }
         if (bestIt == m_reusableStagingBuffers.end() || it->capacity < bestIt->capacity) {
@@ -352,11 +358,11 @@ UploadContext::StagingBuffer UploadContext::acquireReusableStagingBuffer(vk::Dev
 }
 
 void UploadContext::recycleStagingBuffer(StagingBuffer &&stagingBuffer) {
-    if (stagingBuffer.buffer == nullptr || stagingBuffer.memory == nullptr ||
-        stagingBuffer.capacity == 0) {
+    if (stagingBuffer.buffer == nullptr || stagingBuffer.capacity == 0) {
         return;
     }
     if ((m_reusableStagingBytes + stagingBuffer.capacity) > kMaxReusableStagingBytes) {
+        VulkanUtils::destroyBuffer(stagingBuffer.buffer);
         return;
     }
     m_reusableStagingBytes += stagingBuffer.capacity;

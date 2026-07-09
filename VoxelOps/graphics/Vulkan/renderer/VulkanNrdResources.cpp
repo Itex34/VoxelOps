@@ -257,16 +257,12 @@ void VulkanRenderer::createNrdSignalResources() {
         imageInfo.usage = kUsage;
         imageInfo.samples = vk::SampleCountFlagBits::e1;
         imageInfo.sharingMode = vk::SharingMode::eExclusive;
-        dst.image = vk::raii::Image(device, imageInfo);
-
-        const vk::MemoryRequirements requirements = dst.image.getMemoryRequirements();
-        vk::MemoryAllocateInfo allocInfo{};
-        allocInfo.allocationSize = requirements.size;
-        allocInfo.memoryTypeIndex = VulkanUtils::findMemoryType(
-            physicalDevice, requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal
+        VulkanUtils::createImage(
+            m_context.getVmaAllocator(),
+            imageInfo,
+            vk::MemoryPropertyFlagBits::eDeviceLocal,
+            dst.image
         );
-        dst.memory = vk::raii::DeviceMemory(device, allocInfo);
-        dst.image.bindMemory(*dst.memory, 0);
 
         vk::ImageViewCreateInfo viewInfo{};
         viewInfo.image = *dst.image;
@@ -361,35 +357,32 @@ void VulkanRenderer::createNrdSignalResources() {
 }
 
 void VulkanRenderer::cleanupNrdSignalResources() {
+    const auto cleanupSignal = [&](SignalImageResources &signal) {
+        signal.view.clear();
+        VulkanUtils::destroyImage(signal.image);
+    };
+    for (NrdPerImageResources &resources : m_nrdPerImage) {
+        cleanupSignal(resources.diffIn);
+        cleanupSignal(resources.normalRoughnessIn);
+        cleanupSignal(resources.motionIn);
+        cleanupSignal(resources.viewZIn);
+        cleanupSignal(resources.diffOut);
+        cleanupSignal(resources.shadowIn);
+        cleanupSignal(resources.shadowOut);
+        cleanupSignal(resources.composeBase);
+        cleanupSignal(resources.composeIndirect);
+    }
     m_nrdPerImage.clear();
     m_nrdValidPerImage.clear();
-    m_nrdFallback.diffIn.view.clear();
-    m_nrdFallback.diffIn.image.clear();
-    m_nrdFallback.diffIn.memory.clear();
-    m_nrdFallback.normalRoughnessIn.view.clear();
-    m_nrdFallback.normalRoughnessIn.image.clear();
-    m_nrdFallback.normalRoughnessIn.memory.clear();
-    m_nrdFallback.motionIn.view.clear();
-    m_nrdFallback.motionIn.image.clear();
-    m_nrdFallback.motionIn.memory.clear();
-    m_nrdFallback.viewZIn.view.clear();
-    m_nrdFallback.viewZIn.image.clear();
-    m_nrdFallback.viewZIn.memory.clear();
-    m_nrdFallback.diffOut.view.clear();
-    m_nrdFallback.diffOut.image.clear();
-    m_nrdFallback.diffOut.memory.clear();
-    m_nrdFallback.shadowIn.view.clear();
-    m_nrdFallback.shadowIn.image.clear();
-    m_nrdFallback.shadowIn.memory.clear();
-    m_nrdFallback.shadowOut.view.clear();
-    m_nrdFallback.shadowOut.image.clear();
-    m_nrdFallback.shadowOut.memory.clear();
-    m_nrdFallback.composeBase.view.clear();
-    m_nrdFallback.composeBase.image.clear();
-    m_nrdFallback.composeBase.memory.clear();
-    m_nrdFallback.composeIndirect.view.clear();
-    m_nrdFallback.composeIndirect.image.clear();
-    m_nrdFallback.composeIndirect.memory.clear();
+    cleanupSignal(m_nrdFallback.diffIn);
+    cleanupSignal(m_nrdFallback.normalRoughnessIn);
+    cleanupSignal(m_nrdFallback.motionIn);
+    cleanupSignal(m_nrdFallback.viewZIn);
+    cleanupSignal(m_nrdFallback.diffOut);
+    cleanupSignal(m_nrdFallback.shadowIn);
+    cleanupSignal(m_nrdFallback.shadowOut);
+    cleanupSignal(m_nrdFallback.composeBase);
+    cleanupSignal(m_nrdFallback.composeIndirect);
     m_nrdOutputSampler.clear();
     m_nrdFallbackReady = false;
     m_loggedMissingNrdResources = false;
@@ -644,18 +637,12 @@ bool VulkanRenderer::createNrdRuntimeResources() {
             imageInfo.usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage;
             imageInfo.samples = vk::SampleCountFlagBits::e1;
             imageInfo.sharingMode = vk::SharingMode::eExclusive;
-            dst.image.image = vk::raii::Image(device, imageInfo);
-
-            const vk::MemoryRequirements requirements = dst.image.image.getMemoryRequirements();
-            vk::MemoryAllocateInfo allocInfo{};
-            allocInfo.allocationSize = requirements.size;
-            allocInfo.memoryTypeIndex = VulkanUtils::findMemoryType(
-                physicalDevice,
-                requirements.memoryTypeBits,
-                vk::MemoryPropertyFlagBits::eDeviceLocal
+            VulkanUtils::createImage(
+                m_context.getVmaAllocator(),
+                imageInfo,
+                vk::MemoryPropertyFlagBits::eDeviceLocal,
+                dst.image.image
             );
-            dst.image.memory = vk::raii::DeviceMemory(device, allocInfo);
-            dst.image.image.bindMemory(*dst.image.memory, 0);
 
             vk::ImageViewCreateInfo viewInfo{};
             viewInfo.image = *dst.image.image;
@@ -722,15 +709,13 @@ bool VulkanRenderer::createNrdRuntimeResources() {
 
         for (NrdRuntimePerFrame &runtimeFrame : m_nrdRuntimePerFrame) {
             VulkanUtils::createBuffer(
-                device,
-                physicalDevice,
+                m_context.getVmaAllocator(),
                 constantBufferBytes,
                 vk::BufferUsageFlagBits::eUniformBuffer,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-                runtimeFrame.constantBuffer,
-                runtimeFrame.constantMemory
+                runtimeFrame.constantBuffer
             );
-            runtimeFrame.constantMapped = runtimeFrame.constantMemory.mapMemory(0, constantBufferBytes);
+            runtimeFrame.constantMapped = VulkanUtils::mapAllocation(runtimeFrame.constantBuffer);
 
             std::array<vk::DescriptorPoolSize, 4> poolSizes{};
             poolSizes[0].type = vk::DescriptorType::eSampledImage;
@@ -817,20 +802,27 @@ bool VulkanRenderer::createNrdRuntimeResources() {
 
 void VulkanRenderer::cleanupNrdRuntimeResources() {
     for (NrdRuntimePerImage &runtime : m_nrdRuntimePerImage) {
+        for (NrdRuntimeTexture &texture : runtime.permanentPool) {
+            texture.image.view.clear();
+            VulkanUtils::destroyImage(texture.image.image);
+        }
+        for (NrdRuntimeTexture &texture : runtime.transientPool) {
+            texture.image.view.clear();
+            VulkanUtils::destroyImage(texture.image.image);
+        }
         runtime.permanentPool.clear();
         runtime.transientPool.clear();
     }
     m_nrdRuntimePerImage.clear();
     for (NrdRuntimePerFrame &runtimeFrame : m_nrdRuntimePerFrame) {
         if (runtimeFrame.constantMapped != nullptr) {
-            runtimeFrame.constantMemory.unmapMemory();
+            VulkanUtils::unmapAllocation(runtimeFrame.constantBuffer);
             runtimeFrame.constantMapped = nullptr;
         }
         runtimeFrame.resourcesSets.clear();
         runtimeFrame.constantsSet.clear();
         runtimeFrame.descriptorPool.clear();
-        runtimeFrame.constantBuffer.clear();
-        runtimeFrame.constantMemory.clear();
+        VulkanUtils::destroyBuffer(runtimeFrame.constantBuffer);
     }
     m_nrdRuntimePerFrame.clear();
     m_nrdPipelines.clear();

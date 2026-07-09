@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstring>
 #include <iostream>
+#include <sstream>
 #include <string>
 
 using namespace AppHelpers;
@@ -19,8 +20,7 @@ void App::configureBackendPolicy(Runtime &runtime) {
 
     std::cout << "[App] Render API: " << caps.apiName << " | Backend tier: " << caps.backendName
               << " | MDI usable: " << (caps.mdiUsable ? "yes" : "no")
-              << " | AO: " << (runtime.gameplay.chunkManager->enableAO ? "on" : "off")
-              << "\n";
+              << " | AO: " << (runtime.gameplay.chunkManager->enableAO ? "on" : "off") << "\n";
 }
 
 void App::initGameplay(Runtime &runtime) {
@@ -97,29 +97,6 @@ bool App::equipGun(Runtime &runtime, GunType gunType) {
     runtime.combat.equippedGunViewScale = definition->viewScale;
     runtime.combat.equippedGunViewEulerDeg = definition->viewEulerDeg;
 
-    if (runtime.network.clientNet.IsConnected() && runtime.gameplay.player) {
-        const NetworkInputState &input = runtime.gameplay.player->getNetworkInputState();
-        PlayerInput packet;
-        packet.inputTick = runtime.prediction.inputTickCounter++;
-        packet.inputFlags = input.flags;
-        packet.flyMode = input.flyMode ? 1 : 0;
-        packet.weaponId = weaponId;
-        packet.yaw = input.yaw;
-        packet.pitch = input.pitch;
-        packet.moveX = input.moveX;
-        packet.moveZ = input.moveZ;
-        if (runtime.network.clientNet.SendPlayerInput(packet)) {
-            RuntimePredictionState::PendingInputEntry entry;
-            entry.packet = packet;
-            entry.deltaSeconds = RuntimePredictionState::InputSendInterval;
-            runtime.prediction.pendingInputs.push_back(entry);
-            while (runtime.prediction.pendingInputs.size() > RuntimePredictionState::MaxPendingInputs) {
-                runtime.prediction.pendingInputs.pop_front();
-            }
-            runtime.prediction.lastInputSendTime = GetTimeSeconds();
-        }
-    }
-
     std::cout << "[gun] equipped " << definition->displayName << " (weaponId=" << weaponId << ")"
               << " [preloaded]"
               << "\n";
@@ -151,15 +128,15 @@ void App::initRenderResources(Runtime &runtime) {
 }
 
 void App::initUi(Runtime &runtime) {
-    runtime.ui.rmlUi = std::make_unique<RmlUiSystem>();
-    if (!runtime.ui.rmlUi->initialize(m_Window, m_RenderApi)) {
-        std::cerr << "[App] Failed to initialize RmlUi subsystem.\n";
-        runtime.ui.rmlUi.reset();
+    runtime.ui.nativeUi = std::make_unique<NativeUiSystem>();
+    if (!runtime.ui.nativeUi->initialize(m_Window, m_RenderApi)) {
+        std::cerr << "[App] Failed to initialize native UI subsystem.\n";
+        runtime.ui.nativeUi.reset();
     } else if (m_Window != nullptr) {
         int width = 0;
         int height = 0;
         SDL_GetWindowSizeInPixels(m_Window, &width, &height);
-        runtime.ui.rmlUi->onWindowResized(width, height);
+        runtime.ui.nativeUi->onWindowResized(width, height);
     }
 
     runtime.ui.debugUi = std::make_unique<DebugUi>();
@@ -204,7 +181,9 @@ void App::initNetworking(Runtime &runtime) {
         const std::string endpoint = m_ServerIp + ":" + std::to_string(m_ServerPort);
         const size_t copyLen =
             std::min(endpoint.size(), runtime.app.connection.pendingServerEndpointInput.size() - 1);
-        std::memcpy(runtime.app.connection.pendingServerEndpointInput.data(), endpoint.data(), copyLen);
+        std::memcpy(
+            runtime.app.connection.pendingServerEndpointInput.data(), endpoint.data(), copyLen
+        );
         runtime.app.connection.pendingServerEndpointInput[copyLen] = '\0';
     }
     if (!m_RequestedUsername.empty()) {
@@ -219,14 +198,23 @@ void App::initNetworking(Runtime &runtime) {
 
     if (!runtime.network.clientNet.Start()) {
         std::cerr << "Failed to start networking\n";
-        runtime.app.connection.lastConnectionStatus = runtime.network.clientNet.GetConnectionStatusText();
+        runtime.app.connection.lastConnectionStatus =
+            runtime.network.clientNet.GetConnectionStatusText();
         return;
     }
 
-    runtime.app.connection.lastConnectionStatus = runtime.network.clientNet.GetConnectionStatusText();
+    runtime.app.connection.lastConnectionStatus =
+        runtime.network.clientNet.GetConnectionStatusText();
 }
 
 bool App::beginConnectionAttempt(Runtime &runtime) {
+    if (m_BotMode) {
+        const std::string identity = buildBotIdentity();
+        if (!runtime.network.clientNet.SetClientIdentityOverride(identity)) {
+            std::cerr << "Invalid bot identity: " << identity << "\n";
+            return false;
+        }
+    }
     if (!runtime.network.clientNet.ConnectTo(m_ServerIp, m_ServerPort)) {
         std::cerr << "ConnectTo(" << m_ServerIp << ":" << m_ServerPort << ") failed\n";
         return false;
@@ -238,9 +226,23 @@ bool App::beginConnectionAttempt(Runtime &runtime) {
     return true;
 }
 
+std::string App::buildBotIdentity() const {
+    std::ostringstream out;
+    out << "bot";
+    if (!m_RequestedUsername.empty()) {
+        out << "-" << m_RequestedUsername;
+    }
+    out << "-" << std::hex << std::nouppercase << m_BotSeed;
+    return out.str();
+}
 
-
-
-
-
-
+void App::leaveGame(Runtime &runtime) {
+    runtime.network.clientNet.DisconnectFromServer();
+    runtime.ui.pauseMenuVisible = false;
+    runtime.ui.pauseMenuSettingsVisible = false;
+    m_ShowInventoryUi = false;
+    m_ForceCursorEnabled = false;
+    if (runtime.ui.inventoryUi) {
+        runtime.ui.inventoryUi->setVisible(false);
+    }
+}

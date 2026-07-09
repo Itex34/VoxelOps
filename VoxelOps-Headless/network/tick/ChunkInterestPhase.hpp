@@ -27,4 +27,5 @@ private:
     std::mutex &m_mutex;
     ClientSessionManager &m_sessions;
     Hooks m_hooks;
+    size_t m_nextChunkInterestIndex = 0;
 };

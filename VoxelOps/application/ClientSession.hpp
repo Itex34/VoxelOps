@@ -18,8 +18,13 @@ struct ClientSessionContext {
 
 class ClientSession {
 public:
-    void update(
-        Runtime &runtime, const ClientSessionContext &ctx, const ClientInputIntent *inputIntent
+    void
+    update(Runtime &runtime, const ClientSessionContext &ctx, const ClientInputIntent *inputIntent);
+    bool sendPredictedInputTick(
+        Runtime &runtime,
+        const ClientInputIntent &inputIntent,
+        double deltaSeconds,
+        bool sendRedundantInputs = true
     );
 
 private:

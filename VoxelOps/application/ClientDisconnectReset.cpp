@@ -18,7 +18,9 @@ void ClientDisconnectReset::apply(Runtime &runtime, bool *forceCursorEnabled) co
     runtime.ui.matchWinner.clear();
     runtime.ui.scoreboardEntries.clear();
     runtime.ui.activeView = UiView::MainMenu;
-    runtime.ui.wantsCursor = true;
+    runtime.ui.pauseMenuVisible = false;
+    runtime.ui.pauseMenuSettingsVisible = false;
+    //runtime.ui.wantsCursor = true;
     runtime.combat.localPlayerAlive = true;
     runtime.combat.localHealth = 100.0f;
     runtime.combat.localRespawnSeconds = 0.0f;

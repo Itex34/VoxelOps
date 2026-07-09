@@ -1,30 +1,46 @@
 #pragma once
 
-#include <glm/glm.hpp>
+#include <cstdint>
+#include <string>
 #include <unordered_map>
+#include <vector>
 
+#include "../../graphics/TextureHandle.hpp"
 
-using FontHandle = uint32_t;
-using TextureHandle = uintptr_t;
+using FontHandle = std::uint32_t;
 
-struct Glyph {
-    glm::vec2 uvMin;
-    glm::vec2 uvMax;
+struct GlyphBitmap {
+    int width = 0;
+    int height = 0;
 
-    glm::ivec2 size;    // bitmap size
-    glm::ivec2 bearing; // offset from baseline
-    uint32_t advance;   // usually in pixels
+    int bearingX = 0;
+    int bearingY = 0;
+
+    // FreeType advance is 26.6 fixed-point.
+    // Divide by 64 when converting to pixels.
+    int advanceX = 0;
+
+    int atlasX = 0;
+    int atlasY = 0;
+    float u0 = 0.0f;
+    float v0 = 0.0f;
+    float u1 = 0.0f;
+    float v1 = 0.0f;
+
+    // 8-bit grayscale alpha mask.
+    // Size = width * height.
+    std::vector<std::uint8_t> pixels;
 };
 
-class Font {
-public:
-    const Glyph &getGlyph(char c) const;
-    TextureHandle getAtlasTexture() const;
+struct Font {
+    std::string name;
+    float pixelSize = 0.0f;
+    int ascender = 0;
+    int descender = 0;
+    int lineHeight = 0;
+    int atlasWidth = 0;
+    int atlasHeight = 0;
+    TextureHandle atlasTexture = 0;
 
-private:
-    TextureHandle m_atlasTexture{};
-    std::unordered_map<char, Glyph> m_glyphs;
-    float m_pixelSize = 0.0f;
-
-    friend class FontManager;
+    std::unordered_map<char32_t, GlyphBitmap> glyphs;
 };

@@ -5,6 +5,7 @@
 #include "vulkan/VulkanUtils.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <future>
 #include <limits>
@@ -20,15 +21,31 @@ namespace {
     constexpr int kGiChunkBoundsPaddingXZ = 2;
     constexpr int kGiChunkBoundsPaddingY = 0;
 
+    using BlockSolidTable = std::array<uint8_t, static_cast<size_t>(BlockID::COUNT)>;
+
+    const BlockSolidTable &traceSolidTable() {
+        static const BlockSolidTable table = [] {
+            BlockSolidTable result{};
+            result.fill(1u);
+            for (size_t i = 0; i < result.size(); ++i) {
+                const BlockID id = static_cast<BlockID>(i);
+                const auto it = blockTypes.find(id);
+                result[i] = (it == blockTypes.end()) ? uint8_t{id != BlockID::Air}
+                                                     : uint8_t{it->second.isSolid};
+            }
+            result[static_cast<size_t>(BlockID::Air)] = 0u;
+            return result;
+        }();
+        return table;
+    }
+
     bool isTraceSolid(BlockID id) {
-        if (id == BlockID::Air) {
-            return false;
+        const uint32_t index = static_cast<uint32_t>(id);
+        const BlockSolidTable &table = traceSolidTable();
+        if (index >= table.size()) {
+            return id != BlockID::Air;
         }
-        const auto it = blockTypes.find(id);
-        if (it == blockTypes.end()) {
-            return true;
-        }
-        return it->second.isSolid;
+        return table[index] != 0u;
     }
 
     uint64_t mixGiTraceSignature(uint64_t v) {
@@ -50,6 +67,33 @@ namespace {
         return capacity;
     }
 
+    uint32_t packedMaterialWordCount(uint32_t voxelCount) {
+        return (voxelCount + 3u) >> 2u;
+    }
+
+    uint32_t packMaterialWord(BlockID b0, BlockID b1, BlockID b2, BlockID b3) {
+        return (static_cast<uint32_t>(b0) & 0xFFu) |
+               ((static_cast<uint32_t>(b1) & 0xFFu) << 8u) |
+               ((static_cast<uint32_t>(b2) & 0xFFu) << 16u) |
+               ((static_cast<uint32_t>(b3) & 0xFFu) << 24u);
+    }
+
+    uint32_t traceSolidNibble(
+        const BlockSolidTable &solidTable,
+        BlockID b0,
+        BlockID b1,
+        BlockID b2,
+        BlockID b3
+    ) {
+        auto solidBit = [&](BlockID id, uint32_t bit) {
+            const uint32_t index = static_cast<uint32_t>(id);
+            const bool solid = (index < solidTable.size()) ? (solidTable[index] != 0u)
+                                                           : (id != BlockID::Air);
+            return solid ? bit : 0u;
+        };
+        return solidBit(b0, 1u) | solidBit(b1, 2u) | solidBit(b2, 4u) | solidBit(b3, 8u);
+    }
+
 } // namespace
 
 bool VulkanGiSceneBuffers::rebuild(
@@ -64,7 +108,7 @@ bool VulkanGiSceneBuffers::rebuild(
     if (chunkMeshes.empty()) {
         resetActiveState();
         m_chunkSnapshotCache.clear();
-        m_hostMaterialIds.clear();
+        m_hostMaterialWords.clear();
         m_hostOccupancyWords.clear();
         if (hadActiveState) {
             ++m_contentVersion;
@@ -142,6 +186,7 @@ bool VulkanGiSceneBuffers::rebuild(
     }
     const uint32_t voxelCount = static_cast<uint32_t>(voxelCount64);
     const uint32_t wordCount = (voxelCount + 31u) >> 5u;
+    const uint32_t materialWordCount = packedMaterialWordCount(voxelCount);
     const bool topologyChanged =
         !m_valid || m_minBlocks != minBlocks || m_dims != dims || m_wordCount != wordCount;
     const bool signatureChanged =
@@ -151,57 +196,70 @@ bool VulkanGiSceneBuffers::rebuild(
         return true;
     }
 
-    if (m_hostMaterialIds.size() != static_cast<size_t>(voxelCount)) {
-        m_hostMaterialIds.assign(static_cast<size_t>(voxelCount), 0u);
+    if (m_hostMaterialWords.size() != static_cast<size_t>(materialWordCount)) {
+        m_hostMaterialWords.assign(static_cast<size_t>(materialWordCount), 0u);
     }
     if (m_hostOccupancyWords.size() != static_cast<size_t>(wordCount)) {
         m_hostOccupancyWords.assign(static_cast<size_t>(wordCount), 0u);
     }
     if (topologyChanged) {
-        std::fill(m_hostMaterialIds.begin(), m_hostMaterialIds.end(), 0u);
+        std::fill(m_hostMaterialWords.begin(), m_hostMaterialWords.end(), 0u);
         std::fill(m_hostOccupancyWords.begin(), m_hostOccupancyWords.end(), 0u);
         m_chunkSnapshotCache.clear();
     }
 
+    const uint32_t yStride = dims.x;
+    const uint32_t zStride = dims.x * dims.y;
+    const BlockSolidTable &solidTable = traceSolidTable();
+
     auto applyChunkToHost = [&](const glm::ivec3 &chunkPos,
                                 const std::array<BlockID, CHUNK_VOLUME> &chunkBlocks) {
-        const glm::ivec3 chunkWorldBase = chunkPos * CHUNK_SIZE;
+        const glm::ivec3 baseLocal = (chunkPos * CHUNK_SIZE) - minBlocks;
+        const uint32_t baseLinear = static_cast<uint32_t>(baseLocal.x) +
+                                    yStride * static_cast<uint32_t>(baseLocal.y) +
+                                    zStride * static_cast<uint32_t>(baseLocal.z);
         for (int z = 0; z < CHUNK_SIZE; ++z) {
+            const uint32_t zLinear = baseLinear + static_cast<uint32_t>(z) * zStride;
+            const uint32_t zSource = static_cast<uint32_t>(z * CHUNK_SIZE * CHUNK_SIZE);
             for (int y = 0; y < CHUNK_SIZE; ++y) {
-                for (int x = 0; x < CHUNK_SIZE; ++x) {
-                    const glm::ivec3 worldPos = chunkWorldBase + glm::ivec3(x, y, z);
-                    const glm::ivec3 local = worldPos - minBlocks;
-                    const uint32_t linear = static_cast<uint32_t>(local.x) +
-                                            dims.x * (static_cast<uint32_t>(local.y) +
-                                                      dims.y * static_cast<uint32_t>(local.z));
-                    const BlockID id = chunkBlocks[x + CHUNK_SIZE * (y + CHUNK_SIZE * z)];
-                    m_hostMaterialIds[linear] = static_cast<uint32_t>(id);
-                    const uint32_t wordIndex = linear >> 5u;
-                    const uint32_t bitMask = (1u << (linear & 31u));
-                    if (isTraceSolid(id)) {
-                        m_hostOccupancyWords[wordIndex] |= bitMask;
-                    } else {
-                        m_hostOccupancyWords[wordIndex] &= ~bitMask;
-                    }
+                const uint32_t rowLinear = zLinear + static_cast<uint32_t>(y) * yStride;
+                const uint32_t rowSource = zSource + static_cast<uint32_t>(y * CHUNK_SIZE);
+                for (int x = 0; x < CHUNK_SIZE; x += 4) {
+                    const uint32_t linear = rowLinear + static_cast<uint32_t>(x);
+                    const uint32_t source = rowSource + static_cast<uint32_t>(x);
+                    const BlockID b0 = chunkBlocks[source + 0u];
+                    const BlockID b1 = chunkBlocks[source + 1u];
+                    const BlockID b2 = chunkBlocks[source + 2u];
+                    const BlockID b3 = chunkBlocks[source + 3u];
+
+                    m_hostMaterialWords[linear >> 2u] = packMaterialWord(b0, b1, b2, b3);
+
+                    const uint32_t occupancyShift = linear & 31u;
+                    const uint32_t occupancyMask = 0xFu << occupancyShift;
+                    const uint32_t occupancyBits =
+                        traceSolidNibble(solidTable, b0, b1, b2, b3) << occupancyShift;
+                    uint32_t &occupancyWord = m_hostOccupancyWords[linear >> 5u];
+                    occupancyWord = (occupancyWord & ~occupancyMask) | occupancyBits;
                 }
             }
         }
     };
 
     auto clearChunkInHost = [&](const glm::ivec3 &chunkPos) {
-        const glm::ivec3 chunkWorldBase = chunkPos * CHUNK_SIZE;
+        const glm::ivec3 baseLocal = (chunkPos * CHUNK_SIZE) - minBlocks;
+        const uint32_t baseLinear = static_cast<uint32_t>(baseLocal.x) +
+                                    yStride * static_cast<uint32_t>(baseLocal.y) +
+                                    zStride * static_cast<uint32_t>(baseLocal.z);
         for (int z = 0; z < CHUNK_SIZE; ++z) {
+            const uint32_t zLinear = baseLinear + static_cast<uint32_t>(z) * zStride;
             for (int y = 0; y < CHUNK_SIZE; ++y) {
-                for (int x = 0; x < CHUNK_SIZE; ++x) {
-                    const glm::ivec3 worldPos = chunkWorldBase + glm::ivec3(x, y, z);
-                    const glm::ivec3 local = worldPos - minBlocks;
-                    const uint32_t linear = static_cast<uint32_t>(local.x) +
-                                            dims.x * (static_cast<uint32_t>(local.y) +
-                                                      dims.y * static_cast<uint32_t>(local.z));
-                    m_hostMaterialIds[linear] = 0u;
-                    const uint32_t wordIndex = linear >> 5u;
-                    const uint32_t bitMask = (1u << (linear & 31u));
-                    m_hostOccupancyWords[wordIndex] &= ~bitMask;
+                const uint32_t rowLinear = zLinear + static_cast<uint32_t>(y) * yStride;
+                for (int x = 0; x < CHUNK_SIZE; x += 4) {
+                    const uint32_t linear = rowLinear + static_cast<uint32_t>(x);
+                    m_hostMaterialWords[linear >> 2u] = 0u;
+
+                    const uint32_t occupancyShift = linear & 31u;
+                    m_hostOccupancyWords[linear >> 5u] &= ~(0xFu << occupancyShift);
                 }
             }
         }
@@ -266,7 +324,8 @@ bool VulkanGiSceneBuffers::rebuild(
     }
 
     const vk::DeviceSize occupancyBytes = static_cast<vk::DeviceSize>(wordCount) * sizeof(uint32_t);
-    const vk::DeviceSize materialBytes = static_cast<vk::DeviceSize>(voxelCount) * sizeof(uint32_t);
+    const vk::DeviceSize materialBytes =
+        static_cast<vk::DeviceSize>(materialWordCount) * sizeof(uint32_t);
     if (m_bufferSlots.empty()) {
         m_bufferSlots.resize(kGiBufferSlotCount);
     }
@@ -293,15 +352,15 @@ bool VulkanGiSceneBuffers::rebuild(
     ensureBufferSlotCapacity(slot, context, frameCounter, occupancyBytes, materialBytes);
 
     {
-        void *mapped = slot.occupancyBufferMemory.mapMemory(0, occupancyBytes);
+        void *mapped = VulkanUtils::mapAllocation(slot.occupancyBuffer);
         std::memcpy(mapped, m_hostOccupancyWords.data(), static_cast<size_t>(occupancyBytes));
-        slot.occupancyBufferMemory.unmapMemory();
+        VulkanUtils::unmapAllocation(slot.occupancyBuffer);
     }
 
     {
-        void *mapped = slot.traceMaterialBufferMemory.mapMemory(0, materialBytes);
-        std::memcpy(mapped, m_hostMaterialIds.data(), static_cast<size_t>(materialBytes));
-        slot.traceMaterialBufferMemory.unmapMemory();
+        void *mapped = VulkanUtils::mapAllocation(slot.traceMaterialBuffer);
+        std::memcpy(mapped, m_hostMaterialWords.data(), static_cast<size_t>(materialBytes));
+        VulkanUtils::unmapAllocation(slot.traceMaterialBuffer);
     }
 
     const glm::ivec3 maxBlocksExclusiveNow =
@@ -330,15 +389,12 @@ void VulkanGiSceneBuffers::ensureBufferSlotCapacity(
     vk::DeviceSize occupancyBytes,
     vk::DeviceSize materialBytes
 ) {
-    const vk::raii::Device &device = context.getDevice();
-    const vk::raii::PhysicalDevice &physicalDevice = context.getPhysicalDevice();
+    const VmaAllocator allocator = context.getVmaAllocator();
 
-    if (slot.occupancyBuffer == nullptr || slot.occupancyBufferMemory == nullptr ||
-        slot.occupancyCapacityBytes < occupancyBytes) {
-        if (slot.occupancyBuffer != nullptr || slot.occupancyBufferMemory != nullptr) {
+    if (slot.occupancyBuffer == nullptr || slot.occupancyCapacityBytes < occupancyBytes) {
+        if (slot.occupancyBuffer != nullptr) {
             RetiredBuffers retired{};
             retired.occupancyBuffer = std::move(slot.occupancyBuffer);
-            retired.occupancyBufferMemory = std::move(slot.occupancyBufferMemory);
             retired.occupancyCapacityBytes = slot.occupancyCapacityBytes;
             retired.retireFrame = frameCounter + kGiRetireDelayFrames;
             m_retiredBuffers.push_back(std::move(retired));
@@ -346,22 +402,18 @@ void VulkanGiSceneBuffers::ensureBufferSlotCapacity(
         }
         slot.occupancyCapacityBytes = roundGiBufferCapacity(occupancyBytes);
         VulkanUtils::createBuffer(
-            device,
-            physicalDevice,
+            allocator,
             slot.occupancyCapacityBytes,
             vk::BufferUsageFlagBits::eStorageBuffer,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            slot.occupancyBuffer,
-            slot.occupancyBufferMemory
+            slot.occupancyBuffer
         );
     }
 
-    if (slot.traceMaterialBuffer == nullptr || slot.traceMaterialBufferMemory == nullptr ||
-        slot.materialCapacityBytes < materialBytes) {
-        if (slot.traceMaterialBuffer != nullptr || slot.traceMaterialBufferMemory != nullptr) {
+    if (slot.traceMaterialBuffer == nullptr || slot.materialCapacityBytes < materialBytes) {
+        if (slot.traceMaterialBuffer != nullptr) {
             RetiredBuffers retired{};
             retired.traceMaterialBuffer = std::move(slot.traceMaterialBuffer);
-            retired.traceMaterialBufferMemory = std::move(slot.traceMaterialBufferMemory);
             retired.materialCapacityBytes = slot.materialCapacityBytes;
             retired.retireFrame = frameCounter + kGiRetireDelayFrames;
             m_retiredBuffers.push_back(std::move(retired));
@@ -369,13 +421,11 @@ void VulkanGiSceneBuffers::ensureBufferSlotCapacity(
         }
         slot.materialCapacityBytes = roundGiBufferCapacity(materialBytes);
         VulkanUtils::createBuffer(
-            device,
-            physicalDevice,
+            allocator,
             slot.materialCapacityBytes,
             vk::BufferUsageFlagBits::eStorageBuffer,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            slot.traceMaterialBuffer,
-            slot.traceMaterialBufferMemory
+            slot.traceMaterialBuffer
         );
     }
 }
@@ -416,7 +466,7 @@ bool VulkanGiSceneBuffers::consumeCompletedBuild(
     const vk::DeviceSize occupancyBytes =
         static_cast<vk::DeviceSize>(wordCount) * sizeof(uint32_t);
     const vk::DeviceSize materialBytes =
-        static_cast<vk::DeviceSize>(voxelCount) * sizeof(uint32_t);
+        static_cast<vk::DeviceSize>(packedMaterialWordCount(voxelCount)) * sizeof(uint32_t);
 
     if (m_bufferSlots.empty()) {
         m_bufferSlots.resize(kGiBufferSlotCount);
@@ -446,15 +496,15 @@ bool VulkanGiSceneBuffers::consumeCompletedBuild(
     ensureBufferSlotCapacity(slot, context, frameCounter, occupancyBytes, materialBytes);
 
     if (occupancyBytes > 0 && !latest.occupancyWords.empty()) {
-        void *mapped = slot.occupancyBufferMemory.mapMemory(0, occupancyBytes);
+        void *mapped = VulkanUtils::mapAllocation(slot.occupancyBuffer);
         std::memcpy(mapped, latest.occupancyWords.data(), static_cast<size_t>(occupancyBytes));
-        slot.occupancyBufferMemory.unmapMemory();
+        VulkanUtils::unmapAllocation(slot.occupancyBuffer);
     }
 
-    if (materialBytes > 0 && !latest.materialIds.empty()) {
-        void *mapped = slot.traceMaterialBufferMemory.mapMemory(0, materialBytes);
-        std::memcpy(mapped, latest.materialIds.data(), static_cast<size_t>(materialBytes));
-        slot.traceMaterialBufferMemory.unmapMemory();
+    if (materialBytes > 0 && !latest.materialWords.empty()) {
+        void *mapped = VulkanUtils::mapAllocation(slot.traceMaterialBuffer);
+        std::memcpy(mapped, latest.materialWords.data(), static_cast<size_t>(materialBytes));
+        VulkanUtils::unmapAllocation(slot.traceMaterialBuffer);
     }
 
     m_minBlocks = minBlocks;
@@ -490,30 +540,41 @@ void VulkanGiSceneBuffers::enqueueBuildJob(GiBuildJob &&job) {
             result.wordCount = job.wordCount;
             result.voxelCount = job.voxelCount;
             result.occupancyWords.assign(job.wordCount, 0u);
-            result.materialIds.assign(job.voxelCount, 0u);
+            result.materialWords.assign(packedMaterialWordCount(job.voxelCount), 0u);
 
+            const uint32_t yStride = job.dims.x;
+            const uint32_t zStride = job.dims.x * job.dims.y;
+            const BlockSolidTable &solidTable = traceSolidTable();
             for (const GiBuildChunkSnapshotRef &snapshot : job.chunks) {
                 if (!snapshot.blocks) {
                     continue;
                 }
                 const std::array<BlockID, CHUNK_VOLUME> &chunkBlocks = *snapshot.blocks;
+                const glm::ivec3 baseLocal = snapshot.chunkWorldBase - job.minBlocks;
+                const uint32_t baseLinear = static_cast<uint32_t>(baseLocal.x) +
+                                            yStride * static_cast<uint32_t>(baseLocal.y) +
+                                            zStride * static_cast<uint32_t>(baseLocal.z);
                 for (int z = 0; z < CHUNK_SIZE; ++z) {
+                    const uint32_t zLinear = baseLinear + static_cast<uint32_t>(z) * zStride;
+                    const uint32_t zSource = static_cast<uint32_t>(z * CHUNK_SIZE * CHUNK_SIZE);
                     for (int y = 0; y < CHUNK_SIZE; ++y) {
-                        for (int x = 0; x < CHUNK_SIZE; ++x) {
-                            const BlockID id =
-                                chunkBlocks[x + CHUNK_SIZE * (y + CHUNK_SIZE * z)];
-                            if (id == BlockID::Air) {
-                                continue;
-                            }
-                            const glm::ivec3 worldPos = snapshot.chunkWorldBase + glm::ivec3(x, y, z);
-                            const glm::ivec3 local = worldPos - job.minBlocks;
-                            const uint32_t linear = static_cast<uint32_t>(local.x) +
-                                                    job.dims.x * (static_cast<uint32_t>(local.y) +
-                                                                  job.dims.y * static_cast<uint32_t>(local.z));
-                            result.materialIds[linear] = static_cast<uint32_t>(id);
-                            if (isTraceSolid(id)) {
-                                result.occupancyWords[linear >> 5u] |= (1u << (linear & 31u));
-                            }
+                        const uint32_t rowLinear = zLinear + static_cast<uint32_t>(y) * yStride;
+                        const uint32_t rowSource = zSource + static_cast<uint32_t>(y * CHUNK_SIZE);
+                        for (int x = 0; x < CHUNK_SIZE; x += 4) {
+                            const uint32_t linear = rowLinear + static_cast<uint32_t>(x);
+                            const uint32_t source = rowSource + static_cast<uint32_t>(x);
+                            const BlockID b0 = chunkBlocks[source + 0u];
+                            const BlockID b1 = chunkBlocks[source + 1u];
+                            const BlockID b2 = chunkBlocks[source + 2u];
+                            const BlockID b3 = chunkBlocks[source + 3u];
+
+                            result.materialWords[linear >> 2u] =
+                                packMaterialWord(b0, b1, b2, b3);
+
+                            const uint32_t occupancyShift = linear & 31u;
+                            const uint32_t occupancyBits =
+                                traceSolidNibble(solidTable, b0, b1, b2, b3) << occupancyShift;
+                            result.occupancyWords[linear >> 5u] |= occupancyBits;
                         }
                     }
                 }
@@ -569,11 +630,9 @@ void VulkanGiSceneBuffers::collectRetiredBuffers(uint64_t frameCounter) {
             ++it;
             continue;
         }
-        it->occupancyBuffer.clear();
-        it->occupancyBufferMemory.clear();
+        VulkanUtils::destroyBuffer(it->occupancyBuffer);
         it->occupancyCapacityBytes = 0;
-        it->traceMaterialBuffer.clear();
-        it->traceMaterialBufferMemory.clear();
+        VulkanUtils::destroyBuffer(it->traceMaterialBuffer);
         it->materialCapacityBytes = 0;
         it = m_retiredBuffers.erase(it);
     }
@@ -617,25 +676,21 @@ void VulkanGiSceneBuffers::cleanup() {
 
     resetActiveState();
     for (GiBufferSlot &slot : m_bufferSlots) {
-        slot.occupancyBuffer.clear();
-        slot.occupancyBufferMemory.clear();
+        VulkanUtils::destroyBuffer(slot.occupancyBuffer);
         slot.occupancyCapacityBytes = 0;
-        slot.traceMaterialBuffer.clear();
-        slot.traceMaterialBufferMemory.clear();
+        VulkanUtils::destroyBuffer(slot.traceMaterialBuffer);
         slot.materialCapacityBytes = 0;
     }
     m_bufferSlots.clear(); 
     for (RetiredBuffers &retired : m_retiredBuffers) {
-        retired.occupancyBuffer.clear();
-        retired.occupancyBufferMemory.clear();
+        VulkanUtils::destroyBuffer(retired.occupancyBuffer);
         retired.occupancyCapacityBytes = 0;
-        retired.traceMaterialBuffer.clear();
-        retired.traceMaterialBufferMemory.clear();
+        VulkanUtils::destroyBuffer(retired.traceMaterialBuffer);
         retired.materialCapacityBytes = 0;
         retired.retireFrame = 0;
     }
     m_retiredBuffers.clear();
     m_chunkSnapshotCache.clear();
     m_hostOccupancyWords.clear();
-    m_hostMaterialIds.clear();
+    m_hostMaterialWords.clear();
 }

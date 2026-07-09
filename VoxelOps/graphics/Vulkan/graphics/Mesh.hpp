@@ -1,5 +1,7 @@
 #pragma once
 
+#include "graphics/Vulkan/vulkan/VulkanResource.hpp"
+
 #include <glm/glm.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <vk_mem_alloc.h>
@@ -85,12 +87,9 @@ private:
     std::vector<PackedVoxelVertex> m_packedVertices;
     std::vector<uint16_t> m_packedIndices;
 
-    VmaAllocator m_allocator = VK_NULL_HANDLE;
-    VkBuffer m_vertexBuffer = VK_NULL_HANDLE;
-    VmaAllocation m_vertexAllocation = VK_NULL_HANDLE;
+    VulkanBuffer m_vertexBuffer;
     vk::DeviceSize m_vertexCapacityBytes = 0;
-    VkBuffer m_indexBuffer = VK_NULL_HANDLE;
-    VmaAllocation m_indexAllocation = VK_NULL_HANDLE;
+    VulkanBuffer m_indexBuffer;
     vk::DeviceSize m_indexCapacityBytes = 0;
     vk::IndexType m_indexType = vk::IndexType::eUint32;
     uint32_t m_indexCount = 0;

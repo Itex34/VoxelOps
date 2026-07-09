@@ -90,6 +90,70 @@ void ClientSession::syncEquippedGunFromInventory(
     }
 }
 
+bool ClientSession::sendPredictedInputTick(
+    Runtime &runtime,
+    const ClientInputIntent &inputIntent,
+    double deltaSeconds,
+    bool sendRedundantInputs
+) {
+    if (!runtime.gameplay.player || !runtime.network.clientNet.IsConnected()) {
+        return false;
+    }
+
+    NetworkInputState input = inputIntent.networkInput;
+    if (!runtime.combat.localPlayerAlive) {
+        input.moveX = 0.0f;
+        input.moveZ = 0.0f;
+        input.flags = 0;
+        input.flyMode = false;
+    }
+
+    PlayerInput packet;
+    packet.inputTick = runtime.prediction.inputTickCounter++;
+    packet.inputFlags = input.flags;
+    packet.flyMode = input.flyMode ? 1 : 0;
+    packet.weaponId = runtime.combat.equippedGun ? runtime.combat.equippedGun->getWeaponId()
+                                                 : kInventoryEmptyItemId;
+    packet.yaw = input.yaw;
+    packet.pitch = input.pitch;
+    packet.moveX = input.moveX;
+    packet.moveZ = input.moveZ;
+    if (!runtime.network.clientNet.SendPlayerInput(packet)) {
+        return false;
+    }
+
+    if (runtime.combat.localPlayerAlive) {
+        RuntimePredictionState::PendingInputEntry entry;
+        entry.packet = packet;
+        entry.deltaSeconds = deltaSeconds;
+        runtime.prediction.pendingInputs.push_back(entry);
+        while (runtime.prediction.pendingInputs.size() > RuntimePredictionState::MaxPendingInputs) {
+            runtime.prediction.pendingInputs.pop_front();
+        }
+
+        size_t resentCopies = 0;
+        for (auto pendingIt = runtime.prediction.pendingInputs.rbegin();
+             sendRedundantInputs && pendingIt != runtime.prediction.pendingInputs.rend() &&
+             resentCopies < RuntimePredictionState::InputRedundancyCopies;
+             ++pendingIt) {
+            const PlayerInput &resendPacket = pendingIt->packet;
+            if (resendPacket.inputTick == packet.inputTick) {
+                continue;
+            }
+            if (IsAckedU32(resendPacket.inputTick, runtime.prediction.lastAckedInputTick)) {
+                continue;
+            }
+            if (!runtime.network.clientNet.SendPlayerInput(resendPacket)) {
+                break;
+            }
+            ++resentCopies;
+        }
+    }
+
+    runtime.prediction.lastInputSendTime = GetTimeSeconds();
+    return true;
+}
+
 void ClientSession::update(
     Runtime &runtime, const ClientSessionContext &ctx, const ClientInputIntent *inputIntent
 ) {
@@ -122,7 +186,9 @@ void ClientSession::update(
     }
 
     runtime.world.justRespawned = false;
-    runtime.gameplay.player->setTreatMissingCollisionAsSolid(now >= runtime.world.respawnMissingChunkGraceUntil);
+    runtime.gameplay.player->setTreatMissingCollisionAsSolid(
+        now >= runtime.world.respawnMissingChunkGraceUntil
+    );
     if (runtime.world.rbDiagActive && now >= runtime.world.rbDiagUntil) {
         runtime.world.rbDiagActive = false;
         std::cout << "[rbdiag/client] end window\n";
@@ -146,7 +212,6 @@ void ClientSession::update(
     ShootResult shootResult{};
     while (runtime.network.clientNet.PopShootResult(shootResult)) {
         if (!shootResult.accepted) {
-            std::cout << "[shoot] rejected shot id=" << shootResult.clientShotId << "\n";
             continue;
         }
         runtime.combat.hasLastAcceptedShotResult = true;
@@ -154,15 +219,6 @@ void ClientSession::update(
         runtime.combat.lastAcceptedShotResultPoint =
             glm::vec3(shootResult.hitX, shootResult.hitY, shootResult.hitZ);
         runtime.combat.lastAcceptedShotResultTime = now;
-        if (shootResult.didHit) {
-            std::cout << "[shoot] hit id=" << shootResult.hitEntityId
-                      << " dmg=" << shootResult.damageApplied << " at=(" << shootResult.hitX << ","
-                      << shootResult.hitY << "," << shootResult.hitZ << ")\n";
-        } else {
-            std::cout << "[shoot] miss"
-                      << " at=(" << shootResult.hitX << "," << shootResult.hitY << ","
-                      << shootResult.hitZ << ")\n";
-        }
     }
 
     GrappleResult grappleResult{};
@@ -193,8 +249,8 @@ void ClientSession::update(
                 runtime.combat.grapple.anchorPoint - runtime.gameplay.player->getPosition()
             );
             runtime.combat.grapple.anchorFaceNormal = grappleResult.faceNormal;
-            std::cout << "[grapple] attached id=" << grappleResult.clientGrappleId
-                      << " anchor=(" << grappleResult.hitX << "," << grappleResult.hitY << ","
+            std::cout << "[grapple] attached id=" << grappleResult.clientGrappleId << " anchor=("
+                      << grappleResult.hitX << "," << grappleResult.hitY << ","
                       << grappleResult.hitZ << ")"
                       << " face=" << static_cast<int>(grappleResult.faceNormal) << "\n";
         } else {
@@ -281,6 +337,7 @@ void ClientSession::update(
     bool newestServerJumpPressedLastTick = false;
     float newestServerTimeSinceGrounded = 0.0f;
     float newestServerJumpBufferTimer = 0.0f;
+    float newestServerStepCooldownTimer = 0.0f;
 
     std::vector<PlayerSnapshotFrame> queuedSnapshotFrames;
     queuedSnapshotFrames.reserve(8);
@@ -328,6 +385,7 @@ void ClientSession::update(
         newestServerJumpPressedLastTick = (localSnapshot->jumpPressedLastTick != 0);
         newestServerTimeSinceGrounded = localSnapshot->timeSinceGrounded;
         newestServerJumpBufferTimer = localSnapshot->jumpBufferTimer;
+        newestServerStepCooldownTimer = localSnapshot->stepCooldownTimer;
     }
 
     double renderTime = 0.0;
@@ -338,7 +396,8 @@ void ClientSession::update(
         std::unordered_map<PlayerID, PlayerState> newestRemotePlayers;
         newestRemotePlayers.reserve(interpolated.size());
         for (const SnapshotInterpolator::InterpolatedPlayer &snapshot : interpolated) {
-            if (runtime.prediction.hasLocalPlayerId && snapshot.id == runtime.prediction.localPlayerId) {
+            if (runtime.prediction.hasLocalPlayerId &&
+                snapshot.id == runtime.prediction.localPlayerId) {
                 continue;
             }
             if (hasNewestSelfSnapshot && snapshot.id == newestSelfPlayerId) {
@@ -375,10 +434,12 @@ void ClientSession::update(
         snapshot.jumpPressedLastTick = newestServerJumpPressedLastTick;
         snapshot.timeSinceGrounded = newestServerTimeSinceGrounded;
         snapshot.jumpBufferTimer = newestServerJumpBufferTimer;
+        snapshot.stepCooldownTimer = newestServerStepCooldownTimer;
         runtime.network.reconciler.Apply(runtime, snapshot);
         runtime.combat.localHealth = newestServerHealth;
         if (runtime.world.justRespawned) {
-            runtime.world.respawnMissingChunkGraceUntil = now + RuntimeWorldState::RespawnMissingChunkGraceSeconds;
+            runtime.world.respawnMissingChunkGraceUntil =
+                now + RuntimeWorldState::RespawnMissingChunkGraceSeconds;
             runtime.gameplay.player->setTreatMissingCollisionAsSolid(false);
             // Respawn teleports can shift chunk center instantly.
             runtime.world.hasLastChunkRequestCenter = false;
@@ -416,9 +477,11 @@ void ClientSession::update(
     if (runtime.world.rbDiagActive && now >= runtime.world.rbDiagNextHeartbeatAt) {
         runtime.world.rbDiagNextHeartbeatAt = now + 1.0;
         const Player::SimulationState simState = runtime.gameplay.player->captureSimulationState();
-        const ClientNetwork::ChunkQueueDepths queueDepths = runtime.network.clientNet.GetChunkQueueDepths();
-        const int32_t unackedTicks =
-            static_cast<int32_t>(runtime.prediction.inputTickCounter - runtime.prediction.lastAckedInputTick);
+        const ClientNetwork::ChunkQueueDepths queueDepths =
+            runtime.network.clientNet.GetChunkQueueDepths();
+        const int32_t unackedTicks = static_cast<int32_t>(
+            runtime.prediction.inputTickCounter - runtime.prediction.lastAckedInputTick
+        );
         std::cout << "[rbdiag/client] heartbeat"
                   << " serverTick=" << runtime.prediction.lastAppliedServerTick
                   << " ackedInputTick=" << runtime.prediction.lastAckedInputTick
@@ -449,72 +512,6 @@ void ClientSession::update(
     }
     runtime.combat.wasRespawnClickDown = respawnClickDown;
 
-    constexpr size_t kMaxInputSendsPerFrame = 4;
-    size_t inputSendsThisFrame = 0;
-
-    while (now - runtime.prediction.lastInputSendTime >= RuntimePredictionState::InputSendInterval &&
-           inputSendsThisFrame < kMaxInputSendsPerFrame) {
-        runtime.prediction.lastInputSendTime += RuntimePredictionState::InputSendInterval;
-
-        NetworkInputState input =
-            (inputIntent != nullptr) ? inputIntent->networkInput
-                                     : runtime.gameplay.player->getNetworkInputState();
-        if (!runtime.combat.localPlayerAlive) {
-            input.moveX = 0.0f;
-            input.moveZ = 0.0f;
-            input.flags = 0;
-            input.flyMode = false;
-        }
-
-        PlayerInput packet;
-        packet.inputTick = runtime.prediction.inputTickCounter++;
-        packet.inputFlags = input.flags;
-        packet.flyMode = input.flyMode ? 1 : 0;
-        packet.weaponId = runtime.combat.equippedGun ? runtime.combat.equippedGun->getWeaponId()
-                                                     : kInventoryEmptyItemId;
-        packet.yaw = input.yaw;
-        packet.pitch = input.pitch;
-        packet.moveX = input.moveX;
-        packet.moveZ = input.moveZ;
-        if (!runtime.network.clientNet.SendPlayerInput(packet)) {
-            break;
-        }
-
-        if (runtime.combat.localPlayerAlive) {
-            RuntimePredictionState::PendingInputEntry entry;
-            entry.packet = packet;
-            entry.deltaSeconds = RuntimePredictionState::InputSendInterval;
-            runtime.prediction.pendingInputs.push_back(entry);
-            while (runtime.prediction.pendingInputs.size() > RuntimePredictionState::MaxPendingInputs) {
-                runtime.prediction.pendingInputs.pop_front();
-            }
-
-            size_t resentCopies = 0;
-            for (auto pendingIt = runtime.prediction.pendingInputs.rbegin();
-                 pendingIt != runtime.prediction.pendingInputs.rend() &&
-                 resentCopies < RuntimePredictionState::InputRedundancyCopies;
-                 ++pendingIt) {
-                const PlayerInput &resendPacket = pendingIt->packet;
-                if (resendPacket.inputTick == packet.inputTick) {
-                    continue;
-                }
-                if (IsAckedU32(resendPacket.inputTick, runtime.prediction.lastAckedInputTick)) {
-                    continue;
-                }
-                if (!runtime.network.clientNet.SendPlayerInput(resendPacket)) {
-                    break;
-                }
-                ++resentCopies;
-            }
-        }
-
-        ++inputSendsThisFrame;
-    }
-    if (now - runtime.prediction.lastInputSendTime >= RuntimePredictionState::InputSendInterval) {
-        // Avoid unbounded backlog after long hitches.
-        runtime.prediction.lastInputSendTime = now;
-    }
-
     const glm::vec3 requestPos = runtime.gameplay.player->getPosition();
     const glm::ivec3 worldPos(
         static_cast<int>(std::floor(requestPos.x)),
@@ -528,16 +525,18 @@ void ClientSession::update(
                                centerChunk.x != runtime.world.lastChunkRequestCenter.x ||
                                centerChunk.y != runtime.world.lastChunkRequestCenter.y ||
                                centerChunk.z != runtime.world.lastChunkRequestCenter.z;
-    const bool allowBurstRequest =
-        !runtime.world.hasLastChunkRequestCenter ||
-        (now - runtime.world.lastChunkRequestSendTime >= RuntimeWorldState::ChunkRequestCenterChangeMinInterval);
+    const bool allowBurstRequest = !runtime.world.hasLastChunkRequestCenter ||
+                                   (now - runtime.world.lastChunkRequestSendTime >=
+                                    RuntimeWorldState::ChunkRequestCenterChangeMinInterval);
 
     if (centerChanged && allowBurstRequest) {
         runtime.world.lastChunkRequestSendTime = now;
         runtime.world.lastChunkRequestCenter = centerChunk;
         runtime.world.hasLastChunkRequestCenter = true;
         (void)runtime.network.clientNet.SendChunkRequest(centerChunk, viewDistance);
-    } else if (now - runtime.world.lastChunkRequestSendTime >= RuntimeWorldState::ChunkRequestSendInterval) {
+    } else if (
+        now - runtime.world.lastChunkRequestSendTime >= RuntimeWorldState::ChunkRequestSendInterval
+    ) {
         runtime.world.lastChunkRequestSendTime = now;
         runtime.world.lastChunkRequestCenter = centerChunk;
         runtime.world.hasLastChunkRequestCenter = true;
@@ -549,8 +548,3 @@ void ClientSession::update(
         runtime.combat.grapple.ropeLength = 0.0f;
     }
 }
-
-
-
-
-

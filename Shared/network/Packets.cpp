@@ -478,7 +478,7 @@ std::optional<GrappleResult> GrappleResult::deserialize(const std::vector<uint8_
 // -------------------- PlayerSnapshotFrame --------------------
 std::vector<uint8_t> PlayerSnapshotFrame::serialize() const {
     std::vector<uint8_t> out;
-    constexpr size_t kEntrySize = 8 + (8 * 4) + 3 + 2 + 4 + 1 + 4 + 1 + 4 + 4;
+    constexpr size_t kEntrySize = 8 + (8 * 4) + 3 + 2 + 4 + 1 + 4 + 1 + 4 + 4 + 4;
     out.reserve(1 + 4 + 8 + 4 + 4 + players.size() * kEntrySize);
     write_u8(out, static_cast<uint8_t>(PacketType::PlayerSnapshot));
     write_u32(out, serverTick);
@@ -505,6 +505,7 @@ std::vector<uint8_t> PlayerSnapshotFrame::serialize() const {
         write_u8(out, p.jumpPressedLastTick);
         write_f32(out, p.timeSinceGrounded);
         write_f32(out, p.jumpBufferTimer);
+        write_f32(out, p.stepCooldownTimer);
     }
     return out;
 }
@@ -514,7 +515,7 @@ PlayerSnapshotFrame::deserialize(const std::vector<uint8_t> &buf) {
     size_t off = 0;
     uint8_t type = 0;
     uint32_t count = 0;
-    constexpr size_t kEntrySize = 8 + (8 * 4) + 3 + 2 + 4 + 1 + 4 + 1 + 4 + 4;
+    constexpr size_t kEntrySize = 8 + (8 * 4) + 3 + 2 + 4 + 1 + 4 + 1 + 4 + 4 + 4;
 
     if (!read_u8(buf, off, type))
         return std::nullopt;
@@ -574,6 +575,8 @@ PlayerSnapshotFrame::deserialize(const std::vector<uint8_t> &buf) {
         if (!read_f32(buf, off, p.timeSinceGrounded))
             return std::nullopt;
         if (!read_f32(buf, off, p.jumpBufferTimer))
+            return std::nullopt;
+        if (!read_f32(buf, off, p.stepCooldownTimer))
             return std::nullopt;
         frame.players.push_back(p);
     }

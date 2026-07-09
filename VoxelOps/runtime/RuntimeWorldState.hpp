@@ -44,15 +44,15 @@ struct RuntimeWorldState {
 
     static constexpr double ChunkRequestSendInterval = 0.5;
     static constexpr double ChunkRequestCenterChangeMinInterval = 1.0 / 8.0;
-    static constexpr size_t MaxChunkDataApplyPerFrame = 12;
+    static constexpr size_t MaxChunkDataApplyPerFrame = 8;
     static constexpr size_t MaxChunkDeltaApplyPerFrame = 48;
     static constexpr size_t MaxChunkUnloadApplyPerFrame = 64;
-    static constexpr int64_t ChunkApplyBudgetUs = 9000;
-    static constexpr int64_t ChunkApplyBudgetUsUnderInputPressure = 2500;
-    static constexpr size_t MaxChunkMeshBuildsPerFrame = 8;
-    static constexpr size_t MaxChunkMeshBuildsPerFrameUnderInputPressure = 3;
-    static constexpr int64_t ChunkMeshBuildBudgetUs = 6000;
-    static constexpr int64_t ChunkMeshBuildBudgetUsUnderInputPressure = 2000;
+    static constexpr int64_t ChunkApplyBudgetUs = 4500;
+    static constexpr int64_t ChunkApplyBudgetUsUnderInputPressure = 1500;
+    static constexpr size_t MaxChunkMeshBuildsPerFrame = 4;
+    static constexpr size_t MaxChunkMeshBuildsPerFrameUnderInputPressure = 2;
+    static constexpr int64_t ChunkMeshBuildBudgetUs = 3000;
+    static constexpr int64_t ChunkMeshBuildBudgetUsUnderInputPressure = 1200;
     static constexpr size_t MaxBlockPlaceResultsPerFrame = 32;
     static constexpr size_t MaxBlockBreakResultsPerFrame = 32;
     static constexpr double RespawnMissingChunkGraceSeconds = 1.25;

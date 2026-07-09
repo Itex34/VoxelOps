@@ -5,7 +5,6 @@
 namespace {
     constexpr size_t kMaxBufferedInputs = 256;
     constexpr int32_t kMaxInputLeadTicks = 120;
-    constexpr int32_t kMaxInputGapTicks = 8;
 } // namespace
 
 bool InputBuffer::enqueue(const PlayerInput &input) {
@@ -55,59 +54,25 @@ bool InputBuffer::consumeNext(PlayerInput &outInput) {
         hasReceivedInput_ = true;
     }
 
-    if (!hasReceivedInput_) {
+    if (!hasReceivedInput_ || pendingInputs_.empty()) {
         return false;
     }
 
-    const uint32_t expectedTick = lastProcessedInputTick_ + 1;
-    auto pendingIt = pendingInputs_.find(expectedTick);
-    bool advancedInputTick = false;
-    bool consumed = false;
-
-    if (pendingIt != pendingInputs_.end()) {
-        outInput = pendingIt->second;
-        pendingInputs_.erase(pendingIt);
-        lastProcessedInputTick_ = expectedTick;
-        advancedInputTick = true;
-        consumed = true;
-    } else if (!pendingInputs_.empty()) {
-        const uint32_t oldestTick = pendingInputs_.begin()->first;
-        const uint32_t gap = (oldestTick > expectedTick) ? (oldestTick - expectedTick) : 0;
-        if (gap > static_cast<uint32_t>(kMaxInputGapTicks)) {
-            lastProcessedInputTick_ = (oldestTick > 0) ? (oldestTick - 1) : 0;
-            advancedInputTick = true;
-        }
-    }
-
-    if (advancedInputTick) {
-        while (!pendingInputs_.empty() &&
-               !Shared::Utils::IsNewerU32(pendingInputs_.begin()->first, lastProcessedInputTick_)) {
-            pendingInputs_.erase(pendingInputs_.begin());
-        }
-    }
-
-    return consumed;
+    const auto nextIt = pendingInputs_.begin();
+    outInput = nextIt->second;
+    lastProcessedInputTick_ = nextIt->first;
+    pendingInputs_.erase(nextIt);
+    return true;
 }
 
 bool InputBuffer::peekNext(PlayerInput &outInput, uint32_t &outInputTick) const {
-    if (!hasReceivedInput_) {
-        if (pendingInputs_.empty()) {
-            return false;
-        }
-        const auto firstIt = pendingInputs_.begin();
-        outInput = firstIt->second;
-        outInputTick = firstIt->first;
-        return true;
-    }
-
-    const uint32_t expectedTick = lastProcessedInputTick_ + 1;
-    const auto pendingIt = pendingInputs_.find(expectedTick);
-    if (pendingIt == pendingInputs_.end()) {
+    if (pendingInputs_.empty()) {
         return false;
     }
 
-    outInput = pendingIt->second;
-    outInputTick = pendingIt->first;
+    const auto nextIt = pendingInputs_.begin();
+    outInput = nextIt->second;
+    outInputTick = nextIt->first;
     return true;
 }
 

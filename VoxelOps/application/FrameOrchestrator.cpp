@@ -5,6 +5,7 @@
 #include "../graphics/Camera.hpp"
 #include "../render/RenderScene.hpp"
 #include "../data/GameData.hpp"
+#include "../../Shared/network/Packets.hpp"
 #include <imgui.h>
 #include <SDL3/SDL.h>
 
@@ -13,12 +14,15 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <utility>
 
 #include <glm/geometric.hpp>
 
 namespace {
     using Clock = std::chrono::steady_clock;
+    constexpr double kBotPredictionStep = 1.0 / 30.0;
+    constexpr uint32_t kBotMaxUnackedShootLeadTicks = 12;
 
     float MeasureMs(const Clock::time_point &start, const Clock::time_point &end) {
         return static_cast<float>(
@@ -33,7 +37,26 @@ namespace {
         return keys != nullptr && scancode < keyCount && keys[scancode];
     }
 
-    glm::vec3 ComputeViewmodelMuzzlePosition(const Camera &camera, const RuntimeCombatState &combat) {
+    bool HasMoveIntent(const NetworkInputState &input) {
+        constexpr uint8_t kMoveFlags = kPlayerInputFlagForward | kPlayerInputFlagBackward |
+                                       kPlayerInputFlagLeft | kPlayerInputFlagRight |
+                                       kPlayerInputFlagFlyUp | kPlayerInputFlagFlyDown;
+        constexpr float kMoveAxisEps = 0.001f;
+        return (input.flags & kMoveFlags) != 0 || std::abs(input.moveX) > kMoveAxisEps ||
+               std::abs(input.moveZ) > kMoveAxisEps;
+    }
+
+    float RandomFloat(std::mt19937 &rng, float minValue, float maxValue) {
+        std::uniform_real_distribution<float> dist(minValue, maxValue);
+        return dist(rng);
+    }
+
+    bool RandomChance(std::mt19937 &rng, float probability) {
+        return RandomFloat(rng, 0.0f, 1.0f) < probability;
+    }
+
+    glm::vec3
+    ComputeViewmodelMuzzlePosition(const Camera &camera, const RuntimeCombatState &combat) {
         glm::vec3 forward = camera.front;
         const float forwardLenSq = glm::dot(forward, forward);
         if (!std::isfinite(forwardLenSq) || forwardLenSq < 1e-8f) {
@@ -111,6 +134,172 @@ const Runtime &FrameOrchestrator::runtime() const {
     return *m_runtime;
 }
 
+bool FrameOrchestrator::isBotModeEnabled() const {
+    return m_context.simulation.botMode != nullptr && *m_context.simulation.botMode;
+}
+
+ClientInputIntent FrameOrchestrator::buildBotInputIntent() {
+    ClientInputIntent intent{};
+    Runtime &rt = runtime();
+    if (!rt.gameplay.player) {
+        return intent;
+    }
+
+    if (!m_botInitialized) {
+        uint32_t seed = 0;
+        if (m_context.simulation.botSeed != nullptr && *m_context.simulation.botSeed != 0) {
+            seed = *m_context.simulation.botSeed;
+        } else {
+            seed = static_cast<uint32_t>(
+                Clock::now().time_since_epoch().count() ^
+                static_cast<int64_t>(reinterpret_cast<uintptr_t>(this))
+            );
+        }
+        m_botRng.seed(seed);
+        m_botYaw = RandomFloat(m_botRng, -180.0f, 180.0f);
+        m_botPitch = RandomFloat(m_botRng, -8.0f, 8.0f);
+        m_botNextDecisionTime = 0.0;
+        m_botNextShotTime = m_frameNow + RandomFloat(m_botRng, 0.25f, 1.0f);
+        m_botInitialized = true;
+    }
+
+    if (m_frameNow >= m_botNextDecisionTime) {
+        const float localForward = RandomFloat(m_botRng, -0.25f, 1.0f);
+        const float localStrafe = RandomFloat(m_botRng, -1.0f, 1.0f);
+        glm::vec2 localMove(localStrafe, localForward);
+        if (glm::length(localMove) > 1.0f) {
+            localMove = glm::normalize(localMove);
+        }
+
+        m_botYaw = AppHelpers::NormalizeYawDegrees(m_botYaw + RandomFloat(m_botRng, -80.0f, 80.0f));
+        m_botPitch = std::clamp(m_botPitch + RandomFloat(m_botRng, -8.0f, 8.0f), -30.0f, 30.0f);
+
+        const float yawRad = glm::radians(m_botYaw);
+        const glm::vec2 forward2D(std::cos(yawRad), std::sin(yawRad));
+        const glm::vec2 right2D(-forward2D.y, forward2D.x);
+        const glm::vec2 worldMove = right2D * localMove.x + forward2D * localMove.y;
+
+        m_botInput.moveX = worldMove.x;
+        m_botInput.moveZ = worldMove.y;
+        m_botInput.yaw = m_botYaw;
+        m_botInput.pitch = m_botPitch;
+        m_botInput.flyMode = false;
+        m_botInput.flags = 0;
+        if (localMove.y > 0.15f) {
+            m_botInput.flags |= kPlayerInputFlagForward;
+        }
+        if (localMove.y < -0.15f) {
+            m_botInput.flags |= kPlayerInputFlagBackward;
+        }
+        if (localMove.x < -0.15f) {
+            m_botInput.flags |= kPlayerInputFlagLeft;
+        }
+        if (localMove.x > 0.15f) {
+            m_botInput.flags |= kPlayerInputFlagRight;
+        }
+        if (RandomChance(m_botRng, 0.75f)) {
+            m_botInput.flags |= kPlayerInputFlagSprint;
+        }
+        if (RandomChance(m_botRng, 0.18f)) {
+            m_botInput.flags |= kPlayerInputFlagJump;
+        }
+
+        m_botNextDecisionTime = m_frameNow + RandomFloat(m_botRng, 0.20f, 0.90f);
+    } else {
+        m_botInput.yaw = AppHelpers::NormalizeYawDegrees(
+            m_botInput.yaw +
+            RandomFloat(m_botRng, -28.0f, 28.0f) * static_cast<float>(GameData::deltaTime)
+        );
+        m_botInput.pitch = std::clamp(
+            m_botInput.pitch +
+                RandomFloat(m_botRng, -8.0f, 8.0f) * static_cast<float>(GameData::deltaTime),
+            -30.0f,
+            30.0f
+        );
+        m_botYaw = m_botInput.yaw;
+        m_botPitch = m_botInput.pitch;
+    }
+
+    intent.gameplayInputEnabled = true;
+    intent.networkInput = m_botInput;
+    rt.gameplay.player->setNetworkInputState(intent.networkInput);
+    return intent;
+}
+
+void FrameOrchestrator::maybeSendBotShot() {
+    Runtime &rt = runtime();
+    if (!rt.combat.localPlayerAlive || !rt.network.clientNet.IsConnected() ||
+        !rt.combat.equippedGun || !rt.gameplay.player) {
+        return;
+    }
+
+    float shootRate = 1.5f;
+    if (m_context.simulation.botShootRate != nullptr) {
+        shootRate = std::max(0.05f, *m_context.simulation.botShootRate);
+    }
+
+    if (m_frameNow < m_botNextShotTime) {
+        return;
+    }
+    if ((m_frameNow - rt.combat.lastShootSendTime) < rt.combat.shootSendInterval) {
+        return;
+    }
+    if (!rt.prediction.hasAppliedServerTick || rt.prediction.lastAckedInputTick == 0 ||
+        rt.prediction.inputTickCounter == 0) {
+        return;
+    }
+
+    const uint32_t latestSentInputTick = rt.prediction.inputTickCounter - 1u;
+    if (latestSentInputTick < rt.prediction.lastAckedInputTick ||
+        static_cast<uint32_t>(latestSentInputTick - rt.prediction.lastAckedInputTick) >
+            kBotMaxUnackedShootLeadTicks) {
+        return;
+    }
+
+    const Camera &cam = rt.gameplay.player->getCamera();
+    const float dirLenSq = glm::dot(cam.front, cam.front);
+    if (!std::isfinite(dirLenSq) || dirLenSq < 1e-8f) {
+        return;
+    }
+
+    glm::vec3 shootDir = glm::normalize(cam.front);
+    shootDir.x += RandomFloat(m_botRng, -0.035f, 0.035f);
+    shootDir.y += RandomFloat(m_botRng, -0.020f, 0.020f);
+    shootDir.z += RandomFloat(m_botRng, -0.035f, 0.035f);
+    const float jitteredLenSq = glm::dot(shootDir, shootDir);
+    if (std::isfinite(jitteredLenSq) && jitteredLenSq >= 1e-8f) {
+        shootDir = glm::normalize(shootDir);
+    } else {
+        shootDir = glm::normalize(cam.front);
+    }
+
+    const uint32_t shotId = rt.combat.nextClientShotId++;
+    const uint32_t clientTick = rt.prediction.lastAckedInputTick;
+    const uint32_t seed = shotId ^ (clientTick * 2654435761u);
+    if (rt.network.clientNet.SendShootRequest(
+            shotId,
+            clientTick,
+            rt.combat.equippedGun->getWeaponId(),
+            cam.position,
+            shootDir,
+            seed,
+            m_botInput.flags
+        )) {
+        rt.combat.lastShootSendTime = m_frameNow;
+        rt.combat.hasLastLocalShot = true;
+        rt.combat.lastLocalShotId = shotId;
+        rt.combat.lastLocalShotOrigin = cam.position;
+        rt.combat.lastLocalShotDirection = shootDir;
+        rt.combat.lastLocalShotTime = m_frameNow;
+    }
+
+    const double meanInterval = 1.0 / static_cast<double>(std::max(0.05f, shootRate));
+    m_botNextShotTime = m_frameNow + RandomFloat(
+                                         m_botRng,
+                                         static_cast<float>(meanInterval * 0.55),
+                                         static_cast<float>(meanInterval * 1.65)
+                                     );
+}
 
 void FrameOrchestrator::runFrame() {
     assert(m_runtime != nullptr);
@@ -132,9 +321,6 @@ void FrameOrchestrator::runFrame() {
     const auto perfFrameEnd = Clock::now();
     runtime().app.perf.frameCpuMs = MeasureMs(perfFrameStart, perfFrameEnd);
 }
-
-
-
 
 void FrameOrchestrator::updateFrameTime() {
     m_frameNow = AppHelpers::GetTimeSeconds();
@@ -183,23 +369,31 @@ FrameOrchestrator::SimulationStageResult FrameOrchestrator::runSimulationStage()
         inputHost->updateToggleStates(runtime());
     }
     GameData::gameplayInputEnabled =
-        runtime().network.clientNet.IsConnected() &&
-        (runtime().ui.activeView == UiView::InGame) && (m_context.ui.showDebugUi != nullptr) &&
-        (m_context.ui.showInventoryUi != nullptr) &&
+        runtime().network.clientNet.IsConnected() && (runtime().ui.activeView == UiView::InGame) &&
+        (m_context.ui.showDebugUi != nullptr) && (m_context.ui.showInventoryUi != nullptr) &&
         (m_context.simulation.forceCursorEnabled != nullptr) && !*m_context.ui.showDebugUi &&
-        !*m_context.ui.showInventoryUi && !*m_context.simulation.forceCursorEnabled;
+        !*m_context.ui.showInventoryUi && !runtime().ui.pauseMenuVisible &&
+        !*m_context.simulation.forceCursorEnabled;
 
-    runtime().gameplay.inputCallbacks->processInput(m_context.host.window);
-    if (windowHost != nullptr) {
+    if (!isBotModeEnabled()) {
+        runtime().gameplay.inputCallbacks->processInput(m_context.host.window);
+    }
+    if (windowHost != nullptr && !isBotModeEnabled()) {
         windowHost->applyMouseInputModes();
     }
-    const ClientInputIntent inputIntent = m_inputSystem.captureIntent(runtime(), m_context.host.window);
+    const ClientInputIntent inputIntent =
+        isBotModeEnabled() ? buildBotInputIntent()
+                           : m_inputSystem.captureIntent(runtime(), m_context.host.window);
+    const bool botMode = isBotModeEnabled();
+    const double predictionStep =
+        botMode ? kBotPredictionStep : RuntimePredictionState::LocalPredictionStep;
     runtime().prediction.localSimAccumulator += GameData::deltaTime;
     const auto perfInputEnd = Clock::now();
     runtime().app.perf.inputMs = MeasureMs(perfInputStart, perfInputEnd);
 
-    const double maxAccumulatedTime = RuntimePredictionState::LocalPredictionStep *
-                                      static_cast<double>(RuntimePredictionState::MaxLocalPredictionStepsPerFrame);
+    const double maxAccumulatedTime =
+        predictionStep *
+        static_cast<double>(RuntimePredictionState::MaxLocalPredictionStepsPerFrame);
     if (runtime().prediction.localSimAccumulator > maxAccumulatedTime) {
         runtime().prediction.localSimAccumulator = maxAccumulatedTime;
     }
@@ -214,7 +408,8 @@ FrameOrchestrator::SimulationStageResult FrameOrchestrator::runSimulationStage()
 
     const auto perfPredictionStart = Clock::now();
     if (!runtime().prediction.hasRenderSimState) {
-        const Player::SimulationState initialSimState = runtime().gameplay.player->captureSimulationState();
+        const Player::SimulationState initialSimState =
+            runtime().gameplay.player->captureSimulationState();
         const Player::PresentationState initialPresentationState =
             runtime().gameplay.player->capturePresentationState();
         runtime().prediction.renderPrevSimState = initialSimState;
@@ -226,16 +421,20 @@ FrameOrchestrator::SimulationStageResult FrameOrchestrator::runSimulationStage()
 
     size_t localPredictionSteps = 0;
     if (runtime().combat.localPlayerAlive) {
-        while (runtime().prediction.localSimAccumulator >= RuntimePredictionState::LocalPredictionStep &&
+        while (runtime().prediction.localSimAccumulator >= predictionStep &&
                localPredictionSteps < RuntimePredictionState::MaxLocalPredictionStepsPerFrame) {
-            m_clientPrediction.update(
-                runtime(), inputIntent, RuntimePredictionState::LocalPredictionStep
+            (void)m_clientSession.sendPredictedInputTick(
+                runtime(), inputIntent, predictionStep, !botMode
             );
-            runtime().prediction.localSimAccumulator -= RuntimePredictionState::LocalPredictionStep;
+            m_clientPrediction.update(runtime(), inputIntent, predictionStep);
+            runtime().prediction.localSimAccumulator -= predictionStep;
             runtime().prediction.renderPrevSimState = runtime().prediction.renderCurrSimState;
-            runtime().prediction.renderCurrSimState = runtime().gameplay.player->captureSimulationState();
-            runtime().prediction.renderPrevPresentationState = runtime().prediction.renderCurrPresentationState;
-            runtime().prediction.renderCurrPresentationState = runtime().gameplay.player->capturePresentationState();
+            runtime().prediction.renderCurrSimState =
+                runtime().gameplay.player->captureSimulationState();
+            runtime().prediction.renderPrevPresentationState =
+                runtime().prediction.renderCurrPresentationState;
+            runtime().prediction.renderCurrPresentationState =
+                runtime().gameplay.player->capturePresentationState();
             ++localPredictionSteps;
         }
         if (localPredictionSteps == 0) {
@@ -243,14 +442,30 @@ FrameOrchestrator::SimulationStageResult FrameOrchestrator::runSimulationStage()
             m_clientPrediction.update(runtime(), inputIntent, 0.0);
         }
         if (localPredictionSteps == RuntimePredictionState::MaxLocalPredictionStepsPerFrame &&
-            runtime().prediction.localSimAccumulator >= RuntimePredictionState::LocalPredictionStep) {
+            runtime().prediction.localSimAccumulator >= predictionStep) {
             runtime().prediction.localSimAccumulator =
-                std::fmod(runtime().prediction.localSimAccumulator, RuntimePredictionState::LocalPredictionStep);
+                std::fmod(runtime().prediction.localSimAccumulator, predictionStep);
+        }
+        if (!HasMoveIntent(inputIntent.networkInput)) {
+            const Player::SimulationState stoppedState =
+                runtime().gameplay.player->captureSimulationState();
+            const glm::vec2 horizontalVelocity(stoppedState.velocity.x, stoppedState.velocity.z);
+            constexpr float kStoppedVelocityEps = 0.01f;
+            if (stoppedState.onGround && glm::dot(horizontalVelocity, horizontalVelocity) <=
+                                             kStoppedVelocityEps * kStoppedVelocityEps) {
+                const Player::PresentationState stoppedPresentationState =
+                    runtime().gameplay.player->capturePresentationState();
+                runtime().prediction.renderPrevSimState = stoppedState;
+                runtime().prediction.renderCurrSimState = stoppedState;
+                runtime().prediction.renderPrevPresentationState = stoppedPresentationState;
+                runtime().prediction.renderCurrPresentationState = stoppedPresentationState;
+            }
         }
     } else {
         runtime().prediction.localSimAccumulator = 0.0;
         runtime().world.renderStateNeedsResync = false;
-        const Player::SimulationState frozenState = runtime().gameplay.player->captureSimulationState();
+        const Player::SimulationState frozenState =
+            runtime().gameplay.player->captureSimulationState();
         const Player::PresentationState frozenPresentationState =
             runtime().gameplay.player->capturePresentationState();
         runtime().prediction.renderPrevSimState = frozenState;
@@ -269,7 +484,11 @@ FrameOrchestrator::SimulationStageResult FrameOrchestrator::runSimulationStage()
     CombatShootSystemContext combatShootCtx{};
     combatShootCtx.useDebugCamera =
         (m_context.simulation.useDebugCamera != nullptr) && *m_context.simulation.useDebugCamera;
-    m_combatShootSystem.update(runtime(), combatShootCtx);
+    if (isBotModeEnabled()) {
+        maybeSendBotShot();
+    } else {
+        m_combatShootSystem.update(runtime(), combatShootCtx);
+    }
     CombatGrappleSystemContext combatGrappleCtx{};
     combatGrappleCtx.useDebugCamera = combatShootCtx.useDebugCamera;
     m_combatGrappleSystem.update(runtime(), combatGrappleCtx);
@@ -282,9 +501,6 @@ FrameOrchestrator::SimulationStageResult FrameOrchestrator::runSimulationStage()
     return result;
 }
 
-
-
-
 FrameOrchestrator::UiStageResult
 FrameOrchestrator::runUiStage(const SimulationStageResult &simulation) {
     UiStageResult result;
@@ -292,22 +508,25 @@ FrameOrchestrator::runUiStage(const SimulationStageResult &simulation) {
     GameData::uiWantsKeyboardCapture = false;
     GameData::uiWantsTextInput = false;
 
-    if (runtime().ui.rmlUi) {
-        GameData::uiWantsMouseCapture = runtime().ui.rmlUi->wantsMouseCapture();
-        GameData::uiWantsKeyboardCapture = runtime().ui.rmlUi->wantsKeyboardCapture();
-        GameData::uiWantsTextInput = runtime().ui.rmlUi->wantsKeyboardCapture();
+    if (runtime().ui.nativeUi) {
+        runtime().ui.nativeUi->beginFrame(static_cast<float>(GameData::deltaTime));
+        GameData::uiWantsMouseCapture = runtime().ui.nativeUi->wantsMouseCapture();
+        GameData::uiWantsKeyboardCapture = runtime().ui.nativeUi->wantsKeyboardCapture();
+        GameData::uiWantsTextInput = runtime().ui.nativeUi->wantsKeyboardCapture();
     }
 
     if (ImGui::GetCurrentContext() != nullptr) {
         const ImGuiIO &io = ImGui::GetIO();
         GameData::uiWantsMouseCapture = GameData::uiWantsMouseCapture || io.WantCaptureMouse;
-        GameData::uiWantsKeyboardCapture = GameData::uiWantsKeyboardCapture || io.WantCaptureKeyboard;
+        GameData::uiWantsKeyboardCapture =
+            GameData::uiWantsKeyboardCapture || io.WantCaptureKeyboard;
         GameData::uiWantsTextInput = GameData::uiWantsTextInput || io.WantTextInput;
     }
 
     if (runtime().ui.debugUi) {
-        const bool rmlOwnsHud = runtime().ui.rmlUi && runtime().ui.rmlUi->isUsingOpenGlBackend();
-        if (!rmlOwnsHud) {
+        const bool nativeOwnsHud =
+            runtime().ui.nativeUi && runtime().ui.nativeUi->hasBackendRenderer();
+        if (!nativeOwnsHud) {
             runtime().ui.debugUi->drawCrosshair(
                 !GameData::cursorEnabled && runtime().combat.localPlayerAlive
             );
@@ -361,19 +580,21 @@ FrameOrchestrator::runUiStage(const SimulationStageResult &simulation) {
         mutableState.sunDirection = m_context.render.sunDirection;
         mutableState.sunShadowDirectionalBias = m_context.render.sunShadowDirectionalBias;
         mutableState.sunShadowLowSunBiasBoost = m_context.render.sunShadowLowSunBiasBoost;
-        mutableState.sunShadowFrontFaceCullAtLowSun = m_context.render.sunShadowFrontFaceCullAtLowSun;
+        mutableState.sunShadowFrontFaceCullAtLowSun =
+            m_context.render.sunShadowFrontFaceCullAtLowSun;
         mutableState.sunShadowFrontFaceCullGrazingThreshold =
             m_context.render.sunShadowFrontFaceCullGrazingThreshold;
         mutableState.skyExposure = m_context.render.skyExposure;
-        mutableState.giTracingBackendPreference = simulation.renderCapabilities.supportsGiRuntimeControls
-                                                      ? &GameData::giTracingBackendPreference
-                                                      : nullptr;
-        mutableState.giNrdDebugView =
-            simulation.renderCapabilities.supportsGiRuntimeControls ? &GameData::giNrdDebugView : nullptr;
-        mutableState.giNrdGuideOverride =
+        mutableState.giTracingBackendPreference =
             simulation.renderCapabilities.supportsGiRuntimeControls
-                ? &GameData::giNrdGuideOverride
+                ? &GameData::giTracingBackendPreference
                 : nullptr;
+        mutableState.giNrdDebugView = simulation.renderCapabilities.supportsGiRuntimeControls
+                                          ? &GameData::giNrdDebugView
+                                          : nullptr;
+        mutableState.giNrdGuideOverride = simulation.renderCapabilities.supportsGiRuntimeControls
+                                              ? &GameData::giNrdGuideOverride
+                                              : nullptr;
         mutableState.isVulkanActive = simulation.renderCapabilities.api == RenderApi::Vulkan;
         mutableState.isOpenGlActive = simulation.renderCapabilities.api == RenderApi::OpenGL;
 
@@ -384,8 +605,8 @@ FrameOrchestrator::runUiStage(const SimulationStageResult &simulation) {
         runtime().ui.debugUi->drawMainWindow(frameData, mutableState);
     }
 
-    if (runtime().ui.debugUi && !runtime().ui.debugUi->isVisible() && m_context.ui.showDebugUi != nullptr &&
-        *m_context.ui.showDebugUi) {
+    if (runtime().ui.debugUi && !runtime().ui.debugUi->isVisible() &&
+        m_context.ui.showDebugUi != nullptr && *m_context.ui.showDebugUi) {
         *m_context.ui.showDebugUi = false;
     }
     if (runtime().ui.inventoryUi) {
@@ -416,7 +637,8 @@ FrameOrchestrator::runUiStage(const SimulationStageResult &simulation) {
     const bool showDebugUi = (m_context.ui.showDebugUi != nullptr) && *m_context.ui.showDebugUi;
     const bool showInventoryUi =
         (m_context.ui.showInventoryUi != nullptr) && *m_context.ui.showInventoryUi;
-    GameData::cursorEnabled = forceCursor || showDebugUi || showInventoryUi || runtime().ui.wantsCursor;
+    GameData::cursorEnabled = forceCursor || showDebugUi || showInventoryUi ||
+                              runtime().ui.pauseMenuVisible || runtime().ui.wantsCursor();
     if (!GameData::cursorEnabled && runtime().ui.activeView == UiView::InGame) {
         GameData::uiWantsMouseCapture = false;
     }
@@ -425,8 +647,11 @@ FrameOrchestrator::runUiStage(const SimulationStageResult &simulation) {
     }
 
     m_hudSystem.draw(runtime());
-    if (runtime().ui.rmlUi) {
-        runtime().ui.rmlUi->update();
+    m_pauseMenu.draw(runtime(), m_context.connectionHost, m_context.windowHost);
+    m_settingsMenu.draw(runtime(), m_context.connectionHost, m_context.windowHost);
+
+    if (runtime().ui.nativeUi) {
+        runtime().ui.nativeUi->endFrame();
     }
     result.drawData = runtime().ui.debugUi ? runtime().ui.debugUi->endFrame() : nullptr;
     return result;
@@ -454,6 +679,8 @@ void FrameOrchestrator::runRenderStage(
     sceneInput.sunShadowFrontFaceCullGrazingThreshold =
         *m_context.render.sunShadowFrontFaceCullGrazingThreshold;
     sceneInput.uiDrawData = ui.drawData;
+    sceneInput.nativeUiDrawData =
+        runtime().ui.nativeUi ? runtime().ui.nativeUi->drawData() : nullptr;
 
     RenderScene frameScene = m_renderSceneBuilder.build(runtime(), sceneInput);
     const bool renderDebugLine = simulation.renderCapabilities.api == RenderApi::OpenGL;
@@ -498,8 +725,7 @@ void FrameOrchestrator::runRenderStage(
         if (drawAcceptedShotConfirmation) {
             const glm::vec3 hitPoint = runtime().combat.lastAcceptedShotResultPoint;
             const glm::vec3 hitUp(0.0f, 0.10f, 0.0f);
-            const glm::vec3 hitBack =
-                runtime().combat.lastLocalShotDirection * -0.25f;
+            const glm::vec3 hitBack = runtime().combat.lastLocalShotDirection * -0.25f;
             m_debugRenderer.drawLine(
                 hitPoint - hitUp,
                 hitPoint + hitUp,
@@ -528,11 +754,6 @@ void FrameOrchestrator::runRenderStage(
     };
     runtime().render.renderer->renderFrame(frameScene);
     *m_context.render.sunDirection = frameScene.sunDirection;
-
-    if (runtime().ui.rmlUi && runtime().ui.rmlUi->isUsingOpenGlBackend() &&
-        simulation.renderCapabilities.api == RenderApi::OpenGL) {
-        runtime().ui.rmlUi->render();
-    }
 
     if (simulation.renderCapabilities.supportsFirstPersonViewmodel && !useDebugCamera &&
         runtime().combat.localPlayerAlive && runtime().render.gunSceneRenderer) {
@@ -568,8 +789,10 @@ void FrameOrchestrator::runPresentStage(size_t localPredictionSteps) {
     const auto perfPresentEnd = Clock::now();
     runtime().app.perf.presentMs = MeasureMs(perfPresentStart, perfPresentEnd);
 
-    const ClientNetwork::ChunkQueueDepths queueDepths = runtime().network.clientNet.GetChunkQueueDepths();
-    const bool frameUnderPressure = GameData::deltaTime > (RuntimePredictionState::LocalPredictionStep * 1.2);
+    const ClientNetwork::ChunkQueueDepths queueDepths =
+        runtime().network.clientNet.GetChunkQueueDepths();
+    constexpr double kSmoothStreamingFrameBudgetSec = 1.0 / 90.0;
+    const bool frameUnderPressure = GameData::deltaTime > kSmoothStreamingFrameBudgetSec;
     const bool chunkBacklog =
         queueDepths.chunkData > (RuntimeWorldState::MaxChunkDataApplyPerFrame * 3) ||
         queueDepths.chunkDelta > (RuntimeWorldState::MaxChunkDeltaApplyPerFrame * 3) ||
@@ -581,9 +804,3 @@ void FrameOrchestrator::runPresentStage(size_t localPredictionSteps) {
     const auto perfChunkEnd = Clock::now();
     runtime().app.perf.chunkStreamingMs = MeasureMs(perfChunkStart, perfChunkEnd);
 }
-
-
-
-
-
-

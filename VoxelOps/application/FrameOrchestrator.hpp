@@ -2,6 +2,9 @@
 
 #include "../ui/Hud.hpp"
 #include "../ui/player/MainMenu.hpp"
+#include "../ui/player/PauseMenu.hpp"
+#include "../ui/player/SettingsMenu.hpp"
+
 #include "../ui/player/UiStateController.hpp"
 #include "ClientInputSystem.hpp"
 #include "ClientSession.hpp"
@@ -19,6 +22,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <random>
 #include <string>
 
 #include <glm/vec3.hpp>
@@ -32,40 +36,43 @@ struct HostFrameContext {
 };
 
 struct SimulationFrameContext {
-    bool *useDebugCamera = nullptr;        // required, non-owning
-    bool *forceCursorEnabled = nullptr;    // required, non-owning
+    bool *useDebugCamera = nullptr;          // required, non-owning
+    bool *forceCursorEnabled = nullptr;      // required, non-owning
     bool *wasWorldInteractPressed = nullptr; // required, non-owning
+    const bool *botMode = nullptr;           // optional, non-owning
+    const uint32_t *botSeed = nullptr;       // optional, non-owning
+    const float *botShootRate = nullptr;     // optional, non-owning
 };
 
 struct UiFrameContext {
-    std::string *serverIp = nullptr;       // required, non-owning
-    uint16_t *serverPort = nullptr;        // required, non-owning
+    std::string *serverIp = nullptr;          // required, non-owning
+    uint16_t *serverPort = nullptr;           // required, non-owning
     std::string *requestedUsername = nullptr; // required, non-owning
-    bool *showDebugUi = nullptr;           // required, non-owning
-    bool *showInventoryUi = nullptr;       // required, non-owning
-    bool *enableRawMouseInput = nullptr;   // required, non-owning
-    bool *requestSwitchToOpenGl = nullptr; // required, non-owning
-    bool *requestSwitchToVulkan = nullptr; // required, non-owning
-    int *renderApiPreference = nullptr;    // required, non-owning, 0=OpenGL, 1=Vulkan
+    bool *showDebugUi = nullptr;              // required, non-owning
+    bool *showInventoryUi = nullptr;          // required, non-owning
+    bool *enableRawMouseInput = nullptr;      // required, non-owning
+    bool *requestSwitchToOpenGl = nullptr;    // required, non-owning
+    bool *requestSwitchToVulkan = nullptr;    // required, non-owning
+    int *renderApiPreference = nullptr;       // required, non-owning, 0=OpenGL, 1=Vulkan
 };
 
 struct RenderFrameContext {
-    bool *toggleWireframe = nullptr; // optional, non-owning
-    bool *toggleChunkBorders = nullptr; // optional, non-owning
-    bool *toggleDebugFrustum = nullptr; // optional, non-owning
-    float *skyExposure = nullptr; // required, non-owning
-    glm::vec3 *sunDirection = nullptr; // required, non-owning
-    glm::vec3 *sunShadowDirectionalBias = nullptr; // required, non-owning
-    float *sunShadowLowSunBiasBoost = nullptr; // required, non-owning
-    bool *sunShadowFrontFaceCullAtLowSun = nullptr; // required, non-owning
+    bool *toggleWireframe = nullptr;                         // optional, non-owning
+    bool *toggleChunkBorders = nullptr;                      // optional, non-owning
+    bool *toggleDebugFrustum = nullptr;                      // optional, non-owning
+    float *skyExposure = nullptr;                            // required, non-owning
+    glm::vec3 *sunDirection = nullptr;                       // required, non-owning
+    glm::vec3 *sunShadowDirectionalBias = nullptr;           // required, non-owning
+    float *sunShadowLowSunBiasBoost = nullptr;               // required, non-owning
+    bool *sunShadowFrontFaceCullAtLowSun = nullptr;          // required, non-owning
     float *sunShadowFrontFaceCullGrazingThreshold = nullptr; // required, non-owning
 };
 
 struct FrameOrchestratorContext {
-    FrameInputHost *inputHost = nullptr; // required, non-owning
+    FrameInputHost *inputHost = nullptr;           // required, non-owning
     FrameConnectionHost *connectionHost = nullptr; // required, non-owning
-    FrameWindowHost *windowHost = nullptr; // required, non-owning
-    FrameRenderHost *renderHost = nullptr; // required, non-owning
+    FrameWindowHost *windowHost = nullptr;         // required, non-owning
+    FrameRenderHost *renderHost = nullptr;         // required, non-owning
     HostFrameContext host;
     SimulationFrameContext simulation;
     UiFrameContext ui;
@@ -95,6 +102,9 @@ private:
     void runPresentStage(size_t localPredictionSteps);
     void updateFrameTime();
     void updateFrameHotkeysAndCounters();
+    [[nodiscard]] bool isBotModeEnabled() const;
+    ClientInputIntent buildBotInputIntent();
+    void maybeSendBotShot();
     Runtime &runtime();
     const Runtime &runtime() const;
 
@@ -103,10 +113,12 @@ private:
     ClientInputSystem m_inputSystem;
     ClientPrediction m_clientPrediction;
 
-    
     ClientSession m_clientSession;
     UiStateController m_uiStateController;
     MainMenu m_mainMenu;
+    PauseMenu m_pauseMenu;
+    SettingsMenu m_settingsMenu;
+
     Hud m_hudSystem;
     WorldInteractionSystem m_worldInteractionSystem;
     CombatShootSystem m_combatShootSystem;
@@ -114,5 +126,12 @@ private:
     ChunkStreamingClient m_chunkStreaming;
     RenderSceneBuilder m_renderSceneBuilder;
     double m_frameNow = 0.0;
+    bool m_botInitialized = false;
+    double m_botNextDecisionTime = 0.0;
+    double m_botNextShotTime = 0.0;
+    float m_botYaw = -90.0f;
+    float m_botPitch = 0.0f;
+    NetworkInputState m_botInput{};
+    std::mt19937 m_botRng;
     OpenGLDebugRenderer m_debugRenderer;
 };

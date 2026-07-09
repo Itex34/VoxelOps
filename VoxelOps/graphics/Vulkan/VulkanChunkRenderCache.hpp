@@ -6,6 +6,7 @@
 #include "../../misc/ThreadPool.hpp"
 #include "vulkan/UploadContext.hpp"
 
+#include <chrono>
 #include <deque>
 #include <functional>
 #include <mutex>
@@ -26,6 +27,7 @@ public:
         const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuMeshes,
         const glm::ivec3 &cullingChunk,
         size_t maxChunkUploadsPerFrame,
+        float uploadBudgetMs,
         uint64_t frameCounter,
         VulkanContext &context,
         UploadContext &uploadContext,
@@ -79,7 +81,9 @@ private:
         VulkanContext &context,
         UploadContext &uploadContext,
         const std::function<void(const glm::ivec3 &, const CpuChunkMesh &)> &onChunkUploaded,
-        size_t maxCompletedUploadsPerCall
+        size_t maxCompletedUploadsPerCall,
+        float uploadBudgetMs,
+        const std::chrono::steady_clock::time_point &syncStart
     );
     void retireChunkMesh(VkMesh &&mesh, uint64_t frameCounter);
 

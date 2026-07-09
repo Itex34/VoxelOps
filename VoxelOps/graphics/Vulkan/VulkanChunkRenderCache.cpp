@@ -3,8 +3,10 @@
 #include "vulkan/VulkanContext.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <exception>
 #include <future>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <utility>
@@ -24,6 +26,7 @@ void VulkanChunkRenderCache::syncFromCpuChunkMeshes(
     const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuMeshes,
     const glm::ivec3 &cullingChunk,
     size_t maxChunkUploadsPerFrame,
+    float uploadBudgetMs,
     uint64_t frameCounter,
     VulkanContext &context,
     UploadContext &uploadContext,
@@ -34,6 +37,20 @@ void VulkanChunkRenderCache::syncFromCpuChunkMeshes(
         maxChunkUploadsPerFrame = 1;
     }
 
+    const auto syncStart = std::chrono::steady_clock::now();
+    const auto withinUploadBudget = [&]() {
+        if (uploadBudgetMs <= 0.0f) {
+            return true;
+        }
+        const float elapsedMs = static_cast<float>(
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - syncStart
+            )
+                .count()
+        );
+        return elapsedMs < uploadBudgetMs;
+    };
+
     m_acceptBackgroundJobs = true;
     consumeCompletedUploadJobs(
         cpuMeshes,
@@ -41,7 +58,9 @@ void VulkanChunkRenderCache::syncFromCpuChunkMeshes(
         context,
         uploadContext,
         onChunkUploaded,
-        std::max<size_t>(1u, maxChunkUploadsPerFrame)
+        std::max<size_t>(1u, maxChunkUploadsPerFrame),
+        uploadBudgetMs,
+        syncStart
     );
 
     std::vector<glm::ivec3> chunksToRemove;
@@ -144,6 +163,10 @@ void VulkanChunkRenderCache::syncFromCpuChunkMeshes(
     );
 
     for (const UploadCandidate &candidate : candidates) {
+        if (!withinUploadBudget()) {
+            break;
+        }
+
         const glm::ivec3 &chunkPos = candidate.chunkPos;
         const auto cpuIt = cpuMeshes.find(chunkPos);
         if (cpuIt == cpuMeshes.end()) {
@@ -267,26 +290,39 @@ void VulkanChunkRenderCache::consumeCompletedUploadJobs(
     VulkanContext &context,
     UploadContext &uploadContext,
     const std::function<void(const glm::ivec3 &, const CpuChunkMesh &)> &onChunkUploaded,
-    size_t maxCompletedUploadsPerCall
+    size_t maxCompletedUploadsPerCall,
+    float uploadBudgetMs,
+    const std::chrono::steady_clock::time_point &syncStart
 ) {
     if (maxCompletedUploadsPerCall == 0) {
         maxCompletedUploadsPerCall = 1;
     }
-    std::deque<CompletedChunkUploadJob> completed;
-    {
-        std::lock_guard<std::mutex> lock(m_chunkUploadStateMutex);
-        if (m_completedChunkUploadJobs.empty()) {
-            return;
+    const auto withinUploadBudget = [&]() {
+        if (uploadBudgetMs <= 0.0f) {
+            return true;
         }
-        size_t processed = 0;
-        while (processed < maxCompletedUploadsPerCall && !m_completedChunkUploadJobs.empty()) {
-            completed.push_back(std::move(m_completedChunkUploadJobs.front()));
-            m_completedChunkUploadJobs.pop_front();
-            ++processed;
-        }
-    }
+        const float elapsedMs = static_cast<float>(
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - syncStart
+            )
+                .count()
+        );
+        return elapsedMs < uploadBudgetMs;
+    };
 
-    for (CompletedChunkUploadJob &job : completed) {
+    size_t processed = 0;
+    while (processed < maxCompletedUploadsPerCall && withinUploadBudget()) {
+        CompletedChunkUploadJob job{};
+        {
+            std::lock_guard<std::mutex> lock(m_chunkUploadStateMutex);
+            if (m_completedChunkUploadJobs.empty()) {
+                return;
+            }
+            job = std::move(m_completedChunkUploadJobs.front());
+            m_completedChunkUploadJobs.pop_front();
+        }
+        ++processed;
+
         {
             std::lock_guard<std::mutex> lock(m_chunkUploadStateMutex);
             auto pendingIt = m_pendingChunkUploadRevisions.find(job.chunkPos);

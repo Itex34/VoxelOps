@@ -2,8 +2,8 @@
 
 #include "../network/ClientNetwork.hpp"
 #include "../ui/debug/DebugUi.hpp"
+#include "../ui/native/NativeUiSystem.hpp"
 #include "../ui/player/InventoryUI.hpp"
-#include "../ui/rml/RmlUiSystem.hpp"
 
 #include <cstdint>
 #include <deque>
@@ -11,10 +11,7 @@
 #include <string>
 #include <vector>
 
-enum class UiView : uint8_t {
-    MainMenu = 0,
-    InGame = 1
-};
+enum class UiView : uint8_t { MainMenu = 0, InGame = 1, SettingsMenu = 2 };
 
 struct RuntimeUiState {
     struct KillFeedEntry {
@@ -29,7 +26,7 @@ struct RuntimeUiState {
 
     std::unique_ptr<DebugUi> debugUi;
     std::unique_ptr<InventoryUI> inventoryUi;
-    std::unique_ptr<RmlUiSystem> rmlUi;
+    std::unique_ptr<NativeUiSystem> nativeUi;
 
     std::deque<KillFeedEntry> killFeedEntries;
     int matchRemainingSeconds = 600;
@@ -38,5 +35,18 @@ struct RuntimeUiState {
     std::string matchWinner;
     std::vector<ClientNetwork::ScoreboardEntry> scoreboardEntries;
     UiView activeView = UiView::MainMenu;
-    bool wantsCursor = true;
+    bool pauseMenuVisible = false;
+    bool pauseMenuSettingsVisible = false;
+
+    bool wantsCursor() const {
+        switch (activeView) {
+        case UiView::MainMenu:
+            return true;
+
+        case UiView::InGame:
+            return pauseMenuVisible || pauseMenuSettingsVisible;
+        }
+
+        return true;
+    }
 };

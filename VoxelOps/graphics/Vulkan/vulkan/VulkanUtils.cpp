@@ -1,6 +1,5 @@
 #include "graphics/Vulkan/vulkan/VulkanUtils.hpp"
 
-#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -11,48 +10,51 @@
 
 namespace VulkanUtils {
 
-    uint32_t findMemoryType(
-        const vk::raii::PhysicalDevice &physicalDevice,
-        uint32_t typeFilter,
-        vk::MemoryPropertyFlags properties
-    ) {
-        const vk::PhysicalDeviceMemoryProperties memoryProperties =
-            physicalDevice.getMemoryProperties();
-        for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; ++i) {
-            const bool typeMatches = (typeFilter & (1u << i)) != 0;
-            const bool propertyMatches =
-                (memoryProperties.memoryTypes[i].propertyFlags & properties) == properties;
-            if (typeMatches && propertyMatches) {
-                return i;
-            }
-        }
-
-        throw std::runtime_error("Failed to find suitable memory type.");
-    }
-
     void createBuffer(
-        const vk::raii::Device &device,
-        const vk::raii::PhysicalDevice &physicalDevice,
+        VmaAllocator allocator,
         vk::DeviceSize size,
         vk::BufferUsageFlags usage,
         vk::MemoryPropertyFlags properties,
-        vk::raii::Buffer &buffer,
-        vk::raii::DeviceMemory &bufferMemory
+        VulkanBuffer &buffer,
+        VmaAllocationCreateFlags allocationFlags,
+        const uint32_t *queueFamilyIndices,
+        uint32_t queueFamilyIndexCount
     ) {
-        vk::BufferCreateInfo bufferInfo{};
-        bufferInfo.size = size;
-        bufferInfo.usage = usage;
-        bufferInfo.sharingMode = vk::SharingMode::eExclusive;
+        buffer.create(
+            allocator,
+            size,
+            usage,
+            properties,
+            allocationFlags,
+            queueFamilyIndices,
+            queueFamilyIndexCount
+        );
+    }
 
-        buffer = vk::raii::Buffer(device, bufferInfo);
-        const vk::MemoryRequirements memoryRequirements = buffer.getMemoryRequirements();
+    void destroyBuffer(VulkanBuffer &buffer) {
+        buffer.destroy();
+    }
 
-        vk::MemoryAllocateInfo allocInfo{};
-        allocInfo.allocationSize = memoryRequirements.size;
-        allocInfo.memoryTypeIndex =
-            findMemoryType(physicalDevice, memoryRequirements.memoryTypeBits, properties);
-        bufferMemory = vk::raii::DeviceMemory(device, allocInfo);
-        buffer.bindMemory(*bufferMemory, 0);
+    void createImage(
+        VmaAllocator allocator,
+        const vk::ImageCreateInfo &imageInfo,
+        vk::MemoryPropertyFlags properties,
+        VulkanImage &image,
+        VmaAllocationCreateFlags allocationFlags
+    ) {
+        image.create(allocator, imageInfo, properties, allocationFlags);
+    }
+
+    void destroyImage(VulkanImage &image) {
+        image.destroy();
+    }
+
+    void *mapAllocation(VulkanBuffer &buffer) {
+        return buffer.map();
+    }
+
+    void unmapAllocation(VulkanBuffer &buffer) {
+        buffer.unmap();
     }
 
     vk::raii::CommandBuffer beginSingleTimeCommands(

@@ -16,7 +16,7 @@ namespace {
     // Runtime values are assigned each frame in updateGiDescriptorSet(...) from frameData.giLighting.
     struct alignas(16) GiLightingParamsGpu {
         glm::uvec4 header{0u};
-        glm::uvec4 pathConfig{1u, 0u, 0u, 0u};
+        glm::uvec4 pathConfig{1u, 0u, 0u, 0u}; // x=rays, y=checkerboard, z=frame, w=history reset
         glm::uvec4 tracingConfig{0u, 0u, 0u, 0u};
         glm::uvec4 nrdEncoding{0u}; // {normalEncoding, roughnessEncoding}
         glm::vec4 tuning{0.0f}; // x = base diffuse, y = gi intensity, z = sun intensity, w = sun shadow min visibility
@@ -26,7 +26,7 @@ namespace {
         glm::ivec4 shadowWorldBoundsXy{0};
         glm::ivec4 shadowWorldBoundsZ{0};
         glm::vec4 shadowParams{0.0f};
-        glm::vec4 screenParams{0.0f, 0.0f, 0.0f, 0.0f}; // zw = inv viewport size
+        glm::vec4 screenParams{1.0f, 1.0f, 0.0f, 0.0f}; // x=RT render scale, y=RT ray density, zw=inv viewport
         glm::vec4 denoiseParams{0.0f};
         glm::vec4 nrdHitDistanceParams{0.0f};
         glm::mat4 currViewProjection{1.0f};
@@ -42,7 +42,7 @@ void VulkanRenderer::createGiDescriptorResources() {
     }
 
     const vk::raii::Device &device = m_context.getDevice();
-    const vk::raii::PhysicalDevice &physicalDevice = m_context.getPhysicalDevice();
+    const VmaAllocator allocator = m_context.getVmaAllocator();
 
     m_giRtDescriptorEnabled = m_context.isHardwareRayTracingSupported();
 
@@ -122,48 +122,42 @@ void VulkanRenderer::createGiDescriptorResources() {
     m_giDescriptorSets = device.allocateDescriptorSets(allocateInfo);
 
     VulkanUtils::createBuffer(
-        device,
-        physicalDevice,
+        allocator,
         sizeof(uint32_t),
         vk::BufferUsageFlagBits::eStorageBuffer,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        m_giFallbackShadowOccupancyBuffer,
-        m_giFallbackShadowOccupancyBufferMemory
+        m_giFallbackShadowOccupancyBuffer
     );
     {
         const uint32_t zeroWord = 0u;
-        void *mapped = m_giFallbackShadowOccupancyBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
+        void *mapped = VulkanUtils::mapAllocation(m_giFallbackShadowOccupancyBuffer);
         std::memcpy(mapped, &zeroWord, sizeof(zeroWord));
-        m_giFallbackShadowOccupancyBufferMemory.unmapMemory();
+        VulkanUtils::unmapAllocation(m_giFallbackShadowOccupancyBuffer);
     }
 
     VulkanUtils::createBuffer(
-        device,
-        physicalDevice,
+        allocator,
         sizeof(uint32_t),
         vk::BufferUsageFlagBits::eStorageBuffer,
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        m_giFallbackMaterialBuffer,
-        m_giFallbackMaterialBufferMemory
+        m_giFallbackMaterialBuffer
     );
     {
         const uint32_t fallbackMaterial = 0u;
-        void *mapped = m_giFallbackMaterialBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
+        void *mapped = VulkanUtils::mapAllocation(m_giFallbackMaterialBuffer);
         std::memcpy(mapped, &fallbackMaterial, sizeof(fallbackMaterial));
-        m_giFallbackMaterialBufferMemory.unmapMemory();
+        VulkanUtils::unmapAllocation(m_giFallbackMaterialBuffer);
     }
 
     for (PerImageDrawResources &resources : m_perImageDrawResources) {
         VulkanUtils::createBuffer(
-            device,
-            physicalDevice,
+            allocator,
             sizeof(GiLightingParamsGpu),
             vk::BufferUsageFlagBits::eUniformBuffer,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            resources.giParamsBuffer,
-            resources.giParamsBufferMemory
+            resources.giParamsBuffer
         );
-        resources.giParamsMapped = resources.giParamsBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
+        resources.giParamsMapped = VulkanUtils::mapAllocation(resources.giParamsBuffer);
     }
 }
 
@@ -180,7 +174,7 @@ void VulkanRenderer::updateGiDescriptorSet(
     }
 
     GiLightingParamsGpu params{};
-    params.header.x = 0u;
+    params.header.x = frameData.giLighting.enabled ? 1u : 0u;
     params.header.y = frameData.giLighting.sunShadowsEnabled ? 1u : 0u;
     params.header.z = frameData.giLighting.pathTracingEnabled ? 1u : 0u;
     params.header.w = frameData.giLighting.nrdDebugView;
@@ -188,7 +182,10 @@ void VulkanRenderer::updateGiDescriptorSet(
     const bool hasNrdPrevViewProjection = frameData.giLighting.enabled &&
                                           !frameData.giLighting.resetHistory &&
                                           m_nrdPrevMatricesValid;
-    params.pathConfig.y = 0u;
+    const float rtRenderScale =
+        glm::clamp(frameData.giLighting.pathTraceRenderScale, 0.25f, 1.0f);
+    params.pathConfig.y =
+        (frameData.giLighting.pathTraceCheckerboard != 0u || rtRenderScale < 0.999f) ? 1u : 0u;
     params.pathConfig.z = m_frameCounterLow;
     params.pathConfig.w = frameData.giLighting.resetHistory ? 1u : 0u;
     const uint32_t historyIndex =
@@ -227,6 +224,8 @@ void VulkanRenderer::updateGiDescriptorSet(
         static_cast<float>(std::max(1u, frameData.giLighting.pathTraceMaxBounces));
     params.shadowParams.w = std::max(0.0f, frameData.giLighting.pathTraceSkyIntensity);
     const vk::Extent2D extent = m_context.getSwapchainExtent();
+    params.screenParams.x = rtRenderScale;
+    params.screenParams.y = glm::clamp(rtRenderScale * rtRenderScale, 0.0f, 1.0f);
     if (extent.width > 0 && extent.height > 0) {
         params.screenParams.z = 1.0f / static_cast<float>(extent.width);
         params.screenParams.w = 1.0f / static_cast<float>(extent.height);
@@ -448,8 +447,6 @@ void VulkanRenderer::cleanupGiDescriptorResources() {
     m_giDescriptorPool.clear();
     m_giDescriptorSetLayout.clear();
     m_giRtDescriptorEnabled = false;
-    m_giFallbackShadowOccupancyBuffer.clear();
-    m_giFallbackShadowOccupancyBufferMemory.clear();
-    m_giFallbackMaterialBuffer.clear();
-    m_giFallbackMaterialBufferMemory.clear();
+    VulkanUtils::destroyBuffer(m_giFallbackShadowOccupancyBuffer);
+    VulkanUtils::destroyBuffer(m_giFallbackMaterialBuffer);
 }

@@ -5,8 +5,8 @@ layout(early_fragment_tests) in;
 layout(set = 0, binding = 0) uniform sampler2DArray texSampler;
 
 layout(set = 2, binding = 0, std140) uniform GiLightingParams {
-    uvec4 header;     // x = reserved, y = sun shadow enabled, z = path trace enabled, w = NRD debug view
-    uvec4 pathConfig; // x = path rays/pixel, y = reserved, z = frame index low, w = history reset
+    uvec4 header;     // x = GI enabled, y = sun shadow state, z = path trace enabled, w = NRD debug view
+    uvec4 pathConfig; // x = path rays/pixel, y = checkerboard indirect, z = frame index low, w = history reset
     uvec4 tracingConfig; // x = reserved, y = hw rt supported, z = tlas valid, w = NRD history valid
     uvec4 nrdEncoding; // x = normal encoding, y = roughness encoding (NRD enums)
     vec4 tuning;  // x = base diffuse, y = gi intensity, z = sun intensity, w = sun shadow min visibility
@@ -16,7 +16,7 @@ layout(set = 2, binding = 0, std140) uniform GiLightingParams {
     ivec4 shadowWorldBoundsXy;         // x = minX, y = maxX, z = minY, w = maxY
     ivec4 shadowWorldBoundsZ;          // x = minZ, y = maxZ
     vec4 shadowParams;                 // x = max trace distance, y = normal bias, z = max bounces, w = sky intensity
-    vec4 screenParams;                 // zw = inv viewport size
+    vec4 screenParams;                 // x = RT render scale, y = RT ray density, zw = inv viewport size
     vec4 denoiseParams;                // x = temporal blend, y = spatial weight, z = luma phi, w = moments blend
     vec4 nrdHitDistanceParams;         // xyz = ReblurHitDistanceParameters {A, B, C}
     mat4 currViewProjection;
@@ -30,6 +30,7 @@ layout(set = 2, binding = 1, std430) readonly buffer ShadowOccupancyWords {
 layout(set = 2, binding = 2, std430) readonly buffer TraceMaterialIds {
     uint ids[];
 } traceMaterials;
+layout(set = 2, binding = 7) uniform sampler2D nrdOutDiffRadianceHitDistSampler;
 layout(set = 2, binding = 12, r16f) uniform image2D nrdShadowInImage;
 layout(set = 2, binding = 13) uniform sampler2D nrdShadowOutSampler;
 layout(set = 2, binding = 14) uniform sampler2D blueNoiseTex;
@@ -57,6 +58,25 @@ layout(location = 6) out vec4 outNrdViewZIn;
 #include "gi_nrd.glsl"
 #include "gi_debug.glsl"
 
+uint bayer4x4Rank(uvec2 pixel) {
+    const uint bayer[16] = uint[16](
+        0u, 8u, 2u, 10u,
+        12u, 4u, 14u, 6u,
+        3u, 11u, 1u, 9u,
+        15u, 7u, 13u, 5u
+    );
+    uvec2 p = pixel & uvec2(3u);
+    return bayer[p.x + (p.y * 4u)];
+}
+
+bool shouldTraceRtIndirectPixel() {
+    float rayDensity = clamp(giParams.screenParams.y, 1.0 / 16.0, 1.0);
+    uint threshold = uint(clamp(floor((rayDensity * 16.0) + 0.5), 1.0, 16.0));
+    uvec2 pixel = uvec2(gl_FragCoord.xy);
+    uvec2 frameOffset = uvec2(giParams.pathConfig.z, giParams.pathConfig.z >> 2u) & uvec2(3u);
+    return bayer4x4Rank(pixel + frameOffset) < threshold;
+}
+
 void main() {
     outComposeBase = vec4(0.0);
     outComposeIndirect = vec4(0.0);
@@ -78,17 +98,35 @@ void main() {
     float nrdMaterialClass = nrdMaterialClassFromVoxelId(rawVoxelMaterialId);
 
     if (pathTracingEnabled) {
-        PathTraceResult giTrace = tracePathTracedIndirect(inWorldPos, normalWs);
-        vec3 indirectCurrent = giTrace.indirect;
         vec3 surfaceEmission = sampleSurfaceEmission(inWorldPos, normalWs);
         float direct =
             computePathTracedDirectSunNormalized(inWorldPos, normalWs, sunDir, ndl, nrdMaxDistance);
+        bool nrdHistoryValid = (giParams.tracingConfig.w != 0u);
+        bool scaledIndirect = (giParams.pathConfig.y != 0u) && nrdHistoryValid;
+        bool traceIndirectThisPixel = !scaledIndirect || shouldTraceRtIndirectPixel();
+        vec3 indirectCurrent = vec3(0.0);
+        float nrdInputHitDistance = nrdMaxDistance;
+        if (traceIndirectThisPixel) {
+            PathTraceResult giTrace = tracePathTracedIndirect(inWorldPos, normalWs);
+            indirectCurrent = giTrace.indirect;
+            nrdInputHitDistance = giTrace.candidateHitDistance;
+        } else {
+            vec2 prevUv = vec2(0.0);
+            float prevClipW = 0.0;
+            if (projectWorldToUvRaw(giParams.nrdPrevViewProjection, inWorldPos, prevUv, prevClipW)) {
+                vec4 previousPacked = texture(
+                    nrdOutDiffRadianceHitDistSampler,
+                    clamp(prevUv, vec2(0.001), vec2(0.999))
+                );
+                indirectCurrent = nrdYCoCgToLinear(previousPacked.rgb);
+                nrdInputHitDistance = clamp(previousPacked.a, 0.0, 1.0) * nrdMaxDistance;
+            }
+        }
         vec3 directBaseLinear = texel.rgb * vec3(giParams.tuning.x + direct);
         directBaseLinear += surfaceEmission;
         vec3 indirectTintLinear = texel.rgb * giParams.tuning.y;
         vec3 noisyLitLinear = directBaseLinear + (indirectCurrent * indirectTintLinear);
         vec3 nrdInputRadiance = max(indirectCurrent, vec3(0.0));
-        float nrdInputHitDistance = giTrace.candidateHitDistance;
         writeNrdInputs(
             inWorldPos,
             normalWs,

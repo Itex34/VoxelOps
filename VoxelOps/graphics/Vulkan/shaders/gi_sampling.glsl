@@ -48,5 +48,5 @@ vec3 sampleCosineHemisphere(vec3 normal, inout uint rng) {
     vec3 tangent;
     vec3 bitangent;
     buildBasis(normal, tangent, bitangent);
-    return safeNormalize(tangent * x + normal * y + bitangent * z);
+    return tangent * x + normal * y + bitangent * z;
 }

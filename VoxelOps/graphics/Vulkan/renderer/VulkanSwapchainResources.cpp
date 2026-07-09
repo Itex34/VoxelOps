@@ -517,6 +517,9 @@ void VulkanRenderer::recreateSwapchainDependentResources() {
     );
     createNrdCompositePipeline();
     createPostProcessPipeline();
+    m_nativeUiRenderer.initialize(
+        m_context, m_uploadContext, *m_compositeRenderPass.get(), static_cast<uint32_t>(m_compositeFramebuffers.size())
+    );
     createCommandBuffers();
     createTimestampResources();
     m_frameSync.recreateSwapchainSync(device, m_framebuffers.size());
@@ -546,6 +549,7 @@ void VulkanRenderer::cleanupSwapchainDependentResources() {
     m_nrdAsyncComputeEnabled = false;
     cleanupPostProcessPipeline();
     cleanupNrdCompositePipeline();
+    m_nativeUiRenderer.cleanup();
     m_chunkPipeline.cleanup();
     m_modelPipeline.cleanup();
     cleanupPerImageDrawResources();

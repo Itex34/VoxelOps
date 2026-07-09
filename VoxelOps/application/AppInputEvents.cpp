@@ -24,8 +24,8 @@ void App::pollEvents(Runtime &runtime) {
     SDL_Event event;
     const SDL_WindowID windowId = (m_Window != nullptr) ? SDL_GetWindowID(m_Window) : 0;
     while (SDL_PollEvent(&event)) {
-        if (runtime.ui.rmlUi) {
-            runtime.ui.rmlUi->processEvent(event);
+        if (runtime.ui.nativeUi) {
+            runtime.ui.nativeUi->processEvent(event);
         }
         if (runtime.ui.debugUi) {
             runtime.ui.debugUi->processEvent(event);
@@ -47,8 +47,8 @@ void App::pollEvents(Runtime &runtime) {
                     m_Window, event.window.data1, event.window.data2
                 );
                 runtime.render.renderer->onWindowResized(event.window.data1, event.window.data2);
-                if (runtime.ui.rmlUi) {
-                    runtime.ui.rmlUi->onWindowResized(event.window.data1, event.window.data2);
+                if (runtime.ui.nativeUi) {
+                    runtime.ui.nativeUi->onWindowResized(event.window.data1, event.window.data2);
                 }
             }
             break;
@@ -135,7 +135,7 @@ void App::updateToggleStates(Runtime &runtime) {
     const bool textInputBlocked = GameData::uiWantsTextInput;
     const auto refreshCursorState = [&]() {
         GameData::cursorEnabled = m_ForceCursorEnabled || m_ShowDebugUi || m_ShowInventoryUi ||
-                                  runtime.ui.wantsCursor;
+                                  runtime.ui.wantsCursor();
         applyMouseInputModes();
     };
 
@@ -174,7 +174,7 @@ void App::updateToggleStates(Runtime &runtime) {
     m_WasF10Pressed = isF10Pressed;
 
     const bool isXPressed = IsScancodeDown(SDL_SCANCODE_X);
-    if (!textInputBlocked && isXPressed && !m_WasXPressed) {
+    if (!textInputBlocked && !runtime.ui.pauseMenuVisible && isXPressed && !m_WasXPressed) {
         m_ShowInventoryUi = !m_ShowInventoryUi;
         if (runtime.ui.inventoryUi) {
             runtime.ui.inventoryUi->setVisible(m_ShowInventoryUi);
@@ -185,13 +185,32 @@ void App::updateToggleStates(Runtime &runtime) {
 
     const bool isEscapePressed = IsScancodeDown(SDL_SCANCODE_ESCAPE);
     if (!textInputBlocked && isEscapePressed && !m_WasEscapePressed) {
-        m_ForceCursorEnabled = !m_ForceCursorEnabled;
+        const bool isInGame =
+            runtime.network.clientNet.IsConnected() && runtime.ui.activeView == UiView::InGame;
+
+        if (isInGame) {
+            runtime.ui.pauseMenuVisible = !runtime.ui.pauseMenuVisible;
+            runtime.ui.pauseMenuSettingsVisible = false;
+
+            m_ForceCursorEnabled = false;
+
+            if (runtime.ui.pauseMenuVisible) {
+                m_ShowInventoryUi = false;
+
+                if (runtime.ui.inventoryUi) {
+                    runtime.ui.inventoryUi->setVisible(false);
+                }
+            }
+        } else {
+            m_ForceCursorEnabled = !m_ForceCursorEnabled;
+        }
+
         refreshCursorState();
     }
     m_WasEscapePressed = isEscapePressed;
 
     const bool canRecaptureCursor = runtime.network.clientNet.IsConnected() && !m_ShowDebugUi &&
-                                    !m_ShowInventoryUi && m_ForceCursorEnabled;
+                                    !m_ShowInventoryUi && !runtime.ui.pauseMenuVisible && m_ForceCursorEnabled;
     const bool primaryMouseDown = IsMouseButtonDown(SDL_BUTTON_LEFT);
     if (canRecaptureCursor && primaryMouseDown && !textInputBlocked) {
         m_ForceCursorEnabled = false;

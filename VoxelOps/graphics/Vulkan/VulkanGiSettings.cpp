@@ -7,6 +7,8 @@
 namespace {
     constexpr bool kEnablePathTracedGi = true;
     constexpr uint32_t kPathTraceRaysPerPixel = 1u;
+    constexpr uint32_t kPathTraceCheckerboard = 0u;
+    constexpr float kPathTraceRenderScale = 0.8f;
     constexpr uint32_t kPathTraceMaxBounces = 2u;
     constexpr float kPathTraceSkyIntensity = 1.0f;
 } // namespace
@@ -88,6 +90,8 @@ void VulkanGiSettings::fillLightingData(
     lighting.tracingBackend = decision.backend;
     lighting.pathTracingEnabled = kEnablePathTracedGi;
     lighting.pathTraceRaysPerPixel = kPathTraceRaysPerPixel;
+    lighting.pathTraceCheckerboard = kPathTraceCheckerboard;
+    lighting.pathTraceRenderScale = std::clamp(kPathTraceRenderScale, 0.25f, 1.0f);
     lighting.pathTraceMaxBounces = kPathTraceMaxBounces;
     lighting.pathTraceSkyIntensity = kPathTraceSkyIntensity;
     lighting.baseDiffuse = kEnablePathTracedGi ? 0.0f : 0.50f;

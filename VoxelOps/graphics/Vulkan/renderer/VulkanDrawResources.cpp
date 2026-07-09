@@ -74,31 +74,27 @@ void VulkanRenderer::ensurePerImageDrawBufferCapacity(
     }
 
     PerImageDrawResources &resources = m_perImageDrawResources[imageIndex];
-    const vk::raii::Device &device = m_context.getDevice();
-    const vk::raii::PhysicalDevice &physicalDevice = m_context.getPhysicalDevice();
+    const VmaAllocator allocator = m_context.getVmaAllocator();
 
     const vk::DeviceSize requiredModelBytes = std::max(modelBytes, MIN_MODEL_BUFFER_BYTES);
     if (resources.modelMatrixCapacityBytes < requiredModelBytes ||
         resources.modelMatrixBuffer == nullptr) {
         if (resources.modelMatrixMapped != nullptr) {
-            resources.modelMatrixBufferMemory.unmapMemory();
+            VulkanUtils::unmapAllocation(resources.modelMatrixBuffer);
             resources.modelMatrixMapped = nullptr;
         }
-        resources.modelMatrixBuffer.clear();
-        resources.modelMatrixBufferMemory.clear();
+        VulkanUtils::destroyBuffer(resources.modelMatrixBuffer);
         resources.modelMatrixCapacityBytes =
             growCapacity(MIN_MODEL_BUFFER_BYTES, requiredModelBytes);
 
         VulkanUtils::createBuffer(
-            device,
-            physicalDevice,
+            allocator,
             resources.modelMatrixCapacityBytes,
             vk::BufferUsageFlagBits::eStorageBuffer,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            resources.modelMatrixBuffer,
-            resources.modelMatrixBufferMemory
+            resources.modelMatrixBuffer
         );
-        resources.modelMatrixMapped = resources.modelMatrixBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
+        resources.modelMatrixMapped = VulkanUtils::mapAllocation(resources.modelMatrixBuffer);
 
         updateModelDescriptorSet(imageIndex);
     }
@@ -107,25 +103,21 @@ void VulkanRenderer::ensurePerImageDrawBufferCapacity(
     if (resources.indirectCommandCapacityBytes < requiredIndirectBytes ||
         resources.indirectCommandBuffer == nullptr) {
         if (resources.indirectCommandMapped != nullptr) {
-            resources.indirectCommandBufferMemory.unmapMemory();
+            VulkanUtils::unmapAllocation(resources.indirectCommandBuffer);
             resources.indirectCommandMapped = nullptr;
         }
-        resources.indirectCommandBuffer.clear();
-        resources.indirectCommandBufferMemory.clear();
+        VulkanUtils::destroyBuffer(resources.indirectCommandBuffer);
         resources.indirectCommandCapacityBytes =
             growCapacity(MIN_INDIRECT_BUFFER_BYTES, requiredIndirectBytes);
 
         VulkanUtils::createBuffer(
-            device,
-            physicalDevice,
+            allocator,
             resources.indirectCommandCapacityBytes,
             vk::BufferUsageFlagBits::eIndirectBuffer,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            resources.indirectCommandBuffer,
-            resources.indirectCommandBufferMemory
+            resources.indirectCommandBuffer
         );
-        resources.indirectCommandMapped =
-            resources.indirectCommandBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
+        resources.indirectCommandMapped = VulkanUtils::mapAllocation(resources.indirectCommandBuffer);
     }
 }
 
@@ -167,31 +159,27 @@ void VulkanRenderer::updatePerImageDrawBuffers(
     );
     const vk::DeviceSize chunkSuperIndexBytes =
         static_cast<vk::DeviceSize>(chunkSuperbatchIndices.size() * sizeof(uint16_t));
-    const vk::raii::Device &device = m_context.getDevice();
-    const vk::raii::PhysicalDevice &physicalDevice = m_context.getPhysicalDevice();
+    const VmaAllocator allocator = m_context.getVmaAllocator();
 
     if (chunkSuperVertexBytes > 0) {
         if (resources.chunkSuperbatchVertexCapacityBytes < chunkSuperVertexBytes ||
             resources.chunkSuperbatchVertexBuffer == nullptr) {
             if (resources.chunkSuperbatchVertexMapped != nullptr) {
-                resources.chunkSuperbatchVertexBufferMemory.unmapMemory();
+                VulkanUtils::unmapAllocation(resources.chunkSuperbatchVertexBuffer);
                 resources.chunkSuperbatchVertexMapped = nullptr;
             }
-            resources.chunkSuperbatchVertexBuffer.clear();
-            resources.chunkSuperbatchVertexBufferMemory.clear();
+            VulkanUtils::destroyBuffer(resources.chunkSuperbatchVertexBuffer);
             resources.chunkSuperbatchVertexCapacityBytes =
                 growCapacity(4096u, chunkSuperVertexBytes);
             VulkanUtils::createBuffer(
-                device,
-                physicalDevice,
+                allocator,
                 resources.chunkSuperbatchVertexCapacityBytes,
                 vk::BufferUsageFlagBits::eVertexBuffer,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-                resources.chunkSuperbatchVertexBuffer,
-                resources.chunkSuperbatchVertexBufferMemory
+                resources.chunkSuperbatchVertexBuffer
             );
             resources.chunkSuperbatchVertexMapped =
-                resources.chunkSuperbatchVertexBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
+                VulkanUtils::mapAllocation(resources.chunkSuperbatchVertexBuffer);
         }
         if (resources.chunkSuperbatchVertexMapped != nullptr) {
             std::memcpy(
@@ -206,24 +194,21 @@ void VulkanRenderer::updatePerImageDrawBuffers(
         if (resources.chunkSuperbatchIndexCapacityBytes < chunkSuperIndexBytes ||
             resources.chunkSuperbatchIndexBuffer == nullptr) {
             if (resources.chunkSuperbatchIndexMapped != nullptr) {
-                resources.chunkSuperbatchIndexBufferMemory.unmapMemory();
+                VulkanUtils::unmapAllocation(resources.chunkSuperbatchIndexBuffer);
                 resources.chunkSuperbatchIndexMapped = nullptr;
             }
-            resources.chunkSuperbatchIndexBuffer.clear();
-            resources.chunkSuperbatchIndexBufferMemory.clear();
+            VulkanUtils::destroyBuffer(resources.chunkSuperbatchIndexBuffer);
             resources.chunkSuperbatchIndexCapacityBytes =
                 growCapacity(4096u, chunkSuperIndexBytes);
             VulkanUtils::createBuffer(
-                device,
-                physicalDevice,
+                allocator,
                 resources.chunkSuperbatchIndexCapacityBytes,
                 vk::BufferUsageFlagBits::eIndexBuffer,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-                resources.chunkSuperbatchIndexBuffer,
-                resources.chunkSuperbatchIndexBufferMemory
+                resources.chunkSuperbatchIndexBuffer
             );
             resources.chunkSuperbatchIndexMapped =
-                resources.chunkSuperbatchIndexBufferMemory.mapMemory(0, VK_WHOLE_SIZE);
+                VulkanUtils::mapAllocation(resources.chunkSuperbatchIndexBuffer);
         }
         if (resources.chunkSuperbatchIndexMapped != nullptr) {
             std::memcpy(
@@ -267,43 +252,38 @@ void VulkanRenderer::updateModelDescriptorSet(uint32_t imageIndex) {
 void VulkanRenderer::cleanupPerImageDrawResources() {
     for (PerImageDrawResources &resources : m_perImageDrawResources) {
         if (resources.modelMatrixMapped != nullptr) {
-            resources.modelMatrixBufferMemory.unmapMemory();
+            VulkanUtils::unmapAllocation(resources.modelMatrixBuffer);
             resources.modelMatrixMapped = nullptr;
         }
-        resources.modelMatrixBuffer.clear();
-        resources.modelMatrixBufferMemory.clear();
+        VulkanUtils::destroyBuffer(resources.modelMatrixBuffer);
         resources.modelMatrixCapacityBytes = 0;
 
         if (resources.indirectCommandMapped != nullptr) {
-            resources.indirectCommandBufferMemory.unmapMemory();
+            VulkanUtils::unmapAllocation(resources.indirectCommandBuffer);
             resources.indirectCommandMapped = nullptr;
         }
-        resources.indirectCommandBuffer.clear();
-        resources.indirectCommandBufferMemory.clear();
+        VulkanUtils::destroyBuffer(resources.indirectCommandBuffer);
         resources.indirectCommandCapacityBytes = 0;
 
         if (resources.chunkSuperbatchVertexMapped != nullptr) {
-            resources.chunkSuperbatchVertexBufferMemory.unmapMemory();
+            VulkanUtils::unmapAllocation(resources.chunkSuperbatchVertexBuffer);
             resources.chunkSuperbatchVertexMapped = nullptr;
         }
-        resources.chunkSuperbatchVertexBuffer.clear();
-        resources.chunkSuperbatchVertexBufferMemory.clear();
+        VulkanUtils::destroyBuffer(resources.chunkSuperbatchVertexBuffer);
         resources.chunkSuperbatchVertexCapacityBytes = 0;
 
         if (resources.chunkSuperbatchIndexMapped != nullptr) {
-            resources.chunkSuperbatchIndexBufferMemory.unmapMemory();
+            VulkanUtils::unmapAllocation(resources.chunkSuperbatchIndexBuffer);
             resources.chunkSuperbatchIndexMapped = nullptr;
         }
-        resources.chunkSuperbatchIndexBuffer.clear();
-        resources.chunkSuperbatchIndexBufferMemory.clear();
+        VulkanUtils::destroyBuffer(resources.chunkSuperbatchIndexBuffer);
         resources.chunkSuperbatchIndexCapacityBytes = 0;
 
         if (resources.giParamsMapped != nullptr) {
-            resources.giParamsBufferMemory.unmapMemory();
+            VulkanUtils::unmapAllocation(resources.giParamsBuffer);
             resources.giParamsMapped = nullptr;
         }
-        resources.giParamsBuffer.clear();
-        resources.giParamsBufferMemory.clear();
+        VulkanUtils::destroyBuffer(resources.giParamsBuffer);
     }
     m_perImageDrawResources.clear();
 }

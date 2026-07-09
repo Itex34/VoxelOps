@@ -5,7 +5,17 @@
 #include <GameNetworkingSockets/steam/steamnetworkingsockets.h>
 
 #include <algorithm>
+#include <chrono>
 #include <utility>
+
+namespace {
+    std::chrono::duration<double> SnapshotIntervalForRecipientCount(size_t recipients) {
+        if (recipients >= 33) {
+            return std::chrono::duration<double>(1.0 / 30.0);
+        }
+        return std::chrono::duration<double>(1.0 / 60.0);
+    }
+} // namespace
 
 ReplicationPhase::ReplicationPhase(
     std::mutex &mutex, ClientSessionManager &sessions, PlayerManager &playerManager, Hooks hooks
@@ -23,30 +33,38 @@ double ReplicationPhase::RunSnapshotPhase(
     const auto snapshotNow = std::chrono::steady_clock::now();
     const auto snapshotStart = std::chrono::steady_clock::now();
     bool snapshotRan = false;
-    if (snapshotNow - lastSnapshotTime >= snapshotInterval) {
+    size_t registeredRecipientCount = 0;
+    {
+        auto lk = LockWaitTelemetry::AcquireSessionLock(
+            m_mutex, "ReplicationPhase::RunSnapshotPhase.countRecipients"
+        );
+        registeredRecipientCount = m_sessions.CountRegisteredSessions();
+    }
+
+    const auto effectiveSnapshotInterval =
+        std::max(snapshotInterval, SnapshotIntervalForRecipientCount(registeredRecipientCount));
+    if (snapshotNow - lastSnapshotTime >= effectiveSnapshotInterval) {
         snapshotRan = true;
         lastSnapshotTime = snapshotNow;
 
         std::vector<std::pair<HSteamNetConnection, PlayerID>> recipients;
+        std::vector<std::pair<PlayerID, uint16_t>> recipientInterests;
         {
             auto lk =
                 LockWaitTelemetry::AcquireSessionLock(m_mutex, "ReplicationPhase::RunSnapshotPhase");
             recipients.reserve(m_sessions.size());
+            recipientInterests.reserve(m_sessions.size());
             for (const auto &[conn, session] : m_sessions) {
                 if (session.playerId != 0) {
                     recipients.emplace_back(conn, session.playerId);
+                    recipientInterests.emplace_back(session.playerId, session.viewDistance);
                 }
             }
         }
 
         std::vector<HSteamNetConnection> staleRecipients;
-        std::vector<PlayerID> recipientIds;
-        recipientIds.reserve(recipients.size());
-        for (const auto &[_, playerId] : recipients) {
-            recipientIds.push_back(playerId);
-        }
         std::vector<std::vector<uint8_t>> snapshots =
-            m_playerManager.buildSnapshotsForRecipients(recipientIds, serverTick);
+            m_playerManager.buildSnapshotsForRecipients(recipientInterests, serverTick);
 
         const size_t snapshotCount = std::min(recipients.size(), snapshots.size());
         std::vector<std::pair<HSteamNetConnection, PlayerID>> activeRecipients;

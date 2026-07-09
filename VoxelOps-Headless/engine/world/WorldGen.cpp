@@ -8,6 +8,62 @@
 #include <random>
 #include <vector>
 #include <algorithm>
+#include <array>
+
+namespace {
+    int ChunkBlockIndex(int x, int y, int z) {
+        return x + CHUNK_SIZE * (y + CHUNK_SIZE * z);
+    }
+
+    std::array<BlockID, CHUNK_VOLUME> BuildTerrainBlocks(
+        FastNoiseLite &noise, const glm::ivec3 &pos, float initialFrequency, float initialAmplitude
+    ) {
+        std::array<BlockID, CHUNK_VOLUME> blocks{};
+        blocks.fill(BlockID::Air);
+
+        for (int z = 0; z < CHUNK_SIZE; ++z) {
+            for (int x = 0; x < CHUNK_SIZE; ++x) {
+                const int worldX = pos.x * CHUNK_SIZE + x;
+                const int worldZ = pos.z * CHUNK_SIZE + z;
+
+                float n = 0.f;
+                float freq = initialFrequency;
+                float amp = initialAmplitude;
+                constexpr float persistence = 0.5f;
+                constexpr int octaves = 6;
+                const int maxYrange = WORLD_MAX_Y - WORLD_MIN_Y;
+                float maxAmp = 0.f;
+
+                for (int o = 0; o < octaves; ++o) {
+                    n += noise.GetNoise(worldX * freq, worldZ * freq) * amp;
+                    maxAmp += amp;
+                    freq *= 2.f;
+                    amp *= persistence;
+                }
+                n /= (maxAmp > 0.f ? maxAmp : 1.f);
+
+                const int height = WORLD_MIN_Y + static_cast<int>((n + 1.f) * 0.5f * maxYrange);
+
+                for (int y = 0; y < CHUNK_SIZE; ++y) {
+                    const int worldY = pos.y * CHUNK_SIZE + y;
+                    BlockID block = BlockID::Air;
+                    if (worldY == WORLD_MIN_Y) {
+                        block = BlockID::Bedrock;
+                    } else if (worldY < height - 2) {
+                        block = BlockID::Stone;
+                    } else if (worldY < height - 1) {
+                        block = BlockID::Dirt;
+                    } else if (worldY < height) {
+                        block = BlockID::Grass;
+                    }
+                    blocks[ChunkBlockIndex(x, y, z)] = block;
+                }
+            }
+        }
+
+        return blocks;
+    }
+} // namespace
 
 void WorldGen::applyClientDecorationPass(
     ChunkManager &cm, ServerChunk &chunk, const glm::ivec3 &chunkPos
@@ -87,45 +143,7 @@ void WorldGen::generateChunkAt(ChunkManager &cm, const glm::ivec3 &pos) {
         return;
 
     auto chunk = std::make_unique<ServerChunk>(pos);
-
-    for (int z = 0; z < CHUNK_SIZE; ++z) {
-        for (int x = 0; x < CHUNK_SIZE; ++x) {
-            int worldX = pos.x * CHUNK_SIZE + x;
-            int worldZ = pos.z * CHUNK_SIZE + z;
-
-            float n = 0.f;
-            float freq = 1.01f;
-            float amp = 0.8f;
-            float persistence = 0.5f;
-            int octaves = 6;
-            int maxYrange = WORLD_MAX_Y - WORLD_MIN_Y;
-            float maxAmp = 0.f;
-
-            for (int o = 0; o < octaves; ++o) {
-                n += cm.noise.GetNoise(worldX * freq, worldZ * freq) * amp;
-                maxAmp += amp;
-                freq *= 2.f;
-                amp *= persistence;
-            }
-            n /= (maxAmp > 0.f ? maxAmp : 1.f);
-
-            int height = WORLD_MIN_Y + static_cast<int>((n + 1.f) * 0.5f * maxYrange);
-
-            for (int y = 0; y < CHUNK_SIZE; ++y) {
-                int worldY = pos.y * CHUNK_SIZE + y;
-                if (worldY == WORLD_MIN_Y)
-                    chunk->applyEdit(x, y, z, BlockID::Bedrock);
-                else if (worldY < height - 2)
-                    chunk->applyEdit(x, y, z, BlockID::Stone);
-                else if (worldY < height - 1)
-                    chunk->applyEdit(x, y, z, BlockID::Dirt);
-                else if (worldY < height)
-                    chunk->applyEdit(x, y, z, BlockID::Grass);
-                else
-                    chunk->applyEdit(x, y, z, BlockID::Air);
-            }
-        }
-    }
+    chunk->replaceAllBlocks(BuildTerrainBlocks(cm.noise, pos, 1.01f, 0.8f));
 
     // Reuse the client-style two-pass decoration rules for consistency with the client worldgen.
     applyClientDecorationPass(cm, *chunk, pos);
@@ -158,45 +176,7 @@ void WorldGen::generateTerrainChunkAt(ChunkManager &cm, const glm::ivec3 &pos) {
         return;
 
     auto chunk = std::make_unique<ServerChunk>(pos);
-
-    for (int z = 0; z < CHUNK_SIZE; ++z) {
-        for (int x = 0; x < CHUNK_SIZE; ++x) {
-            int worldX = pos.x * CHUNK_SIZE + x;
-            int worldZ = pos.z * CHUNK_SIZE + z;
-
-            float n = 0.f;
-            float freq = 1.f;
-            float amp = 1.9f;
-            float persistence = 0.5f;
-            int octaves = 6;
-            int maxYrange = WORLD_MAX_Y - WORLD_MIN_Y;
-            float maxAmp = 0.f;
-
-            for (int o = 0; o < octaves; ++o) {
-                n += cm.noise.GetNoise(worldX * freq, worldZ * freq) * amp;
-                maxAmp += amp;
-                freq *= 2.f;
-                amp *= persistence;
-            }
-            n /= (maxAmp > 0.f ? maxAmp : 1.f);
-
-            int height = WORLD_MIN_Y + static_cast<int>((n + 1.f) * 0.5f * maxYrange);
-
-            for (int y = 0; y < CHUNK_SIZE; ++y) {
-                int worldY = pos.y * CHUNK_SIZE + y;
-                if (worldY == WORLD_MIN_Y)
-                    chunk->applyEdit(x, y, z, BlockID::Bedrock);
-                else if (worldY < height - 2)
-                    chunk->applyEdit(x, y, z, BlockID::Stone);
-                else if (worldY < height - 1)
-                    chunk->applyEdit(x, y, z, BlockID::Dirt);
-                else if (worldY < height)
-                    chunk->applyEdit(x, y, z, BlockID::Grass);
-                else
-                    chunk->applyEdit(x, y, z, BlockID::Air);
-            }
-        }
-    }
+    chunk->replaceAllBlocks(BuildTerrainBlocks(cm.noise, pos, 1.0f, 1.9f));
 
     {
         std::lock_guard<std::shared_mutex> lk(cm.mapMutex);

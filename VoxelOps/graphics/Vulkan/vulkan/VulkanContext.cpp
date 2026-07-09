@@ -1,4 +1,5 @@
 #include "graphics/Vulkan/vulkan/VulkanContext.hpp"
+#include "graphics/Vulkan/vulkan/VulkanUtils.hpp"
 
 #include <set>
 #include <iostream>
@@ -746,8 +747,7 @@ void VulkanContext::createDepthResources() {
         vk::ImageTiling::eOptimal,
         vk::ImageUsageFlagBits::eDepthStencilAttachment,
         vk::MemoryPropertyFlagBits::eDeviceLocal,
-        depthImage,
-        depthImageMemory
+        depthImage
     );
 
     vk::ImageAspectFlags aspectFlags = vk::ImageAspectFlagBits::eDepth;
@@ -759,8 +759,7 @@ void VulkanContext::createDepthResources() {
 
 void VulkanContext::cleanupSwapchainResources() {
     depthImageView.clear();
-    depthImage.clear();
-    depthImageMemory.clear();
+    VulkanUtils::destroyImage(depthImage);
     depthFormat = vk::Format::eUndefined;
     swapchainImageViews.clear();
     swapchainImages.clear();
@@ -814,8 +813,7 @@ void VulkanContext::createImage(
     vk::ImageTiling tiling,
     vk::ImageUsageFlags usage,
     vk::MemoryPropertyFlags properties,
-    vk::raii::Image &image,
-    vk::raii::DeviceMemory &imageMemory
+    VulkanImage &image
 ) {
     vk::ImageCreateInfo imageInfo{};
     imageInfo.imageType = vk::ImageType::e2D;
@@ -829,31 +827,7 @@ void VulkanContext::createImage(
     imageInfo.samples = vk::SampleCountFlagBits::e1;
     imageInfo.sharingMode = vk::SharingMode::eExclusive;
 
-    image = vk::raii::Image(device, imageInfo);
-    vk::MemoryRequirements memoryRequirements = image.getMemoryRequirements();
-
-    vk::MemoryAllocateInfo allocateInfo{};
-    allocateInfo.allocationSize = memoryRequirements.size;
-    allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, properties);
-
-    imageMemory = vk::raii::DeviceMemory(device, allocateInfo);
-    image.bindMemory(*imageMemory, 0);
-}
-
-uint32_t
-VulkanContext::findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const {
-    vk::PhysicalDeviceMemoryProperties memoryProperties = physicalDevice.getMemoryProperties();
-
-    for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; ++i) {
-        const bool typeMatches = (typeFilter & (1u << i)) != 0;
-        const bool propertyMatches =
-            (memoryProperties.memoryTypes[i].propertyFlags & properties) == properties;
-        if (typeMatches && propertyMatches) {
-            return i;
-        }
-    }
-
-    throw std::runtime_error("Failed to find suitable memory type for image allocation.");
+    VulkanUtils::createImage(m_vmaAllocator, imageInfo, properties, image);
 }
 
 vk::Format VulkanContext::findSupportedFormat(

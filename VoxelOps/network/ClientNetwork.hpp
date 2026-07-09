@@ -63,6 +63,8 @@ public:
     // Connect to server at host/IP + port. Returns true if a connection attempt was started.
     bool ConnectTo(std::string_view host, uint16_t port);
 
+    bool SetClientIdentityOverride(std::string_view identity);
+
     // Send connect request. Server assigns the canonical username.
     bool SendConnectRequest(std::string_view requestedUsername = {});
 
@@ -76,6 +78,9 @@ public:
     bool SendChunkRequest(const glm::ivec3 &centerChunk, uint16_t viewDistance);
 
     void Poll();
+
+    // Close the active server connection while keeping the networking runtime started.
+    void DisconnectFromServer();
 
     // Close connection and cleanup
     void Shutdown();
@@ -164,6 +169,8 @@ private:
     bool m_useTransientIdentity = false;
     bool m_hasEverConnectedSuccessfully = false;
     bool m_retryWithAutoAssignedUsername = false;
+    std::chrono::steady_clock::time_point m_nextOverflowChunkResyncAt =
+        std::chrono::steady_clock::time_point::min();
     std::unordered_map<ChunkCoordKey, std::chrono::steady_clock::time_point, ChunkCoordKeyHash>
         m_chunkResyncOverflowCooldownUntil;
 
@@ -182,4 +189,3 @@ private:
     std::deque<KillFeedEvent> m_killFeedQueue;
     std::deque<ScoreboardSnapshot> m_scoreboardQueue;
 };
-

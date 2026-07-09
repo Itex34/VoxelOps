@@ -53,6 +53,7 @@ public:
         bool jumpPressedLastTick = false;
         float timeSinceGrounded = 0.0f;
         float jumpBufferTimer = 0.0f;
+        float stepCooldownTimer = 0.0f;
     };
 
     struct PresentationState {
@@ -152,7 +153,7 @@ public:
     float currentFov;
     uint16_t renderDistance = 12;
     bool flyMode = false;
-    int8_t maxReach = 8; // blocks
+    int8_t maxReach = 12; // blocks
 
     std::unordered_map<PlayerID, PlayerState> connectedPlayers;
 
@@ -168,7 +169,7 @@ private:
     // Reference to the world
     ChunkManager &chunkManager;
 
-    // Core state
+    // Core state  
     glm::vec3 position{0.0f};
     glm::vec3 velocity{0.0f};
     glm::vec3 front{0.0f, 0.0f, -1.0f};
@@ -184,7 +185,7 @@ private:
     float playerHeight = 2.56f;
     float playerRadius = 0.3f; // half width
 
-    // Mouse look state
+    // Mouse look state 
     bool firstMouse = true;
     double lastX = 0.0;
     double lastY = 0.0;
@@ -199,6 +200,7 @@ private:
     bool m_jumpPressedLastTick = false;
     float m_timeSinceGrounded = 0.0f;
     float m_jumpBufferTimer = 0.0f;
+    float m_stepCooldownTimer = 0.0f;
 
     // Cached model matrix & hitboxes
     glm::mat4 m_modelMatrix{1.0f};
@@ -224,9 +226,9 @@ private:
     float runningFov = 83.0f;
     float runningFovMultiplier = 1.0f;
     float m_stepUpVisualOffset = 0.0f;
-    float m_stepUpSmoothingSpeed = 7.5f;
-    float m_stepUpOffsetMax = 0.70f;
-    float m_stepUpVisualScale = 0.48f;
+    float m_stepUpSmoothingSpeed = 18.0f;
+    float m_stepUpOffsetMax = 1.05f;
+    float m_stepUpVisualScale = 1.0f;
 
     NetworkInputState m_networkInput{};
     std::unordered_map<PlayerID, PlayerState> m_remotePlayerTargets;

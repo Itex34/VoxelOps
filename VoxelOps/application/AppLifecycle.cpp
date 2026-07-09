@@ -95,9 +95,9 @@ void App::shutdownRenderBackendCore(Runtime &runtime) {
         runtime.ui.debugUi->shutdown();
         runtime.ui.debugUi.reset();
     }
-    if (runtime.ui.rmlUi) {
-        runtime.ui.rmlUi->shutdown();
-        runtime.ui.rmlUi.reset();
+    if (runtime.ui.nativeUi) {
+        runtime.ui.nativeUi->shutdown();
+        runtime.ui.nativeUi.reset();
     }
     runtime.render.gunSceneRenderer.reset();
     if (runtime.render.gunRenderer) {
@@ -179,19 +179,27 @@ int App::run(int argc, char **argv) {
     m_ServerIp = options.serverIp;
     m_ServerPort = options.serverPort;
     m_RequestedUsername = options.requestedUsername;
+    m_BotMode = options.botMode;
+    m_BotDurationSeconds = options.botDurationSeconds;
+    m_BotSeed = options.botSeed;
+    m_BotShootRate = options.botShootRate;
+    m_BotRenderDistance = options.botRenderDistance;
+    m_BotMinimizeWindow = options.botMinimizeWindow;
 
     std::cout << "[App] Runtime paths: " << Shared::RuntimePaths::Describe() << "\n";
     std::cout << "[App] Network target: " << m_ServerIp << ":" << m_ServerPort;
     if (!m_RequestedUsername.empty()) {
         std::cout << " | requestedName=" << m_RequestedUsername;
     }
+    if (m_BotMode) {
+        std::cout << " | bot=on"
+                  << " durationSec=" << m_BotDurationSeconds << " seed=" << m_BotSeed
+                  << " shootRate=" << m_BotShootRate << " renderDistance=" << m_BotRenderDistance;
+    }
     std::cout << "\n";
 
     {
-        const std::array<std::filesystem::path, 4> requiredFiles = {
-            Shared::RuntimePaths::ResolveVoxelOpsPath("ui/rml/documents/hud.rml"),
-            Shared::RuntimePaths::ResolveVoxelOpsPath("ui/rml/documents/inventory.rml"),
-            Shared::RuntimePaths::ResolveVoxelOpsPath("ui/rml/documents/main_menu.rml"),
+        const std::array<std::filesystem::path, 1> requiredFiles = {
             Shared::RuntimePaths::ResolveVoxelOpsPath("Assets/fonts/SF/SF-Pro-Text-Medium.otf")
         };
 
@@ -220,8 +228,7 @@ int App::run(int argc, char **argv) {
         const std::filesystem::path shaderDir = ResolveShaderDir();
         if (IsObviouslyMisconfiguredShaderDir(shaderDir)) {
             std::cerr << "[App] Vulkan preflight failed: SHADER_DIR is invalid ('"
-                      << shaderDir.generic_string()
-                      << "'). Reconfigure CMake and rebuild.\n";
+                      << shaderDir.generic_string() << "'). Reconfigure CMake and rebuild.\n";
             std::cout << "[App] Falling back to OpenGL.\n";
             requestedApi = RenderApi::OpenGL;
         } else {
@@ -247,9 +254,11 @@ int App::run(int argc, char **argv) {
                 std::cerr << "[App] Vulkan preflight failed: shaders were not built "
                              "(VOXELOPS_OPENGL_ONLY=ON at configure time).\n";
 #else
-                std::cerr << "[App] Vulkan preflight failed: missing compiled SPIR-V shader files.\n";
+                std::cerr
+                    << "[App] Vulkan preflight failed: missing compiled SPIR-V shader files.\n";
 #endif
-                std::cerr << "[App] Expected shader directory: " << shaderDir.generic_string() << "\n";
+                std::cerr << "[App] Expected shader directory: " << shaderDir.generic_string()
+                          << "\n";
                 std::cerr << JoinMissingPaths(missingShaders) << "\n";
                 std::cout << "[App] Falling back to OpenGL.\n";
                 requestedApi = RenderApi::OpenGL;
@@ -281,19 +290,38 @@ int App::run(int argc, char **argv) {
 
     m_ShouldQuit = false;
     initGameplay(runtime);
+    if (m_BotMode && runtime.gameplay.player) {
+        runtime.gameplay.player->renderDistance = m_BotRenderDistance;
+    }
     initCallbacks(runtime);
     initRenderResources(runtime);
     initUi(runtime);
     initNetworking(runtime);
     rebindFrameOrchestrator(runtime);
+    if (m_BotMode) {
+        //runtime.ui.wantsCursor = false;
+        GameData::cursorEnabled = false;
+        if (m_BotMinimizeWindow && m_Window != nullptr) {
+            SDL_MinimizeWindow(m_Window);
+        }
+        if (!beginConnectionAttempt(runtime)) {
+            std::cerr << "[bot] initial connection attempt failed; auto-reconnect may retry\n";
+        }
+    }
 
     const double startTime = GetTimeSeconds();
+    m_BotStartTime = startTime;
     GameData::lastFrame = startTime;
     GameData::fpsTime = startTime;
     GameData::deltaTime = 0.0;
 
     while (!m_ShouldQuit) {
         m_frameOrchestrator.runFrame();
+        if (m_BotMode && m_BotDurationSeconds > 0.0 &&
+            (GetTimeSeconds() - m_BotStartTime) >= m_BotDurationSeconds) {
+            std::cout << "[bot] duration elapsed, shutting down\n";
+            m_ShouldQuit = true;
+        }
         const bool requestedOpenGl = m_RequestSwitchToOpenGL;
         const bool requestedVulkan = m_RequestSwitchToVulkan;
         if (requestedOpenGl || requestedVulkan) {
@@ -314,6 +342,3 @@ int App::run(int argc, char **argv) {
     shutdown(runtime);
     return 0;
 }
-
-
-

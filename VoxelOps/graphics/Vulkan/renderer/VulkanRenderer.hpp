@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 #include <vulkan/vulkan_raii.hpp>
+#include <vk_mem_alloc.h>
 
 #include <array>
 #include <cstdint>
@@ -12,6 +13,8 @@
 #include "graphics/Vulkan/renderer/Pipeline.hpp"
 #include "graphics/Vulkan/renderer/RenderFrameData.hpp"
 #include "graphics/Vulkan/renderer/RenderPass.hpp"
+#include "graphics/Vulkan/renderer/VulkanNativeUiRenderer.hpp"
+#include "graphics/Vulkan/vulkan/VulkanResource.hpp"
 #include "graphics/Vulkan/graphics/Mesh.hpp"
 #include "graphics/Vulkan/graphics/VkTexture.hpp"
 #include "graphics/Vulkan/vulkan/UploadContext.hpp"
@@ -50,8 +53,7 @@ public:
     };
 
     struct PingPongImageResources {
-        vk::raii::Image image{nullptr};
-        vk::raii::DeviceMemory memory{nullptr};
+        VulkanImage image;
         vk::raii::ImageView view{nullptr};
     };
 
@@ -131,28 +133,23 @@ private:
     VkTexture m_giBlueNoiseTexture;
 
     struct PerImageDrawResources {
-        vk::raii::Buffer modelMatrixBuffer{nullptr};
-        vk::raii::DeviceMemory modelMatrixBufferMemory{nullptr};
+        VulkanBuffer modelMatrixBuffer;
         vk::DeviceSize modelMatrixCapacityBytes = 0;
         void *modelMatrixMapped = nullptr;
 
-        vk::raii::Buffer indirectCommandBuffer{nullptr};
-        vk::raii::DeviceMemory indirectCommandBufferMemory{nullptr};
+        VulkanBuffer indirectCommandBuffer;
         vk::DeviceSize indirectCommandCapacityBytes = 0;
         void *indirectCommandMapped = nullptr;
 
-        vk::raii::Buffer chunkSuperbatchVertexBuffer{nullptr};
-        vk::raii::DeviceMemory chunkSuperbatchVertexBufferMemory{nullptr};
+        VulkanBuffer chunkSuperbatchVertexBuffer;
         vk::DeviceSize chunkSuperbatchVertexCapacityBytes = 0;
         void *chunkSuperbatchVertexMapped = nullptr;
 
-        vk::raii::Buffer chunkSuperbatchIndexBuffer{nullptr};
-        vk::raii::DeviceMemory chunkSuperbatchIndexBufferMemory{nullptr};
+        VulkanBuffer chunkSuperbatchIndexBuffer;
         vk::DeviceSize chunkSuperbatchIndexCapacityBytes = 0;
         void *chunkSuperbatchIndexMapped = nullptr;
 
-        vk::raii::Buffer giParamsBuffer{nullptr};
-        vk::raii::DeviceMemory giParamsBufferMemory{nullptr};
+        VulkanBuffer giParamsBuffer;
         void *giParamsMapped = nullptr;
     };
     std::vector<PerImageDrawResources> m_perImageDrawResources;
@@ -164,13 +161,10 @@ private:
     vk::raii::DescriptorPool m_giDescriptorPool{nullptr};
     std::vector<vk::raii::DescriptorSet> m_giDescriptorSets;
     bool m_giRtDescriptorEnabled = false;
-    vk::raii::Buffer m_giFallbackShadowOccupancyBuffer{nullptr};
-    vk::raii::DeviceMemory m_giFallbackShadowOccupancyBufferMemory{nullptr};
-    vk::raii::Buffer m_giFallbackMaterialBuffer{nullptr};
-    vk::raii::DeviceMemory m_giFallbackMaterialBufferMemory{nullptr};
+    VulkanBuffer m_giFallbackShadowOccupancyBuffer;
+    VulkanBuffer m_giFallbackMaterialBuffer;
     struct SignalImageResources {
-        vk::raii::Image image{nullptr};
-        vk::raii::DeviceMemory memory{nullptr};
+        VulkanImage image;
         vk::raii::ImageView view{nullptr};
     };
     glm::mat4 m_nrdPrevViewProjection{1.0f};
@@ -200,6 +194,7 @@ private:
     vk::raii::Pipeline m_postProcessPipeline{nullptr};
     vk::raii::PipelineLayout m_nrdCompositePipelineLayout{nullptr};
     vk::raii::Pipeline m_nrdCompositePipeline{nullptr};
+    VulkanNativeUiRenderer m_nativeUiRenderer;
 #if VOXELOPS_NRD_HEADERS
     struct NrdRuntimeTexture {
         vk::Format format = vk::Format::eUndefined;
@@ -212,8 +207,7 @@ private:
         std::vector<NrdRuntimeTexture> transientPool;
     };
     struct NrdRuntimePerFrame {
-        vk::raii::Buffer constantBuffer{nullptr};
-        vk::raii::DeviceMemory constantMemory{nullptr};
+        VulkanBuffer constantBuffer;
         void *constantMapped = nullptr;
         vk::raii::DescriptorPool descriptorPool{nullptr};
         std::vector<vk::raii::DescriptorSet> resourcesSets;
@@ -283,11 +277,43 @@ private:
     void clearTemporalGiWriteTargets(uint32_t imageIndex);
     void barrierNrdSignalsForCompute(vk::CommandBuffer commandBuffer, uint32_t imageIndex);
     void barrierNrdSignalsForComposite(vk::CommandBuffer commandBuffer, uint32_t imageIndex);
+    void beginMainSceneRenderPass(const vk::raii::CommandBuffer &commandBuffer, uint32_t imageIndex);
+    float recordChunkPass(
+        const vk::raii::CommandBuffer &commandBuffer,
+        uint32_t imageIndex,
+        const glm::mat4 &viewProjection,
+        const FrameRenderData &frameData,
+        vk::DescriptorSet modelDescriptorSet,
+        vk::DescriptorSet giDescriptorSet
+    );
+    float recordModelPass(
+        const vk::raii::CommandBuffer &commandBuffer,
+        uint32_t imageIndex,
+        const glm::mat4 &viewProjection,
+        const FrameRenderData &frameData,
+        vk::DescriptorSet modelDescriptorSet,
+        vk::DescriptorSet giDescriptorSet
+    );
+    float recordUiPass(
+        const vk::raii::CommandBuffer &commandBuffer, uint32_t imageIndex, const FrameRenderData &frameData
+    );
     void recordNrdCompositePass(
         vk::CommandBuffer commandBuffer,
         uint32_t imageIndex,
         const FrameRenderData &frameData,
         bool applyNrdComposite
+    );
+    void recordCompositeFullscreen(
+        vk::CommandBuffer commandBuffer,
+        uint32_t imageIndex,
+        const FrameRenderData &frameData,
+        bool applyNrdComposite
+    );
+    void recordCompositeOverlays(
+        vk::CommandBuffer commandBuffer,
+        uint32_t imageIndex,
+        const FrameRenderData &frameData,
+        vk::Extent2D extent
     );
     void recordCompositeCommandBuffer(
         uint32_t imageIndex, const FrameRenderData &frameData, bool applyNrdComposite

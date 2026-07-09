@@ -26,6 +26,8 @@ public:
         const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuChunkMeshes,
         const glm::ivec3 &cullingChunk,
         size_t maxChunkUploadsPerFrame,
+        float uploadBudgetMs,
+        int rtActiveRadiusChunks,
         uint64_t frameCounter,
         VulkanContext &context,
         UploadContext &uploadContext,

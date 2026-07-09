@@ -53,6 +53,7 @@ struct ServerPlayer {
     bool jumpPressedLastTick = false;
     float timeSinceGrounded = 0.0f;
     float jumpBufferTimer = 0.0f;
+    float stepCooldownTimer = 0.0f;
     Inventory inventory{};
     GrappleState grappleState{};
     uint64_t movementRevision = 0;

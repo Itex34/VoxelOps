@@ -10,6 +10,7 @@ class VkMesh;
 class VkModel;
 class VkTexture;
 struct ImDrawData;
+struct NativeUiDrawData;
 
 struct PackedVoxelVertexGpu {
     uint32_t low = 0;
@@ -47,6 +48,8 @@ struct GiLightingData {
     bool hardwareRayTracingSupported = false;
     GiTracingBackend tracingBackend = GiTracingBackend::SoftwareDda;
     uint32_t pathTraceRaysPerPixel = 1;
+    uint32_t pathTraceCheckerboard = 0;
+    float pathTraceRenderScale = 1.0f;
     uint32_t pathTraceMaxBounces = 8;
     float baseDiffuse = 1.0f;
     float giIntensity = 0.55f;
@@ -90,6 +93,7 @@ struct FrameRenderData {
     std::vector<PackedVoxelVertexGpu> chunkSuperbatchVertices;
     std::vector<uint16_t> chunkSuperbatchIndices;
     ImDrawData *uiDrawData = nullptr;
+    const NativeUiDrawData *nativeUiDrawData = nullptr;
     GiLightingData giLighting{};
 
     void clear() {
@@ -102,6 +106,7 @@ struct FrameRenderData {
         chunkSuperbatchVertices.clear();
         chunkSuperbatchIndices.clear();
         uiDrawData = nullptr;
+        nativeUiDrawData = nullptr;
         giLighting = GiLightingData{};
     }
 };

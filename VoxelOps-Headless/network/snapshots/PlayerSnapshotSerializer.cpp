@@ -6,7 +6,7 @@
 namespace PlayerSnapshotSerializer {
     namespace {
         constexpr std::size_t kPlayerSnapshotEntrySize =
-            8 + (8 * 4) + 3 + 2 + 4 + 1 + 4 + 1 + 4 + 4;
+            8 + (8 * 4) + 3 + 2 + 4 + 1 + 4 + 1 + 4 + 4 + 4;
     } // namespace
 
     std::vector<uint8_t> serializePlayers(const std::vector<PlayerSnapshot> &players) {
@@ -33,6 +33,7 @@ namespace PlayerSnapshotSerializer {
             Shared::Utils::appendU8(out, p.jumpPressedLastTick ? 1u : 0u);
             Shared::Utils::appendF32(out, p.timeSinceGrounded);
             Shared::Utils::appendF32(out, p.jumpBufferTimer);
+            Shared::Utils::appendF32(out, p.stepCooldownTimer);
         }
         return out;
     }

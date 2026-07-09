@@ -57,7 +57,6 @@ public:
 
     // Chunk lifecycle / updates
     void updateDirtyChunks();
-    void updateChunks(const glm::ivec3 &playerWorldPos, int renderDistance);
 
     // Block access (thread-safe wrappers that find the chunk then call chunk methods)
     void setBlockInWorld(const glm::ivec3 &worldPos, BlockID blockID);
@@ -76,6 +75,8 @@ public:
     glm::ivec3 worldToChunkPos(const glm::ivec3 &worldPos) const;
     glm::ivec3 worldToLocalPos(const glm::ivec3 &worldPos) const;
     bool inBounds(const glm::ivec3 &pos) const;
+    const ChunkWorldBounds &chunkWorldBounds() const noexcept;
+    bool isChunkStreamReady(const glm::ivec3 &chunkPos) const;
 
     void markChunkDirty(const glm::ivec3 &pos);
 

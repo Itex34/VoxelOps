@@ -46,9 +46,4 @@ void InputCallbacks::processInput(SDL_Window *window) {
     (void)window;
     if (GameData::uiWantsKeyboardCapture || GameData::uiWantsTextInput)
         return;
-    int keyCount = 0;
-    const bool *keys = SDL_GetKeyboardState(&keyCount);
-    if (keys && SDL_SCANCODE_ESCAPE < keyCount && keys[SDL_SCANCODE_ESCAPE]) {
-        GameData::cursorEnabled = true;
-    }
 }

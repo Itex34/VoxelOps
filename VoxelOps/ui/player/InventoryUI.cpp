@@ -1,14 +1,9 @@
 #include "InventoryUI.hpp"
 
 #include "../../../Shared/items/Items.hpp"
-#include "../../../Shared/runtime/Paths.hpp"
 #include "../../runtime/Runtime.hpp"
-
-#include <RmlUi/Core.h>
-#include <RmlUi/Core/Element.h>
-#include <RmlUi/Core/ElementDocument.h>
-#include <RmlUi/Core/Event.h>
-#include <RmlUi/Core/EventListener.h>
+#include "ItemIconUi.hpp"
+#include "../widgets/UIContext.hpp"
 
 #include <imgui.h>
 
@@ -19,52 +14,23 @@
 #include <string_view>
 
 namespace {
-    template <size_t N>
-    void SetButtonText(Rml::Element *button, const std::array<char, N> &text) {
-        if (!button) {
-            return;
-        }
-        button->SetInnerRML(text.data());
-    }
+    constexpr uint16_t kHotbarStart = 0;
+    constexpr uint16_t kHotbarEnd = kHotbarStart + kHotbarSlots;
+    constexpr uint16_t kBackpackStart = kHotbarEnd;
+    constexpr uint16_t kBackpackEnd = kBackpackStart + kBackpackSlots;
+    constexpr uint16_t kAmmoStart = kBackpackEnd;
+    constexpr uint16_t kAmmoEnd = kAmmoStart + kAmmoSlots;
 
-    std::string BuildSlotButtonsRml(uint16_t start, uint16_t end, std::string_view labelPrefix) {
-        std::string rml;
-        for (uint16_t i = start; i < end; ++i) {
-            const uint16_t localIndex = static_cast<uint16_t>(i - start + 1);
-            rml += "<button class='slot_btn' id='slot_btn_";
-            rml += std::to_string(i);
-            rml += "'>";
-            rml += std::string(labelPrefix);
-            rml += " ";
-            rml += std::to_string(localIndex);
-            rml += "<br/>Empty</button>";
+    std::string Ellipsize(std::string text, size_t maxChars) {
+        if (text.size() <= maxChars) {
+            return text;
         }
-        return rml;
+        if (maxChars <= 3) {
+            return text.substr(0, maxChars);
+        }
+        return text.substr(0, maxChars - 3) + "...";
     }
 } // namespace
-
-class InventoryUI::RmlInventoryListener final : public Rml::EventListener {
-public:
-    explicit RmlInventoryListener(InventoryUI *owner)
-        : m_owner(owner) {}
-
-    void setFrameContext(Runtime *runtime, ClientNetwork *clientNet) {
-        m_runtime = runtime;
-        m_clientNet = clientNet;
-    }
-
-    void ProcessEvent(Rml::Event &event) override {
-        if (!m_owner || !m_runtime || !m_clientNet) {
-            return;
-        }
-        m_owner->handleRmlEvent(*m_runtime, *m_clientNet, event);
-    }
-
-private:
-    InventoryUI *m_owner = nullptr;
-    Runtime *m_runtime = nullptr;
-    ClientNetwork *m_clientNet = nullptr;
-};
 
 InventoryUI::InventoryUI() = default;
 InventoryUI::~InventoryUI() = default;
@@ -72,12 +38,7 @@ InventoryUI::~InventoryUI() = default;
 void InventoryUI::setVisible(bool visible) noexcept {
     m_visible = visible;
     if (!m_visible) {
-        m_selectedSlot = -1;
-        m_selectedItemName.clear();
-        if (m_rmlDocument && m_rmlDocumentVisible) {
-            m_rmlDocument->Hide();
-            m_rmlDocumentVisible = false;
-        }
+        clearSelection();
     }
 }
 
@@ -104,8 +65,7 @@ uint32_t InventoryUI::revision() const noexcept {
 void InventoryUI::reset() {
     m_hasSnapshot = false;
     m_revision = 0;
-    m_selectedSlot = -1;
-    m_selectedItemName.clear();
+    clearSelection();
     for (Slot &slot : m_slots) {
         slot.itemId = kInventoryEmptyItemId;
         slot.quantity = 0;
@@ -152,8 +112,7 @@ void InventoryUI::consumeNetwork(ClientNetwork &clientNet) {
         if (m_selectedSlot >= 0 && m_selectedSlot < static_cast<int>(kInventorySlotCount)) {
             const Slot &selected = m_slots[static_cast<size_t>(m_selectedSlot)];
             if (Inventory::IsEmpty(selected)) {
-                m_selectedSlot = -1;
-                m_selectedItemName.clear();
+                clearSelection();
             }
         }
     }
@@ -169,294 +128,72 @@ void InventoryUI::draw(Runtime &runtime, ClientNetwork &clientNet, bool connecte
         return;
     }
 
-    if (runtime.ui.rmlUi && runtime.ui.rmlUi->isUsingOpenGlBackend()) {
-        drawRml(runtime, clientNet, connected);
+    if (runtime.ui.nativeUi && runtime.ui.nativeUi->hasBackendRenderer()) {
+        drawNative(runtime, clientNet, connected);
         return;
     }
-
-    drawImGui(runtime, clientNet, connected);
 }
 
-bool InventoryUI::ensureRmlDocument(Runtime &runtime) {
-    if (!runtime.ui.rmlUi || !runtime.ui.rmlUi->isUsingOpenGlBackend()) {
-        if (m_rmlDocument) {
-            resetRmlDocument();
-        } else {
-            forgetRmlState();
-        }
-        return false;
-    }
-
-    Rml::Context *context = runtime.ui.rmlUi->context();
-    if (context == nullptr) {
-        forgetRmlState();
-        return false;
-    }
-    if (m_rmlContext == context && m_rmlDocument != nullptr) {
-        return true;
-    }
-
-    if (m_rmlContext != nullptr && m_rmlContext != context) {
-        forgetRmlState();
-    } else {
-        resetRmlDocument();
-    }
-    m_rmlContext = context;
-
-    const std::string inventoryPath =
-        Shared::RuntimePaths::ResolveVoxelOpsPath("ui/rml/documents/inventory.rml").generic_string();
-    m_rmlDocument = m_rmlContext->LoadDocument(inventoryPath);
-    if (!m_rmlDocument) {
-        return false;
-    }
-
-    m_backdrop = m_rmlDocument->GetElementById("inventory_backdrop");
-    m_panel = m_rmlDocument->GetElementById("inventory_panel");
-    m_statusText = m_rmlDocument->GetElementById("status_line");
-    m_selectedText = m_rmlDocument->GetElementById("selected_line");
-    m_useButton = m_rmlDocument->GetElementById("use_btn");
-    m_dropOneButton = m_rmlDocument->GetElementById("drop1_btn");
-    m_dropStackButton = m_rmlDocument->GetElementById("dropstack_btn");
-    Rml::Element *ammoGrid = m_rmlDocument->GetElementById("ammo_grid");
-    Rml::Element *bagGrid = m_rmlDocument->GetElementById("bag_grid");
-    Rml::Element *hotbarGrid = m_rmlDocument->GetElementById("hotbar_grid");
-    if (!m_backdrop || !m_panel || !m_statusText || !m_selectedText || !m_useButton ||
-        !m_dropOneButton || !m_dropStackButton || !ammoGrid || !bagGrid || !hotbarGrid) {
-        resetRmlDocument();
-        return false;
-    }
-
-    constexpr uint16_t kHotbarStart = 0;
-    constexpr uint16_t kHotbarEnd = kHotbarStart + kHotbarSlots;
-    constexpr uint16_t kBackpackStart = kHotbarEnd;
-    constexpr uint16_t kBackpackEnd = kBackpackStart + kBackpackSlots;
-    constexpr uint16_t kAmmoStart = kBackpackEnd;
-    constexpr uint16_t kAmmoEnd = kAmmoStart + kAmmoSlots;
-
-    ammoGrid->SetInnerRML(BuildSlotButtonsRml(kAmmoStart, kAmmoEnd, "Ammo"));
-    bagGrid->SetInnerRML(BuildSlotButtonsRml(kBackpackStart, kBackpackEnd, "Bag"));
-    hotbarGrid->SetInnerRML(BuildSlotButtonsRml(kHotbarStart, kHotbarEnd, "Hotbar"));
-
-    for (uint16_t i = 0; i < kInventorySlotCount; ++i) {
-        m_slotButtons[i] = m_rmlDocument->GetElementById("slot_btn_" + std::to_string(i));
-    }
-
-    m_rmlListener = std::make_unique<RmlInventoryListener>(this);
-    m_backdrop->AddEventListener("click", m_rmlListener.get());
-    m_useButton->AddEventListener("click", m_rmlListener.get());
-    m_dropOneButton->AddEventListener("click", m_rmlListener.get());
-    m_dropStackButton->AddEventListener("click", m_rmlListener.get());
-    for (Rml::Element *button : m_slotButtons) {
-        if (button) {
-            button->AddEventListener("click", m_rmlListener.get());
-        }
-    }
-
-    m_rmlDocument->Show();
-    m_rmlDocumentVisible = true;
-    return true;
+void InventoryUI::clearSelection() {
+    m_selectedSlot = -1;
+    m_selectedItemName.clear();
 }
 
-void InventoryUI::resetRmlDocument() {
-    if (m_backdrop && m_rmlListener) {
-        m_backdrop->RemoveEventListener("click", m_rmlListener.get());
-    }
-    if (m_useButton && m_rmlListener) {
-        m_useButton->RemoveEventListener("click", m_rmlListener.get());
-    }
-    if (m_dropOneButton && m_rmlListener) {
-        m_dropOneButton->RemoveEventListener("click", m_rmlListener.get());
-    }
-    if (m_dropStackButton && m_rmlListener) {
-        m_dropStackButton->RemoveEventListener("click", m_rmlListener.get());
-    }
-    if (m_rmlListener) {
-        for (Rml::Element *button : m_slotButtons) {
-            if (button) {
-                button->RemoveEventListener("click", m_rmlListener.get());
-            }
-        }
-    }
-    if (m_rmlDocument) {
-        m_rmlDocument->Close();
-    }
-    forgetRmlState();
-}
-
-void InventoryUI::forgetRmlState() {
-    m_rmlListener.reset();
-    m_backdrop = nullptr;
-    m_panel = nullptr;
-    m_statusText = nullptr;
-    m_selectedText = nullptr;
-    m_useButton = nullptr;
-    m_dropOneButton = nullptr;
-    m_dropStackButton = nullptr;
-    m_slotButtons.fill(nullptr);
-    m_rmlDocument = nullptr;
-    m_rmlContext = nullptr;
-    m_rmlDocumentVisible = false;
-}
-
-void InventoryUI::syncRmlState(Runtime &, bool connected) {
-    if (!m_rmlDocument || !m_statusText) {
-        return;
-    }
-
-    if (!connected) {
-        m_statusText->SetInnerRML("Not connected.");
-    } else if (!m_hasSnapshot) {
-        m_statusText->SetInnerRML("Waiting for inventory...");
-    } else {
-        m_statusText->SetInnerRML("Inventory ready.");
-    }
-
-    constexpr uint16_t kHotbarStart = 0;
-    constexpr uint16_t kHotbarEnd = kHotbarStart + kHotbarSlots;
-    constexpr uint16_t kBackpackStart = kHotbarEnd;
-    constexpr uint16_t kBackpackEnd = kBackpackStart + kBackpackSlots;
-    constexpr uint16_t kAmmoStart = kBackpackEnd;
-    constexpr uint16_t kAmmoEnd = kAmmoStart + kAmmoSlots;
-
-    for (uint16_t slotIndex = 0; slotIndex < kInventorySlotCount; ++slotIndex) {
-        Rml::Element *button = m_slotButtons[slotIndex];
-        if (!button) {
-            continue;
-        }
-
-        const Slot &slot = m_slots[slotIndex];
-        const bool empty = Inventory::IsEmpty(slot);
-        std::string itemName = "Empty";
-        if (!empty && Inventory::IsValidItemId(slot.itemId)) {
-            itemName = Items::ItemDatabase[slot.itemId].name;
-            if (itemName.empty()) {
-                itemName = "Item " + std::to_string(slot.itemId);
-            }
-        }
-
-        std::string title = "Slot";
-        if (slotIndex >= kAmmoStart && slotIndex < kAmmoEnd) {
-            title = "Ammo " + std::to_string(slotIndex - kAmmoStart + 1);
-        } else if (slotIndex >= kBackpackStart && slotIndex < kBackpackEnd) {
-            title = "Bag " + std::to_string(slotIndex - kBackpackStart + 1);
-        } else {
-            title = "Hotbar " + std::to_string(slotIndex - kHotbarStart + 1);
-        }
-
-        std::string label = title + "<br/>" + itemName;
-        if (!empty) {
-            label += " x" + std::to_string(slot.quantity);
-        }
-        button->SetInnerRML(label);
-
-        const bool selected = (m_selectedSlot == static_cast<int>(slotIndex));
-        const bool ammoSlot = Inventory::IsAmmoSlotIndex(slotIndex);
-        const bool hotbarSlot = slotIndex < kHotbarSlots;
-        if (selected) {
-            button->SetProperty("background-color", "#1c1c1c");
-            button->SetProperty("border", "2px #ff7b00");
-        } else if (ammoSlot) {
-            button->SetProperty("background-color", "#242424");
-            button->SetProperty("border", "1px #ffb866");
-        } else if (hotbarSlot) {
-            button->SetProperty("background-color", "#242424");
-            button->SetProperty("border", "1px #ff9f43");
-        } else {
-            button->SetProperty("background-color", "#242424");
-            button->SetProperty("border", "1px #4a4a4a");
-        }
-    }
-
-    if (m_selectedText) {
-        if (m_selectedSlot >= 0 && m_selectedSlot < static_cast<int>(kInventorySlotCount)) {
-            const uint16_t slotIndex = static_cast<uint16_t>(m_selectedSlot);
-            const Slot &slot = m_slots[slotIndex];
-            if (!Inventory::IsEmpty(slot)) {
-                if (m_selectedItemName.empty() && Inventory::IsValidItemId(slot.itemId)) {
-                    m_selectedItemName = Items::ItemDatabase[slot.itemId].name;
-                }
-                m_selectedText->SetInnerRML(
-                    "Slot " + std::to_string(slotIndex) + ": " + m_selectedItemName + " x" +
-                    std::to_string(slot.quantity)
-                );
-            } else {
-                m_selectedSlot = -1;
-                m_selectedItemName.clear();
-                m_selectedText->SetInnerRML("No slot selected.");
-            }
-        } else {
-            m_selectedText->SetInnerRML("No slot selected.");
-        }
-    }
-
-    auto setDisabled = [connected, this](Rml::Element *button) {
-        if (!button) {
-            return;
-        }
-        if (!connected || !m_hasSnapshot || m_selectedSlot < 0) {
-            button->SetAttribute("disabled", "");
-        } else {
-            button->RemoveAttribute("disabled");
-        }
-    };
-    setDisabled(m_useButton);
-    setDisabled(m_dropOneButton);
-    setDisabled(m_dropStackButton);
-}
-
-void InventoryUI::handleRmlEvent(Runtime &, ClientNetwork &clientNet, Rml::Event &event) {
-    if (!m_visible || event.GetType() != "click") {
-        return;
-    }
-
-    Rml::Element *source = event.GetCurrentElement();
-    if (!source) {
-        return;
-    }
-
-    if (source == m_backdrop && event.GetTargetElement() == m_backdrop) {
-        m_visible = false;
-        m_selectedSlot = -1;
-        m_selectedItemName.clear();
-        return;
-    }
-
-    if (source == m_useButton || source == m_dropOneButton || source == m_dropStackButton) {
-        if (m_selectedSlot < 0 || m_selectedSlot >= static_cast<int>(kInventorySlotCount)) {
-            return;
-        }
-        const uint16_t slotIndex = static_cast<uint16_t>(m_selectedSlot);
-        if (source == m_useButton) {
-            (void)submitAction(clientNet, InventoryActionType::Use, slotIndex, slotIndex, 1);
-        } else if (source == m_dropOneButton) {
-            (void)submitAction(clientNet, InventoryActionType::Drop, slotIndex, slotIndex, 1);
-        } else {
-            (void)submitAction(clientNet, InventoryActionType::Drop, slotIndex, slotIndex, 0);
-        }
-        return;
-    }
-
-    const std::string id = source->GetId();
-    constexpr std::string_view prefix = "slot_btn_";
-    if (!id.starts_with(prefix)) {
-        return;
-    }
-    const uint16_t slotIndex = static_cast<uint16_t>(
-        std::stoi(id.substr(prefix.size()))
-    );
+std::string InventoryUI::slotDisplayName(uint16_t slotIndex) const {
     if (slotIndex >= kInventorySlotCount) {
+        return "Empty";
+    }
+
+    const Slot &slot = m_slots[slotIndex];
+    if (Inventory::IsEmpty(slot)) {
+        return "Empty";
+    }
+    if (Inventory::IsValidItemId(slot.itemId)) {
+        std::string itemName = Items::ItemDatabase[slot.itemId].name;
+        if (!itemName.empty()) {
+            return itemName;
+        }
+    }
+    return "Item " + std::to_string(slot.itemId);
+}
+
+std::string InventoryUI::slotTitle(uint16_t slotIndex) const {
+    if (slotIndex >= kAmmoStart && slotIndex < kAmmoEnd) {
+        return "Ammo " + std::to_string(slotIndex - kAmmoStart + 1);
+    }
+    if (slotIndex >= kBackpackStart && slotIndex < kBackpackEnd) {
+        return "Bag " + std::to_string(slotIndex - kBackpackStart + 1);
+    }
+    return "Hotbar " + std::to_string(slotIndex - kHotbarStart + 1);
+}
+
+std::string InventoryUI::selectedLine() {
+    if (m_selectedSlot < 0 || m_selectedSlot >= static_cast<int>(kInventorySlotCount)) {
+        return "No slot selected.";
+    }
+
+    const uint16_t slotIndex = static_cast<uint16_t>(m_selectedSlot);
+    const Slot &slot = m_slots[slotIndex];
+    if (Inventory::IsEmpty(slot)) {
+        clearSelection();
+        return "No slot selected.";
+    }
+
+    if (m_selectedItemName.empty()) {
+        m_selectedItemName = slotDisplayName(slotIndex);
+    }
+    return "Slot " + std::to_string(slotIndex) + ": " + m_selectedItemName + " x" +
+           std::to_string(slot.quantity);
+}
+
+void InventoryUI::selectOrMoveSlot(ClientNetwork &clientNet, uint16_t slotIndex) {
+    if (!m_hasSnapshot || slotIndex >= kInventorySlotCount) {
         return;
     }
 
     const Slot &slot = m_slots[slotIndex];
     const bool empty = Inventory::IsEmpty(slot);
-    std::string itemName = "Empty";
-    if (!empty && Inventory::IsValidItemId(slot.itemId)) {
-        itemName = Items::ItemDatabase[slot.itemId].name;
-        if (itemName.empty()) {
-            itemName = "Item " + std::to_string(slot.itemId);
-        }
-    }
+    const std::string itemName = slotDisplayName(slotIndex);
 
     if (m_selectedSlot < 0) {
         if (!empty) {
@@ -465,17 +202,21 @@ void InventoryUI::handleRmlEvent(Runtime &, ClientNetwork &clientNet, Rml::Event
         }
         return;
     }
+
     if (m_selectedSlot == static_cast<int>(slotIndex)) {
-        m_selectedSlot = -1;
-        m_selectedItemName.clear();
+        clearSelection();
         return;
     }
 
     const uint16_t sourceSlot = static_cast<uint16_t>(m_selectedSlot);
+    if (sourceSlot >= kInventorySlotCount) {
+        clearSelection();
+        return;
+    }
+
     const Slot &sourceSlotData = m_slots[sourceSlot];
     if (Inventory::IsEmpty(sourceSlotData)) {
-        m_selectedSlot = -1;
-        m_selectedItemName.clear();
+        clearSelection();
         return;
     }
     if (!Inventory::IsItemAllowedInSlot(sourceSlotData.itemId, slotIndex)) {
@@ -492,228 +233,185 @@ void InventoryUI::handleRmlEvent(Runtime &, ClientNetwork &clientNet, Rml::Event
         }
     }
     if (canSubmit && submitAction(clientNet, actionType, sourceSlot, slotIndex, 0)) {
-        m_selectedSlot = -1;
-        m_selectedItemName.clear();
+        clearSelection();
     }
 }
 
-void InventoryUI::drawRml(Runtime &runtime, ClientNetwork &clientNet, bool connected) {
-    if (!ensureRmlDocument(runtime)) {
-        drawImGui(runtime, clientNet, connected);
+void InventoryUI::useSelected(ClientNetwork &clientNet) {
+    if (m_selectedSlot < 0 || m_selectedSlot >= static_cast<int>(kInventorySlotCount)) {
         return;
     }
-
-    if (m_rmlListener) {
-        m_rmlListener->setFrameContext(&runtime, &clientNet);
-    }
-
-    if (m_visible && m_rmlDocument && !m_rmlDocumentVisible) {
-        m_rmlDocument->Show();
-        m_rmlDocumentVisible = true;
-    }
-    if (!m_visible && m_rmlDocument && m_rmlDocumentVisible) {
-        m_rmlDocument->Hide();
-        m_rmlDocumentVisible = false;
-    }
-    if (!m_visible) {
+    const uint16_t slotIndex = static_cast<uint16_t>(m_selectedSlot);
+    if (Inventory::IsEmpty(m_slots[slotIndex])) {
+        clearSelection();
         return;
     }
-
-    syncRmlState(runtime, connected);
+    (void)submitAction(clientNet, InventoryActionType::Use, slotIndex, slotIndex, 1);
 }
 
-void InventoryUI::drawImGui(Runtime &, ClientNetwork &clientNet, bool connected) {
-    ImGuiIO &io = ImGui::GetIO();
-    const ImVec2 windowSize(760.0f, 520.0f);
-    ImGui::SetNextWindowSize(windowSize, ImGuiCond_Always);
-    ImGui::SetNextWindowPos(
-        ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
-        ImGuiCond_Always,
-        ImVec2(0.5f, 0.5f)
-    );
-    constexpr ImGuiWindowFlags windowFlags =
-        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
-    if (!ImGui::Begin("Inventory", nullptr, windowFlags)) {
-        ImGui::End();
+void InventoryUI::dropSelected(ClientNetwork &clientNet, uint16_t amount) {
+    if (m_selectedSlot < 0 || m_selectedSlot >= static_cast<int>(kInventorySlotCount)) {
+        return;
+    }
+    const uint16_t slotIndex = static_cast<uint16_t>(m_selectedSlot);
+    if (Inventory::IsEmpty(m_slots[slotIndex])) {
+        clearSelection();
+        return;
+    }
+    (void)submitAction(clientNet, InventoryActionType::Drop, slotIndex, slotIndex, amount);
+}
+
+void InventoryUI::drawNative(Runtime &runtime, ClientNetwork &clientNet, bool connected) {
+    UIContext &ui = runtime.ui.nativeUi->context();
+    const glm::vec2 screen = ui.screenSize();
+    ui.panel(Rect{0.0f, 0.0f, screen.x, screen.y}, Color{0.0f, 0.0f, 0.0f, 0.52f});
+
+    const float panelWidth = std::min(860.0f, std::max(520.0f, screen.x - 48.0f));
+    const float panelHeight = std::min(560.0f, std::max(500.0f, screen.y - 48.0f));
+    const float panelX = (screen.x - panelWidth) * 0.5f;
+    const float panelY = (screen.y - panelHeight) * 0.5f;
+
+    ui.panel(Rect{panelX, panelY, panelWidth, panelHeight}, Color{0.035f, 0.038f, 0.043f, 0.94f});
+    ui.panel(Rect{panelX, panelY, panelWidth, 2.0f}, Color{1.0f, 0.63f, 0.22f, 1.0f});
+    ui.label("Inventory", glm::vec2(panelX + 24.0f, panelY + 20.0f), Color{0.98f, 0.98f, 0.98f, 1.0f});
+
+    const TextureHandle closeIcon = runtime.ui.nativeUi->icon(NativeUiIcon::Close);
+    const TextureHandle useIcon = runtime.ui.nativeUi->icon(NativeUiIcon::Use);
+    const TextureHandle dropOneIcon = runtime.ui.nativeUi->icon(NativeUiIcon::DropOne);
+    const TextureHandle dropStackIcon = runtime.ui.nativeUi->icon(NativeUiIcon::DropStack);
+
+    if (ui.iconButton("inventory_close", closeIcon, Rect{panelX + panelWidth - 56.0f, panelY + 18.0f, 32.0f, 32.0f})) {
+        setVisible(false);
         return;
     }
 
-    if (!connected) {
-        ImGui::TextUnformatted("Not connected.");
-        ImGui::End();
+    if (!connected || !m_hasSnapshot) {
+        ui.label(
+            "Inventory data is unavailable.",
+            glm::vec2(panelX + 24.0f, panelY + 100.0f),
+            Color{0.88f, 0.88f, 0.88f, 1.0f}
+        );
         return;
     }
 
-    if (!m_hasSnapshot) {
-        ImGui::TextUnformatted("Waiting for inventory...");
-        ImGui::End();
-        return;
-    }
+    const float slotW = 122.0f;
+    const float slotH = 54.0f;
+    const float gap = 8.0f;
+    const float left = panelX + 24.0f;
+    float y = panelY + 86.0f;
 
-    const bool hoveredInventoryWindow =
-        ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows);
-    const bool clickOutside = (ImGui::IsMouseClicked(ImGuiMouseButton_Left) ||
-                               ImGui::IsMouseClicked(ImGuiMouseButton_Right)) &&
-                              !hoveredInventoryWindow;
-    if (clickOutside) {
-        m_visible = false;
-        m_selectedSlot = -1;
-        m_selectedItemName.clear();
-        ImGui::End();
-        return;
-    }
-
-    constexpr ImVec2 kSlotButtonSize(112.0f, 56.0f);
-    constexpr uint16_t kHotbarStart = 0;
-    constexpr uint16_t kHotbarEnd = kHotbarStart + kHotbarSlots;
-    constexpr uint16_t kBackpackStart = kHotbarEnd;
-    constexpr uint16_t kBackpackEnd = kBackpackStart + kBackpackSlots;
-    constexpr uint16_t kAmmoStart = kBackpackEnd;
-    constexpr uint16_t kAmmoEnd = kAmmoStart + kAmmoSlots;
-
-    const auto drawSlotButton = [&](const uint16_t slotIndex, const std::string &slotTitle) {
+    const auto drawSlot = [&](uint16_t slotIndex, float x, float slotY) {
         const Slot &slot = m_slots[slotIndex];
         const bool empty = Inventory::IsEmpty(slot);
-        const bool selected = (m_selectedSlot == static_cast<int>(slotIndex));
+        const bool selected = m_selectedSlot == static_cast<int>(slotIndex);
         const bool ammoSlot = Inventory::IsAmmoSlotIndex(slotIndex);
         const bool hotbarSlot = slotIndex < kHotbarSlots;
 
-        std::string itemName = "Empty";
-        if (!empty && Inventory::IsValidItemId(slot.itemId)) {
-            itemName = Items::ItemDatabase[slot.itemId].name;
-            if (itemName.empty()) {
-                itemName = "Item " + std::to_string(slot.itemId);
-            }
+        const Rect rect{x, slotY, slotW, slotH};
+        if (ui.button("", rect)) {
+            selectOrMoveSlot(clientNet, slotIndex);
         }
 
-        std::string buttonLabel = slotTitle;
-        buttonLabel += "\n";
-        buttonLabel += itemName;
-        if (!empty) {
-            buttonLabel += " x";
-            buttonLabel += std::to_string(slot.quantity);
-        }
-
-        ImGui::PushID(static_cast<int>(slotIndex));
-        if (selected) {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.45f, 0.24f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.28f, 0.58f, 0.31f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.20f, 0.40f, 0.22f, 1.0f));
-        } else if (ammoSlot) {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.28f, 0.25f, 0.12f, 0.90f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.37f, 0.33f, 0.16f, 0.95f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.24f, 0.21f, 0.10f, 0.95f));
-        } else if (hotbarSlot) {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.14f, 0.18f, 0.32f, 0.90f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.18f, 0.24f, 0.42f, 0.95f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.12f, 0.16f, 0.28f, 0.95f));
-        }
-
-        const bool clicked = ImGui::Button(buttonLabel.c_str(), kSlotButtonSize);
-        if (selected || ammoSlot || hotbarSlot) {
-            ImGui::PopStyleColor(3);
-        }
-
-        if (clicked) {
-            if (m_selectedSlot < 0) {
-                if (!empty) {
-                    m_selectedSlot = static_cast<int>(slotIndex);
-                    m_selectedItemName = itemName;
-                }
-            } else if (m_selectedSlot == static_cast<int>(slotIndex)) {
-                m_selectedSlot = -1;
-                m_selectedItemName.clear();
+        ui.labelInRect(
+            slotTitle(slotIndex),
+            Rect{rect.x + 8.0f, rect.y + 4.0f, rect.w - 16.0f, 18.0f},
+            Color{0.78f, 0.80f, 0.82f, 1.0f},
+            TextAlign::Center,
+            TextVerticalAlign::Center
+        );
+        if (empty) {
+            ui.labelInRect(
+                "Empty",
+                Rect{rect.x + 8.0f, rect.y + 25.0f, rect.w - 16.0f, 22.0f},
+                Color{0.50f, 0.50f, 0.52f, 0.92f},
+                TextAlign::Center,
+                TextVerticalAlign::Center
+            );
+        } else {
+            const TextureHandle blockTexture = ItemIconUi::blockTextureForSlot(*runtime.ui.nativeUi, slot);
+            if (blockTexture != 0) {
+                ui.image(blockTexture, Rect{rect.x + (rect.w - 26.0f) * 0.5f, rect.y + 23.0f, 26.0f, 26.0f});
             } else {
-                const uint16_t sourceSlot = static_cast<uint16_t>(m_selectedSlot);
-                const Slot &source = m_slots[sourceSlot];
-                if (Inventory::IsEmpty(source)) {
-                    m_selectedSlot = -1;
-                    m_selectedItemName.clear();
-                } else if (!Inventory::IsItemAllowedInSlot(source.itemId, slotIndex)) {
-                } else {
-                    InventoryActionType actionType = InventoryActionType::Move;
-                    bool canSubmit = true;
-                    if (!empty && slot.itemId != source.itemId) {
-                        if (!Inventory::IsItemAllowedInSlot(slot.itemId, sourceSlot)) {
-                            canSubmit = false;
-                        } else {
-                            actionType = InventoryActionType::Swap;
-                        }
-                    }
-                    if (canSubmit &&
-                        submitAction(clientNet, actionType, sourceSlot, slotIndex, 0)) {
-                        m_selectedSlot = -1;
-                        m_selectedItemName.clear();
-                    }
-                }
+                const std::string itemName = Ellipsize(slotDisplayName(slotIndex), 13);
+                ui.labelInRect(
+                    itemName,
+                    Rect{rect.x + 8.0f, rect.y + 25.0f, rect.w - 56.0f, 22.0f},
+                    Color{0.94f, 0.94f, 0.94f, 1.0f},
+                    TextAlign::Start,
+                    TextVerticalAlign::Center
+                );
             }
+            ui.labelInRect(
+                "x" + std::to_string(slot.quantity),
+                Rect{rect.x + rect.w - 46.0f, rect.y + 25.0f, 38.0f, 22.0f},
+                Color{0.92f, 0.92f, 0.92f, 1.0f},
+                TextAlign::End,
+                TextVerticalAlign::Center
+            );
         }
 
-        if (ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Right) && !empty) {
-            (void)submitAction(clientNet, InventoryActionType::Drop, slotIndex, slotIndex, 1);
+        Color accent{1.0f, 1.0f, 1.0f, 0.10f};
+        if (selected) {
+            accent = Color{1.0f, 0.48f, 0.0f, 1.0f};
+        } else if (ammoSlot) {
+            accent = Color{1.0f, 0.72f, 0.40f, 0.78f};
+        } else if (hotbarSlot) {
+            accent = Color{1.0f, 0.63f, 0.22f, 0.78f};
         }
-
-        ImGui::PopID();
+        ui.panel(Rect{rect.x, rect.y, rect.w, selected ? 3.0f : 2.0f}, accent);
     };
 
-    ImGui::SeparatorText("Ammo (Top, Ammo-Only)");
+    ui.label("Ammo", glm::vec2(left, y), Color{0.78f, 0.80f, 0.82f, 1.0f});
+    y += 24.0f;
     for (uint16_t i = kAmmoStart; i < kAmmoEnd; ++i) {
-        const uint16_t ammoIndex = static_cast<uint16_t>(i - kAmmoStart + 1);
-        drawSlotButton(i, "Ammo " + std::to_string(ammoIndex));
-        if ((i + 1) < kAmmoEnd) {
-            ImGui::SameLine();
-        }
+        drawSlot(i, left + static_cast<float>(i - kAmmoStart) * (slotW + gap), y);
     }
 
-    ImGui::SeparatorText("Backpack");
-    constexpr int kBackpackColumns = 6;
+    y += slotH + 30.0f;
+    ui.label("Backpack", glm::vec2(left, y), Color{0.78f, 0.80f, 0.82f, 1.0f});
+    y += 24.0f;
     for (uint16_t i = kBackpackStart; i < kBackpackEnd; ++i) {
-        const uint16_t backpackIndex = static_cast<uint16_t>(i - kBackpackStart + 1);
-        drawSlotButton(i, "Bag " + std::to_string(backpackIndex));
-        const uint16_t localIndex = static_cast<uint16_t>(i - kBackpackStart);
-        if (((localIndex + 1) % kBackpackColumns) != 0 && (i + 1) < kBackpackEnd) {
-            ImGui::SameLine();
-        }
+        const uint16_t local = static_cast<uint16_t>(i - kBackpackStart);
+        const float x = left + static_cast<float>(local % 6) * (slotW + gap);
+        const float rowY = y + static_cast<float>(local / 6) * (slotH + gap);
+        drawSlot(i, x, rowY);
     }
 
-    ImGui::SeparatorText("Hotbar (Bottom)");
-    constexpr int kHotbarColumns = 6;
+    y += (slotH * 2.0f) + gap + 30.0f;
+    ui.label("Hotbar", glm::vec2(left, y), Color{0.78f, 0.80f, 0.82f, 1.0f});
+    y += 24.0f;
     for (uint16_t i = kHotbarStart; i < kHotbarEnd; ++i) {
-        const uint16_t hotbarIndex = static_cast<uint16_t>(i - kHotbarStart + 1);
-        drawSlotButton(i, "[" + std::to_string(hotbarIndex) + "] Hotbar");
-        const uint16_t localIndex = static_cast<uint16_t>(i - kHotbarStart);
-        if (((localIndex + 1) % kHotbarColumns) != 0 && (i + 1) < kHotbarEnd) {
-            ImGui::SameLine();
-        }
+        drawSlot(i, left + static_cast<float>(i - kHotbarStart) * (slotW + gap), y);
     }
 
-    ImGui::SeparatorText("Selected");
-    if (m_selectedSlot >= 0 && m_selectedSlot < static_cast<int>(kInventorySlotCount)) {
-        const uint16_t slotIndex = static_cast<uint16_t>(m_selectedSlot);
-        const Slot &slot = m_slots[slotIndex];
-        if (!Inventory::IsEmpty(slot)) {
-            if (m_selectedItemName.empty() && Inventory::IsValidItemId(slot.itemId)) {
-                m_selectedItemName = Items::ItemDatabase[slot.itemId].name;
-            }
-            ImGui::Text("Slot %u: %s x%u", slotIndex, m_selectedItemName.c_str(), slot.quantity);
+    const float bottomY = panelY + panelHeight - 82.0f;
+    ui.panel(Rect{left, bottomY, 410.0f, 54.0f}, Color{0.07f, 0.075f, 0.085f, 0.90f});
+    ui.label("Selected Item", glm::vec2(left + 14.0f, bottomY + 8.0f), Color{0.72f, 0.74f, 0.76f, 1.0f});
+    ui.label(
+        Ellipsize(selectedLine(), 48),
+        glm::vec2(left + 14.0f, bottomY + 28.0f),
+        Color{0.94f, 0.94f, 0.94f, 1.0f}
+    );
 
-            if (ImGui::Button("Use Item")) {
-                (void)submitAction(clientNet, InventoryActionType::Use, slotIndex, slotIndex, 1);
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Drop 1")) {
-                (void)submitAction(clientNet, InventoryActionType::Drop, slotIndex, slotIndex, 1);
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Drop Stack")) {
-                (void)submitAction(clientNet, InventoryActionType::Drop, slotIndex, slotIndex, 0);
-            }
-        } else {
-            m_selectedSlot = -1;
-            m_selectedItemName.clear();
-            ImGui::TextUnformatted("No slot selected.");
-        }
+    const bool hasSelection = m_selectedSlot >= 0 && m_selectedSlot < static_cast<int>(kInventorySlotCount);
+    const float actionX = left + 430.0f;
+    if (ui.iconButton("use_selected", useIcon, Rect{actionX, bottomY + 8.0f, 46.0f, 38.0f}, hasSelection)) {
+        useSelected(clientNet);
     }
-    ImGui::End();
+    if (ui.iconButton(
+            "drop_one",
+            dropOneIcon,
+            Rect{actionX + 56.0f, bottomY + 8.0f, 46.0f, 38.0f},
+            hasSelection
+        )) {
+        dropSelected(clientNet, 1);
+    }
+    if (ui.iconButton(
+            "drop_stack",
+            dropStackIcon,
+            Rect{actionX + 112.0f, bottomY + 8.0f, 46.0f, 38.0f},
+            hasSelection
+        )) {
+        dropSelected(clientNet, 0);
+    }
 }

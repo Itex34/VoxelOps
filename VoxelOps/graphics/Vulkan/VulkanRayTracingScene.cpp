@@ -26,49 +26,27 @@ namespace {
     constexpr glm::ivec3 kRtDummyChunkPos{250000, 250000, 250000};
     constexpr uint64_t kRtRetireFrameLag = 24u;
     constexpr vk::DeviceSize kRtBlasCacheBudgetBytes = 512ull * 1024ull * 1024ull;
-    constexpr size_t kMaxPendingBlasBuildBatches = 2u;
+    constexpr size_t kMaxPendingBlasBuildBatches = 1u;
+    constexpr int kRtActiveRadiusHysteresisChunks = 3;
+
+    bool isWithinRtChunkRadius(
+        const glm::ivec3 &chunkPos, const glm::ivec3 &centerChunk, int radiusChunks
+    ) {
+        if (radiusChunks < 0) {
+            return true;
+        }
+        const glm::ivec3 delta = chunkPos - centerChunk;
+        const int64_t radius = static_cast<int64_t>(radiusChunks);
+        return static_cast<int64_t>(delta.x) * static_cast<int64_t>(delta.x) +
+                   static_cast<int64_t>(delta.z) * static_cast<int64_t>(delta.z) <=
+               radius * radius;
+    }
 
     struct DeviceBufferAllocation {
-        VmaAllocator allocator = VK_NULL_HANDLE;
-        VkBuffer buffer = VK_NULL_HANDLE;
-        VmaAllocation allocation = VK_NULL_HANDLE;
-
-        DeviceBufferAllocation() = default;
-        ~DeviceBufferAllocation() {
-            reset();
-        }
-        DeviceBufferAllocation(const DeviceBufferAllocation &) = delete;
-        DeviceBufferAllocation &operator=(const DeviceBufferAllocation &) = delete;
-        DeviceBufferAllocation(DeviceBufferAllocation &&other) noexcept {
-            allocator = other.allocator;
-            buffer = other.buffer;
-            allocation = other.allocation;
-            other.allocator = VK_NULL_HANDLE;
-            other.buffer = VK_NULL_HANDLE;
-            other.allocation = VK_NULL_HANDLE;
-        }
-        DeviceBufferAllocation &operator=(DeviceBufferAllocation &&other) noexcept {
-            if (this == &other) {
-                return *this;
-            }
-            reset();
-            allocator = other.allocator;
-            buffer = other.buffer;
-            allocation = other.allocation;
-            other.allocator = VK_NULL_HANDLE;
-            other.buffer = VK_NULL_HANDLE;
-            other.allocation = VK_NULL_HANDLE;
-            return *this;
-        }
+        VulkanBuffer buffer{};
 
         void reset() {
-            if (allocator != VK_NULL_HANDLE && buffer != VK_NULL_HANDLE &&
-                allocation != VK_NULL_HANDLE) {
-                vmaDestroyBuffer(allocator, buffer, allocation);
-            }
-            allocator = VK_NULL_HANDLE;
-            buffer = VK_NULL_HANDLE;
-            allocation = VK_NULL_HANDLE;
+            buffer.destroy();
         }
     };
 
@@ -82,38 +60,17 @@ namespace {
         uint32_t sharedQueueFamilyCount,
         DeviceBufferAllocation &outBuffer
     ) {
-        outBuffer.reset();
-        if (allocator == VK_NULL_HANDLE) {
-            throw std::runtime_error("VMA allocator is not initialized.");
-        }
-
-        VkBufferCreateInfo bufferInfo{};
-        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = std::max<vk::DeviceSize>(size, 4u);
-        bufferInfo.usage = static_cast<VkBufferUsageFlags>(usage);
-        if (sharedQueueFamilies != nullptr && sharedQueueFamilyCount > 1) {
-            bufferInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
-            bufferInfo.queueFamilyIndexCount = sharedQueueFamilyCount;
-            bufferInfo.pQueueFamilyIndices = sharedQueueFamilies;
-        } else {
-            bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        }
-
-        VmaAllocationCreateInfo allocInfo{};
-        allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-        allocInfo.requiredFlags = static_cast<VkMemoryPropertyFlags>(properties);
-        if (hostAccessSequentialWrite) {
-            allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                              VMA_ALLOCATION_CREATE_MAPPED_BIT;
-        }
-
-        outBuffer.allocator = allocator;
-        const VkResult result =
-            vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &outBuffer.buffer, &outBuffer.allocation, nullptr);
-        if (result != VK_SUCCESS) {
-            outBuffer.reset();
-            throw std::runtime_error("Failed to create VMA buffer allocation.");
-        }
+        const VmaAllocationCreateFlags allocationFlags =
+            hostAccessSequentialWrite ? VMA_ALLOCATION_CREATE_MAPPED_BIT : 0;
+        outBuffer.buffer.create(
+            allocator,
+            size,
+            usage,
+            properties,
+            allocationFlags,
+            sharedQueueFamilies,
+            sharedQueueFamilyCount
+        );
     }
 
     vk::DeviceSize nextPow2SizeClass(vk::DeviceSize value) {
@@ -515,7 +472,16 @@ void VulkanRayTracingScene::initialize(
         const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> bootstrapCpuMeshes = {
             {kRtDummyChunkPos, dummyMesh}
         };
-        (void)processPendingUploads(context, uploadContext, frameCounter, 1u, bootstrapCpuMeshes);
+        (void)processPendingUploads(
+            context,
+            uploadContext,
+            frameCounter,
+            1u,
+            std::numeric_limits<uint32_t>::max(),
+            std::numeric_limits<VkDeviceSize>::max(),
+            true,
+            bootstrapCpuMeshes
+        );
         while (!rt.pendingGpuBuildBatches.empty()) {
             const std::array<vk::Fence, 1> fences = {*rt.pendingGpuBuildBatches.front().fence};
             (void)context.getDevice().waitForFences(
@@ -609,7 +575,8 @@ bool VulkanRayTracingScene::uploadChunkGeometry(
     uint64_t frameCounter,
     const glm::ivec3 &chunkPos,
     const CpuChunkMesh &cpuMesh,
-    bool highPriority
+    bool highPriority,
+    bool activeForTracing
 ) {
     (void)context;
     (void)uploadContext;
@@ -623,6 +590,20 @@ bool VulkanRayTracingScene::uploadChunkGeometry(
 
     RtSceneState &rt = *m_state;
     auto existingIt = rt.chunkBlases.find(chunkPos);
+    if (!activeForTracing) {
+        if (existingIt != rt.chunkBlases.end()) {
+            existingIt->second.lastTouchedFrame = frameCounter;
+        }
+        const bool wasActive = (rt.activeChunkBlases.erase(chunkPos) > 0);
+        m_pendingChunkUploads.erase(chunkPos);
+        m_pendingChunkUploadSet.erase(chunkPos);
+        m_highPriorityChunkUploadPending.erase(chunkPos);
+        if (wasActive) {
+            m_dirty = true;
+        }
+        return existingIt != rt.chunkBlases.end();
+    }
+
     if (existingIt != rt.chunkBlases.end() && existingIt->second.revision == cpuMesh.revision) {
         existingIt->second.lastTouchedFrame = frameCounter;
         const bool becameActive = rt.activeChunkBlases.insert(chunkPos).second;
@@ -670,9 +651,20 @@ size_t VulkanRayTracingScene::processPendingUploads(
     UploadContext &uploadContext,
     uint64_t frameCounter,
     size_t maxUploadsPerCall,
+    uint32_t maxBuildPrimitives,
+    VkDeviceSize maxBuildBytes,
+    bool allowOversizedBuild,
     const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuChunkMeshes
 ) {
     (void)uploadContext;
+    m_streamingStats.lastBuildFrame = frameCounter;
+    m_streamingStats.lastBuildSubmitted = 0;
+    m_streamingStats.lastBuildSelectedPrimitives = 0;
+    m_streamingStats.lastBuildSelectedBytes = 0;
+    m_streamingStats.lastBuildDeferredBudget = false;
+    m_streamingStats.lastBuildDeferredOversized = false;
+    m_streamingStats.lastBuildDeferredPrimitives = 0;
+    m_streamingStats.lastBuildDeferredBytes = 0;
     if (!m_state || !m_state->ready || maxUploadsPerCall == 0) {
         return 0;
     }
@@ -753,7 +745,22 @@ size_t VulkanRayTracingScene::processPendingUploads(
     std::vector<PendingBuild> pendingBuilds;
     pendingBuilds.reserve(maxUploadsPerCall);
     size_t processed = 0;
+    uint32_t selectedPrimitives = 0;
+    vk::DeviceSize selectedBytes = 0;
     vk::DeviceSize maxScratchSize = 0;
+    const auto requeuePendingUpload = [&](const glm::ivec3 &chunkPos,
+                                          const PendingChunkUpload &pendingUpload,
+                                          bool highPriorityUpload) {
+        m_pendingChunkUploads[chunkPos] = pendingUpload;
+        if (m_pendingChunkUploadSet.insert(chunkPos).second) {
+            if (highPriorityUpload) {
+                m_highPriorityChunkUploadPending.insert(chunkPos);
+                m_highPriorityChunkUploadQueue.push_front(chunkPos);
+            } else {
+                m_pendingChunkUploadQueue.push_back(chunkPos);
+            }
+        }
+    };
 
     while (processed < maxUploadsPerCall &&
            (!m_highPriorityChunkUploadQueue.empty() || !m_pendingChunkUploadQueue.empty())) {
@@ -841,6 +848,32 @@ size_t VulkanRayTracingScene::processPendingUploads(
         build.indexBytes =
             static_cast<vk::DeviceSize>(build.sourceIndices->size() * sizeof(uint16_t));
 
+        const uint32_t primitiveCount = static_cast<uint32_t>(build.sourceIndices->size() / 3u);
+        if (primitiveCount == 0u) {
+            ++processed;
+            continue;
+        }
+        const vk::DeviceSize buildUploadBytes = build.vertexBytes + build.indexBytes;
+        const bool primitiveBudgetExceeded =
+            maxBuildPrimitives > 0u && selectedPrimitives > 0u &&
+            selectedPrimitives + primitiveCount > maxBuildPrimitives;
+        const bool byteBudgetExceeded =
+            maxBuildBytes > 0u && selectedBytes > 0u &&
+            selectedBytes + buildUploadBytes > maxBuildBytes;
+        const bool singleBuildOverBudget =
+            (maxBuildPrimitives > 0u && primitiveCount > maxBuildPrimitives) ||
+            (maxBuildBytes > 0u && buildUploadBytes > maxBuildBytes);
+        if (primitiveBudgetExceeded || byteBudgetExceeded ||
+            (singleBuildOverBudget && !highPriorityUpload && !allowOversizedBuild)) {
+            m_streamingStats.lastBuildDeferredBudget =
+                primitiveBudgetExceeded || byteBudgetExceeded;
+            m_streamingStats.lastBuildDeferredOversized = singleBuildOverBudget;
+            m_streamingStats.lastBuildDeferredPrimitives = primitiveCount;
+            m_streamingStats.lastBuildDeferredBytes = buildUploadBytes;
+            requeuePendingUpload(chunkPos, pendingUpload, highPriorityUpload);
+            break;
+        }
+
         allocateBlasDeviceBuffer(
             rt.reusableBlasVertexBuffers,
             build.vertexBytes,
@@ -858,15 +891,11 @@ size_t VulkanRayTracingScene::processPendingUploads(
             build.pending.built.indexCapacity
         );
 
-        const vk::DeviceAddress vertexAddress =
-            getBufferDeviceAddress(device, static_cast<vk::Buffer>(build.pending.built.vertexBuffer.buffer));
+        const vk::DeviceAddress vertexAddress = getBufferDeviceAddress(
+            device, static_cast<vk::Buffer>(build.pending.built.vertexBuffer.buffer.handle())
+        );
         const vk::DeviceAddress indexAddress =
-            getBufferDeviceAddress(device, static_cast<vk::Buffer>(build.pending.built.indexBuffer.buffer));
-        const uint32_t primitiveCount = static_cast<uint32_t>(build.sourceIndices->size() / 3u);
-        if (primitiveCount == 0u) {
-            ++processed;
-            continue;
-        }
+            getBufferDeviceAddress(device, static_cast<vk::Buffer>(build.pending.built.indexBuffer.buffer.handle()));
 
         build.triangles.vertexFormat = vk::Format::eR32G32B32Sfloat;
         build.triangles.vertexData.deviceAddress = vertexAddress;
@@ -880,7 +909,7 @@ size_t VulkanRayTracingScene::processPendingUploads(
         build.geometry.geometry.triangles = build.triangles;
 
         build.buildInfo.type = vk::AccelerationStructureTypeKHR::eBottomLevel;
-        build.buildInfo.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild;
+        build.buildInfo.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
         build.buildInfo.mode = vk::BuildAccelerationStructureModeKHR::eBuild;
         build.buildInfo.geometryCount = 1;
         build.buildInfo.pGeometries = &build.geometry;
@@ -901,7 +930,7 @@ size_t VulkanRayTracingScene::processPendingUploads(
             build.pending.built.asCapacity
         );
         vk::AccelerationStructureCreateInfoKHR asCreateInfo{};
-        asCreateInfo.buffer = static_cast<vk::Buffer>(build.pending.built.asBuffer.buffer);
+        asCreateInfo.buffer = static_cast<vk::Buffer>(build.pending.built.asBuffer.buffer.handle());
         asCreateInfo.size = sizeInfo.accelerationStructureSize;
         asCreateInfo.type = vk::AccelerationStructureTypeKHR::eBottomLevel;
         build.pending.built.as = vk::raii::AccelerationStructureKHR(device, asCreateInfo);
@@ -915,12 +944,17 @@ size_t VulkanRayTracingScene::processPendingUploads(
 
         pendingBuilds.push_back(std::move(build));
         pendingBuilds.back().buildInfo.pGeometries = &pendingBuilds.back().geometry;
+        selectedPrimitives += primitiveCount;
+        selectedBytes += buildUploadBytes;
         ++processed;
     }
 
     if (pendingBuilds.empty()) {
         return processed;
     }
+    m_streamingStats.lastBuildSubmitted = pendingBuilds.size();
+    m_streamingStats.lastBuildSelectedPrimitives = selectedPrimitives;
+    m_streamingStats.lastBuildSelectedBytes = selectedBytes;
 
     DeviceBufferAllocation batchVertexStaging{};
     DeviceBufferAllocation batchIndexStaging{};
@@ -975,10 +1009,8 @@ size_t VulkanRayTracingScene::processPendingUploads(
             batchVertexStaging,
             batchVertexStagingCapacity
         );
-        void *mapped = nullptr;
-        const VkResult mapResult =
-            vmaMapMemory(vmaAllocator, batchVertexStaging.allocation, &mapped);
-        if (mapResult != VK_SUCCESS || mapped == nullptr) {
+        void *mapped = batchVertexStaging.buffer.map();
+        if (mapped == nullptr) {
             throw std::runtime_error("Failed to map batched vertex staging buffer.");
         }
         uint8_t *cursor = static_cast<uint8_t *>(mapped);
@@ -995,7 +1027,7 @@ size_t VulkanRayTracingScene::processPendingUploads(
                 );
             }
         });
-        vmaUnmapMemory(vmaAllocator, batchVertexStaging.allocation);
+        batchVertexStaging.buffer.unmap();
     }
     if (totalIndexBytes > 0) {
         allocateBlasStagingBuffer(
@@ -1004,10 +1036,8 @@ size_t VulkanRayTracingScene::processPendingUploads(
             batchIndexStaging,
             batchIndexStagingCapacity
         );
-        void *mapped = nullptr;
-        const VkResult mapResult =
-            vmaMapMemory(vmaAllocator, batchIndexStaging.allocation, &mapped);
-        if (mapResult != VK_SUCCESS || mapped == nullptr) {
+        void *mapped = batchIndexStaging.buffer.map();
+        if (mapped == nullptr) {
             throw std::runtime_error("Failed to map batched index staging buffer.");
         }
         uint8_t *cursor = static_cast<uint8_t *>(mapped);
@@ -1024,7 +1054,7 @@ size_t VulkanRayTracingScene::processPendingUploads(
                 );
             }
         });
-        vmaUnmapMemory(vmaAllocator, batchIndexStaging.allocation);
+        batchIndexStaging.buffer.unmap();
     }
 
     const vk::DeviceSize requiredScratchSize = std::max<vk::DeviceSize>(maxScratchSize, 4u);
@@ -1047,8 +1077,9 @@ size_t VulkanRayTracingScene::processPendingUploads(
     }
 
     try {
-        const vk::DeviceAddress scratchBaseAddress =
-            getBufferDeviceAddress(device, static_cast<vk::Buffer>(rt.blasScratchBuffer.buffer));
+        const vk::DeviceAddress scratchBaseAddress = getBufferDeviceAddress(
+            device, static_cast<vk::Buffer>(rt.blasScratchBuffer.buffer.handle())
+        );
         const vk::DeviceAddress scratchAddress =
             alignDeviceAddress(scratchBaseAddress, rtScratchAlignment);
         vk::raii::CommandBuffer commandBuffer =
@@ -1064,8 +1095,8 @@ size_t VulkanRayTracingScene::processPendingUploads(
             vertexCopy.size = build.vertexBytes;
             const std::array<vk::BufferCopy, 1> vertexRegions = {vertexCopy};
             commandBuffer.copyBuffer(
-                static_cast<vk::Buffer>(batchVertexStaging.buffer),
-                static_cast<vk::Buffer>(build.pending.built.vertexBuffer.buffer),
+                static_cast<vk::Buffer>(batchVertexStaging.buffer.handle()),
+                static_cast<vk::Buffer>(build.pending.built.vertexBuffer.buffer.handle()),
                 vertexRegions
             );
 
@@ -1074,8 +1105,8 @@ size_t VulkanRayTracingScene::processPendingUploads(
             indexCopy.size = build.indexBytes;
             const std::array<vk::BufferCopy, 1> indexRegions = {indexCopy};
             commandBuffer.copyBuffer(
-                static_cast<vk::Buffer>(batchIndexStaging.buffer),
-                static_cast<vk::Buffer>(build.pending.built.indexBuffer.buffer),
+                static_cast<vk::Buffer>(batchIndexStaging.buffer.handle()),
+                static_cast<vk::Buffer>(build.pending.built.indexBuffer.buffer.handle()),
                 indexRegions
             );
 
@@ -1084,7 +1115,8 @@ size_t VulkanRayTracingScene::processPendingUploads(
             vertexBarrier.dstAccessMask = vk::AccessFlagBits::eAccelerationStructureReadKHR;
             vertexBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             vertexBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            vertexBarrier.buffer = static_cast<vk::Buffer>(build.pending.built.vertexBuffer.buffer);
+            vertexBarrier.buffer =
+                static_cast<vk::Buffer>(build.pending.built.vertexBuffer.buffer.handle());
             vertexBarrier.offset = 0;
             vertexBarrier.size = VK_WHOLE_SIZE;
             vk::BufferMemoryBarrier indexBarrier{};
@@ -1092,7 +1124,8 @@ size_t VulkanRayTracingScene::processPendingUploads(
             indexBarrier.dstAccessMask = vk::AccessFlagBits::eAccelerationStructureReadKHR;
             indexBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             indexBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            indexBarrier.buffer = static_cast<vk::Buffer>(build.pending.built.indexBuffer.buffer);
+            indexBarrier.buffer =
+                static_cast<vk::Buffer>(build.pending.built.indexBuffer.buffer.handle());
             indexBarrier.offset = 0;
             indexBarrier.size = VK_WHOLE_SIZE;
             const std::array<vk::BufferMemoryBarrier, 2> copyBarriers = {vertexBarrier, indexBarrier};
@@ -1296,6 +1329,44 @@ void VulkanRayTracingScene::removeChunkGeometry(uint64_t frameCounter, const glm
     trimInactiveBlasCache(frameCounter);
 }
 
+void VulkanRayTracingScene::updateActiveChunkRadius(
+    uint64_t frameCounter, const glm::ivec3 &centerChunk, int radiusChunks
+) {
+    if (!m_state || !m_state->ready) {
+        return;
+    }
+
+    RtSceneState &rt = *m_state;
+    bool changed = false;
+    const int pruneRadiusChunks =
+        (radiusChunks < 0) ? radiusChunks : radiusChunks + kRtActiveRadiusHysteresisChunks;
+    for (auto it = rt.activeChunkBlases.begin(); it != rt.activeChunkBlases.end();) {
+        if (*it == kRtDummyChunkPos ||
+            isWithinRtChunkRadius(*it, centerChunk, pruneRadiusChunks)) {
+            ++it;
+            continue;
+        }
+        it = rt.activeChunkBlases.erase(it);
+        changed = true;
+    }
+
+    for (auto &[chunkPos, chunkBlas] : rt.chunkBlases) {
+        if (chunkPos == kRtDummyChunkPos ||
+            !isWithinRtChunkRadius(chunkPos, centerChunk, radiusChunks)) {
+            continue;
+        }
+        chunkBlas.lastTouchedFrame = frameCounter;
+        if (rt.activeChunkBlases.insert(chunkPos).second) {
+            changed = true;
+        }
+    }
+
+    if (changed) {
+        m_dirty = true;
+    }
+    trimInactiveBlasCache(frameCounter);
+}
+
 bool VulkanRayTracingScene::hasPendingBuildWork() const noexcept {
     if (!m_state || !m_state->ready) {
         return !m_highPriorityChunkUploadQueue.empty() || !m_pendingChunkUploadQueue.empty() ||
@@ -1330,6 +1401,11 @@ bool VulkanRayTracingScene::hasHighPriorityBuildWork() const noexcept {
 }
 
 bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounter) {
+    m_streamingStats.lastTlasFrame = frameCounter;
+    m_streamingStats.lastTlasSubmitted = false;
+    m_streamingStats.lastTlasSkippedPendingBuild = false;
+    m_streamingStats.lastTlasSkippedEmpty = false;
+    m_streamingStats.lastTlasInstanceCount = 0;
     if (!m_state || !m_state->ready) {
         m_activeTlas = VK_NULL_HANDLE;
         m_dirty = false;
@@ -1353,6 +1429,7 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
         const uint32_t sharedQueueFamilyCount = context.hasDedicatedRtBuildQueue() ? 2u : 0u;
 
         if (rt.pendingTlasBuild.has_value()) {
+            m_streamingStats.lastTlasSkippedPendingBuild = true;
             return false;
         }
 
@@ -1388,9 +1465,13 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
         }
 
         if (instances.empty()) {
+            m_streamingStats.lastTlasSkippedEmpty = true;
             m_dirty = false;
             return false;
         }
+        m_streamingStats.lastTlasInstanceCount = static_cast<uint32_t>(
+            std::min<size_t>(instances.size(), std::numeric_limits<uint32_t>::max())
+        );
 
         RtSceneState::PendingGpuTlasBuild pending{};
         const vk::DeviceSize instanceBytes = static_cast<vk::DeviceSize>(
@@ -1412,10 +1493,8 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
             rt.tlasInstanceCapacity = instanceBytes;
         }
         if (!instances.empty()) {
-            void *mapped = nullptr;
-            const VkResult mapResult =
-                vmaMapMemory(vmaAllocator, rt.tlasInstanceBuffer.allocation, &mapped);
-            if (mapResult != VK_SUCCESS || mapped == nullptr) {
+            void *mapped = rt.tlasInstanceBuffer.buffer.map();
+            if (mapped == nullptr) {
                 throw std::runtime_error("Failed to map TLAS instance buffer.");
             }
             std::memcpy(
@@ -1423,13 +1502,14 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
                 instances.data(),
                 static_cast<size_t>(instances.size() * sizeof(VkAccelerationStructureInstanceKHR))
             );
-            vmaUnmapMemory(vmaAllocator, rt.tlasInstanceBuffer.allocation);
+            rt.tlasInstanceBuffer.buffer.unmap();
         }
 
         vk::AccelerationStructureGeometryInstancesDataKHR instancesData{};
         instancesData.arrayOfPointers = VK_FALSE;
-        instancesData.data.deviceAddress =
-            getBufferDeviceAddress(device, static_cast<vk::Buffer>(rt.tlasInstanceBuffer.buffer));
+        instancesData.data.deviceAddress = getBufferDeviceAddress(
+            device, static_cast<vk::Buffer>(rt.tlasInstanceBuffer.buffer.handle())
+        );
 
         vk::AccelerationStructureGeometryKHR geometry{};
         geometry.geometryType = vk::GeometryTypeKHR::eInstances;
@@ -1478,7 +1558,7 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
         }
 
         vk::AccelerationStructureCreateInfoKHR asCreateInfo{};
-        asCreateInfo.buffer = static_cast<vk::Buffer>(pending.asBuffer.buffer);
+        asCreateInfo.buffer = static_cast<vk::Buffer>(pending.asBuffer.buffer.handle());
         asCreateInfo.size = asRequiredSize;
         asCreateInfo.type = vk::AccelerationStructureTypeKHR::eTopLevel;
         pending.as = vk::raii::AccelerationStructureKHR(device, asCreateInfo);
@@ -1505,7 +1585,7 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
 
         buildInfo.dstAccelerationStructure = *pending.as;
         const vk::DeviceAddress tlasScratchBaseAddress =
-            getBufferDeviceAddress(device, static_cast<vk::Buffer>(rt.tlasScratchBuffer.buffer));
+            getBufferDeviceAddress(device, static_cast<vk::Buffer>(rt.tlasScratchBuffer.buffer.handle()));
         buildInfo.scratchData.deviceAddress =
             alignDeviceAddress(tlasScratchBaseAddress, rtScratchAlignment);
 
@@ -1525,6 +1605,7 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
         context.getRtBuildQueue().submit(submitInfo, *pending.fence);
         pending.submitFrame = frameCounter;
         rt.pendingTlasBuild = std::move(pending);
+        m_streamingStats.lastTlasSubmitted = true;
         m_highPriorityTlasRefreshRequested = false;
         m_dirty = false;
         return true;
@@ -1532,6 +1613,20 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
         std::cerr << "[Vulkan][RT] Failed to rebuild TLAS: " << e.what() << "\n";
         return false;
     }
+}
+
+VulkanRayTracingScene::StreamingStats VulkanRayTracingScene::streamingStats() const noexcept {
+    StreamingStats stats = m_streamingStats;
+    stats.pendingNormalUploads = m_pendingChunkUploadQueue.size();
+    stats.pendingHighPriorityUploads = m_highPriorityChunkUploadQueue.size();
+    stats.pendingTrackedUploads = m_pendingChunkUploads.size();
+    if (m_state && m_state->ready) {
+        stats.pendingGpuBuildBatches = m_state->pendingGpuBuildBatches.size();
+        stats.pendingTlasBuild = m_state->pendingTlasBuild.has_value();
+        stats.cachedBlasCount = m_state->chunkBlases.size();
+        stats.activeBlasCount = m_state->activeChunkBlases.size();
+    }
+    return stats;
 }
 
 void VulkanRayTracingScene::pollFinishedTlasBuild(

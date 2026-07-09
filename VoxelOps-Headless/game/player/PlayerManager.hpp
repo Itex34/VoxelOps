@@ -51,6 +51,9 @@ public:
     std::vector<uint8_t> buildSnapshotFor(PlayerID recipientId, uint32_t serverTick);
     std::vector<std::vector<uint8_t>>
     buildSnapshotsForRecipients(const std::vector<PlayerID> &recipientIds, uint32_t serverTick);
+    std::vector<std::vector<uint8_t>> buildSnapshotsForRecipients(
+        const std::vector<std::pair<PlayerID, uint16_t>> &recipients, uint32_t serverTick
+    );
     void CaptureReplicationSnapshot(uint32_t serverTick);
 
     // Send snapshots to all players (calls connection->send). This is a convenience

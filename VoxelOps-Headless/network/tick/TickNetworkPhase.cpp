@@ -56,9 +56,9 @@ void TickNetworkPhase::RunConnectionCleanupPhase() {
     staleConnections.reserve(sessionSnapshot.size());
     for (const auto &[conn, session] : sessionSnapshot) {
         SteamNetConnectionInfo_t info{};
-        if (SteamNetworkingSockets()->GetConnectionInfo(conn, &info) &&
-            (info.m_eState == k_ESteamNetworkingConnectionState_ClosedByPeer ||
-             info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally)) {
+        const bool haveInfo = SteamNetworkingSockets()->GetConnectionInfo(conn, &info);
+        if (!haveInfo || info.m_eState == k_ESteamNetworkingConnectionState_ClosedByPeer ||
+            info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally) {
             staleConnections.emplace_back(conn, session);
         }
     }

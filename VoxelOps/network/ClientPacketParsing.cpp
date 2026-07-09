@@ -100,7 +100,7 @@ bool ParseConnectResponse(std::span<const uint8_t> bytes, ConnectResponse &out) 
 }
 
 bool ParsePlayerSnapshotFrame(std::span<const uint8_t> bytes, PlayerSnapshotFrame &out) {
-    constexpr size_t kSnapshotEntryBytes = 8 + (8 * 4) + 3 + 2 + 4 + 1 + 4 + 1 + 4 + 4;
+    constexpr size_t kSnapshotEntryBytes = 8 + (8 * 4) + 3 + 2 + 4 + 1 + 4 + 1 + 4 + 4 + 4;
     size_t offset = 0;
     uint8_t type = 0;
     uint32_t playerCount = 0;
@@ -132,7 +132,8 @@ bool ParsePlayerSnapshotFrame(std::span<const uint8_t> bytes, PlayerSnapshotFram
             !ReadF32LE(bytes, offset, snapshot.respawnSeconds) ||
             !ReadU8(bytes, offset, snapshot.jumpPressedLastTick) ||
             !ReadF32LE(bytes, offset, snapshot.timeSinceGrounded) ||
-            !ReadF32LE(bytes, offset, snapshot.jumpBufferTimer)) {
+            !ReadF32LE(bytes, offset, snapshot.jumpBufferTimer) ||
+            !ReadF32LE(bytes, offset, snapshot.stepCooldownTimer)) {
             return false;
         }
         out.players.push_back(snapshot);

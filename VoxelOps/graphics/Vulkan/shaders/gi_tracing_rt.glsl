@@ -93,7 +93,7 @@ bool traceSceneRtVisibility(vec3 origin, vec3 direction, float maxDistance) {
     return traceSceneRtVisibilityNormalized(origin, dir, maxDistance);
 }
 
-TraceResult traceSceneRt(vec3 origin, vec3 direction, float maxDistance) {
+TraceResult traceSceneRtNormalized(vec3 origin, vec3 dir, float maxDistance) {
     TraceResult outResult;
     outResult.hit = false;
     outResult.distance = maxDistance;
@@ -105,7 +105,6 @@ TraceResult traceSceneRt(vec3 origin, vec3 direction, float maxDistance) {
         return outResult;
     }
 
-    vec3 dir = safeNormalize(direction);
     if (dot(dir, dir) <= 1.0e-8) {
         outResult.distance = 0.0;
         return outResult;
@@ -140,4 +139,8 @@ TraceResult traceSceneRt(vec3 origin, vec3 direction, float maxDistance) {
     outResult.hitVoxel = hitVoxel;
     outResult.hitNormal = computeVoxelFaceNormalFromHit(hitVoxel, hitPos, dir);
     return outResult;
+}
+
+TraceResult traceSceneRt(vec3 origin, vec3 direction, float maxDistance) {
+    return traceSceneRtNormalized(origin, safeNormalize(direction), maxDistance);
 }

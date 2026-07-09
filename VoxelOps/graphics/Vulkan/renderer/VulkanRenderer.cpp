@@ -76,7 +76,9 @@ void VulkanRenderer::init() {
     const vk::raii::PhysicalDevice &physicalDevice = m_context.getPhysicalDevice();
     const vk::raii::Queue &graphicsQueue = m_context.getGraphicsQueue();
 
-    m_uploadContext.init(device, m_context.getGraphicsQueueFamily(), graphicsQueue);
+    m_uploadContext.init(
+        device, m_context.getVmaAllocator(), m_context.getGraphicsQueueFamily(), graphicsQueue
+    );
 
     m_fallbackArrayTexture.initFromAtlasFileAsArray(
         device,
@@ -116,10 +118,6 @@ void VulkanRenderer::init() {
 }
 
 void VulkanRenderer::cleanup() {
-    if (!m_initialized) {
-        return;
-    }
-
     const vk::raii::Device &device = m_context.getDevice();
     try {
         device.waitIdle();

@@ -1,9 +1,12 @@
 #include "CombatRequestService.hpp"
 
+#include "../core/DiagnosticsFlags.hpp"
 #include "../protocol/PacketParsers.hpp"
 
 #include <GameNetworkingSockets/steam/steamnetworkingsockets.h>
 
+#include <atomic>
+#include <chrono>
 #include <iostream>
 #include <utility>
 #include <vector>
@@ -32,6 +35,8 @@ void SendGrappleResult(HSteamNetConnection incoming, const GrappleResult &result
     );
 }
 
+std::atomic<uint64_t> g_slowShootRequestCount{0};
+
 } // namespace
 
 CombatRequestService::CombatRequestService(Hooks hooks)
@@ -46,7 +51,22 @@ void CombatRequestService::HandleShootRequestPacket(
         return;
     }
 
+    const auto shootStart = std::chrono::steady_clock::now();
     const ShootResult result = m_hooks.executeShootRequest(incoming, req);
+    const auto shootUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                             std::chrono::steady_clock::now() - shootStart
+    )
+                             .count();
+    if (DiagnosticsFlags::g_enableServerPerfDiagnostics.load(std::memory_order_acquire) &&
+        shootUs >= 2000) {
+        const uint64_t count = g_slowShootRequestCount.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (count <= 40 || (count % 200) == 0) {
+            std::cerr << "[perf/shoot] slow request us=" << shootUs
+                      << " conn=" << incoming
+                      << " shotId=" << req.clientShotId
+                      << " count=" << count << "\n";
+        }
+    }
     SendShootResult(incoming, result);
 }
 
