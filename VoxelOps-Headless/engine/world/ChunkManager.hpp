@@ -77,6 +77,7 @@ public:
     bool inBounds(const glm::ivec3 &pos) const;
     const ChunkWorldBounds &chunkWorldBounds() const noexcept;
     bool isChunkStreamReady(const glm::ivec3 &chunkPos) const;
+    bool isChunkTerrainGenerated(const glm::ivec3 &chunkPos) const;
 
     void markChunkDirty(const glm::ivec3 &pos);
 
@@ -114,7 +115,11 @@ private:
 
     // protects m_chunks structure (only)
     mutable std::shared_mutex mapMutex;
+    // Serializes terrain/decorative generation, including cross-chunk tree writes.
+    mutable std::recursive_mutex generationMutex;
     ServerChunkGrid m_chunks;
+    // Tracks whether a chunk's terrain baseline has been generated/merged into the chunk data.
+    std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> terrainGeneratedChunks;
     // Tracks whether a chunk has had decoration pass applied at least once.
     std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> decoratedChunks;
 

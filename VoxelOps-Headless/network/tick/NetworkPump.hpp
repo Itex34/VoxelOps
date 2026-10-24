@@ -5,7 +5,9 @@
 #include <GameNetworkingSockets/steam/steamnetworkingtypes.h>
 
 #include <cstdint>
+#include <deque>
 #include <functional>
+#include <vector>
 
 class NetworkPump {
 public:
@@ -33,6 +35,12 @@ public:
     );
 
 private:
+    struct DeferredPacket {
+        HSteamNetConnection conn = k_HSteamNetConnection_Invalid;
+        PacketType packetType{};
+        std::vector<uint8_t> bytes;
+    };
+
     void DispatchInboundPacket(
         HSteamNetConnection incoming,
         PacketType packetType,
@@ -45,4 +53,5 @@ private:
 private:
     HSteamNetPollGroup &m_pollGroup;
     Hooks m_hooks;
+    std::deque<DeferredPacket> m_deferredPackets;
 };

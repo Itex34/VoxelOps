@@ -79,6 +79,12 @@ public:
     void Clear();
 
     QueuePrepResult QueuePrep(HSteamNetConnection conn, const ChunkCoord &coord, size_t maxQueue);
+    QueuePrepResult QueuePreparedSend(
+        HSteamNetConnection conn, const ChunkCoord &coord, size_t maxChunkSendQueuePerClient
+    );
+    QueuePrepResult RequeueSendFront(
+        HSteamNetConnection conn, const ChunkCoord &coord, size_t maxChunkSendQueuePerClient
+    );
     QueuePrepBatchResult QueuePrepBatch(
         HSteamNetConnection conn,
         const std::vector<ChunkCoord> &coords,
@@ -92,7 +98,7 @@ public:
         std::vector<ChunkCoord> &acceptedCoords
     );
     bool WaitPopPrepTask(ChunkPrepTask &outTask, const std::atomic<bool> &quitFlag);
-    void MarkPrepDoneAndQueueSend(
+    bool MarkPrepDoneAndQueueSend(
         const ChunkPrepTask &task,
         bool prepared,
         const std::atomic<bool> &quitFlag,
@@ -105,6 +111,7 @@ public:
     );
     void PruneForClient(HSteamNetConnection conn, const ChunkInterestBounds &desired);
     size_t GetSendQueueDepthForClient(HSteamNetConnection conn) const;
+    void ClearChunkForConnection(HSteamNetConnection conn, const ChunkCoord &coord);
     void ClearForConnection(HSteamNetConnection conn);
 
     void NotifyPrepWorker();

@@ -157,40 +157,35 @@ namespace Shared::Movement {
         }
 
         state.onGround = false;
-        if (!steppedDuringMove) {
-            glm::vec3 tryPosY = tryPos;
-            tryPosY.y += delta.y;
-            if (!collides(tryPosY)) {
-                tryPos = tryPosY;
-            } else {
-                if (delta.y < 0.0f) {
-                    state.onGround = true;
-                    state.velocity.y = 0.0f;
-                    if (wasGrounded) {
-                        tryPos.y = state.position.y;
-                    } else {
-                        float lowY = tryPosY.y;
-                        float highY = tryPos.y;
-                        for (int i = 0; i < 10; ++i) {
-                            const float midY = 0.5f * (lowY + highY);
-                            glm::vec3 testPos = tryPos;
-                            testPos.y = midY;
-                            if (collides(testPos)) {
-                                lowY = midY;
-                            } else {
-                                highY = midY;
-                            }
-                        }
-                        tryPos.y = highY;
-                    }
-                } else {
-                    state.velocity.y = 0.0f;
-                    tryPos.y = state.position.y;
-                }
-            }
+        glm::vec3 tryPosY = tryPos;
+        tryPosY.y += delta.y;
+        if (!collides(tryPosY)) {
+            tryPos = tryPosY;
         } else {
-            state.onGround = true;
-            state.velocity.y = 0.0f;
+            if (delta.y < 0.0f) {
+                state.onGround = true;
+                state.velocity.y = 0.0f;
+                if (wasGrounded && !steppedDuringMove) {
+                    tryPos.y = state.position.y;
+                } else {
+                    float lowY = tryPosY.y;
+                    float highY = tryPos.y;
+                    for (int i = 0; i < 10; ++i) {
+                        const float midY = 0.5f * (lowY + highY);
+                        glm::vec3 testPos = tryPos;
+                        testPos.y = midY;
+                        if (collides(testPos)) {
+                            lowY = midY;
+                        } else {
+                            highY = midY;
+                        }
+                    }
+                    tryPos.y = highY;
+                }
+            } else {
+                state.velocity.y = 0.0f;
+                tryPos.y = state.position.y;
+            }
         }
 
         if (steppedDuringMove && stepUpHeight > 0.0f) {

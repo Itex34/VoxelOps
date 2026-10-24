@@ -4,31 +4,57 @@
 
 bool ClientNetwork::PopChunkData(ChunkData &out) {
     std::lock_guard<std::mutex> lk(m_inboundMutex);
-    if (m_chunkDataQueue.empty()) {
+    if (m_chunkStreamQueue.empty() ||
+        m_chunkStreamQueue.front().type != ChunkStreamEventType::Data) {
         return false;
     }
-    out = std::move(m_chunkDataQueue.front());
-    m_chunkDataQueue.pop_front();
+    out = std::move(m_chunkStreamQueue.front().chunkData);
+    DecrementChunkStreamEventDepth(m_chunkStreamQueue.front());
+    m_chunkStreamQueue.pop_front();
     return true;
 }
 
 bool ClientNetwork::PopChunkDelta(ChunkDelta &out) {
     std::lock_guard<std::mutex> lk(m_inboundMutex);
-    if (m_chunkDeltaQueue.empty()) {
+    if (m_chunkStreamQueue.empty() ||
+        m_chunkStreamQueue.front().type != ChunkStreamEventType::Delta) {
         return false;
     }
-    out = std::move(m_chunkDeltaQueue.front());
-    m_chunkDeltaQueue.pop_front();
+    out = std::move(m_chunkStreamQueue.front().chunkDelta);
+    DecrementChunkStreamEventDepth(m_chunkStreamQueue.front());
+    m_chunkStreamQueue.pop_front();
     return true;
 }
 
 bool ClientNetwork::PopChunkUnload(ChunkUnload &out) {
     std::lock_guard<std::mutex> lk(m_inboundMutex);
-    if (m_chunkUnloadQueue.empty()) {
+    if (m_chunkStreamQueue.empty() ||
+        m_chunkStreamQueue.front().type != ChunkStreamEventType::Unload) {
         return false;
     }
-    out = std::move(m_chunkUnloadQueue.front());
-    m_chunkUnloadQueue.pop_front();
+    out = std::move(m_chunkStreamQueue.front().chunkUnload);
+    DecrementChunkStreamEventDepth(m_chunkStreamQueue.front());
+    m_chunkStreamQueue.pop_front();
+    return true;
+}
+
+bool ClientNetwork::PeekChunkStreamEventType(ChunkStreamEventType &out) {
+    std::lock_guard<std::mutex> lk(m_inboundMutex);
+    if (m_chunkStreamQueue.empty()) {
+        return false;
+    }
+    out = m_chunkStreamQueue.front().type;
+    return true;
+}
+
+bool ClientNetwork::PopChunkStreamEvent(ChunkStreamEvent &out) {
+    std::lock_guard<std::mutex> lk(m_inboundMutex);
+    if (m_chunkStreamQueue.empty()) {
+        return false;
+    }
+    out = std::move(m_chunkStreamQueue.front());
+    DecrementChunkStreamEventDepth(m_chunkStreamQueue.front());
+    m_chunkStreamQueue.pop_front();
     return true;
 }
 
@@ -135,8 +161,8 @@ bool ClientNetwork::PopScoreboardSnapshot(ScoreboardSnapshot &out) {
 ClientNetwork::ChunkQueueDepths ClientNetwork::GetChunkQueueDepths() {
     std::lock_guard<std::mutex> lk(m_inboundMutex);
     ChunkQueueDepths depths;
-    depths.chunkData = m_chunkDataQueue.size();
-    depths.chunkDelta = m_chunkDeltaQueue.size();
-    depths.chunkUnload = m_chunkUnloadQueue.size();
+    depths.chunkData = m_chunkDataQueueDepth;
+    depths.chunkDelta = m_chunkDeltaQueueDepth;
+    depths.chunkUnload = m_chunkUnloadQueueDepth;
     return depths;
 }

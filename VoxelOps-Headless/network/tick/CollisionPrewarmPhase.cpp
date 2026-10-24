@@ -103,7 +103,7 @@ size_t CollisionPrewarmPhase::RunCollisionPrewarmPhase(
                     if (!m_chunkManager.inBounds(chunkPos)) {
                         continue;
                     }
-                    if (m_chunkManager.hasChunkLoaded(chunkPos)) {
+                    if (m_chunkManager.isChunkTerrainGenerated(chunkPos)) {
                         continue;
                     }
                     m_chunkManager.generateTerrainChunkAt(chunkPos);

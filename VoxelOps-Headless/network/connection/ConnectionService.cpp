@@ -1,5 +1,6 @@
 #include "ConnectionService.hpp"
 
+#include "../core/DiagnosticsFlags.hpp"
 #include "../protocol/Validation.hpp"
 
 #include <glm/ext/vector_int3.hpp>
@@ -22,7 +23,46 @@ namespace {
     constexpr uint32_t kMaxChunkRequestsPerWindow = 120u;
     constexpr auto kSoftInputRateLimitLogInterval = std::chrono::seconds(2);
     constexpr auto kChunkResyncRateWindow = std::chrono::seconds(1);
-    constexpr uint32_t kMaxChunkResyncRequestsPerWindow = 12u;
+    constexpr uint32_t kMaxChunkResyncRequestsPerWindow = 60u;
+
+    const char *ConnectionStateName(ESteamNetworkingConnectionState state) {
+        switch (state) {
+        case k_ESteamNetworkingConnectionState_None:
+            return "none";
+        case k_ESteamNetworkingConnectionState_Connecting:
+            return "connecting";
+        case k_ESteamNetworkingConnectionState_FindingRoute:
+            return "finding_route";
+        case k_ESteamNetworkingConnectionState_Connected:
+            return "connected";
+        case k_ESteamNetworkingConnectionState_ClosedByPeer:
+            return "closed_by_peer";
+        case k_ESteamNetworkingConnectionState_ProblemDetectedLocally:
+            return "problem_detected_locally";
+        default:
+            return "unknown";
+        }
+    }
+
+    bool ParseI32(std::string_view text, int32_t &out) {
+        if (text.empty()) {
+            return false;
+        }
+        const char *begin = text.data();
+        const char *end = text.data() + text.size();
+        const auto parseResult = std::from_chars(begin, end, out);
+        return parseResult.ec == std::errc{} && parseResult.ptr == end;
+    }
+
+    bool ParseU64(std::string_view text, uint64_t &out) {
+        if (text.empty()) {
+            return false;
+        }
+        const char *begin = text.data();
+        const char *end = text.data() + text.size();
+        const auto parseResult = std::from_chars(begin, end, out);
+        return parseResult.ec == std::errc{} && parseResult.ptr == end;
+    }
 
 } // namespace
 
@@ -154,10 +194,10 @@ void ConnectionService::EnsureSpawnCollisionChunksPrepared(const glm::vec3 &spaw
                 const glm::ivec3 chunkPos(
                     centerChunk.x + dx, centerChunk.y + dy, centerChunk.z + dz
                 );
-                if (!m_chunkManager.inBounds(chunkPos) || m_chunkManager.hasChunkLoaded(chunkPos)) {
+                if (!m_chunkManager.inBounds(chunkPos)) {
                     continue;
                 }
-                m_chunkManager.generateTerrainChunkAt(chunkPos);
+                (void)m_chunkManager.loadOrGenerateChunk(chunkPos);
             }
         }
     }
@@ -242,8 +282,7 @@ void ConnectionService::HandleConnectRequest(
     m_sessionState.WithLock([&](ClientSessionManager &sessions) {
         auto it = sessions.find(incoming);
         if (it == sessions.end()) {
-            registrationRejected = true;
-            return;
+            it = sessions.AddConnection(incoming).first;
         }
         if (it->second.playerId != 0 && !it->second.username.empty()) {
             queueDeferredResponse(
@@ -445,6 +484,149 @@ void ConnectionService::HandleMessagePacket(
             return;
         }
 
+        constexpr std::string_view kChunkHaveBatchPrefix = "CHUNK_HAVE_BATCH|";
+        if (msg.size() > kChunkHaveBatchPrefix.size() &&
+            msg.compare(
+                0,
+                kChunkHaveBatchPrefix.size(),
+                kChunkHaveBatchPrefix.data(),
+                kChunkHaveBatchPrefix.size()
+            ) == 0) {
+            const std::string_view payload(
+                msg.data() + kChunkHaveBatchPrefix.size(),
+                msg.size() - kChunkHaveBatchPrefix.size()
+            );
+
+            std::vector<ChunkCoord> receipts;
+            size_t entryStart = 0;
+            while (entryStart < payload.size()) {
+                const size_t entryEnd = payload.find(';', entryStart);
+                const std::string_view entry =
+                    payload.substr(
+                        entryStart,
+                        (entryEnd == std::string_view::npos) ? std::string_view::npos
+                                                              : entryEnd - entryStart
+                    );
+                const size_t firstComma = entry.find(',');
+                const size_t secondComma = (firstComma == std::string_view::npos)
+                                               ? std::string_view::npos
+                                               : entry.find(',', firstComma + 1);
+                if (firstComma != std::string_view::npos &&
+                    secondComma != std::string_view::npos) {
+                    int32_t cx = 0;
+                    int32_t cy = 0;
+                    int32_t cz = 0;
+                    if (ParseI32(entry.substr(0, firstComma), cx) &&
+                        ParseI32(entry.substr(firstComma + 1, secondComma - firstComma - 1), cy) &&
+                        ParseI32(entry.substr(secondComma + 1), cz) &&
+                        m_chunkManager.inBounds(glm::ivec3(cx, cy, cz))) {
+                        receipts.push_back(ChunkCoord{cx, cy, cz});
+                    }
+                }
+
+                if (entryEnd == std::string_view::npos) {
+                    break;
+                }
+                entryStart = entryEnd + 1;
+            }
+
+            if (receipts.empty()) {
+                return;
+            }
+
+            std::vector<ChunkCoord> acceptedReceipts;
+            acceptedReceipts.reserve(receipts.size());
+            m_sessionState.WithLock([&](ClientSessionManager &sessions) {
+                auto it = sessions.find(incoming);
+                if (it == sessions.end() || it->second.playerId == 0 ||
+                    it->second.username.empty()) {
+                    return;
+                }
+
+                auto &session = it->second;
+                for (const ChunkCoord &coord : receipts) {
+                    const auto pendingIt = session.pendingChunkData.find(coord);
+                    if (pendingIt == session.pendingChunkData.end()) {
+                        continue;
+                    }
+
+                    session.pendingChunkData.erase(pendingIt);
+                    session.streamedChunks.insert(coord);
+                    acceptedReceipts.push_back(coord);
+                }
+            });
+
+            if (m_hooks.clearChunkPipelineForConnection) {
+                for (const ChunkCoord &coord : acceptedReceipts) {
+                    m_hooks.clearChunkPipelineForConnection(incoming, coord);
+                }
+            }
+            return;
+        }
+
+        constexpr std::string_view kChunkHavePrefix = "CHUNK_HAVE|";
+        if (msg.size() > kChunkHavePrefix.size() &&
+            msg.compare(
+                0, kChunkHavePrefix.size(), kChunkHavePrefix.data(), kChunkHavePrefix.size()
+            ) == 0) {
+            const std::string_view payload(
+                msg.data() + kChunkHavePrefix.size(), msg.size() - kChunkHavePrefix.size()
+            );
+            const size_t firstSep = payload.find('|');
+            const size_t secondSep = (firstSep == std::string_view::npos)
+                                         ? std::string_view::npos
+                                         : payload.find('|', firstSep + 1);
+            const size_t thirdSep = (secondSep == std::string_view::npos)
+                                        ? std::string_view::npos
+                                        : payload.find('|', secondSep + 1);
+            if (firstSep == std::string_view::npos || secondSep == std::string_view::npos ||
+                thirdSep == std::string_view::npos) {
+                return;
+            }
+
+            int32_t cx = 0;
+            int32_t cy = 0;
+            int32_t cz = 0;
+            uint64_t version = 0;
+            if (!ParseI32(payload.substr(0, firstSep), cx) ||
+                !ParseI32(payload.substr(firstSep + 1, secondSep - firstSep - 1), cy) ||
+                !ParseI32(payload.substr(secondSep + 1, thirdSep - secondSep - 1), cz) ||
+                !ParseU64(payload.substr(thirdSep + 1), version)) {
+                return;
+            }
+            (void)version;
+
+            const glm::ivec3 chunkPos(cx, cy, cz);
+            if (!m_chunkManager.inBounds(chunkPos)) {
+                return;
+            }
+
+            const ChunkCoord coord{cx, cy, cz};
+            bool acceptedReceipt = false;
+            m_sessionState.WithLock([&](ClientSessionManager &sessions) {
+                auto it = sessions.find(incoming);
+                if (it == sessions.end() || it->second.playerId == 0 ||
+                    it->second.username.empty()) {
+                    return;
+                }
+
+                auto &session = it->second;
+                const auto pendingIt = session.pendingChunkData.find(coord);
+                if (pendingIt == session.pendingChunkData.end()) {
+                    return;
+                }
+
+                session.pendingChunkData.erase(pendingIt);
+                session.streamedChunks.insert(coord);
+                acceptedReceipt = true;
+            });
+
+            if (acceptedReceipt && m_hooks.clearChunkPipelineForConnection) {
+                m_hooks.clearChunkPipelineForConnection(incoming, coord);
+            }
+            return;
+        }
+
         constexpr std::string_view kChunkResyncPrefix = "CHUNK_RESYNC|";
         if (msg.size() > kChunkResyncPrefix.size() &&
             msg.compare(
@@ -465,20 +647,10 @@ void ConnectionService::HandleMessagePacket(
             const std::string_view sy = payload.substr(firstSep + 1, secondSep - firstSep - 1);
             const std::string_view sz = payload.substr(secondSep + 1);
 
-            auto parseI32 = [](std::string_view text, int32_t &out) -> bool {
-                if (text.empty()) {
-                    return false;
-                }
-                const char *begin = text.data();
-                const char *end = text.data() + text.size();
-                const auto parseResult = std::from_chars(begin, end, out);
-                return parseResult.ec == std::errc{} && parseResult.ptr == end;
-            };
-
             int32_t cx = 0;
             int32_t cy = 0;
             int32_t cz = 0;
-            if (!parseI32(sx, cx) || !parseI32(sy, cy) || !parseI32(sz, cz)) {
+            if (!ParseI32(sx, cx) || !ParseI32(sy, cy) || !ParseI32(sz, cz)) {
                 return;
             }
 
@@ -532,7 +704,7 @@ void ConnectionService::HandleMessagePacket(
 
                 ++session.chunkResyncRequestsInWindow;
                 session.streamedChunks.erase(coord);
-                session.pendingChunkData[coord] = nowSteady - std::chrono::milliseconds(600);
+                session.pendingChunkData[coord] = nowSteady;
                 session.chunkInterestDirty = true;
                 session.nextChunkInterestUpdateAt = std::chrono::steady_clock::time_point::min();
                 allowResync = true;
@@ -553,6 +725,14 @@ void ConnectionService::HandleMessagePacket(
                 return;
             }
 
+            if (DiagnosticsFlags::g_enableChunkDiagnostics.load(std::memory_order_acquire)) {
+                std::cerr << "[chunk/resync] accepted conn=" << incoming << " chunk=(" << cx << ","
+                          << cy << "," << cz << ")\n";
+            }
+
+            if (m_hooks.clearChunkPipelineForConnection) {
+                m_hooks.clearChunkPipelineForConnection(incoming, coord);
+            }
             if (m_hooks.queueChunkPreparation) {
                 (void)m_hooks.queueChunkPreparation(incoming, coord);
             }
@@ -609,9 +789,14 @@ void ConnectionService::OnConnectionStatusChanged(
         m_sessionState.WithLock([&](ClientSessionManager &sessions) {
             (void)sessions.RemoveConnection(hConn, &session);
         });
-        m_hooks.teardownClientSession(hConn, session, "closed by server callback", true);
-        std::cout << "[callback] conn closed/failed: conn=" << hConn << " reason=" << info.m_eState
-                  << "\n";
+        m_hooks.teardownClientSession(hConn, session, "connection closed", true);
+        std::cout << "[callback] conn closed/failed: conn=" << hConn
+                  << " state=" << ConnectionStateName(info.m_eState)
+                  << " endReason=" << info.m_eEndReason;
+        if (info.m_szEndDebug[0] != '\0') {
+            std::cout << " debug=\"" << info.m_szEndDebug << "\"";
+        }
+        std::cout << "\n";
         return;
     }
 }

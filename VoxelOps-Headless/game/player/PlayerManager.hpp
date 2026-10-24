@@ -1,5 +1,6 @@
 #pragma once
 #include "ServerPlayer.hpp"
+#include "ServerMovementSimulation.hpp"
 #include "../../network/snapshots/ReplicationPlayerState.hpp"
 #include <unordered_map>
 #include <list>
@@ -29,6 +30,7 @@ public:
     // Called by network code when a heartbeat or data arrives to update lastHeartbeat
     bool touchHeartbeat(PlayerID id);
     bool enqueuePlayerInput(PlayerID id, const PlayerInput &input);
+    bool enqueuePlayerInputAndSetEquippedWeapon(PlayerID id, const PlayerInput &input);
     bool setFlyModeAllowed(PlayerID id, bool allowed);
     bool setEquippedWeapon(PlayerID id, uint16_t weaponId);
     bool tryFireGrapple(
@@ -88,12 +90,23 @@ public:
     );
 
 private:
+    struct SimTask {
+        PlayerID id = 0;
+        ServerMovementSimulation::PlayerPhysicsState workingPlayer{};
+        uint64_t baseMovementRevision = 0;
+        bool hasPreparedInput = false;
+        PlayerInput preparedInput{};
+        uint32_t preparedInputTick = 0;
+    };
+
     PlayerID addPlayerInternal();
 
     void sendBytes(const std::shared_ptr<ConnectionHandle> &conn, const std::vector<uint8_t> &buf);
 
     std::unordered_map<PlayerID, ServerPlayer> playersById;
     std::list<PlayerID> playersOrder; // insertion order / iteration order
+    std::vector<SimTask> m_simTasks;
+    std::vector<PlayerID> m_timedOutPlayerIds;
 
     std::mutex mtx;
     std::atomic<PlayerID> nextId{1};

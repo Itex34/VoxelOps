@@ -116,7 +116,7 @@ private:
     std::vector<UICommand> m_commands;
 
     uint64_t m_hotId = 0;
-    uint64_t m_activeId = 0;
+    uint64_t m_activeId = 0; 
     uint64_t m_focusedId = 0;
     std::size_t m_textCursor = 0;
     float m_timeSeconds = 0.0f;

@@ -470,9 +470,15 @@ void ClientSession::update(
     }
 
     if (!runtime.network.clientNet.IsConnected()) {
-        m_disconnectReset.apply(runtime, ctx.forceCursorEnabled);
+        if (m_wasConnected ||
+            runtime.network.clientNet.GetConnectionState() ==
+                ClientNetwork::ConnectionState::Disconnected) {
+            m_disconnectReset.apply(runtime, ctx.forceCursorEnabled);
+            m_wasConnected = false;
+        }
         return;
     }
+    m_wasConnected = true;
 
     if (runtime.world.rbDiagActive && now >= runtime.world.rbDiagNextHeartbeatAt) {
         runtime.world.rbDiagNextHeartbeatAt = now + 1.0;
@@ -533,6 +539,8 @@ void ClientSession::update(
         runtime.world.lastChunkRequestSendTime = now;
         runtime.world.lastChunkRequestCenter = centerChunk;
         runtime.world.hasLastChunkRequestCenter = true;
+        runtime.world.chunkCoverageMissingIdleAudits = 0;
+        runtime.world.chunkCoverageMissingScanOffset = 0;
         (void)runtime.network.clientNet.SendChunkRequest(centerChunk, viewDistance);
     } else if (
         now - runtime.world.lastChunkRequestSendTime >= RuntimeWorldState::ChunkRequestSendInterval

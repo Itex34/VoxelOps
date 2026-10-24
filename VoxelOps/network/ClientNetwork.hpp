@@ -11,7 +11,6 @@
 #include <atomic>
 #include <deque>
 #include <mutex>
-#include <unordered_map>
 #include <glm/vec3.hpp>
 
 #include <GameNetworkingSockets/steam/steamnetworkingsockets.h>
@@ -30,6 +29,15 @@ public:
         size_t chunkData = 0;
         size_t chunkDelta = 0;
         size_t chunkUnload = 0;
+    };
+
+    enum class ChunkStreamEventType : uint8_t { Data = 0, Delta = 1, Unload = 2 };
+
+    struct ChunkStreamEvent {
+        ChunkStreamEventType type = ChunkStreamEventType::Data;
+        ChunkData chunkData;
+        ChunkDelta chunkDelta;
+        ChunkUnload chunkUnload;
     };
 
     struct KillFeedEvent {
@@ -71,6 +79,8 @@ public:
     // Send movement input for server-authoritative simulation.
     bool SendPlayerInput(const PlayerInput &input);
     bool SendRespawnRequest();
+    bool SendChunkHave(const glm::ivec3 &chunkPos, uint64_t version);
+    bool SendChunkHaveBatch(const std::vector<glm::ivec3> &chunkPositions);
     bool SendChunkResyncRequest(const glm::ivec3 &chunkPos);
     bool SendInventoryActionRequest(const InventoryActionRequest &request);
     bool SendBlockPlaceRequest(const BlockPlaceRequest &request);
@@ -113,6 +123,8 @@ public:
     bool PopChunkData(ChunkData &out);
     bool PopChunkDelta(ChunkDelta &out);
     bool PopChunkUnload(ChunkUnload &out);
+    bool PeekChunkStreamEventType(ChunkStreamEventType &out);
+    bool PopChunkStreamEvent(ChunkStreamEvent &out);
     bool PopPlayerSnapshot(PlayerSnapshotFrame &out);
     bool PopShootResult(ShootResult &out);
     bool PopGrappleResult(GrappleResult &out);
@@ -126,26 +138,6 @@ public:
     ChunkQueueDepths GetChunkQueueDepths();
 
 private:
-    struct ChunkCoordKey {
-        int32_t x = 0;
-        int32_t y = 0;
-        int32_t z = 0;
-
-        bool operator==(const ChunkCoordKey &other) const noexcept {
-            return x == other.x && y == other.y && z == other.z;
-        }
-    };
-
-    struct ChunkCoordKeyHash {
-        size_t operator()(const ChunkCoordKey &key) const noexcept {
-            const uint64_t ux = static_cast<uint32_t>(key.x);
-            const uint64_t uy = static_cast<uint32_t>(key.y);
-            const uint64_t uz = static_cast<uint32_t>(key.z);
-            const uint64_t h = (ux * 73856093u) ^ (uy * 19349663u) ^ (uz * 83492791u);
-            return static_cast<size_t>(h);
-        }
-    };
-
     HSteamNetConnection m_conn = k_HSteamNetConnection_Invalid;
     std::atomic<bool> m_started{false};
     // helper serialization
@@ -155,8 +147,9 @@ private:
     // handle messages received from server
     void OnMessage(const uint8_t *data, uint32_t size);
     bool EnsureClientIdentity();
-    bool ShouldSendChunkResyncForOverflow(const glm::ivec3 &chunkPos);
-    void PruneChunkResyncOverflowState();
+    void ClearInboundQueues();
+    void DecrementChunkStreamEventDepth(const ChunkStreamEvent &event) noexcept;
+    void EnqueueChunkStreamEvent(ChunkStreamEvent event);
     void SetConnectionStatus(ConnectionState state, std::string text, bool allowReconnect = true);
 
     // small internal: store last connect response state
@@ -169,15 +162,12 @@ private:
     bool m_useTransientIdentity = false;
     bool m_hasEverConnectedSuccessfully = false;
     bool m_retryWithAutoAssignedUsername = false;
-    std::chrono::steady_clock::time_point m_nextOverflowChunkResyncAt =
-        std::chrono::steady_clock::time_point::min();
-    std::unordered_map<ChunkCoordKey, std::chrono::steady_clock::time_point, ChunkCoordKeyHash>
-        m_chunkResyncOverflowCooldownUntil;
 
     std::mutex m_inboundMutex;
-    std::deque<ChunkData> m_chunkDataQueue;
-    std::deque<ChunkDelta> m_chunkDeltaQueue;
-    std::deque<ChunkUnload> m_chunkUnloadQueue;
+    std::deque<ChunkStreamEvent> m_chunkStreamQueue;
+    size_t m_chunkDataQueueDepth = 0;
+    size_t m_chunkDeltaQueueDepth = 0;
+    size_t m_chunkUnloadQueueDepth = 0;
     std::deque<PlayerSnapshotFrame> m_playerSnapshotQueue;
     std::deque<ShootResult> m_shootResultQueue;
     std::deque<GrappleResult> m_grappleResultQueue;

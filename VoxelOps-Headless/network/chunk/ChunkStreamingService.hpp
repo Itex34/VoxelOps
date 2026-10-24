@@ -49,18 +49,22 @@ public:
         HSteamNetConnection conn, const ChunkPipelineState::ChunkInterestBounds &desired
     );
     size_t GetChunkSendQueueDepthForClient(HSteamNetConnection conn);
+    void ClearChunkPipelineForConnection(HSteamNetConnection conn, const ChunkCoord &coord);
     void ClearChunkPipelineForConnection(HSteamNetConnection conn);
 
-    bool SendChunkData(HSteamNetConnection conn, const ChunkCoord &coord);
     bool SendChunkUnload(HSteamNetConnection conn, const ChunkCoord &coord);
     void UpdateChunkStreamingForClient(
         HSteamNetConnection conn, const glm::ivec3 &centerChunk, uint16_t viewDistance
     );
 
 private:
+    enum class ChunkSendResult { Sent, MissingChunk, SendFailed };
+
     void ChunkPrepWorkerLoop();
     bool IsConnectionSendable(HSteamNetConnection conn) const;
+    bool CanSendChunkDataNow(HSteamNetConnection conn) const;
     void ClearClientChunkState(HSteamNetConnection conn);
+    ChunkSendResult SendChunkData(HSteamNetConnection conn, const ChunkCoord &coord);
     ChunkPipelineState::QueuePrepBatchResult QueueChunkPreparations(
         HSteamNetConnection conn,
         const std::vector<ChunkCoord> &coords,
@@ -72,13 +76,7 @@ private:
     ClientSessionManager &m_sessions;
     ChunkManager &m_chunkManager;
     ChunkPipelineState &m_pipelineState;
-
-    struct CachedChunkPacket {
-        uint64_t version = 0;
-        std::vector<uint8_t> bytes;
-    };
-    std::unordered_map<ChunkCoord, CachedChunkPacket, ChunkCoordHash> m_chunkPacketCache;
-
+     
     mutable std::mutex m_chunkPrepareMutex;
     std::condition_variable m_chunkPrepareCv;
     std::unordered_set<ChunkCoord, ChunkCoordHash> m_chunksBeingPrepared;
@@ -89,5 +87,5 @@ private:
     std::vector<std::thread> m_chunkPrepThreads;
 
     static constexpr size_t kMaxChunkPrepQueue = 8192;
-    static constexpr size_t kMaxChunkSendQueuePerClient = 768;
+    static constexpr size_t kMaxChunkSendQueuePerClient = 1024;
 };

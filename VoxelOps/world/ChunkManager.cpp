@@ -42,6 +42,7 @@ namespace {
 } // namespace
 
 constexpr bool kEnableMissingChunkUnloadLogs = false;
+constexpr bool kTraceChunkLifecycle = false;
 
 ChunkManager::ChunkManager() {
     m_chunkMesher = std::make_unique<ChunkMesher>(*this);
@@ -89,7 +90,6 @@ bool ChunkManager::applyNetworkChunkData(const ChunkData &packet) {
         return false;
     }
 
-    const uint32_t payloadHash = fnv1a32(packet.payload.data(), packet.payload.size());
     const size_t rawBlockBytes = CHUNK_VOLUME * sizeof(BlockID);
     if (decodedPayload.size() != rawBlockBytes) {
         std::cerr << "[chunk/apply] invalid ChunkData payload size=" << decodedPayload.size()
@@ -98,23 +98,57 @@ bool ChunkManager::applyNetworkChunkData(const ChunkData &packet) {
         return false;
     }
 
+    const uint32_t rawContentHash = fnv1a32(decodedPayload.data(), decodedPayload.size());
     const uint8_t *raw = decodedPayload.data();
     glm::ivec3 chunkPos(packet.chunkX, packet.chunkY, packet.chunkZ);
     const uint64_t incomingVersion = packet.version;
+    const bool hadChunkBeforeApply = chunkMap.find(chunkPos) != chunkMap.end();
+
+    if (kTraceChunkLifecycle) {
+        std::cerr << "[chunk/apply] data begin chunk=(" << chunkPos.x << "," << chunkPos.y << ","
+                  << chunkPos.z << ") version=" << incomingVersion
+                  << " hadChunk=" << (hadChunkBeforeApply ? 1 : 0)
+                  << " payloadHash=" << rawContentHash << "\n";
+    }
 
     auto knownVersionIt = m_networkChunkVersions.find(chunkPos);
-    if (knownVersionIt != m_networkChunkVersions.end() &&
-        incomingVersion <= knownVersionIt->second) {
-        static uint64_t staleChunkDataCount = 0;
-        ++staleChunkDataCount;
-        if (staleChunkDataCount <= 20 || (staleChunkDataCount % 100) == 0) {
-            std::cerr << "[chunk/apply] stale ChunkData ignored chunk=(" << chunkPos.x << ","
-                      << chunkPos.y << "," << chunkPos.z << ")"
-                      << " incomingVersion=" << incomingVersion
-                      << " knownVersion=" << knownVersionIt->second
-                      << " count=" << staleChunkDataCount << "\n";
+    auto existingChunkIt = chunkMap.find(chunkPos);
+    const bool chunkLoaded = existingChunkIt != chunkMap.end();
+    if (knownVersionIt != m_networkChunkVersions.end() && chunkLoaded) {
+        bool samePayload = true;
+        Chunk &existingChunk = existingChunkIt->second;
+        for (int z = 0; samePayload && z < CHUNK_SIZE; ++z) {
+            for (int y = 0; samePayload && y < CHUNK_SIZE; ++y) {
+                for (int x = 0; x < CHUNK_SIZE; ++x) {
+                    const size_t i = static_cast<size_t>(x + CHUNK_SIZE * (y + CHUNK_SIZE * z));
+                    if (existingChunk.getBlock(x, y, z) != static_cast<BlockID>(raw[i])) {
+                        samePayload = false;
+                        break;
+                    }
+                }
+            }
         }
-        return true;
+
+        if (samePayload) {
+            const auto &cpuMeshes = m_chunkMesher->getCpuChunkMeshes();
+            const bool hasMesh = cpuMeshes.find(chunkPos) != cpuMeshes.end();
+            if (!existingChunkIt->second.isCompletelyAir() && !hasMesh) {
+                markChunkDirtyHighPriority(chunkPos);
+                if (kTraceChunkLifecycle) {
+                    std::cerr << "[chunk/apply] data same-payload remesh chunk=(" << chunkPos.x
+                              << "," << chunkPos.y << "," << chunkPos.z << ") version="
+                              << incomingVersion << "\n";
+                }
+                return true;
+            }
+
+            if (kTraceChunkLifecycle) {
+                std::cerr << "[chunk/apply] data same-payload ok chunk=(" << chunkPos.x << ","
+                          << chunkPos.y << "," << chunkPos.z << ") version=" << incomingVersion
+                          << "\n";
+            }
+            return true;
+        }
     }
 
     m_chunkMesher->onChunkRemoved(chunkPos);
@@ -124,6 +158,8 @@ bool ChunkManager::applyNetworkChunkData(const ChunkData &packet) {
 
     Chunk &chunk = chunkIt->second;
     size_t nonAirCount = 0;
+    int minNonAirLocalY = CHUNK_SIZE;
+    int maxNonAirLocalY = -1;
     for (int z = 0; z < CHUNK_SIZE; ++z) {
         for (int y = 0; y < CHUNK_SIZE; ++y) {
             for (int x = 0; x < CHUNK_SIZE; ++x) {
@@ -132,6 +168,8 @@ bool ChunkManager::applyNetworkChunkData(const ChunkData &packet) {
                 if (id != BlockID::Air) {
                     chunk.setBlock(x, y, z, id);
                     ++nonAirCount;
+                    minNonAirLocalY = std::min(minNonAirLocalY, y);
+                    maxNonAirLocalY = std::max(maxNonAirLocalY, y);
                 }
             }
         }
@@ -141,7 +179,7 @@ bool ChunkManager::applyNetworkChunkData(const ChunkData &packet) {
     if (chunkPos.y == minChunkY && nonAirCount < static_cast<size_t>(CHUNK_SIZE * CHUNK_SIZE)) {
         std::cerr << "[chunk/apply] suspicious low nonAir in bottom chunk chunk=(" << chunkPos.x
                   << "," << chunkPos.y << "," << chunkPos.z << ")"
-                  << " nonAir=" << nonAirCount << " payloadHash=" << payloadHash
+                  << " nonAir=" << nonAirCount << " rawContentHash=" << rawContentHash
                   << " payloadBytes=" << decodedPayload.size() << "\n";
     }
 
@@ -158,6 +196,23 @@ bool ChunkManager::applyNetworkChunkData(const ChunkData &packet) {
     }
 
     m_networkChunkVersions[chunkPos] = incomingVersion;
+    NetworkChunkDebugSummary summary{};
+    summary.version = incomingVersion;
+    summary.rawContentHash = rawContentHash;
+    summary.nonAirCount = static_cast<uint16_t>(std::min<size_t>(nonAirCount, UINT16_MAX));
+    if (nonAirCount > 0) {
+        summary.minNonAirWorldY = chunkPos.y * CHUNK_SIZE + minNonAirLocalY;
+        summary.maxNonAirWorldY = chunkPos.y * CHUNK_SIZE + maxNonAirLocalY;
+    } else {
+        summary.minNonAirWorldY = chunkPos.y * CHUNK_SIZE;
+        summary.maxNonAirWorldY = chunkPos.y * CHUNK_SIZE - 1;
+    }
+    m_networkChunkDebugSummaries[chunkPos] = summary;
+    if (kTraceChunkLifecycle) {
+        std::cerr << "[chunk/apply] data inserted chunk=(" << chunkPos.x << "," << chunkPos.y
+                  << "," << chunkPos.z << ") version=" << incomingVersion
+                  << " nonAir=" << nonAirCount << " chunkMapSize=" << chunkMap.size() << "\n";
+    }
     return true;
 }
 
@@ -165,47 +220,18 @@ NetworkChunkDeltaApplyResult ChunkManager::applyNetworkChunkDelta(const ChunkDel
     const glm::ivec3 chunkPos(packet.chunkX, packet.chunkY, packet.chunkZ);
     auto it = chunkMap.find(chunkPos);
     if (it == chunkMap.end()) {
-        static uint64_t missingChunkDeltaCount = 0;
-        ++missingChunkDeltaCount;
-        if (missingChunkDeltaCount <= 20 || (missingChunkDeltaCount % 100) == 0) {
-            std::cerr << "[chunk/delta] received delta for missing chunk=(" << packet.chunkX << ","
-                      << packet.chunkY << "," << packet.chunkZ << ") edits=" << packet.edits.size()
-                      << " count=" << missingChunkDeltaCount << "\n";
-        }
         return NetworkChunkDeltaApplyResult::MissingBaseChunk;
     }
 
     const auto versionIt = m_networkChunkVersions.find(chunkPos);
     if (versionIt == m_networkChunkVersions.end()) {
-        std::cerr << "[chunk/delta] missing base version for chunk=(" << packet.chunkX << ","
-                  << packet.chunkY << "," << packet.chunkZ
-                  << ") resultingVersion=" << packet.resultingVersion << "\n";
         return NetworkChunkDeltaApplyResult::MissingBaseChunk;
     }
 
     const uint64_t knownVersion = versionIt->second;
     const uint64_t incomingVersion = packet.resultingVersion;
     if (incomingVersion <= knownVersion) {
-        static uint64_t staleChunkDeltaCount = 0;
-        ++staleChunkDeltaCount;
-        if (staleChunkDeltaCount <= 20 || (staleChunkDeltaCount % 100) == 0) {
-            std::cerr << "[chunk/delta] stale delta ignored chunk=(" << packet.chunkX << ","
-                      << packet.chunkY << "," << packet.chunkZ << ") knownVersion=" << knownVersion
-                      << " incomingVersion=" << incomingVersion << " count=" << staleChunkDeltaCount
-                      << "\n";
-        }
         return NetworkChunkDeltaApplyResult::StaleVersion;
-    }
-
-    constexpr uint64_t kNoopVersionSlack = 64;
-    const uint64_t maxExpectedVersion =
-        knownVersion + static_cast<uint64_t>(packet.edits.size()) + kNoopVersionSlack;
-    if (!packet.edits.empty() && incomingVersion > maxExpectedVersion) {
-        std::cerr << "[chunk/delta] version gap detected chunk=(" << packet.chunkX << ","
-                  << packet.chunkY << "," << packet.chunkZ << ") knownVersion=" << knownVersion
-                  << " incomingVersion=" << incomingVersion << " edits=" << packet.edits.size()
-                  << "\n";
-        return NetworkChunkDeltaApplyResult::VersionGap;
     }
 
     Chunk &chunk = it->second;
@@ -254,11 +280,26 @@ NetworkChunkDeltaApplyResult ChunkManager::applyNetworkChunkDelta(const ChunkDel
     return NetworkChunkDeltaApplyResult::Applied;
 }
 
+void ChunkManager::clearNetworkChunks() {
+    for (const auto &[chunkPos, _] : chunkMap) {
+        m_chunkMesher->onChunkRemoved(chunkPos);
+    }
+    chunkMap.clear();
+    m_networkChunkVersions.clear();
+    m_networkChunkDebugSummaries.clear();
+}
+
 void ChunkManager::applyNetworkChunkUnload(const ChunkUnload &packet) {
     const glm::ivec3 chunkPos(packet.chunkX, packet.chunkY, packet.chunkZ);
     auto it = chunkMap.find(chunkPos);
+    if (kTraceChunkLifecycle) {
+        std::cerr << "[chunk/apply] unload chunk=(" << chunkPos.x << "," << chunkPos.y << ","
+                  << chunkPos.z << ") existed=" << (it != chunkMap.end() ? 1 : 0)
+                  << " chunkMapSizeBefore=" << chunkMap.size() << "\n";
+    }
     if (it == chunkMap.end()) {
         m_networkChunkVersions.erase(chunkPos);
+        m_networkChunkDebugSummaries.erase(chunkPos);
         m_chunkMesher->onChunkRemoved(chunkPos);
         if (kEnableMissingChunkUnloadLogs) {
             static uint64_t missingChunkUnloadCount = 0;
@@ -274,7 +315,13 @@ void ChunkManager::applyNetworkChunkUnload(const ChunkUnload &packet) {
 
     chunkMap.erase(it);
     m_networkChunkVersions.erase(chunkPos);
+    m_networkChunkDebugSummaries.erase(chunkPos);
     m_chunkMesher->onChunkRemoved(chunkPos);
+
+    if (kTraceChunkLifecycle) {
+        std::cerr << "[chunk/apply] unload removed chunk=(" << chunkPos.x << "," << chunkPos.y
+                  << "," << chunkPos.z << ") chunkMapSizeAfter=" << chunkMap.size() << "\n";
+    }
 
     static const glm::ivec3 dirs[6] = {
         {1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}
@@ -328,6 +375,15 @@ glm::ivec3 ChunkManager::worldToChunkPos(const glm::ivec3 &worldPos) const {
 
 bool ChunkManager::hasChunkLoaded(const glm::ivec3 &chunkPos) const {
     return chunkMap.find(chunkPos) != chunkMap.end();
+}
+
+std::optional<NetworkChunkDebugSummary>
+ChunkManager::getNetworkChunkDebugSummary(const glm::ivec3 &chunkPos) const {
+    const auto it = m_networkChunkDebugSummaries.find(chunkPos);
+    if (it == m_networkChunkDebugSummaries.end()) {
+        return std::nullopt;
+    }
+    return it->second;
 }
 
 glm::ivec3 ChunkManager::worldToLocalPos(const glm::ivec3 &worldPos) const {

@@ -18,7 +18,7 @@ constexpr uint8_t kPlayerInputFlagSprint = 1u << 5;
 constexpr uint8_t kPlayerInputFlagFlyUp = 1u << 6;
 constexpr uint8_t kPlayerInputFlagFlyDown = 1u << 7;
 
-constexpr uint16_t kVoxelOpsProtocolVersion = 11;
+constexpr uint16_t kVoxelOpsProtocolVersion = 12;
 constexpr size_t kMaxConnectIdentityChars = 64;
 constexpr size_t kMaxConnectUsernameChars = 32;
 constexpr size_t kMaxConnectMessageChars = 120;

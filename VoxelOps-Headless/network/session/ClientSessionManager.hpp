@@ -64,8 +64,8 @@ public:
         std::chrono::steady_clock::time_point chunkResyncRateWindowStart =
             std::chrono::steady_clock::time_point::min();
         uint32_t chunkResyncRequestsInWindow = 0;
-        std::chrono::steady_clock::time_point lastAcceptedShootTime =
-            std::chrono::steady_clock::time_point::min();
+        uint32_t lastAcceptedShootTick = 0;
+        bool hasLastAcceptedShootTick = false;
         uint32_t lastShootClientShotId = 0;
         bool hasLastShootClientShotId = false;
     };

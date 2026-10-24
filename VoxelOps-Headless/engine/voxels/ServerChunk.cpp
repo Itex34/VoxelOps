@@ -200,6 +200,15 @@ void ServerChunk::fillRawVoxelBytes(uint8_t *outBuf, size_t bufSize) const {
     std::memcpy(outBuf, m_blocks.data(), need);
 }
 
+int64_t ServerChunk::fillRawVoxelBytesAndVersion(uint8_t *outBuf, size_t bufSize) const {
+    const size_t need = CHUNK_VOLUME * sizeof(BlockID);
+    if (bufSize < need)
+        return m_version.load(std::memory_order_acquire);
+    std::shared_lock<std::shared_mutex> lk(m_mutex);
+    std::memcpy(outBuf, m_blocks.data(), need);
+    return m_version.load(std::memory_order_acquire);
+}
+
 void ServerChunk::loadRawVoxelBytes(const uint8_t *data, size_t bufSize) {
     const size_t need = CHUNK_VOLUME * sizeof(BlockID);
     if (bufSize < need)

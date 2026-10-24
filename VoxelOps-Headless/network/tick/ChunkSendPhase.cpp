@@ -11,10 +11,10 @@ size_t ChunkSendPhase::RunChunkSendPhase(
     std::chrono::steady_clock::time_point &nextChunkSendFlushAt,
     double &chunkSendUs
 ) {
-    constexpr size_t kChunkSendGlobalBudgetPerFlush = 128;
+    constexpr size_t kChunkSendGlobalBudgetPerFlush = 96;
     constexpr size_t kChunkSendPerClientBudgetPerFlush = 16;
     constexpr size_t kBacklogChunkSendGlobalBudgetPerFlush = 48;
-    constexpr size_t kBacklogChunkSendPerClientBudgetPerFlush = 6;
+    constexpr size_t kBacklogChunkSendPerClientBudgetPerFlush = 8;
     const auto kChunkSendFlushInterval = std::chrono::milliseconds(16);
 
     chunkSendUs = 0.0;

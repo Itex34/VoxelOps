@@ -33,4 +33,5 @@ private:
 
     std::array<bool, kHotbarSlots> m_wasHotbarSelectPressed{};
     ClientDisconnectReset m_disconnectReset;
+    bool m_wasConnected = false;
 };

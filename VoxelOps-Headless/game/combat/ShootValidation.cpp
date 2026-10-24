@@ -4,6 +4,7 @@
 #include "../../engine/world/WorldRaycast.hpp"
 #include "LagCompensation.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace ShootValidation {
@@ -19,7 +20,13 @@ namespace ShootValidation {
     }
 
     ShootGateResult
-    RunShootGate(ShootGateState &state, const ShootRequest &request, float minShotIntervalSeconds) {
+    RunShootGate(
+        ShootGateState &state,
+        const ShootRequest &request,
+        float minShotIntervalSeconds,
+        uint32_t shotServerTick,
+        uint32_t serverTickRateHz
+    ) {
         ShootGateResult gate{};
         if (state.hasLastShootClientShotId &&
             !LagCompensation::IsNewerU32(request.clientShotId, state.lastShootClientShotId)) {
@@ -30,17 +37,20 @@ namespace ShootValidation {
         state.lastShootClientShotId = request.clientShotId;
         state.hasLastShootClientShotId = true;
 
-        const auto now = std::chrono::steady_clock::now();
-        if (state.lastAcceptedShootTime != std::chrono::steady_clock::time_point::min()) {
-            const float elapsedSeconds =
-                std::chrono::duration<float>(now - state.lastAcceptedShootTime).count();
-            if (elapsedSeconds < minShotIntervalSeconds) {
+        const uint32_t minimumIntervalTicks = static_cast<uint32_t>(std::ceil(
+            std::max(0.0f, minShotIntervalSeconds) * static_cast<float>(serverTickRateHz)
+        ));
+        if (state.hasLastAcceptedShootTick) {
+            const uint32_t elapsedTicks = shotServerTick - state.lastAcceptedShootTick;
+            if (!LagCompensation::IsNewerU32(shotServerTick, state.lastAcceptedShootTick) ||
+                elapsedTicks < minimumIntervalTicks) {
                 gate.rejectedCooldown = true;
                 return gate;
             }
         }
 
-        state.lastAcceptedShootTime = now;
+        state.lastAcceptedShootTick = shotServerTick;
+        state.hasLastAcceptedShootTick = true;
         return gate;
     }
 

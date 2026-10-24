@@ -109,7 +109,7 @@ void Lighting::faceCornerIndicesForCell(
     int sx,
     int sy,
     int sz,       // sampling cell base (see notes below)
-    int face,     // 0..5 (same enum as your mesher)
+    int face,     // 0..5
     int outIdx[4] // returns 4 corner indices in BL, BR, TR, TL order
 ) const {
     auto idx = [&](int X, int Y, int Z) { return cornerIndexPadded(X, Y, Z); };

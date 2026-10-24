@@ -51,16 +51,12 @@ namespace Shoot {
         const Damage::DamageResolution damage = Damage::ResolveDamage(
             playerManager, hitResult.hitPlayerId, ctx.request.weaponId, hitResult.hitRegion
         );
-        if (!damage.applied) {
-            outcome.hit = false;
-            outcome.hitPoint = hitResult.hitPoint;
-            return outcome;
-        }
-
         outcome.hit = true;
-        outcome.killed = damage.killed;
-        outcome.healthAfter = damage.healthAfter;
-        outcome.damageApplied = damage.damage;
+        if (damage.applied) {
+            outcome.killed = damage.killed;
+            outcome.healthAfter = damage.healthAfter;
+            outcome.damageApplied = damage.damage;
+        }
         return outcome;
     }
 

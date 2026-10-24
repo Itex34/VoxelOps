@@ -360,10 +360,9 @@ namespace HitDetection {
             return detection;
         }
 
-        float meshReferenceHeight = 0.0f;
-        MeshBroadphaseBounds meshBroadphase;
         const auto meshHitData = GetSharedPlayerMeshHitTriangles();
-
+        const float meshReferenceHeight = meshHitData.referenceHeight;
+        const MeshBroadphaseBounds meshBroadphase = meshHitData.broadphaseBounds;
 
 
         std::optional<SharedPlayerHitboxes> sharedHitboxes;
@@ -383,13 +382,17 @@ namespace HitDetection {
             float targetRadius = target.radius;
             if (input.lagCompFrame != nullptr) {
                 const auto targetLagIt = input.lagCompFrame->players.find(target.id);
-                if (targetLagIt != input.lagCompFrame->players.end()) {
-                    const LagCompensation::LagCompPlayerPose &pose = targetLagIt->second;
-                    targetPosition = pose.position;
-                    targetYaw = pose.yaw;
-                    targetHeight = pose.height;
-                    targetRadius = pose.radius;
+                if (targetLagIt == input.lagCompFrame->players.end() ||
+                    !targetLagIt->second.isAlive) {
+                    continue;
                 }
+                const LagCompensation::LagCompPlayerPose &pose = targetLagIt->second;
+                targetPosition = pose.position;
+                targetYaw = pose.yaw;
+                targetHeight = pose.height;
+                targetRadius = pose.radius;
+            } else if (!target.isAlive) {
+                continue;
             }
 
             const CachedTransform targetTransform = BuildPlayerTransform(targetPosition, targetYaw);

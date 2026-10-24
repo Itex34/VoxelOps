@@ -60,7 +60,7 @@ void UploadContext::cleanup() {
 }
 
 void UploadContext::poll() {
-    if (!m_device) {
+    if (m_device == nullptr) {
         return;
     }
 

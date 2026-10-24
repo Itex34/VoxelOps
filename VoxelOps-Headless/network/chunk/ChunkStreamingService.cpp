@@ -29,11 +29,82 @@ namespace {
         return q;
     }
 
+    uint32_t Fnv1a32(const uint8_t *data, size_t size) {
+        uint32_t h = 2166136261u;
+        for (size_t i = 0; i < size; ++i) {
+            h ^= static_cast<uint32_t>(data[i]);
+            h *= 16777619u;
+        }
+        return h;
+    }
+
+    struct RawChunkSummary {
+        uint32_t hash = 0;
+        uint16_t nonAir = 0;
+        int minNonAirWorldY = 0;
+        int maxNonAirWorldY = -1;
+    };
+
+    RawChunkSummary SummarizeRawChunkPayload(
+        const std::vector<uint8_t> &rawPayload, const glm::ivec3 &chunkPos
+    ) {
+        RawChunkSummary summary{};
+        summary.hash = Fnv1a32(rawPayload.data(), rawPayload.size());
+        summary.minNonAirWorldY = chunkPos.y * CHUNK_SIZE;
+        summary.maxNonAirWorldY = chunkPos.y * CHUNK_SIZE - 1;
+
+        int minLocalY = CHUNK_SIZE;
+        int maxLocalY = -1;
+        size_t nonAir = 0;
+        for (int z = 0; z < CHUNK_SIZE; ++z) {
+            for (int y = 0; y < CHUNK_SIZE; ++y) {
+                for (int x = 0; x < CHUNK_SIZE; ++x) {
+                    const size_t i = static_cast<size_t>(x + CHUNK_SIZE * (y + CHUNK_SIZE * z));
+                    if (i >= rawPayload.size()) {
+                        continue;
+                    }
+                    if (static_cast<BlockID>(rawPayload[i]) != BlockID::Air) {
+                        ++nonAir;
+                        minLocalY = std::min(minLocalY, y);
+                        maxLocalY = std::max(maxLocalY, y);
+                    }
+                }
+            }
+        }
+
+        summary.nonAir = static_cast<uint16_t>(std::min<size_t>(nonAir, UINT16_MAX));
+        if (nonAir > 0) {
+            summary.minNonAirWorldY = chunkPos.y * CHUNK_SIZE + minLocalY;
+            summary.maxNonAirWorldY = chunkPos.y * CHUNK_SIZE + maxLocalY;
+        }
+        return summary;
+    }
+
     struct OrderedChunkOffset {
         int dx = 0;
         int y = 0;
         int dz = 0;
     };
+
+    int VerticalStreamRank(int y, int verticalAnchorY) noexcept {
+        const int dy = y - verticalAnchorY;
+        if (dy == 0) {
+            return 0;
+        }
+        if (dy == 1) {
+            return 1;
+        }
+        if (dy == -1) {
+            return 2;
+        }
+        return 2 + (std::abs(dy) * 2) + (dy < 0 ? 1 : 0);
+    }
+
+    int ChunkStreamPriority(const OrderedChunkOffset &offset, int verticalAnchorY) noexcept {
+        const int horizDist2 = offset.dx * offset.dx + offset.dz * offset.dz;
+        const int verticalRank = VerticalStreamRank(offset.y, verticalAnchorY);
+        return (horizDist2 * 4) + (verticalRank * 3);
+    }
 
     bool IsDesiredChunk(
         const ClientSessionManager::ChunkCoord &coord,
@@ -76,22 +147,22 @@ namespace {
             offsets.begin(),
             offsets.end(),
             [&](const OrderedChunkOffset &a, const OrderedChunkOffset &b) {
+                const int aPriority = ChunkStreamPriority(a, verticalAnchorY);
+                const int bPriority = ChunkStreamPriority(b, verticalAnchorY);
+                if (aPriority != bPriority) {
+                    return aPriority < bPriority;
+                }
+
                 const int aHorizDist2 = a.dx * a.dx + a.dz * a.dz;
                 const int bHorizDist2 = b.dx * b.dx + b.dz * b.dz;
                 if (aHorizDist2 != bHorizDist2) {
                     return aHorizDist2 < bHorizDist2;
                 }
 
-                const bool aUnderOrSame = (a.y <= verticalAnchorY);
-                const bool bUnderOrSame = (b.y <= verticalAnchorY);
-                if (aUnderOrSame != bUnderOrSame) {
-                    return aUnderOrSame;
-                }
-
-                const int aVert = std::abs(a.y - verticalAnchorY);
-                const int bVert = std::abs(b.y - verticalAnchorY);
-                if (aVert != bVert) {
-                    return aVert < bVert;
+                const int aVerticalRank = VerticalStreamRank(a.y, verticalAnchorY);
+                const int bVerticalRank = VerticalStreamRank(b.y, verticalAnchorY);
+                if (aVerticalRank != bVerticalRank) {
+                    return aVerticalRank < bVerticalRank;
                 }
 
                 if (a.dx != b.dx) {
@@ -257,25 +328,36 @@ void ChunkStreamingService::StopChunkPipeline() {
 }
 
 bool ChunkStreamingService::PrepareChunkForStreaming(const ChunkCoord &coord) {
-    constexpr int kDecorationNeighborRadiusXZ = 1;
-    constexpr int kDecorationNeighborRadiusY = 1;
-    for (int dx = -kDecorationNeighborRadiusXZ; dx <= kDecorationNeighborRadiusXZ; ++dx) {
-        for (int dz = -kDecorationNeighborRadiusXZ; dz <= kDecorationNeighborRadiusXZ; ++dz) {
-            for (int dy = -kDecorationNeighborRadiusY; dy <= kDecorationNeighborRadiusY; ++dy) {
-                if (dx == 0 && dy == 0 && dz == 0) {
-                    continue;
+    constexpr int kDecorationReachChunksXZ = 2;
+    constexpr int kDecorationReachChunksUp = 3;
+    for (int dz = -kDecorationReachChunksXZ; dz <= kDecorationReachChunksXZ; ++dz) {
+        for (int dx = -kDecorationReachChunksXZ; dx <= kDecorationReachChunksXZ; ++dx) {
+            for (int dy = 0; dy <= kDecorationReachChunksUp; ++dy) {
+                const glm::ivec3 sourcePos(coord.x + dx, coord.y - dy, coord.z + dz);
+                if (m_chunkManager.inBounds(sourcePos) &&
+                    m_chunkManager.loadOrGenerateChunk(sourcePos) == nullptr) {
+                    return false;
                 }
-                const glm::ivec3 npos(coord.x + dx, coord.y + dy, coord.z + dz);
-                if (!m_chunkManager.inBounds(npos)) {
-                    continue;
-                }
-                (void)m_chunkManager.loadOrGenerateChunk(npos);
             }
         }
     }
 
-    ServerChunk *chunk = m_chunkManager.loadOrGenerateChunk(glm::ivec3(coord.x, coord.y, coord.z));
-    return chunk != nullptr;
+    return m_chunkManager.isChunkStreamReady(glm::ivec3(coord.x, coord.y, coord.z));
+}
+
+bool ChunkStreamingService::QueueChunkPreparation(HSteamNetConnection conn, const ChunkCoord &coord) {
+    ChunkPipelineState::QueuePrepResult result{};
+    if (m_chunkManager.isChunkStreamReady(glm::ivec3(coord.x, coord.y, coord.z))) {
+        result = m_pipelineState.QueuePreparedSend(conn, coord, kMaxChunkSendQueuePerClient);
+    } else {
+        result = m_pipelineState.QueuePrep(conn, coord, kMaxChunkPrepQueue);
+        if (result == ChunkPipelineState::QueuePrepResult::Queued) {
+            m_pipelineState.NotifyPrepWorker();
+        }
+    }
+
+    return result == ChunkPipelineState::QueuePrepResult::Queued ||
+           result == ChunkPipelineState::QueuePrepResult::AlreadyQueued;
 }
 
 void ChunkStreamingService::ChunkPrepWorkerLoop() {
@@ -327,24 +409,20 @@ void ChunkStreamingService::ChunkPrepWorkerLoop() {
                 m_chunkPrepareCv.notify_all();
             }
         }
-        m_pipelineState.MarkPrepDoneAndQueueSend(
+        const bool queuedForSend = m_pipelineState.MarkPrepDoneAndQueueSend(
             task, prepared, m_chunkPrepQuit, kMaxChunkSendQueuePerClient
         );
+        if (prepared && !queuedForSend) {
+            auto lk = LockWaitTelemetry::AcquireSessionLock(
+                m_sessionMutex, "ChunkStreamingService::ChunkPrepWorkerLoop.rescheduleSendFull"
+            );
+            auto it = m_sessions.find(task.conn);
+            if (it != m_sessions.end()) {
+                it->second.chunkInterestDirty = true;
+                it->second.nextChunkInterestUpdateAt = std::chrono::steady_clock::time_point::min();
+            }
+        }
     }
-}
-
-bool ChunkStreamingService::QueueChunkPreparation(
-    HSteamNetConnection conn, const ChunkCoord &coord
-) {
-    const auto result = m_pipelineState.QueuePrep(conn, coord, kMaxChunkPrepQueue);
-    if (result == ChunkPipelineState::QueuePrepResult::Queued) {
-        m_pipelineState.NotifyPrepWorker();
-        return true;
-    }
-    if (result == ChunkPipelineState::QueuePrepResult::AlreadyQueued) {
-        return true;
-    }
-    return false;
 }
 
 ChunkPipelineState::QueuePrepBatchResult ChunkStreamingService::QueueChunkPreparations(
@@ -352,34 +430,33 @@ ChunkPipelineState::QueuePrepBatchResult ChunkStreamingService::QueueChunkPrepar
     const std::vector<ChunkCoord> &coords,
     std::vector<ChunkCoord> &acceptedCoords
 ) {
-    std::vector<ChunkCoord> readyCoords;
-    std::vector<ChunkCoord> prepCoords;
-    readyCoords.reserve(coords.size());
-    prepCoords.reserve(coords.size());
+    ChunkPipelineState::QueuePrepBatchResult result{};
+    bool queuedPrepTask = false;
     for (const ChunkCoord &coord : coords) {
+        ChunkPipelineState::QueuePrepResult queueResult{};
         if (m_chunkManager.isChunkStreamReady(glm::ivec3(coord.x, coord.y, coord.z))) {
-            readyCoords.push_back(coord);
+            queueResult = m_pipelineState.QueuePreparedSend(
+                conn, coord, kMaxChunkSendQueuePerClient
+            );
         } else {
-            prepCoords.push_back(coord);
+            queueResult = m_pipelineState.QueuePrep(conn, coord, kMaxChunkPrepQueue);
+            queuedPrepTask =
+                queuedPrepTask || queueResult == ChunkPipelineState::QueuePrepResult::Queued;
+        }
+
+        if (queueResult == ChunkPipelineState::QueuePrepResult::QueueFull) {
+            result.queueFull = true;
+            break;
+        }
+        if (queueResult == ChunkPipelineState::QueuePrepResult::Queued ||
+            queueResult == ChunkPipelineState::QueuePrepResult::AlreadyQueued) {
+            acceptedCoords.push_back(coord);
+            ++result.accepted;
         }
     }
 
-    ChunkPipelineState::QueuePrepBatchResult result{};
-    if (!readyCoords.empty()) {
-        const auto sendResult = m_pipelineState.QueuePreparedSendBatch(
-            conn, readyCoords, kMaxChunkSendQueuePerClient, acceptedCoords
-        );
-        result.accepted += sendResult.accepted;
-        result.queueFull = result.queueFull || sendResult.queueFull;
-    }
-    if (!prepCoords.empty()) {
-        const auto prepResult =
-            m_pipelineState.QueuePrepBatch(conn, prepCoords, kMaxChunkPrepQueue, acceptedCoords);
-        result.accepted += prepResult.accepted;
-        result.queueFull = result.queueFull || prepResult.queueFull;
-        if (prepResult.accepted > 0) {
-            m_pipelineState.NotifyPrepWorkerAll();
-        }
+    if (queuedPrepTask) {
+        m_pipelineState.NotifyPrepWorkerAll();
     }
     return result;
 }
@@ -390,6 +467,19 @@ bool ChunkStreamingService::IsConnectionSendable(HSteamNetConnection conn) const
         return false;
     }
     return info.m_eState == k_ESteamNetworkingConnectionState_Connected;
+}
+
+bool ChunkStreamingService::CanSendChunkDataNow(HSteamNetConnection conn) const {
+    constexpr int kMaxPendingReliableChunkBytes = 48 * 1024;
+
+    SteamNetConnectionRealTimeStatus_t status{};
+    const EResult result =
+        SteamNetworkingSockets()->GetConnectionRealTimeStatus(conn, &status, 0, nullptr);
+    if (result != k_EResultOK) {
+        return true;
+    }
+
+    return status.m_cbPendingReliable < kMaxPendingReliableChunkBytes;
 }
 
 void ChunkStreamingService::ClearClientChunkState(HSteamNetConnection conn) {
@@ -414,63 +504,74 @@ ChunkStreamingService::FlushChunkSendQueueForClient(HSteamNetConnection conn, si
         return 0;
     }
 
-    std::vector<ChunkCoord> poppedCoords;
-    poppedCoords.reserve(maxSends);
-    m_pipelineState.PopNextSendChunks(conn, maxSends, poppedCoords);
-    if (poppedCoords.empty()) {
-        return 0;
-    }
-
-    std::vector<ChunkCoord> sendCoords;
-    sendCoords.reserve(poppedCoords.size());
-    {
-        auto lk = LockWaitTelemetry::AcquireSessionLock(
-            m_sessionMutex, "ChunkStreamingService::FlushChunkSendQueueForClient.snapshotPending"
-        );
-        auto it = m_sessions.find(conn);
-        if (it == m_sessions.end()) {
-            return 0;
-        }
-        for (const ChunkCoord &coord : poppedCoords) {
-            if (it->second.pendingChunkData.find(coord) != it->second.pendingChunkData.end()) {
-                sendCoords.push_back(coord);
-            }
-        }
-    }
-    if (sendCoords.empty()) {
-        return 0;
-    }
-
     size_t sent = 0;
-    std::vector<ChunkCoord> deliveredCoords;
-    deliveredCoords.reserve(sendCoords.size());
-    for (const ChunkCoord &coord : sendCoords) {
+    while (sent < maxSends) {
         if (!IsConnectionSendable(conn)) {
             ClearClientChunkState(conn);
             break;
         }
-
-        if (!SendChunkData(conn, coord)) {
-            ClearClientChunkState(conn);
+        if (!CanSendChunkDataNow(conn)) {
             break;
         }
 
-        deliveredCoords.push_back(coord);
+        ChunkCoord coord{};
+        if (!m_pipelineState.PopNextSendChunk(conn, coord)) {
+            break;
+        }
+
+        bool stillPending = false;
+        {
+            auto lk = LockWaitTelemetry::AcquireSessionLock(
+                m_sessionMutex, "ChunkStreamingService::FlushChunkSendQueueForClient.snapshotPending"
+            );
+            auto it = m_sessions.find(conn);
+            if (it == m_sessions.end()) {
+                return sent;
+            }
+            stillPending =
+                it->second.pendingChunkData.find(coord) != it->second.pendingChunkData.end();
+        }
+        if (!stillPending) {
+            continue;
+        }
+
+        const ChunkSendResult sendResult = SendChunkData(conn, coord);
+        if (sendResult != ChunkSendResult::Sent) {
+            if (!IsConnectionSendable(conn)) {
+                ClearClientChunkState(conn);
+            } else if (sendResult == ChunkSendResult::SendFailed) {
+                const auto requeueResult =
+                    m_pipelineState.RequeueSendFront(conn, coord, kMaxChunkSendQueuePerClient);
+                if (requeueResult == ChunkPipelineState::QueuePrepResult::QueueFull) {
+                    auto lk = LockWaitTelemetry::AcquireSessionLock(
+                        m_sessionMutex,
+                        "ChunkStreamingService::FlushChunkSendQueueForClient.requeueFull"
+                    );
+                    auto it = m_sessions.find(conn);
+                    if (it != m_sessions.end()) {
+                        it->second.chunkInterestDirty = true;
+                        it->second.nextChunkInterestUpdateAt =
+                            std::chrono::steady_clock::time_point::min();
+                    }
+                }
+            } else {
+                auto lk = LockWaitTelemetry::AcquireSessionLock(
+                    m_sessionMutex,
+                    "ChunkStreamingService::FlushChunkSendQueueForClient.missingChunk"
+                );
+                auto it = m_sessions.find(conn);
+                if (it != m_sessions.end()) {
+                    it->second.chunkInterestDirty = true;
+                    it->second.nextChunkInterestUpdateAt =
+                        std::chrono::steady_clock::time_point::min();
+                }
+            }
+            break;
+        }
+
         ++sent;
     }
 
-    if (!deliveredCoords.empty()) {
-        auto lk = LockWaitTelemetry::AcquireSessionLock(
-            m_sessionMutex, "ChunkStreamingService::FlushChunkSendQueueForClient.applyDelivered"
-        );
-        auto it = m_sessions.find(conn);
-        if (it != m_sessions.end()) {
-            for (const ChunkCoord &coord : deliveredCoords) {
-                it->second.pendingChunkData.erase(coord);
-                it->second.streamedChunks.insert(coord);
-            }
-        }
-    }
     return sent;
 }
 
@@ -489,7 +590,6 @@ size_t ChunkStreamingService::FlushChunkSendQueues(size_t globalBudget, size_t p
             clients.push_back(kv.first);
         }
     }
-
     size_t totalSent = 0;
     const size_t startIndex = clients.empty() ? 0 : (m_nextChunkSendClientIndex % clients.size());
     size_t visitedClients = 0;
@@ -523,39 +623,40 @@ size_t ChunkStreamingService::GetChunkSendQueueDepthForClient(HSteamNetConnectio
     return m_pipelineState.GetSendQueueDepthForClient(conn);
 }
 
+void ChunkStreamingService::ClearChunkPipelineForConnection(
+    HSteamNetConnection conn, const ChunkCoord &coord
+) {
+    m_pipelineState.ClearChunkForConnection(conn, coord);
+}
+
 void ChunkStreamingService::ClearChunkPipelineForConnection(HSteamNetConnection conn) {
     m_pipelineState.ClearForConnection(conn);
 }
 
-bool ChunkStreamingService::SendChunkData(HSteamNetConnection conn, const ChunkCoord &coord) {
-    ServerChunk *chunk = m_chunkManager.getChunkIfExists(glm::ivec3(coord.x, coord.y, coord.z));
+ChunkStreamingService::ChunkSendResult
+ChunkStreamingService::SendChunkData(HSteamNetConnection conn, const ChunkCoord &coord) {
+    ServerChunk *chunk = m_chunkManager.loadOrGenerateChunk(glm::ivec3(coord.x, coord.y, coord.z));
     if (!chunk) {
         std::cerr << "[chunk/send] chunk missing after prep for conn=" << conn << " chunk=("
                   << coord.x << "," << coord.y << "," << coord.z << ")\n";
-        return false;
+        return ChunkSendResult::MissingChunk;
     }
 
-    const uint64_t version = static_cast<uint64_t>(std::max<int64_t>(0, chunk->version()));
-    auto cacheIt = m_chunkPacketCache.find(coord);
-    if (cacheIt == m_chunkPacketCache.end() || cacheIt->second.version != version) {
-        ChunkData packet;
-        packet.chunkX = coord.x;
-        packet.chunkY = coord.y;
-        packet.chunkZ = coord.z;
-        packet.version = version;
-        std::vector<uint8_t> rawPayload(CHUNK_VOLUME * sizeof(BlockID));
-        chunk->fillRawVoxelBytes(rawPayload.data(), rawPayload.size());
-        const CompressedChunkPayload compressedPayload = CompressChunkPayload(rawPayload);
-        packet.flags = compressedPayload.compressed ? 0x1u : 0u;
-        packet.payload = compressedPayload.payload;
+    ChunkData packet;
+    packet.chunkX = coord.x;
+    packet.chunkY = coord.y;
+    packet.chunkZ = coord.z;
+    std::vector<uint8_t> rawPayload(CHUNK_VOLUME * sizeof(BlockID));
+    const int64_t snapshotVersion =
+        chunk->fillRawVoxelBytesAndVersion(rawPayload.data(), rawPayload.size());
+    packet.version = static_cast<uint64_t>(std::max<int64_t>(0, snapshotVersion));
+    const RawChunkSummary rawSummary =
+        SummarizeRawChunkPayload(rawPayload, glm::ivec3(coord.x, coord.y, coord.z));
+    const CompressedChunkPayload compressedPayload = CompressChunkPayload(rawPayload);
+    packet.flags = compressedPayload.compressed ? 0x1u : 0u;
+    packet.payload = compressedPayload.payload;
 
-        CachedChunkPacket cached;
-        cached.version = version;
-        cached.bytes = packet.serialize();
-        cacheIt = m_chunkPacketCache.insert_or_assign(coord, std::move(cached)).first;
-    }
-
-    const std::vector<uint8_t> &bytes = cacheIt->second.bytes;
+    const std::vector<uint8_t> bytes = packet.serialize();
     const EResult result = SteamNetworkingSockets()->SendMessageToConnection(
         conn,
         bytes.data(),
@@ -573,9 +674,17 @@ bool ChunkStreamingService::SendChunkData(HSteamNetConnection conn, const ChunkC
         if (haveInfo) {
             std::cerr << " connState=" << info.m_eState;
         }
-        std::cerr << " clearingChunkState=1\n";
+        std::cerr << " retryingLater=1\n";
+    } else if (DiagnosticsFlags::g_enableChunkDiagnostics.load(std::memory_order_acquire)) {
+        std::cerr << "[chunk/send] summary conn=" << conn << " chunk=(" << coord.x << ","
+                  << coord.y << "," << coord.z << ")"
+                  << " version=" << packet.version << " rawHash=" << rawSummary.hash
+                  << " nonAir=" << rawSummary.nonAir << " nonAirY=("
+                  << rawSummary.minNonAirWorldY << "," << rawSummary.maxNonAirWorldY << ")"
+                  << " flags=" << static_cast<int>(packet.flags)
+                  << " payloadBytes=" << packet.payload.size() << "\n";
     }
-    return result == k_EResultOK;
+    return result == k_EResultOK ? ChunkSendResult::Sent : ChunkSendResult::SendFailed;
 }
 
 bool ChunkStreamingService::SendChunkUnload(HSteamNetConnection conn, const ChunkCoord &coord) {
@@ -598,12 +707,16 @@ bool ChunkStreamingService::SendChunkUnload(HSteamNetConnection conn, const Chun
 void ChunkStreamingService::UpdateChunkStreamingForClient(
     HSteamNetConnection conn, const glm::ivec3 &centerChunk, uint16_t viewDistance
 ) {
-    constexpr size_t kMaxChunkPrepQueuePerUpdate = 128;
-    constexpr size_t kMaxPendingChunkData = 512;
+    constexpr size_t kMaxChunkPrepQueuePerUpdate = 256;
     constexpr size_t kMaxChunkUnloadsPerUpdate = 24;
-    constexpr auto kChunkRetryInterval = std::chrono::milliseconds(500);
+    constexpr auto kChunkRetryInterval = std::chrono::milliseconds(1000);
     const uint16_t clampedViewDistance = ClampViewDistance(viewDistance);
     const auto now = std::chrono::steady_clock::now();
+
+    if (!IsConnectionSendable(conn)) {
+        ClearClientChunkState(conn);
+        return;
+    }
 
     const int minChunkY = FloorDiv(WORLD_MIN_Y, CHUNK_SIZE);
     const int maxChunkY = FloorDiv(WORLD_MAX_Y, CHUNK_SIZE);
@@ -627,23 +740,19 @@ void ChunkStreamingService::UpdateChunkStreamingForClient(
     const std::vector<OrderedChunkOffset> &orderedOffsets =
         GetOrderedChunkOffsets(radius, verticalAnchorY, minChunkY, maxChunkY);
 
-    std::vector<ChunkCoord> desiredOrdered;
-    desiredOrdered.reserve(orderedOffsets.size());
-    for (const OrderedChunkOffset &offset : orderedOffsets) {
-        ChunkCoord coord{centerChunk.x + offset.dx, offset.y, centerChunk.z + offset.dz};
-        if (!IsDesiredChunk(coord, desiredBounds)) {
-            continue;
-        }
-        desiredOrdered.push_back(coord);
-    }
-
     std::unordered_set<ChunkCoord, ChunkCoordHash> toUnloadSet;
     std::vector<ChunkCoord> toLoad;
     bool interestChanged = false;
-    bool hasMoreLoadWork = false;
-    bool stoppedByPendingCap = false;
     size_t pendingCount = 0;
     size_t streamedCount = 0;
+    size_t desiredCount = 0;
+    bool foundMoreLoadWork = false;
+    struct PendingChunkRestore {
+        ChunkCoord coord{};
+        bool hadPrevious = false;
+        std::chrono::steady_clock::time_point previousTime{};
+    };
+    std::vector<PendingChunkRestore> pendingChunkRestores;
     {
         auto lk = LockWaitTelemetry::AcquireSessionLock(
             m_sessionMutex, "ChunkStreamingService::UpdateChunkStreamingForClient.snapshot"
@@ -661,7 +770,6 @@ void ChunkStreamingService::UpdateChunkStreamingForClient(
         it->second.interestCenterChunk = centerChunk;
         it->second.viewDistance = clampedViewDistance;
         it->second.hasChunkInterest = true;
-
         for (auto pIt = it->second.pendingChunkData.begin();
              pIt != it->second.pendingChunkData.end();) {
             if (!IsDesiredChunk(pIt->first, desiredBounds)) {
@@ -673,9 +781,13 @@ void ChunkStreamingService::UpdateChunkStreamingForClient(
         }
         streamedCount = it->second.streamedChunks.size();
         pendingCount = it->second.pendingChunkData.size();
-        toLoad.reserve(std::min<size_t>(desiredOrdered.size(), kMaxChunkPrepQueuePerUpdate));
-        size_t projectedPendingCount = pendingCount;
-        for (const ChunkCoord &c : desiredOrdered) {
+        toLoad.reserve(std::min<size_t>(orderedOffsets.size(), kMaxChunkPrepQueuePerUpdate));
+        for (const OrderedChunkOffset &offset : orderedOffsets) {
+            const ChunkCoord c{centerChunk.x + offset.dx, offset.y, centerChunk.z + offset.dz};
+            if (!IsDesiredChunk(c, desiredBounds)) {
+                continue;
+            }
+            ++desiredCount;
             if (it->second.streamedChunks.find(c) != it->second.streamedChunks.end()) {
                 continue;
             }
@@ -686,21 +798,21 @@ void ChunkStreamingService::UpdateChunkStreamingForClient(
                 continue;
             }
 
-            if (pendingIt == it->second.pendingChunkData.end() &&
-                projectedPendingCount >= kMaxPendingChunkData) {
-                stoppedByPendingCap = true;
-                hasMoreLoadWork = true;
+            if (toLoad.size() >= kMaxChunkPrepQueuePerUpdate) {
+                foundMoreLoadWork = true;
                 break;
             }
             toLoad.push_back(c);
-            if (pendingIt == it->second.pendingChunkData.end()) {
-                ++projectedPendingCount;
-            }
-            if (toLoad.size() >= kMaxChunkPrepQueuePerUpdate) {
-                hasMoreLoadWork = true;
-                break;
-            }
+            const bool wasPending = pendingIt != it->second.pendingChunkData.end();
+            pendingChunkRestores.push_back(PendingChunkRestore{
+                c,
+                wasPending,
+                wasPending ? pendingIt->second : std::chrono::steady_clock::time_point{},
+            });
+            it->second.streamedChunks.erase(c);
+            it->second.pendingChunkData[c] = now;
         }
+        pendingCount = it->second.pendingChunkData.size();
 
         for (const ChunkCoord &c : it->second.streamedChunks) {
             if (!IsDesiredChunk(c, desiredBounds)) {
@@ -722,7 +834,13 @@ void ChunkStreamingService::UpdateChunkStreamingForClient(
     size_t queuedPrepThisUpdate = 0;
     bool stoppedByPrepCap = false;
     std::vector<ChunkCoord> queuedPrepCoords;
-    queuedPrepCoords.reserve(std::min<size_t>(toLoad.size(), kMaxChunkPrepQueuePerUpdate));
+    queuedPrepCoords.reserve(toLoad.size());
+
+    for (const PendingChunkRestore &restore : pendingChunkRestores) {
+        if (restore.hadPrevious) {
+            m_pipelineState.ClearChunkForConnection(conn, restore.coord);
+        }
+    }
 
     if (!toLoad.empty()) {
         const auto prepResult = QueueChunkPreparations(conn, toLoad, queuedPrepCoords);
@@ -730,21 +848,30 @@ void ChunkStreamingService::UpdateChunkStreamingForClient(
         stoppedByPrepCap = prepResult.queueFull;
     }
 
-    if (!queuedPrepCoords.empty()) {
+    if (queuedPrepThisUpdate < toLoad.size()) {
+        std::unordered_set<ChunkCoord, ChunkCoordHash> acceptedCoordSet;
+        acceptedCoordSet.reserve(queuedPrepCoords.size());
+        for (const ChunkCoord &coord : queuedPrepCoords) {
+            acceptedCoordSet.insert(coord);
+        }
+
         auto lk = LockWaitTelemetry::AcquireSessionLock(
-            m_sessionMutex, "ChunkStreamingService::UpdateChunkStreamingForClient.applyPending"
+            m_sessionMutex, "ChunkStreamingService::UpdateChunkStreamingForClient.rollbackPending"
         );
         auto it = m_sessions.find(conn);
-        if (it != m_sessions.end()) {
-            pendingCount = it->second.pendingChunkData.size();
-            for (const ChunkCoord &c : queuedPrepCoords) {
-                const bool wasPending =
-                    it->second.pendingChunkData.find(c) != it->second.pendingChunkData.end();
-                it->second.pendingChunkData[c] = now;
-                if (!wasPending) {
-                    ++pendingCount;
+        if (it != m_sessions.end() && it->second.interestCenterChunk == centerChunk &&
+            it->second.viewDistance == clampedViewDistance) {
+            for (const PendingChunkRestore &restore : pendingChunkRestores) {
+                if (acceptedCoordSet.find(restore.coord) != acceptedCoordSet.end()) {
+                    continue;
+                }
+                if (restore.hadPrevious) {
+                    it->second.pendingChunkData[restore.coord] = restore.previousTime;
+                } else {
+                    it->second.pendingChunkData.erase(restore.coord);
                 }
             }
+            pendingCount = it->second.pendingChunkData.size();
         }
     }
 
@@ -757,10 +884,9 @@ void ChunkStreamingService::UpdateChunkStreamingForClient(
     if (DiagnosticsFlags::g_enableChunkDiagnostics.load(std::memory_order_acquire) &&
         (now - lastLog) >= std::chrono::seconds(15)) {
         lastLog = now;
-        std::cerr << "[chunk/stream] progress conn=" << conn << " desired=" << desiredOrdered.size()
+        std::cerr << "[chunk/stream] progress conn=" << conn << " desired=" << desiredCount
                   << " streamed=" << streamedCount << " pending=" << pendingCount
                   << " toLoad=" << toLoad.size() << " queuedPrepNow=" << queuedPrepThisUpdate
-                  << " pendingCapHit=" << (stoppedByPendingCap ? 1 : 0)
                   << " prepCapHit=" << (stoppedByPrepCap ? 1 : 0) << " sendQueue=" << sendQueueDepth
                   << " center=(" << centerChunk.x << "," << centerChunk.y << "," << centerChunk.z
                   << ")"
@@ -768,12 +894,11 @@ void ChunkStreamingService::UpdateChunkStreamingForClient(
     }
 
     if (DiagnosticsFlags::g_enableChunkDiagnostics.load(std::memory_order_acquire) &&
-        !toLoad.empty() && queuedPrepThisUpdate == 0 && !stoppedByPendingCap && !stoppedByPrepCap &&
+        !toLoad.empty() && queuedPrepThisUpdate == 0 && !stoppedByPrepCap &&
         sendQueueDepth == 0) {
         std::cerr << "[chunk/stream] stalled load window conn=" << conn
-                  << " desired=" << desiredOrdered.size() << " toLoad=" << toLoad.size()
+                  << " desired=" << desiredCount << " toLoad=" << toLoad.size()
                   << " streamed=" << streamedCount << " pending=" << pendingCount
-                  << " pendingCap=" << kMaxPendingChunkData
                   << " prepQueueCap=" << kMaxChunkPrepQueue << " sendQueue=" << sendQueueDepth
                   << " center=(" << centerChunk.x << "," << centerChunk.y << "," << centerChunk.z
                   << ")"
@@ -818,9 +943,10 @@ void ChunkStreamingService::UpdateChunkStreamingForClient(
                   << " cap=" << kMaxChunkUnloadsPerUpdate << "\n";
     }
 
-    const bool hasMoreInterestWork = hasMoreLoadWork || toLoad.size() > queuedPrepThisUpdate ||
-                                     stoppedByPendingCap ||
-                                     stoppedByPrepCap || toUnload.size() > unloadsSentThisUpdate;
+    const bool hasPendingChunkWork = pendingCount > 0;
+    const bool hasMoreInterestWork = hasPendingChunkWork || foundMoreLoadWork ||
+                                     toLoad.size() > queuedPrepThisUpdate || stoppedByPrepCap ||
+                                     toUnload.size() > unloadsSentThisUpdate;
     {
         auto lk = LockWaitTelemetry::AcquireSessionLock(
             m_sessionMutex, "ChunkStreamingService::UpdateChunkStreamingForClient.reschedule"

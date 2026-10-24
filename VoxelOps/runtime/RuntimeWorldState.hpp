@@ -5,6 +5,7 @@
 
 #include "../../Shared/player/BlockPlace.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
@@ -69,6 +70,8 @@ struct RuntimeWorldState {
 
     double lastChunkRequestSendTime = 0.0;
     double lastChunkCoverageLogTime = 0.0;
+    size_t chunkCoverageMissingIdleAudits = 0;
+    size_t chunkCoverageMissingScanOffset = 0;
     glm::ivec3 lastChunkRequestCenter{0};
     bool hasLastChunkRequestCenter = false;
     bool renderStateNeedsResync = false;

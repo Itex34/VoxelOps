@@ -180,7 +180,7 @@ bool ClientNetwork::ConnectTo(std::string_view host, uint16_t port) {
     m_registered = false;
     m_assignedUsername.clear();
     m_allowAutoReconnect = true;
-    m_chunkResyncOverflowCooldownUntil.clear();
+    ClearInboundQueues();
 
     SteamNetworkingIPAddr addr;
     addr.Clear();
@@ -228,24 +228,9 @@ void ClientNetwork::Shutdown() {
     m_assignedUsername.clear();
     m_hasEverConnectedSuccessfully = false;
     m_retryWithAutoAssignedUsername = false;
-    m_chunkResyncOverflowCooldownUntil.clear();
     SetConnectionStatus(ConnectionState::Disconnected, "disconnected");
 
-    {
-        std::lock_guard<std::mutex> lk(m_inboundMutex);
-        m_chunkDataQueue.clear();
-        m_chunkDeltaQueue.clear();
-        m_chunkUnloadQueue.clear();
-        m_playerSnapshotQueue.clear();
-        m_shootResultQueue.clear();
-        m_inventoryActionResultQueue.clear();
-        m_inventorySnapshotQueue.clear();
-        m_worldItemSnapshotQueue.clear();
-        m_blockPlaceResultQueue.clear();
-        m_blockBreakResultQueue.clear();
-        m_killFeedQueue.clear();
-        m_scoreboardQueue.clear();
-    }
+    ClearInboundQueues();
 }
 
 void ClientNetwork::DisconnectFromServer() {
@@ -258,24 +243,27 @@ void ClientNetwork::DisconnectFromServer() {
     m_hasEverConnectedSuccessfully = false;
     m_retryWithAutoAssignedUsername = false;
     m_allowAutoReconnect = false;
-    m_chunkResyncOverflowCooldownUntil.clear();
     SetConnectionStatus(ConnectionState::Disconnected, "disconnected", false);
 
-    {
-        std::lock_guard<std::mutex> lk(m_inboundMutex);
-        m_chunkDataQueue.clear();
-        m_chunkDeltaQueue.clear();
-        m_chunkUnloadQueue.clear();
-        m_playerSnapshotQueue.clear();
-        m_shootResultQueue.clear();
-        m_inventoryActionResultQueue.clear();
-        m_inventorySnapshotQueue.clear();
-        m_worldItemSnapshotQueue.clear();
-        m_blockPlaceResultQueue.clear();
-        m_blockBreakResultQueue.clear();
-        m_killFeedQueue.clear();
-        m_scoreboardQueue.clear();
-    }
+    ClearInboundQueues();
+}
+
+void ClientNetwork::ClearInboundQueues() {
+    std::lock_guard<std::mutex> lk(m_inboundMutex);
+    m_chunkStreamQueue.clear();
+    m_chunkDataQueueDepth = 0;
+    m_chunkDeltaQueueDepth = 0;
+    m_chunkUnloadQueueDepth = 0;
+    m_playerSnapshotQueue.clear();
+    m_shootResultQueue.clear();
+    m_grappleResultQueue.clear();
+    m_inventoryActionResultQueue.clear();
+    m_inventorySnapshotQueue.clear();
+    m_worldItemSnapshotQueue.clear();
+    m_blockPlaceResultQueue.clear();
+    m_blockBreakResultQueue.clear();
+    m_killFeedQueue.clear();
+    m_scoreboardQueue.clear();
 }
 
 bool ClientNetwork::IsConnected() const {

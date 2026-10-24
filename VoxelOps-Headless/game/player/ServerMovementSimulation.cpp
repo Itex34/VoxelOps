@@ -21,7 +21,7 @@ namespace ServerMovementSimulation {
         std::atomic<bool> g_enableMissingChunkCollisionDiagnostics{false};
 
         bool
-        checkCollision(const ServerPlayer &p, const glm::vec3 &pos, ChunkManager &chunkManager) {
+        checkCollision(const PlayerPhysicsState &p, const glm::vec3 &pos, ChunkManager &chunkManager) {
             if (p.flyMode)
                 return false;
             const ChunkManager::AabbCollisionQueryResult query = chunkManager.queryAabbCollision(
@@ -44,8 +44,48 @@ namespace ServerMovementSimulation {
         }
     } // namespace
 
+    PlayerPhysicsState ExtractPhysicsState(const ServerPlayer &player) {
+        PlayerPhysicsState state{};
+        state.position = player.position;
+        state.velocity = player.velocity;
+        state.yaw = player.yaw;
+        state.pitch = player.pitch;
+        state.onGround = player.onGround;
+        state.height = player.height;
+        state.radius = player.radius;
+        state.lastInputReceived = player.lastInputReceived;
+        state.activeInputFlags = player.activeInputFlags;
+        state.flyMode = player.flyMode;
+        state.allowFlyMode = player.allowFlyMode;
+        state.moveX = player.moveX;
+        state.moveZ = player.moveZ;
+        state.jumpPressedLastTick = player.jumpPressedLastTick;
+        state.timeSinceGrounded = player.timeSinceGrounded;
+        state.jumpBufferTimer = player.jumpBufferTimer;
+        state.stepCooldownTimer = player.stepCooldownTimer;
+        state.grappleState = player.grappleState;
+        return state;
+    }
+
+    void ApplyPhysicsState(ServerPlayer &player, const PlayerPhysicsState &state) {
+        player.position = state.position;
+        player.velocity = state.velocity;
+        player.yaw = state.yaw;
+        player.pitch = state.pitch;
+        player.onGround = state.onGround;
+        player.flyMode = state.flyMode;
+        player.activeInputFlags = state.activeInputFlags;
+        player.moveX = state.moveX;
+        player.moveZ = state.moveZ;
+        player.jumpPressedLastTick = state.jumpPressedLastTick;
+        player.timeSinceGrounded = state.timeSinceGrounded;
+        player.jumpBufferTimer = state.jumpBufferTimer;
+        player.stepCooldownTimer = state.stepCooldownTimer;
+        player.grappleState = state.grappleState;
+    }
+
     void simulatePhysicsForPlayerPrepared(
-        ServerPlayer &p,
+        PlayerPhysicsState &p,
         double dt,
         ChunkManager &chunkManager,
         const PlayerInput *preparedInput
@@ -59,11 +99,6 @@ namespace ServerMovementSimulation {
         std::optional<PlayerInput> cmdOpt;
         if (preparedInput != nullptr) {
             cmdOpt = *preparedInput;
-        } else {
-            PlayerInput cmd{};
-            if (p.inputBuffer.consumeNext(cmd)) {
-                cmdOpt = cmd;
-            }
         }
 
         if (cmdOpt.has_value()) {
@@ -175,6 +210,25 @@ namespace ServerMovementSimulation {
         p.timeSinceGrounded = simState.timeSinceGrounded;
         p.jumpBufferTimer = simState.jumpBufferTimer;
         p.stepCooldownTimer = simState.stepCooldownTimer;
+    }
+
+    void simulatePhysicsForPlayerPrepared(
+        ServerPlayer &p,
+        double dt,
+        ChunkManager &chunkManager,
+        const PlayerInput *preparedInput
+    ) {
+        std::optional<PlayerInput> consumedInput;
+        if (preparedInput == nullptr) {
+            PlayerInput cmd{};
+            if (p.inputBuffer.consumeNext(cmd)) {
+                consumedInput = cmd;
+                preparedInput = &(*consumedInput);
+            }
+        }
+        PlayerPhysicsState state = ExtractPhysicsState(p);
+        simulatePhysicsForPlayerPrepared(state, dt, chunkManager, preparedInput);
+        ApplyPhysicsState(p, state);
     }
 
     void simulatePhysicsForPlayer(ServerPlayer &p, double dt, ChunkManager &chunkManager) {

@@ -50,4 +50,5 @@ private:
     ClientSessionManager &m_sessions;
     Hooks m_hooks;
     NetworkPump m_networkPump;
+    std::vector<HSteamNetConnection> m_connectionSnapshot;
 };

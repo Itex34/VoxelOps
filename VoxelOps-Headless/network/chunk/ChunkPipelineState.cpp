@@ -24,6 +24,52 @@ ChunkPipelineState::QueuePrep(HSteamNetConnection conn, const ChunkCoord &coord,
     return QueuePrepResult::Queued;
 }
 
+ChunkPipelineState::QueuePrepResult ChunkPipelineState::QueuePreparedSend(
+    HSteamNetConnection conn, const ChunkCoord &coord, size_t maxChunkSendQueuePerClient
+) {
+    const ChunkPipelineKey key{conn, coord};
+    std::lock_guard<std::mutex> lk(m_mutex);
+    if (m_chunkPrepQueued.find(key) != m_chunkPrepQueued.end() ||
+        m_chunkSendQueued.find(key) != m_chunkSendQueued.end()) {
+        return QueuePrepResult::AlreadyQueued;
+    }
+
+    auto &sendQ = m_chunkSendQueues[conn];
+    if (sendQ.size() >= maxChunkSendQueuePerClient) {
+        if (sendQ.empty()) {
+            m_chunkSendQueues.erase(conn);
+        }
+        return QueuePrepResult::QueueFull;
+    }
+
+    sendQ.push_back(coord);
+    m_chunkSendQueued.insert(key);
+    return QueuePrepResult::Queued;
+}
+
+ChunkPipelineState::QueuePrepResult ChunkPipelineState::RequeueSendFront(
+    HSteamNetConnection conn, const ChunkCoord &coord, size_t maxChunkSendQueuePerClient
+) {
+    const ChunkPipelineKey key{conn, coord};
+    std::lock_guard<std::mutex> lk(m_mutex);
+    if (m_chunkPrepQueued.find(key) != m_chunkPrepQueued.end() ||
+        m_chunkSendQueued.find(key) != m_chunkSendQueued.end()) {
+        return QueuePrepResult::AlreadyQueued;
+    }
+
+    auto &sendQ = m_chunkSendQueues[conn];
+    if (sendQ.size() >= maxChunkSendQueuePerClient) {
+        if (sendQ.empty()) {
+            m_chunkSendQueues.erase(conn);
+        }
+        return QueuePrepResult::QueueFull;
+    }
+
+    sendQ.push_front(coord);
+    m_chunkSendQueued.insert(key);
+    return QueuePrepResult::Queued;
+}
+
 ChunkPipelineState::QueuePrepBatchResult ChunkPipelineState::QueuePrepBatch(
     HSteamNetConnection conn,
     const std::vector<ChunkCoord> &coords,
@@ -99,7 +145,7 @@ bool ChunkPipelineState::WaitPopPrepTask(
     return true;
 }
 
-void ChunkPipelineState::MarkPrepDoneAndQueueSend(
+bool ChunkPipelineState::MarkPrepDoneAndQueueSend(
     const ChunkPrepTask &task,
     bool prepared,
     const std::atomic<bool> &quitFlag,
@@ -108,14 +154,22 @@ void ChunkPipelineState::MarkPrepDoneAndQueueSend(
     const ChunkPipelineKey key{task.conn, task.coord};
     std::lock_guard<std::mutex> lk(m_mutex);
     m_chunkPrepQueued.erase(key);
+    if (!prepared || quitFlag.load(std::memory_order_acquire)) {
+        return false;
+    }
+    if (m_chunkSendQueued.find(key) != m_chunkSendQueued.end()) {
+        return true;
+    }
     if (prepared && !quitFlag.load(std::memory_order_acquire) &&
         m_chunkSendQueued.find(key) == m_chunkSendQueued.end()) {
         auto &sendQ = m_chunkSendQueues[task.conn];
         if (sendQ.size() < maxChunkSendQueuePerClient) {
             sendQ.push_back(task.coord);
             m_chunkSendQueued.insert(key);
+            return true;
         }
     }
+    return false;
 }
 
 bool ChunkPipelineState::PopNextSendChunk(HSteamNetConnection conn, ChunkCoord &outCoord) {
@@ -199,6 +253,36 @@ size_t ChunkPipelineState::GetSendQueueDepthForClient(HSteamNetConnection conn) 
         return 0;
     }
     return it->second.size();
+}
+
+void ChunkPipelineState::ClearChunkForConnection(HSteamNetConnection conn, const ChunkCoord &coord) {
+    std::lock_guard<std::mutex> lk(m_mutex);
+    const ChunkPipelineKey key{conn, coord};
+    m_chunkPrepQueued.erase(key);
+    m_chunkSendQueued.erase(key);
+
+    for (auto it = m_chunkPrepQueue.begin(); it != m_chunkPrepQueue.end();) {
+        if (it->conn == conn && it->coord == coord) {
+            it = m_chunkPrepQueue.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    auto sendIt = m_chunkSendQueues.find(conn);
+    if (sendIt != m_chunkSendQueues.end()) {
+        auto &sendQueue = sendIt->second;
+        for (auto it = sendQueue.begin(); it != sendQueue.end();) {
+            if (*it == coord) {
+                it = sendQueue.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        if (sendQueue.empty()) {
+            m_chunkSendQueues.erase(sendIt);
+        }
+    }
 }
 
 void ChunkPipelineState::ClearForConnection(HSteamNetConnection conn) {

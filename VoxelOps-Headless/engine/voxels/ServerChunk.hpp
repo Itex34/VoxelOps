@@ -96,6 +96,7 @@ public:
     void replaceAllBlocks(const std::array<BlockID, CHUNK_VOLUME> &blocks);
 
     void fillRawVoxelBytes(uint8_t *outBuf, size_t bufSize) const;
+    int64_t fillRawVoxelBytesAndVersion(uint8_t *outBuf, size_t bufSize) const;
     void loadRawVoxelBytes(const uint8_t *data, size_t bufSize);
 
 private:

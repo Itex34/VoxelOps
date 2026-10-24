@@ -13,8 +13,8 @@ ChunkInterestPhase::ChunkInterestPhase(
     , m_hooks(std::move(hooks)) {}
 
 size_t ChunkInterestPhase::RunChunkInterestPhase(bool simBacklog, double &chunkInterestUs) {
-    constexpr size_t kChunkInterestUpdatesPerLoop = 8;
-    constexpr int64_t kChunkInterestBudgetUs = 5000;
+    constexpr size_t kDefaultChunkInterestUpdatesPerLoop = 8;
+    constexpr int64_t kDefaultChunkInterestBudgetUs = 5000;
     const auto kChunkInterestUpdateInterval = std::chrono::milliseconds(100);
 
     chunkInterestUs = 0.0;
@@ -28,13 +28,23 @@ size_t ChunkInterestPhase::RunChunkInterestPhase(bool simBacklog, double &chunkI
     std::vector<ChunkInterestTask> chunkInterestTasks;
     const auto chunkInterestStart = std::chrono::steady_clock::now();
     const auto chunkInterestNow = std::chrono::steady_clock::now();
+    size_t maxChunkInterestUpdates = kDefaultChunkInterestUpdatesPerLoop;
+    int64_t chunkInterestBudgetUs = kDefaultChunkInterestBudgetUs;
     {
         auto lk = LockWaitTelemetry::AcquireSessionLock(
             m_mutex, "ChunkInterestPhase::RunChunkInterestPhase"
         );
-        chunkInterestTasks.reserve(
-            std::min<size_t>(kChunkInterestUpdatesPerLoop, m_sessions.size())
-        );
+        if (m_sessions.size() >= 64) {
+            maxChunkInterestUpdates = 2;
+            chunkInterestBudgetUs = 1500;
+        } else if (m_sessions.size() >= 32) {
+            maxChunkInterestUpdates = 3;
+            chunkInterestBudgetUs = 2000;
+        } else if (m_sessions.size() >= 16) {
+            maxChunkInterestUpdates = 4;
+            chunkInterestBudgetUs = 3000;
+        }
+        chunkInterestTasks.reserve(std::min<size_t>(maxChunkInterestUpdates, m_sessions.size()));
         std::vector<HSteamNetConnection> conns;
         conns.reserve(m_sessions.size());
         for (const auto &[conn, _] : m_sessions) {
@@ -69,7 +79,7 @@ size_t ChunkInterestPhase::RunChunkInterestPhase(bool simBacklog, double &chunkI
             session.chunkInterestDirty = false;
             session.nextChunkInterestUpdateAt = chunkInterestNow + kChunkInterestUpdateInterval;
 
-            if (chunkInterestTasks.size() >= kChunkInterestUpdatesPerLoop) {
+            if (chunkInterestTasks.size() >= maxChunkInterestUpdates) {
                 m_nextChunkInterestIndex = (index + 1) % conns.size();
                 break;
             }
@@ -87,7 +97,7 @@ size_t ChunkInterestPhase::RunChunkInterestPhase(bool simBacklog, double &chunkI
                                       std::chrono::steady_clock::now() - chunkInterestStart
         )
                                       .count();
-        if (elapsedUs >= kChunkInterestBudgetUs) {
+        if (elapsedUs >= chunkInterestBudgetUs) {
             auto lk = LockWaitTelemetry::AcquireSessionLock(
                 m_mutex, "ChunkInterestPhase::RunChunkInterestPhase.rescheduleSkipped"
             );
@@ -104,7 +114,7 @@ size_t ChunkInterestPhase::RunChunkInterestPhase(bool simBacklog, double &chunkI
     }
     chunkInterestUs = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(
                                               std::chrono::steady_clock::now() - chunkInterestStart
-    )
-                                              .count());
+    ).count());
+
     return processedTasks;
 }

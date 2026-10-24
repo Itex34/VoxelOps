@@ -1,5 +1,6 @@
 #include "Player.hpp"
 
+#include "../application/AppHelpers.hpp"
 #include "../world/ChunkManager.hpp"
 #include "../../Shared/player/PlayerData.hpp"
 #include "../../Shared/player/GrappleSwing.hpp"
@@ -8,6 +9,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iostream>
+#include <optional>
+#include <string>
 
 namespace {
 
@@ -17,6 +21,8 @@ inline const Shared::PlayerData::MovementSettings &movementSettings() {
 
 constexpr bool kClientBlockOnMissingCollisionChunk = true;
 constexpr float kCollisionSkin = 0.001f;
+constexpr double kMissingCollisionLogIntervalSec = 1.0;
+constexpr double kAirUnderFootLogIntervalSec = 1.0;
 
 float NormalizeYawDegrees(float yawDegrees) {
     if (!std::isfinite(yawDegrees)) {
@@ -57,20 +63,139 @@ bool Player::checkCollision(const glm::vec3 &pos) const {
     const int iy1 = ifloor(maxY);
     const int iz1 = ifloor(maxZ);
 
+    bool sampledMissingCollisionChunk = false;
+    bool sampledOutOfBoundsCollisionChunk = false;
+    glm::ivec3 firstMissingCollisionChunk{0};
+    glm::ivec3 firstOutOfBoundsCollisionChunk{0};
     for (int x = ix0; x <= ix1; ++x) {
         for (int y = iy0; y <= iy1; ++y) {
             for (int z = iz0; z <= iz1; ++z) {
                 const glm::ivec3 worldPos(x, y, z);
                 const glm::ivec3 chunkPos = chunkManager.worldToChunkPos(worldPos);
-                if (chunkManager.inBounds(chunkPos) && !chunkManager.hasChunkLoaded(chunkPos)) {
+                if (!chunkManager.inBounds(chunkPos)) {
+                    if (!sampledOutOfBoundsCollisionChunk) {
+                        sampledOutOfBoundsCollisionChunk = true;
+                        firstOutOfBoundsCollisionChunk = chunkPos;
+                    }
+                    continue;
+                }
+                if (!chunkManager.hasChunkLoaded(chunkPos)) {
                     if (kClientBlockOnMissingCollisionChunk && m_treatMissingCollisionAsSolid) {
                         return true;
+                    }
+                    if (!sampledMissingCollisionChunk) {
+                        sampledMissingCollisionChunk = true;
+                        firstMissingCollisionChunk = chunkPos;
                     }
                     continue;
                 }
                 if (chunkManager.getBlockGlobal(x, y, z) != BlockID::Air) {
                     return true;
                 }
+            }
+        }
+    }
+    if (sampledMissingCollisionChunk || sampledOutOfBoundsCollisionChunk) {
+        static double s_nextMissingCollisionLogAt = 0.0;
+        const double nowSec = AppHelpers::GetTimeSeconds();
+        if (nowSec >= s_nextMissingCollisionLogAt) {
+            s_nextMissingCollisionLogAt = nowSec + kMissingCollisionLogIntervalSec;
+            std::cerr << "[chunk/collision] "
+                      << (sampledMissingCollisionChunk ? "missing" : "out-of-bounds")
+                      << " sampled as air chunk=("
+                      << (sampledMissingCollisionChunk ? firstMissingCollisionChunk.x
+                                                       : firstOutOfBoundsCollisionChunk.x)
+                      << ","
+                      << (sampledMissingCollisionChunk ? firstMissingCollisionChunk.y
+                                                       : firstOutOfBoundsCollisionChunk.y)
+                      << ","
+                      << (sampledMissingCollisionChunk ? firstMissingCollisionChunk.z
+                                                       : firstOutOfBoundsCollisionChunk.z)
+                      << ")"
+                      << " testPos=(" << pos.x << "," << pos.y << "," << pos.z << ")"
+                      << " aabbBlocks=(" << ix0 << "," << iy0 << "," << iz0 << ")->(" << ix1
+                      << "," << iy1 << "," << iz1 << ")"
+                      << " missingChunkSolid=" << (m_treatMissingCollisionAsSolid ? 1 : 0)
+                      << "\n";
+        }
+    }
+    {
+        static double s_nextAirUnderFootLogAt = 0.0;
+        const double nowSec = AppHelpers::GetTimeSeconds();
+        if (onGround && std::abs(velocity.y) < 0.01f && nowSec >= s_nextAirUnderFootLogAt) {
+            const int footX = ifloor(pos.x);
+            const int footZ = ifloor(pos.z);
+            const int belowY = ifloor(pos.y - 0.05f);
+            const glm::ivec3 belowWorld(footX, belowY, footZ);
+            const glm::ivec3 belowChunk = chunkManager.worldToChunkPos(belowWorld);
+
+            if (chunkManager.inBounds(belowChunk) && chunkManager.hasChunkLoaded(belowChunk) &&
+                chunkManager.getBlockGlobal(footX, belowY, footZ) == BlockID::Air) {
+                s_nextAirUnderFootLogAt = nowSec + kAirUnderFootLogIntervalSec;
+
+                const auto &chunks = chunkManager.getChunks();
+                const auto chunkIt = chunks.find(belowChunk);
+                const bool chunkAllAir =
+                    chunkIt != chunks.end() ? chunkIt->second.isCompletelyAir() : false;
+                const std::optional<NetworkChunkDebugSummary> chunkSummary =
+                    chunkManager.getNetworkChunkDebugSummary(belowChunk);
+                const auto &cpuMeshes = chunkManager.getCpuChunkMeshes();
+                const auto cpuMeshIt = cpuMeshes.find(belowChunk);
+                const bool hasCpuMesh = cpuMeshIt != cpuMeshes.end();
+                const size_t cpuMeshVertexCount =
+                    hasCpuMesh ? cpuMeshIt->second.vertices.size() : 0;
+                const size_t cpuMeshIndexCount = hasCpuMesh ? cpuMeshIt->second.indices.size() : 0;
+                const uint64_t cpuMeshRevision =
+                    hasCpuMesh ? cpuMeshIt->second.revision : uint64_t{0};
+
+                int nearestSolidY = belowY;
+                BlockID nearestSolidBlock = BlockID::Air;
+                bool foundSolid = false;
+                for (int y = belowY; y >= belowY - 16; --y) {
+                    const BlockID block = chunkManager.getBlockGlobal(footX, y, footZ);
+                    if (block != BlockID::Air) {
+                        nearestSolidY = y;
+                        nearestSolidBlock = block;
+                        foundSolid = true;
+                        break;
+                    }
+                }
+
+                std::cerr << "[chunk/collision] loaded air under foot"
+                          << " pos=(" << pos.x << "," << pos.y << "," << pos.z << ")"
+                          << " belowBlock=(" << footX << "," << belowY << "," << footZ << ")"
+                          << " belowChunk=(" << belowChunk.x << "," << belowChunk.y << ","
+                          << belowChunk.z << ")"
+                          << " chunkAllAir=" << (chunkAllAir ? 1 : 0)
+                          << " chunkVersion="
+                          << (chunkSummary.has_value() ? std::to_string(chunkSummary->version)
+                                                       : std::string("unknown"))
+                          << " chunkHash="
+                          << (chunkSummary.has_value()
+                                  ? std::to_string(chunkSummary->rawContentHash)
+                                  : std::string("unknown"))
+                          << " chunkNonAir="
+                          << (chunkSummary.has_value()
+                                  ? std::to_string(chunkSummary->nonAirCount)
+                                  : std::string("unknown"))
+                          << " chunkNonAirY=("
+                          << (chunkSummary.has_value()
+                                  ? std::to_string(chunkSummary->minNonAirWorldY)
+                                  : std::string("unknown"))
+                          << ","
+                          << (chunkSummary.has_value()
+                                  ? std::to_string(chunkSummary->maxNonAirWorldY)
+                                  : std::string("unknown"))
+                          << ")"
+                          << " cpuMesh=" << (hasCpuMesh ? 1 : 0)
+                          << " cpuMeshVerts=" << cpuMeshVertexCount
+                          << " cpuMeshIndices=" << cpuMeshIndexCount
+                          << " cpuMeshRevision=" << cpuMeshRevision
+                          << " nearestSolid="
+                          << (foundSolid ? std::to_string(nearestSolidY) : std::string("none"))
+                          << " nearestSolidBlock=" << static_cast<int>(nearestSolidBlock)
+                          << " onGround=" << (onGround ? 1 : 0)
+                          << " velY=" << velocity.y << "\n";
             }
         }
     }

@@ -8,6 +8,15 @@
 #include <iostream>
 #include <utility>
 
+namespace {
+
+    constexpr size_t kMaxInboundMessagesPerLoop = 64;
+    constexpr size_t kMaxConnectRequestsPerLoop = 2;
+    constexpr size_t kMaxDeferredInboundPackets = 512;
+    constexpr int64_t kInboundMessageBudgetUs = 1500;
+
+} // namespace
+
 NetworkPump::NetworkPump(HSteamNetPollGroup &pollGroup, Hooks hooks)
     : m_pollGroup(pollGroup)
     , m_hooks(std::move(hooks)) {}
@@ -59,14 +68,12 @@ void NetworkPump::PumpInbound(
     uint64_t &chunkRequestPacketsThisLoop,
     double &messageDrainUs
 ) {
-    constexpr size_t kMaxInboundMessagesPerLoop = 64;
-    constexpr int64_t kInboundMessageBudgetUs = 1500;
-
     SteamNetworkingSockets()->RunCallbacks();
 
     const auto messageDrainStart = std::chrono::steady_clock::now();
     SteamNetworkingMessage_t *pMsg = nullptr;
     size_t inboundMessagesProcessed = 0;
+    size_t connectRequestsProcessed = 0;
     const auto reachedMessageDrainBudget = [&]() {
         ++inboundMessagesProcessed;
         const int64_t elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -75,6 +82,32 @@ void NetworkPump::PumpInbound(
                                       .count();
         return elapsedUs >= kInboundMessageBudgetUs;
     };
+
+    while (inboundMessagesProcessed < kMaxInboundMessagesPerLoop && !m_deferredPackets.empty()) {
+        DeferredPacket packet = std::move(m_deferredPackets.front());
+        if (packet.packetType == PacketType::ConnectRequest &&
+            connectRequestsProcessed >= kMaxConnectRequestsPerLoop) {
+            m_deferredPackets.front() = std::move(packet);
+            break;
+        }
+        m_deferredPackets.pop_front();
+        if (packet.packetType == PacketType::ConnectRequest) {
+            ++connectRequestsProcessed;
+        }
+        ++msgPacketsThisLoop;
+        DispatchInboundPacket(
+            packet.conn,
+            packet.packetType,
+            packet.bytes.data(),
+            static_cast<uint32_t>(packet.bytes.size()),
+            playerInputPacketsThisLoop,
+            chunkRequestPacketsThisLoop
+        );
+        if (reachedMessageDrainBudget()) {
+            break;
+        }
+    }
+
     while (inboundMessagesProcessed < kMaxInboundMessagesPerLoop &&
            SteamNetworkingSockets()->ReceiveMessagesOnPollGroup(m_pollGroup, &pMsg, 1) > 0 &&
            pMsg) {
@@ -113,6 +146,33 @@ void NetworkPump::PumpInbound(
             continue;
         }
 
+        if (packetType == PacketType::ConnectRequest &&
+            connectRequestsProcessed >= kMaxConnectRequestsPerLoop) {
+            if (m_deferredPackets.size() < kMaxDeferredInboundPackets) {
+                DeferredPacket deferred;
+                deferred.conn = incoming;
+                deferred.packetType = packetType;
+                const auto *begin = reinterpret_cast<const uint8_t *>(data);
+                deferred.bytes.assign(begin, begin + cb);
+                m_deferredPackets.push_back(std::move(deferred));
+            } else {
+                std::cerr << "[recv] deferred packet queue full conn=" << incoming
+                          << " type=" << static_cast<int>(packetType)
+                          << " (closing connection)\n";
+                SteamNetworkingSockets()->CloseConnection(
+                    incoming, 0, "server inbound queue full", false
+                );
+            }
+            pMsg->Release();
+            if (reachedMessageDrainBudget()) {
+                break;
+            }
+            continue;
+        }
+
+        if (packetType == PacketType::ConnectRequest) {
+            ++connectRequestsProcessed;
+        }
         ++msgPacketsThisLoop;
         DispatchInboundPacket(
             incoming, packetType, data, cb, playerInputPacketsThisLoop, chunkRequestPacketsThisLoop

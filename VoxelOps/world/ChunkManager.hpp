@@ -35,8 +35,15 @@ class ChunkMesher;
 enum class NetworkChunkDeltaApplyResult {
     Applied = 0,
     MissingBaseChunk = 1,
-    StaleVersion = 2,
-    VersionGap = 3
+    StaleVersion = 2
+};
+
+struct NetworkChunkDebugSummary {
+    uint64_t version = 0;
+    uint32_t rawContentHash = 0;
+    uint16_t nonAirCount = 0;
+    int minNonAirWorldY = 0;
+    int maxNonAirWorldY = 0;
 };
 
 class ChunkManager {
@@ -61,6 +68,7 @@ public:
     bool applyNetworkChunkData(const ChunkData &packet);
     NetworkChunkDeltaApplyResult applyNetworkChunkDelta(const ChunkDelta &packet);
     void applyNetworkChunkUnload(const ChunkUnload &packet);
+    void clearNetworkChunks();
 
     const std::unordered_map<glm::ivec3, Chunk, IVec3Hash> &getChunks() const {
         return chunkMap;
@@ -71,6 +79,8 @@ public:
     }
 
     [[nodiscard]] bool hasChunkLoaded(const glm::ivec3 &chunkPos) const;
+    [[nodiscard]] std::optional<NetworkChunkDebugSummary>
+    getNetworkChunkDebugSummary(const glm::ivec3 &chunkPos) const;
     [[nodiscard]] const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &
     getCpuChunkMeshes() const noexcept {
         return getCpuChunkMeshesImpl();
@@ -94,6 +104,8 @@ private:
 
     std::unordered_map<glm::ivec3, Chunk, IVec3Hash> chunkMap;
     std::unordered_map<glm::ivec3, uint64_t, IVec3Hash> m_networkChunkVersions;
+    std::unordered_map<glm::ivec3, NetworkChunkDebugSummary, IVec3Hash>
+        m_networkChunkDebugSummaries;
     std::unique_ptr<ChunkMesher> m_chunkMesher;
 
     std::unordered_map<glm::ivec2, ChunkColumn, IVec2Hash> chunkColumns;

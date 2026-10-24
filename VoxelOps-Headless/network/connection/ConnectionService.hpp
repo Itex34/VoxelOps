@@ -27,8 +27,7 @@ public:
         std::function<void()> invalidateCombatSnapshotCache;
         std::function<void(PlayerID, size_t)> onSessionAttached;
         std::function<void(const void *, uint32_t, HSteamNetConnection)> broadcastRaw;
-        std::function<bool(const ChunkCoord &)> prepareChunkForStreaming;
-        std::function<bool(HSteamNetConnection, const ChunkCoord &)> sendChunkData;
+        std::function<void(HSteamNetConnection, const ChunkCoord &)> clearChunkPipelineForConnection;
         std::function<bool(HSteamNetConnection, const ChunkCoord &)> queueChunkPreparation;
         std::function<void(HSteamNetConnection, const ClientSession &, const char *, bool)>
             teardownClientSession;

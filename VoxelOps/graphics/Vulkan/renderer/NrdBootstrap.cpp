@@ -129,7 +129,7 @@ void NrdBootstrap::init() {
         return;
     }
 
-    FARPROC proc = nullptr;
+    FARPROC proc = nullptr; 
     if (!loadProc("CreateInstance", proc)) {
         return;
     }

@@ -221,8 +221,7 @@ void ServerComposition::HandlePlayerInputPacket(
         }
     });
     if (!username.empty() && playerId != 0) {
-        m_playerManager.enqueuePlayerInput(playerId, input);
-        m_playerManager.setEquippedWeapon(playerId, input.weaponId);
+        m_playerManager.enqueuePlayerInputAndSetEquippedWeapon(playerId, input);
     } else {
         std::cout << "[input] unregistered conn = " << incoming << " tick = " << input.inputTick
                   << "\n";
@@ -357,11 +356,8 @@ ConnectionService::Hooks ServerComposition::BuildConnectionHooks() {
         [this](const void *data, uint32_t len, HSteamNetConnection except) {
             m_broadcastService.BroadcastRaw(data, len, except);
         },
-        [this](const ClientSessionManager::ChunkCoord &coord) {
-            return m_chunkStreamingService.PrepareChunkForStreaming(coord);
-        },
         [this](HSteamNetConnection conn, const ClientSessionManager::ChunkCoord &coord) {
-            return m_chunkStreamingService.SendChunkData(conn, coord);
+            m_chunkStreamingService.ClearChunkPipelineForConnection(conn, coord);
         },
         [this](HSteamNetConnection conn, const ClientSessionManager::ChunkCoord &coord) {
             return m_chunkStreamingService.QueueChunkPreparation(conn, coord);

@@ -4,15 +4,13 @@
 
 #include <glm/vec3.hpp>
 
-#include <chrono>
-
 class ChunkManager;
 
 namespace ShootValidation {
 
     struct ShootGateState {
-        std::chrono::steady_clock::time_point lastAcceptedShootTime =
-            std::chrono::steady_clock::time_point::min();
+        uint32_t lastAcceptedShootTick = 0;
+        bool hasLastAcceptedShootTick = false;
         uint32_t lastShootClientShotId = 0;
         bool hasLastShootClientShotId = false;
     };
@@ -30,7 +28,13 @@ namespace ShootValidation {
     bool IsDirectionValid(const ShootRequest &request, glm::vec3 &outNormalizedDir);
 
     ShootGateResult
-    RunShootGate(ShootGateState &state, const ShootRequest &request, float minShotIntervalSeconds);
+    RunShootGate(
+        ShootGateState &state,
+        const ShootRequest &request,
+        float minShotIntervalSeconds,
+        uint32_t shotServerTick,
+        uint32_t serverTickRateHz
+    );
 
     ValidatedOrigin ComputeValidatedOrigin(
         const ChunkManager &chunkManager,

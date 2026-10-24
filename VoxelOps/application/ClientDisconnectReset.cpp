@@ -28,6 +28,7 @@ void ClientDisconnectReset::apply(Runtime &runtime, bool *forceCursorEnabled) co
     runtime.combat.wasRespawnClickDown = false;
     runtime.gameplay.player->setFlyModeAllowed(false);
     runtime.gameplay.player->clearConnectedPlayers();
+    runtime.gameplay.chunkManager->clearNetworkChunks();
     runtime.world.worldItems.clear();
     runtime.world.lastWorldItemSnapshotTick = 0;
     runtime.combat.grapple = RuntimeCombatState::GrappleRuntimeState{};
@@ -41,6 +42,9 @@ void ClientDisconnectReset::apply(Runtime &runtime, bool *forceCursorEnabled) co
     runtime.prediction.lastAckedInputTick = 0;
     runtime.prediction.lastInputSendTime = GetTimeSeconds();
     runtime.world.lastChunkRequestSendTime = 0.0;
+    runtime.world.lastChunkCoverageLogTime = 0.0;
+    runtime.world.chunkCoverageMissingIdleAudits = 0;
+    runtime.world.chunkCoverageMissingScanOffset = 0;
     runtime.world.hasLastChunkRequestCenter = false;
     runtime.world.renderStateNeedsResync = false;
     runtime.world.justRespawned = false;

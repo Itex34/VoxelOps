@@ -63,6 +63,20 @@ namespace {
 
         return blocks;
     }
+
+    void OverlayExistingNonAirBlocks(
+        std::array<BlockID, CHUNK_VOLUME> &blocks, const ServerChunk &existingChunk
+    ) {
+        std::array<uint8_t, CHUNK_VOLUME * sizeof(BlockID)> existingRaw{};
+        existingChunk.fillRawVoxelBytes(existingRaw.data(), existingRaw.size());
+
+        for (size_t i = 0; i < CHUNK_VOLUME; ++i) {
+            const BlockID existing = static_cast<BlockID>(existingRaw[i]);
+            if (existing != BlockID::Air) {
+                blocks[i] = existing;
+            }
+        }
+    }
 } // namespace
 
 void WorldGen::applyClientDecorationPass(
@@ -142,31 +156,37 @@ void WorldGen::generateChunkAt(ChunkManager &cm, const glm::ivec3 &pos) {
     if (!cm.inBounds(pos))
         return;
 
+    std::array<BlockID, CHUNK_VOLUME> terrainBlocks =
+        BuildTerrainBlocks(cm.noise, pos, 1.01f, 0.8f);
+
     auto chunk = std::make_unique<ServerChunk>(pos);
-    chunk->replaceAllBlocks(BuildTerrainBlocks(cm.noise, pos, 1.01f, 0.8f));
+    chunk->replaceAllBlocks(terrainBlocks);
 
     // Reuse the client-style two-pass decoration rules for consistency with the client worldgen.
     applyClientDecorationPass(cm, *chunk, pos);
 
-    bool shouldDecorateExisting = false;
     ServerChunk *existingChunk = nullptr;
+    bool shouldFinalizeExisting = false;
     {
         std::lock_guard<std::shared_mutex> lk(cm.mapMutex);
         auto [insertedChunk, inserted] = cm.m_chunks.emplaceIfEmpty(pos, std::move(chunk));
         if (inserted) {
             insertedChunk->markDirty();
+            cm.terrainGeneratedChunks.insert(pos);
             cm.decoratedChunks.insert(pos);
             return;
         }
 
         existingChunk = insertedChunk;
-        shouldDecorateExisting = (cm.decoratedChunks.find(pos) == cm.decoratedChunks.end());
+        shouldFinalizeExisting = (cm.decoratedChunks.find(pos) == cm.decoratedChunks.end());
     }
 
-    if (shouldDecorateExisting && existingChunk != nullptr) {
-        // Another thread inserted terrain while we were generating; finish decoration in place.
+    if (shouldFinalizeExisting && existingChunk != nullptr) {
+        OverlayExistingNonAirBlocks(terrainBlocks, *existingChunk);
+        existingChunk->replaceAllBlocks(terrainBlocks);
         applyClientDecorationPass(cm, *existingChunk, pos);
         std::lock_guard<std::shared_mutex> lk(cm.mapMutex);
+        cm.terrainGeneratedChunks.insert(pos);
         cm.decoratedChunks.insert(pos);
     }
 }
@@ -176,18 +196,37 @@ void WorldGen::generateTerrainChunkAt(ChunkManager &cm, const glm::ivec3 &pos) {
         return;
 
     auto chunk = std::make_unique<ServerChunk>(pos);
-    chunk->replaceAllBlocks(BuildTerrainBlocks(cm.noise, pos, 1.0f, 1.9f));
+    std::array<BlockID, CHUNK_VOLUME> terrainBlocks =
+        BuildTerrainBlocks(cm.noise, pos, 1.01f, 0.8f);
+    chunk->replaceAllBlocks(terrainBlocks);
 
+    ServerChunk *existingChunk = nullptr;
+    bool shouldMergeExisting = false;
     {
         std::lock_guard<std::shared_mutex> lk(cm.mapMutex);
         if (cm.m_chunks.containsLoaded(pos)) {
+            shouldMergeExisting = cm.terrainGeneratedChunks.find(pos) ==
+                                  cm.terrainGeneratedChunks.end();
+            existingChunk = cm.m_chunks.get(pos);
+            if (!shouldMergeExisting) {
+                return;
+            }
+        } else {
+            auto [insertedChunk, inserted] = cm.m_chunks.emplaceIfEmpty(pos, std::move(chunk));
+            if (insertedChunk != nullptr) {
+                insertedChunk->markDirty();
+            }
+            cm.terrainGeneratedChunks.insert(pos);
+            cm.decoratedChunks.erase(pos);
             return;
         }
+    }
 
-        auto [insertedChunk, inserted] = cm.m_chunks.emplaceIfEmpty(pos, std::move(chunk));
-        if (insertedChunk != nullptr) {
-            insertedChunk->markDirty();
-        }
+    if (existingChunk != nullptr) {
+        OverlayExistingNonAirBlocks(terrainBlocks, *existingChunk);
+        existingChunk->replaceAllBlocks(terrainBlocks);
+        std::lock_guard<std::shared_mutex> lk(cm.mapMutex);
+        cm.terrainGeneratedChunks.insert(pos);
         cm.decoratedChunks.erase(pos);
     }
 }

@@ -23,6 +23,7 @@ namespace LagCompensation {
         float yaw = 0.0f;
         float height = 2.56f;
         float radius = 0.3f;
+        bool isAlive = false;
     };
 
     struct LagCompFrame {

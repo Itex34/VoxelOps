@@ -77,20 +77,22 @@ namespace WorldRaycast {
                 cachedChunkCoords = chunkCoords;
                 cachedChunk = chunkManager.getChunkIfExists(chunkCoords);
             }
-            if (cachedChunk) {
+            const bool unknownChunk = cachedChunk == nullptr;
+            bool solidBlock = unknownChunk;
+            if (cachedChunk != nullptr) {
                 const glm::ivec3 blockInChunk = currentBlock - cachedChunk->getWorldPosition();
-                if (cachedChunk->getBlockUnchecked(
-                        blockInChunk.x, blockInChunk.y, blockInChunk.z
-                    ) != BlockID::Air) {
-                    const BlockFace hitFace =
-                        faceFromEntryAxis(enteredAxis, enteredStepSign, rayDir);
-                    return {
-                        .hit = true,
-                        .distance = traveled,
-                        .hitPoint = origin + rayDir * traveled,
-                        .face = hitFace
-                    };
-                }
+                solidBlock = cachedChunk->getBlockUnchecked(
+                                 blockInChunk.x, blockInChunk.y, blockInChunk.z
+                             ) != BlockID::Air;
+            }
+            if (solidBlock) {
+                const BlockFace hitFace = faceFromEntryAxis(enteredAxis, enteredStepSign, rayDir);
+                return {
+                    .hit = true,
+                    .distance = traveled,
+                    .hitPoint = origin + rayDir * traveled,
+                    .face = hitFace
+                };
             }
 
             const float nextT = std::min({tMax.x, tMax.y, tMax.z});

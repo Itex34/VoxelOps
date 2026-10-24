@@ -208,6 +208,19 @@ void App::initNetworking(Runtime &runtime) {
 }
 
 bool App::beginConnectionAttempt(Runtime &runtime) {
+    if (runtime.gameplay.chunkManager) {
+        runtime.gameplay.chunkManager->clearNetworkChunks();
+    }
+    runtime.world.lastChunkRequestSendTime = 0.0;
+    runtime.world.lastChunkCoverageLogTime = 0.0;
+    runtime.world.chunkCoverageMissingIdleAudits = 0;
+    runtime.world.chunkCoverageMissingScanOffset = 0;
+    runtime.world.hasLastChunkRequestCenter = false;
+    runtime.world.pendingBlockPlaceRequests.clear();
+    runtime.world.pendingBlockBreakRequests.clear();
+    runtime.world.nextBlockPlaceRequestId = 1;
+    runtime.world.nextBlockBreakRequestId = 1;
+
     if (m_BotMode) {
         const std::string identity = buildBotIdentity();
         if (!runtime.network.clientNet.SetClientIdentityOverride(identity)) {

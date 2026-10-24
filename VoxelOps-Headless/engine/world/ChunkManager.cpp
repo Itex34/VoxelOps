@@ -48,10 +48,12 @@ void ChunkManager::generateInitialChunks_TwoPass(int radiusChunks) {
 }
 
 void ChunkManager::generateChunkAt(const glm::ivec3 &pos) {
+    std::lock_guard<std::recursive_mutex> generationLock(generationMutex);
     WorldGen::generateChunkAt(*this, pos);
 }
 
 void ChunkManager::generateTerrainChunkAt(const glm::ivec3 &pos) {
+    std::lock_guard<std::recursive_mutex> generationLock(generationMutex);
     WorldGen::generateTerrainChunkAt(*this, pos);
 }
 
@@ -119,7 +121,7 @@ void ChunkManager::setBlockGlobal(int worldX, int worldY, int worldZ, BlockID id
     }
 
     // For cross-chunk edits during generation (tree borders), materialize terrain if absent.
-    if (!chunkPtr) {
+    if (!chunkPtr || !isChunkTerrainGenerated(chunkPos)) {
         generateTerrainChunkAt(chunkPos);
         std::shared_lock<std::shared_mutex> lk(mapMutex);
         chunkPtr = m_chunks.get(chunkPos);
@@ -151,7 +153,7 @@ BlockID ChunkManager::getBlockGlobal(int worldX, int worldY, int worldZ) {
     }
 
     // Mirror write path behavior so neighbor reads during border decoration see real terrain.
-    if (!chunkPtr) {
+    if (!chunkPtr || !isChunkTerrainGenerated(cp)) {
         generateTerrainChunkAt(cp);
         const auto lockStart = std::chrono::steady_clock::now();
         std::shared_lock<std::shared_mutex> lk(mapMutex);
@@ -230,8 +232,37 @@ bool ChunkManager::isChunkStreamReady(const glm::ivec3 &chunkPos) const {
     if (!lk.owns_lock()) {
         return false;
     }
+
+    constexpr int kDecorationReachChunksXZ = 2;
+    constexpr int kDecorationReachChunksUp = 3;
+    if (m_chunks.get(chunkPos) == nullptr) {
+        return false;
+    }
+
+    // Tree placement is owned by the chunk containing the tree base and can write
+    // across up to two horizontal chunks and three chunks upward.
+    for (int dz = -kDecorationReachChunksXZ; dz <= kDecorationReachChunksXZ; ++dz) {
+        for (int dx = -kDecorationReachChunksXZ; dx <= kDecorationReachChunksXZ; ++dx) {
+            for (int dy = 0; dy <= kDecorationReachChunksUp; ++dy) {
+                const glm::ivec3 sourcePos(chunkPos.x + dx, chunkPos.y - dy, chunkPos.z + dz);
+                if (!m_chunks.containsPosition(sourcePos)) {
+                    continue;
+                }
+                if (m_chunks.get(sourcePos) == nullptr ||
+                    terrainGeneratedChunks.find(sourcePos) == terrainGeneratedChunks.end() ||
+                    decoratedChunks.find(sourcePos) == decoratedChunks.end()) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+bool ChunkManager::isChunkTerrainGenerated(const glm::ivec3 &chunkPos) const {
+    std::shared_lock<std::shared_mutex> lk(mapMutex);
     return m_chunks.get(chunkPos) != nullptr &&
-           decoratedChunks.find(chunkPos) != decoratedChunks.end();
+           terrainGeneratedChunks.find(chunkPos) != terrainGeneratedChunks.end();
 }
 
 void ChunkManager::markChunkDirty(const glm::ivec3 &pos) {
@@ -267,10 +298,11 @@ ServerChunk *ChunkManager::getChunkIfExists(const glm::ivec3 &chunkPos) const {
 }
 
 ServerChunk *ChunkManager::loadOrGenerateChunk(const glm::ivec3 &chunkPos) {
+    std::lock_guard<std::recursive_mutex> generationLock(generationMutex);
     if (!inBounds(chunkPos))
         return nullptr;
 
-    bool needsDecoration = false;
+    bool needsGeneration = false;
     // quick path: check if present
     {
         const auto lockStart = std::chrono::steady_clock::now();
@@ -282,16 +314,18 @@ ServerChunk *ChunkManager::loadOrGenerateChunk(const glm::ivec3 &chunkPos) {
         MaybeLogSlowChunkMapLock("loadOrGenerateChunk.initialLookup", waitUs);
         ServerChunk *chunk = m_chunks.get(chunkPos);
         if (chunk != nullptr) {
-            needsDecoration = (decoratedChunks.find(chunkPos) == decoratedChunks.end());
-            if (!needsDecoration) {
+            needsGeneration =
+                terrainGeneratedChunks.find(chunkPos) == terrainGeneratedChunks.end() ||
+                decoratedChunks.find(chunkPos) == decoratedChunks.end();
+            if (!needsGeneration) {
                 return chunk;
             }
         }
     }
 
-    // Upgrade terrain-only placeholders to decorated chunks when explicitly streamed.
-    if (needsDecoration) {
-        WorldGen::decorateChunkAt(*this, chunkPos);
+    // Upgrade partial, terrain-only, or undecorated chunks before streaming.
+    if (needsGeneration) {
+        WorldGen::generateChunkAt(*this, chunkPos);
         const auto lockStart = std::chrono::steady_clock::now();
         std::shared_lock<std::shared_mutex> lk(mapMutex);
         const auto waitUs = std::chrono::duration_cast<std::chrono::microseconds>(

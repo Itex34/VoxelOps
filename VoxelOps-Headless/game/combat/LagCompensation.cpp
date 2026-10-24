@@ -20,6 +20,7 @@ namespace LagCompensation {
             pose.yaw = player.yaw;
             pose.height = player.height;
             pose.radius = player.radius;
+            pose.isAlive = player.isAlive;
             frame.players.emplace(player.id, pose);
         }
 
@@ -43,7 +44,7 @@ namespace LagCompensation {
         const std::deque<LagCompFrame> &frames, uint32_t currentServerTick, uint32_t clientTick
     ) {
         uint32_t lagCompTargetTick = currentServerTick;
-        if (clientTick <= currentServerTick &&
+        if (!IsNewerU32(clientTick, currentServerTick) &&
             (currentServerTick - clientTick) <= kShootLagCompensationMaxTicks) {
             lagCompTargetTick = clientTick;
         }

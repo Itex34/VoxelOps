@@ -24,8 +24,8 @@ void SettingsMenu::draw(
 
     ui.panel(Rect{0.0f, 0.0f, screenSize.x, screenSize.y}, Color{0.0f, 0.0f, 0.0f, 0.46f});
 
-    const float panelWidth = std::min(360.0f, std::max(300.0f, screenSize.x - 48.0f));
-    const float panelHeight = runtime.ui.pauseMenuSettingsVisible ? 260.0f : 236.0f;
+    const float panelWidth = std::min(460.0f, std::max(400.0f, screenSize.x - 48.0f));
+    const float panelHeight = 460.0f;
     const float x = (screenSize.x - panelWidth) * 0.5f;
     const float y = (screenSize.y - panelHeight) * 0.5f;
          
@@ -36,13 +36,12 @@ void SettingsMenu::draw(
     const float buttonX = x + 42.0f;
     const float buttonW = panelWidth - 84.0f;
     const float buttonH = 38.0f;
-    const float firstY = y + 72.0f;
-    const float gap = 14.0f;
 
-
-    if (ui.button("Back", Rect{buttonX, firstY + (buttonH + gap) * 2.0f, buttonW, buttonH})) {
+    const float bottomPadding = 32.0f;
+    const float backButtonY = y + panelHeight - bottomPadding - buttonH;
+     
+    if (ui.button("Back", Rect{buttonX, backButtonY, buttonW, buttonH})) {
         runtime.ui.pauseMenuSettingsVisible = false;
-
         runtime.ui.pauseMenuVisible = false;
     }
 

@@ -95,10 +95,11 @@ void WorldItemService::UpdateWorldItems(double deltaSeconds) {
     const float pickupRadiusSq = WorldItemPhysics::kPickupRadius * WorldItemPhysics::kPickupRadius;
     std::unordered_set<PlayerID> inventoryChangedPlayers;
 
-    const std::vector<ServerPlayer> players = m_playerManager.getAllPlayersCopy();
-    std::vector<const ServerPlayer *> alivePlayers;
+    const std::vector<ServerPlayerCombatSnapshot> players =
+        m_playerManager.getAllCombatSnapshotsCopy(true);
+    std::vector<const ServerPlayerCombatSnapshot *> alivePlayers;
     alivePlayers.reserve(players.size());
-    for (const ServerPlayer &player : players) {
+    for (const ServerPlayerCombatSnapshot &player : players) {
         if (player.isAlive) {
             alivePlayers.push_back(&player);
         }
@@ -116,7 +117,7 @@ void WorldItemService::UpdateWorldItems(double deltaSeconds) {
         WorldItemPhysics::Step(item, dt, static_cast<float>(kServerTickRateHz), m_chunkManager);
 
         if (item.pickupCooldownSeconds <= 0.0f) {
-            for (const ServerPlayer *player : alivePlayers) {
+            for (const ServerPlayerCombatSnapshot *player : alivePlayers) {
                 const glm::vec3 delta = player->position - item.position;
                 if (glm::dot(delta, delta) > pickupRadiusSq) {
                     continue;
@@ -152,10 +153,11 @@ void WorldItemService::UpdateWorldItems(double deltaSeconds) {
 void WorldItemService::SendWorldItemSnapshots(
     const std::vector<std::pair<HSteamNetConnection, PlayerID>> &recipients, uint32_t serverTick
 ) {
-    const std::vector<ServerPlayer> players = m_playerManager.getAllPlayersCopy();
+    const std::vector<ServerPlayerCombatSnapshot> players =
+        m_playerManager.getAllCombatSnapshotsCopy(false);
     std::unordered_map<PlayerID, glm::vec3> playerPositions;
     playerPositions.reserve(players.size());
-    for (const ServerPlayer &player : players) {
+    for (const ServerPlayerCombatSnapshot &player : players) {
         playerPositions.emplace(player.id, player.position);
     }
 

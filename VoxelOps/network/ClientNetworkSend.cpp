@@ -95,6 +95,88 @@ bool ClientNetwork::SendRespawnRequest() {
     return (r == k_EResultOK);
 }
 
+bool ClientNetwork::SendChunkHave(const glm::ivec3 &chunkPos, uint64_t version) {
+    if (!IsConnected()) {
+        return false;
+    }
+
+    std::string payload = "CHUNK_HAVE|";
+    payload += std::to_string(chunkPos.x);
+    payload += "|";
+    payload += std::to_string(chunkPos.y);
+    payload += "|";
+    payload += std::to_string(chunkPos.z);
+    payload += "|";
+    payload += std::to_string(version);
+
+    std::vector<uint8_t> out;
+    out.reserve(1 + payload.size());
+    out.push_back(static_cast<uint8_t>(PacketType::Message));
+    out.insert(out.end(), payload.begin(), payload.end());
+
+    const EResult r = SteamNetworkingSockets()->SendMessageToConnection(
+        m_conn,
+        out.data(),
+        static_cast<uint32_t>(out.size()),
+        k_nSteamNetworkingSend_UnreliableNoDelay,
+        nullptr
+    );
+    return (r == k_EResultOK);
+}
+
+bool ClientNetwork::SendChunkHaveBatch(const std::vector<glm::ivec3> &chunkPositions) {
+    if (!IsConnected()) {
+        return false;
+    }
+    if (chunkPositions.empty()) {
+        return true;
+    }
+
+    constexpr size_t kMaxChunkHavePayloadBytes = 480;
+    bool allSent = true;
+    std::string payload = "CHUNK_HAVE_BATCH|";
+
+    const auto flushPayload = [&]() {
+        if (payload.size() <= std::string_view("CHUNK_HAVE_BATCH|").size()) {
+            return true;
+        }
+
+        std::vector<uint8_t> out;
+        out.reserve(1 + payload.size());
+        out.push_back(static_cast<uint8_t>(PacketType::Message));
+        out.insert(out.end(), payload.begin(), payload.end());
+
+        const EResult r = SteamNetworkingSockets()->SendMessageToConnection(
+            m_conn,
+            out.data(),
+            static_cast<uint32_t>(out.size()),
+            k_nSteamNetworkingSend_UnreliableNoDelay,
+            nullptr
+        );
+        payload = "CHUNK_HAVE_BATCH|";
+        return r == k_EResultOK;
+    };
+
+    for (const glm::ivec3 &chunkPos : chunkPositions) {
+        std::string entry = std::to_string(chunkPos.x);
+        entry += ",";
+        entry += std::to_string(chunkPos.y);
+        entry += ",";
+        entry += std::to_string(chunkPos.z);
+
+        if (payload.size() + entry.size() + 1 > kMaxChunkHavePayloadBytes) {
+            allSent = flushPayload() && allSent;
+        }
+        if (payload.size() > std::string_view("CHUNK_HAVE_BATCH|").size()) {
+            payload += ";";
+        }
+        payload += entry;
+    }
+
+    allSent = flushPayload() && allSent;
+    return allSent;
+}
+
 bool ClientNetwork::SendChunkResyncRequest(const glm::ivec3 &chunkPos) {
     if (!IsConnected()) {
         return false;

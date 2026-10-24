@@ -89,6 +89,25 @@ bool PlayerManager::enqueuePlayerInput(PlayerID id, const PlayerInput &input) {
     return true;
 }
 
+bool PlayerManager::enqueuePlayerInputAndSetEquippedWeapon(PlayerID id, const PlayerInput &input) {
+    auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
+    const auto it = playersById.find(id);
+    if (it == playersById.end()) {
+        return false;
+    }
+
+    ServerPlayer &player = it->second;
+    player.inputBuffer.enqueue(input);
+    const auto now = Clock::now();
+    player.lastHeartbeat = now;
+    player.lastInputReceived = now;
+
+    if (player.equippedWeaponId != input.weaponId) {
+        (void)PlayerInventory::setEquippedWeapon(playersById, id, input.weaponId);
+    }
+    return true;
+}
+
 bool PlayerManager::setFlyModeAllowed(PlayerID id, bool allowed) {
     auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
     const auto it = playersById.find(id);
@@ -109,6 +128,10 @@ bool PlayerManager::setFlyModeAllowed(PlayerID id, bool allowed) {
 
 bool PlayerManager::setEquippedWeapon(PlayerID id, uint16_t weaponId) {
     auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
+    const auto it = playersById.find(id);
+    if (it != playersById.end() && it->second.equippedWeaponId == weaponId) {
+        return true;
+    }
     return PlayerInventory::setEquippedWeapon(playersById, id, weaponId);
 }
 
@@ -188,32 +211,13 @@ void PlayerManager::update(double deltaSeconds, ChunkManager &chunkManager) {
     const auto updateStart = std::chrono::steady_clock::now();
     size_t playerCountForLog = 0;
     const auto now = Clock::now();
-    struct SimTask {
-        PlayerID id = 0;
-        ServerPlayer workingPlayer{};
-        uint64_t baseMovementRevision = 0;
-        bool hasPreparedInput = false;
-        PlayerInput preparedInput{};
-        uint32_t preparedInputTick = 0;
-    };
-    std::vector<SimTask> simTasks;
-    std::vector<PlayerID> playerOrderSnapshot;
+    m_simTasks.clear();
+    m_timedOutPlayerIds.clear();
     {
         auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, __func__);
         playerCountForLog = playersById.size();
-        simTasks.reserve(playersById.size());
-        playerOrderSnapshot.reserve(playersById.size());
-        for (const auto &[id, _] : playersById) {
-            playerOrderSnapshot.push_back(id);
-        }
-
-        for (const PlayerID id : playerOrderSnapshot) {
-            auto it = playersById.find(id);
-            if (it == playersById.end()) {
-                continue;
-            }
-
-            ServerPlayer &player = it->second;
+        m_simTasks.reserve(playersById.size());
+        for (auto &[id, player] : playersById) {
             if (!player.isAlive) {
                 PlayerUpdate::handleRespawn(player, playersById, chunkManager, now);
                 continue;
@@ -221,15 +225,15 @@ void PlayerManager::update(double deltaSeconds, ChunkManager &chunkManager) {
 
             SimTask task{};
             task.id = id;
-            task.workingPlayer = player;
+            task.workingPlayer = ServerMovementSimulation::ExtractPhysicsState(player);
             task.baseMovementRevision = player.movementRevision;
             task.hasPreparedInput =
                 player.inputBuffer.peekNext(task.preparedInput, task.preparedInputTick);
-            simTasks.push_back(std::move(task));
+            m_simTasks.push_back(std::move(task));
         }
     }
 
-    for (SimTask &task : simTasks) {
+    for (SimTask &task : m_simTasks) {
         const PlayerInput *preparedInput = task.hasPreparedInput ? &task.preparedInput : nullptr;
         ServerMovementSimulation::simulatePhysicsForPlayerPrepared(
             task.workingPlayer, deltaSeconds, chunkManager, preparedInput
@@ -238,7 +242,7 @@ void PlayerManager::update(double deltaSeconds, ChunkManager &chunkManager) {
 
     {
         auto lock = LockWaitTelemetry::AcquirePlayerManagerLock(mtx, "PlayerManager::update.apply");
-        for (const SimTask &task : simTasks) {
+        for (const SimTask &task : m_simTasks) {
             auto it = playersById.find(task.id);
             if (it == playersById.end() || !it->second.isAlive) {
                 continue;
@@ -248,34 +252,20 @@ void PlayerManager::update(double deltaSeconds, ChunkManager &chunkManager) {
             }
 
             ServerPlayer &player = it->second;
-            player.position = task.workingPlayer.position;
-            player.velocity = task.workingPlayer.velocity;
-            player.yaw = task.workingPlayer.yaw;
-            player.pitch = task.workingPlayer.pitch;
-            player.onGround = task.workingPlayer.onGround;
-            player.flyMode = task.workingPlayer.flyMode;
-            player.activeInputFlags = task.workingPlayer.activeInputFlags;
-            player.moveX = task.workingPlayer.moveX;
-            player.moveZ = task.workingPlayer.moveZ;
-            player.jumpPressedLastTick = task.workingPlayer.jumpPressedLastTick;
-            player.timeSinceGrounded = task.workingPlayer.timeSinceGrounded;
-            player.jumpBufferTimer = task.workingPlayer.jumpBufferTimer;
-            player.stepCooldownTimer = task.workingPlayer.stepCooldownTimer;
-            player.grappleState = task.workingPlayer.grappleState;
+            ServerMovementSimulation::ApplyPhysicsState(player, task.workingPlayer);
             ++player.movementRevision;
             if (task.hasPreparedInput) {
                 player.inputBuffer.markProcessedUpTo(task.preparedInputTick);
             }
         }
 
-        std::vector<PlayerID> timedOutPlayerIds;
-        timedOutPlayerIds.reserve(playersById.size());
+        m_timedOutPlayerIds.reserve(playersById.size());
         for (const auto &[id, player] : playersById) {
             if (now - player.lastHeartbeat > heartbeatTimeout) {
-                timedOutPlayerIds.push_back(id);
+                m_timedOutPlayerIds.push_back(id);
             }
         }
-        PlayerUpdate::handleTimeouts(playersById, playersOrder, timedOutPlayerIds);
+        PlayerUpdate::handleTimeouts(playersById, playersOrder, m_timedOutPlayerIds);
     }
 
     const int64_t updateUs = std::chrono::duration_cast<std::chrono::microseconds>(

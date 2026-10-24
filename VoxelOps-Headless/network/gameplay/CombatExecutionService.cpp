@@ -55,7 +55,7 @@ CombatExecutionService::CombatExecutionService(
 const std::vector<ServerPlayerCombatSnapshot> &
 CombatExecutionService::GetCombatSnapshotsForTick(uint32_t serverTick) {
     if (!m_hasCombatSnapshotsAliveCache || m_combatSnapshotsAliveCacheTick != serverTick) {
-        m_combatSnapshotsAliveCache = m_playerManager.getAllCombatSnapshotsCopy(true);
+        m_combatSnapshotsAliveCache = m_playerManager.getAllCombatSnapshotsCopy(false);
         m_combatSnapshotsAliveCacheTick = serverTick;
         m_hasCombatSnapshotsAliveCache = true;
     }
@@ -126,7 +126,6 @@ CombatExecutionService::ExecuteShootRequest(HSteamNetConnection incoming, const 
     const uint32_t currentServerTick = m_serverTick.load(std::memory_order_acquire);
     Shoot::ShootContext ctx = Shoot::BuildContext(incoming, req, currentServerTick);
 
-    ShootValidation::ShootGateResult gate{};
     bool sessionMissing = false;
     bool unregisteredSession = false;
     {
@@ -143,19 +142,6 @@ CombatExecutionService::ExecuteShootRequest(HSteamNetConnection incoming, const 
             ctx.session.registered = !ctx.session.username.empty() && ctx.session.playerId != 0;
             if (!ctx.session.registered) {
                 unregisteredSession = true;
-            } else {
-                ShootValidation::ShootGateState gateState{};
-                gateState.lastAcceptedShootTime = mutableSession.lastAcceptedShootTime;
-                gateState.lastShootClientShotId = mutableSession.lastShootClientShotId;
-                gateState.hasLastShootClientShotId = mutableSession.hasLastShootClientShotId;
-
-                const float minShotIntervalSeconds =
-                    Rules::MinSecondsPerShotForWeapon(req.weaponId, kShootMinIntervalSeconds);
-                gate = ShootValidation::RunShootGate(gateState, req, minShotIntervalSeconds);
-
-                mutableSession.lastAcceptedShootTime = gateState.lastAcceptedShootTime;
-                mutableSession.lastShootClientShotId = gateState.lastShootClientShotId;
-                mutableSession.hasLastShootClientShotId = gateState.hasLastShootClientShotId;
             }
         }
     }
@@ -173,16 +159,6 @@ CombatExecutionService::ExecuteShootRequest(HSteamNetConnection incoming, const 
             std::cout << "[shoot/validate] result=rejected"
                       << " reason=weapon_not_in_inventory"
                       << " weapon=" << req.weaponId << "\n";
-        }
-        return ctx.result;
-    }
-
-    if (gate.rejectedReplay || gate.rejectedCooldown) {
-        if (kEnableShootValidationLogs) {
-            std::cout << "[shoot/validate] result=rejected"
-                      << " reason="
-                      << (gate.rejectedReplay ? "replay_or_out_of_order" : "rate_limited")
-                      << " shotId=" << req.clientShotId << "\n";
         }
         return ctx.result;
     }
@@ -227,13 +203,62 @@ CombatExecutionService::ExecuteShootRequest(HSteamNetConnection incoming, const 
             }
         }
     }
+    ShootValidation::ShootGateResult gate{};
+    {
+        auto lk = LockWaitTelemetry::AcquireSessionLock(
+            m_mutex, "CombatExecutionService::ExecuteShootRequest/shot-gate"
+        );
+        const auto it = m_sessions.find(incoming);
+        if (it == m_sessions.end() || it->second.playerId != ctx.session.playerId) {
+            return ctx.result;
+        }
+        auto &session = it->second;
+        ShootValidation::ShootGateState gateState{};
+        gateState.lastAcceptedShootTick = session.lastAcceptedShootTick;
+        gateState.hasLastAcceptedShootTick = session.hasLastAcceptedShootTick;
+        gateState.lastShootClientShotId = session.lastShootClientShotId;
+        gateState.hasLastShootClientShotId = session.hasLastShootClientShotId;
+        const float minShotIntervalSeconds =
+            Rules::MinSecondsPerShotForWeapon(req.weaponId, kShootMinIntervalSeconds);
+        gate = ShootValidation::RunShootGate(
+            gateState,
+            req,
+            minShotIntervalSeconds,
+            lagCompClientTick,
+            LagCompensation::kServerTickRateHz
+        );
+        session.lastAcceptedShootTick = gateState.lastAcceptedShootTick;
+        session.hasLastAcceptedShootTick = gateState.hasLastAcceptedShootTick;
+        session.lastShootClientShotId = gateState.lastShootClientShotId;
+        session.hasLastShootClientShotId = gateState.hasLastShootClientShotId;
+    }
+    if (gate.rejectedReplay || gate.rejectedCooldown) {
+        if (kEnableShootValidationLogs) {
+            std::cout << "[shoot/validate] result=rejected"
+                      << " reason="
+                      << (gate.rejectedReplay ? "replay_or_out_of_order" : "rate_limited")
+                      << " shotId=" << req.clientShotId << "\n";
+        }
+        return ctx.result;
+    }
+
     ctx.lagFrame =
         LagCompensation::GetFrameForTick(m_lagCompFrames, currentServerTick, lagCompClientTick);
 
-    const std::optional<ServerPlayer> shooterOpt =
+    std::optional<ServerPlayer> shooterOpt =
         m_playerManager.getPlayerCopy(ctx.session.playerId);
     if (!shooterOpt.has_value() || !shooterOpt->isAlive) {
         return ctx.result;
+    }
+    if (ctx.lagFrame != nullptr) {
+        const auto shooterPose = ctx.lagFrame->players.find(ctx.session.playerId);
+        if (shooterPose == ctx.lagFrame->players.end() || !shooterPose->second.isAlive) {
+            return ctx.result;
+        }
+        shooterOpt->position = shooterPose->second.position;
+        shooterOpt->yaw = shooterPose->second.yaw;
+        shooterOpt->height = shooterPose->second.height;
+        shooterOpt->radius = shooterPose->second.radius;
     }
     if (!Shoot::FinalizeContext(
             ctx,

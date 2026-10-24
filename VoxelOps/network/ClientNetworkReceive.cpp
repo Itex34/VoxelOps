@@ -13,18 +13,16 @@
 
 namespace {
 
-    constexpr size_t kMaxChunkDataQueueDepth = 4096;
-    constexpr size_t kMaxChunkDeltaQueueDepth = 512;
-    constexpr size_t kMaxChunkUnloadQueueDepth = 256;
     constexpr size_t kMaxKillFeedQueueDepth = 64;
     constexpr size_t kMaxScoreboardQueueDepth = 16;
     constexpr size_t kMaxWorldItemSnapshotQueueDepth = 8;
     constexpr size_t kMaxBlockPlaceResultQueueDepth = 128;
     constexpr size_t kMaxBlockBreakResultQueueDepth = 128;
     constexpr size_t kMaxGrappleResultQueueDepth = 32;
-    constexpr size_t kMaxMessagesPerPoll = 128;
-    constexpr int64_t kMessagePollBudgetUs = 2000;
+    constexpr size_t kMaxMessagesPerPoll = 256;
+    constexpr int64_t kMessagePollBudgetUs = 5000;
     constexpr bool kEnableClientNetProfiling = false;
+    constexpr bool kTraceChunkLifecycle = false;
 
     struct ClientNetProfileState {
         std::chrono::steady_clock::time_point lastLog = std::chrono::steady_clock::now();
@@ -105,6 +103,43 @@ namespace {
 
 } // namespace
 
+void ClientNetwork::DecrementChunkStreamEventDepth(const ChunkStreamEvent &event) noexcept {
+    switch (event.type) {
+    case ChunkStreamEventType::Data:
+        if (m_chunkDataQueueDepth > 0) {
+            --m_chunkDataQueueDepth;
+        }
+        break;
+    case ChunkStreamEventType::Delta:
+        if (m_chunkDeltaQueueDepth > 0) {
+            --m_chunkDeltaQueueDepth;
+        }
+        break;
+    case ChunkStreamEventType::Unload:
+        if (m_chunkUnloadQueueDepth > 0) {
+            --m_chunkUnloadQueueDepth;
+        }
+        break;
+    }
+}
+
+void ClientNetwork::EnqueueChunkStreamEvent(ChunkStreamEvent event) {
+    std::lock_guard<std::mutex> lk(m_inboundMutex);
+
+    switch (event.type) {
+    case ChunkStreamEventType::Data:
+        ++m_chunkDataQueueDepth;
+        break;
+    case ChunkStreamEventType::Delta:
+        ++m_chunkDeltaQueueDepth;
+        break;
+    case ChunkStreamEventType::Unload:
+        ++m_chunkUnloadQueueDepth;
+        break;
+    }
+    m_chunkStreamQueue.push_back(std::move(event));
+}
+
 void ClientNetwork::Poll() {
     if (!m_started.load()) {
         return;
@@ -152,7 +187,6 @@ void ClientNetwork::Poll() {
             m_conn = k_HSteamNetConnection_Invalid;
             m_registered = false;
             m_assignedUsername.clear();
-            m_chunkResyncOverflowCooldownUntil.clear();
             SetConnectionStatus(ConnectionState::Disconnected, reason);
             const auto pollTotalEnd = std::chrono::steady_clock::now();
             const int64_t pollUs =
@@ -171,6 +205,7 @@ void ClientNetwork::Poll() {
            SteamNetworkingSockets()->ReceiveMessagesOnConnection(m_conn, &pMsg, 1) > 0 && pMsg) {
         const uint8_t *data = reinterpret_cast<const uint8_t *>(pMsg->m_pData);
         const uint32_t cb = pMsg->m_cbSize;
+        bool stopAfterRelease = false;
 
         if (cb >= 1) {
             const PacketType type = static_cast<PacketType>(data[0]);
@@ -190,12 +225,15 @@ void ClientNetwork::Poll() {
                                               .count();
 
                 if (elapsedUs >= kMessagePollBudgetUs) {
-                    break;
+                    stopAfterRelease = true;
                 }
             }
         }
 
         pMsg->Release();
+        if (stopAfterRelease) {
+            break;
+        }
     }
 
     const auto pollTotalEnd = std::chrono::steady_clock::now();
@@ -327,33 +365,18 @@ void ClientNetwork::OnMessage(const uint8_t *data, uint32_t size) {
             return;
         }
 
-        bool droppedChunkData = false;
-        glm::ivec3 droppedChunkPos(0);
-        {
-            std::lock_guard<std::mutex> lk(m_inboundMutex);
-            if (m_chunkDataQueue.size() >= kMaxChunkDataQueueDepth) {
-                const ChunkData &dropped = m_chunkDataQueue.front();
-                droppedChunkPos = glm::ivec3(dropped.chunkX, dropped.chunkY, dropped.chunkZ);
-                m_chunkDataQueue.pop_front();
-                droppedChunkData = true;
-            }
-            m_chunkDataQueue.push_back(std::move(packet));
+        if (kTraceChunkLifecycle) {
+            std::cerr << "[chunk/recv] data chunk=(" << packet.chunkX << "," << packet.chunkY
+                      << "," << packet.chunkZ << ")"
+                      << " version=" << packet.version << " flags=" << static_cast<int>(packet.flags)
+                      << " payloadBytes=" << packet.payload.size() << " packetBytes=" << size
+                      << "\n";
         }
 
-        if (droppedChunkData) {
-            static uint64_t s_droppedChunkDataCount = 0;
-            ++s_droppedChunkDataCount;
-            if (s_droppedChunkDataCount <= 20 || (s_droppedChunkDataCount % 100) == 0) {
-                std::cerr << "[net] chunk data queue overflow, resync requested chunk=("
-                          << droppedChunkPos.x << "," << droppedChunkPos.y << ","
-                          << droppedChunkPos.z << ")"
-                          << " count=" << s_droppedChunkDataCount << "\n";
-            }
-            PruneChunkResyncOverflowState();
-            if (ShouldSendChunkResyncForOverflow(droppedChunkPos)) {
-                (void)SendChunkResyncRequest(droppedChunkPos);
-            }
-        }
+        ChunkStreamEvent event;
+        event.type = ChunkStreamEventType::Data;
+        event.chunkData = std::move(packet);
+        EnqueueChunkStreamEvent(std::move(event));
         return;
     }
 
@@ -364,11 +387,10 @@ void ClientNetwork::OnMessage(const uint8_t *data, uint32_t size) {
             return;
         }
 
-        {
-            std::lock_guard<std::mutex> lk(m_inboundMutex);
-            m_chunkDeltaQueue.push_back(std::move(packet));
-            TrimQueueToDepth(m_chunkDeltaQueue, kMaxChunkDeltaQueueDepth);
-        }
+        ChunkStreamEvent event;
+        event.type = ChunkStreamEventType::Delta;
+        event.chunkDelta = std::move(packet);
+        EnqueueChunkStreamEvent(std::move(event));
         return;
     }
 
@@ -379,11 +401,15 @@ void ClientNetwork::OnMessage(const uint8_t *data, uint32_t size) {
             return;
         }
 
-        {
-            std::lock_guard<std::mutex> lk(m_inboundMutex);
-            m_chunkUnloadQueue.push_back(std::move(packet));
-            TrimQueueToDepth(m_chunkUnloadQueue, kMaxChunkUnloadQueueDepth);
+        if (kTraceChunkLifecycle) {
+            std::cerr << "[chunk/recv] unload chunk=(" << packet.chunkX << "," << packet.chunkY
+                      << "," << packet.chunkZ << ") packetBytes=" << size << "\n";
         }
+
+        ChunkStreamEvent event;
+        event.type = ChunkStreamEventType::Unload;
+        event.chunkUnload = std::move(packet);
+        EnqueueChunkStreamEvent(std::move(event));
         return;
     }
 
