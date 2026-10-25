@@ -7,4 +7,7 @@ struct FrameWindowHost;
 class SettingsMenu {
 public:
     void draw(Runtime &runtime, FrameConnectionHost *connectionHost, FrameWindowHost *windowHost);
+
+private:
+
 };
