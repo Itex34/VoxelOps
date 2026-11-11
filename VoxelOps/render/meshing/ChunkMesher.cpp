@@ -12,6 +12,7 @@ namespace {
         const uint32_t z = (packed.low >> 10u) & 31u;
         return glm::vec3(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
     }
+
 } // namespace
 
 ChunkMesher::ChunkMesher(ChunkManager &owner)
@@ -128,10 +129,15 @@ void ChunkMesher::updateDirtyChunks(size_t maxChunksPerCall, int64_t maxBudgetUs
                     }
                 } else {
                     CpuChunkMesh &cpuMesh = m_cpuChunkMeshes[ready.chunkPos];
+                    const bool rtGeometryChanged = cpuMesh.rtVertices != ready.rtVertices ||
+                                                   cpuMesh.indices != ready.indices;
                     cpuMesh.vertices = std::move(ready.vertices);
                     cpuMesh.rtVertices = std::move(ready.rtVertices);
                     cpuMesh.indices = std::move(ready.indices);
                     cpuMesh.revision = m_nextCpuChunkMeshRevision++;
+                    if (rtGeometryChanged || cpuMesh.rtGeometryRevision == 0) {
+                        cpuMesh.rtGeometryRevision = cpuMesh.revision;
+                    }
                     cpuMesh.highPriorityRtBuild = ready.highPriority;
                     ++m_cpuChunkMeshesVersion;
                 }

@@ -104,6 +104,7 @@ private:
     bool m_warnedNoCpuChunkMeshes = false;
     uint64_t m_frameCounter = 0;
     uint64_t m_lastRtTlasBuildFrame = 0;
+    uint64_t m_lastRtBlasBuildFrame = 0;
     uint64_t m_lastStreamingSyncFrame = 0;
     uint64_t m_lastGiRebuildKickFrame = 0;
     uint64_t m_lastGiChunkCacheContentVersion = 0;

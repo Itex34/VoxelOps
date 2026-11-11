@@ -9,3 +9,4 @@ cmake_install.cmake
 compile_commands.json
 .cache
 .zed/
+server_tick_perf.txt

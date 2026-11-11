@@ -191,6 +191,7 @@ bool VulkanRenderDevice::initialize(SDL_Window *window) {
         m_uploadContext.waitIdle();
         m_rtScene.initialize(*m_context, m_uploadContext, m_frameCounter);
         m_lastRtTlasBuildFrame = 0;
+        m_lastRtBlasBuildFrame = 0;
         m_lastStreamingSyncFrame = 0;
         m_lastGiRebuildKickFrame = 0;
         m_lastGiChunkCacheContentVersion = 0;
@@ -370,7 +371,7 @@ void VulkanRenderDevice::renderFrame(RenderScene &scene) {
 
     ++m_frameCounter;
     m_sceneUploader.collectRetiredChunkMeshes(m_frameCounter);
-    m_rtScene.collectRetiredResources(m_frameCounter);
+    m_rtScene.collectRetiredResources(*m_context);
     m_giSceneBuffers.collectRetiredBuffers(m_frameCounter);
 
     const glm::ivec3 cullingBlockPos(
@@ -383,6 +384,7 @@ void VulkanRenderDevice::renderFrame(RenderScene &scene) {
         floorDivLocal(cullingBlockPos.y, CHUNK_SIZE),
         floorDivLocal(cullingBlockPos.z, CHUNK_SIZE)
     );
+
 
     m_lastTimingSnapshot.cpuMeshSyncMs = 0.0f;
     m_lastTimingSnapshot.cpuGiIntegrateMs = 0.0f;
@@ -568,7 +570,9 @@ void VulkanRenderDevice::renderFrame(RenderScene &scene) {
 
     if (m_context) {
         rtTlasDecision = "clean";
-        m_rtScene.pollFinishedBlasBuilds(*m_context, m_frameCounter);
+        m_rtScene.pollFinishedBlasBuilds(
+            *m_context, m_frameCounter, false, scene.chunkWorld.cpuChunkMeshes
+        );
         m_rtScene.pollFinishedTlasBuild(*m_context, m_frameCounter);
         const bool highPriorityRtWork = m_rtScene.hasHighPriorityBuildWork();
         const bool rtPendingBuildWork = m_rtScene.hasPendingBuildWork();
@@ -604,47 +608,44 @@ void VulkanRenderDevice::renderFrame(RenderScene &scene) {
             );
             m_lastStreamingSyncFrame = m_frameCounter;
         }
-        size_t rtBlasUploadsPerFrame = 1u;
-        if (m_streamingBudgetTier == kStreamingTierVeryFast) {
-            rtBlasUploadsPerFrame = 1u;
-        } else if (m_streamingBudgetTier == kStreamingTierFast) {
-            rtBlasUploadsPerFrame = 1u;
-        } else if (m_streamingBudgetTier == kStreamingTierMedium) {
-            rtBlasUploadsPerFrame = 1u;
+        // Reserve a submission opportunity for the TLAS even during continuous streaming.
+        bool submittedTlas = false;
+        if (m_rtScene.isDirty()) {
+            const uint64_t minTlasIntervalFrames =
+                highPriorityRtWork ? 1u : (rtPendingBuildWork ? 8u : 2u);
+            if (m_frameCounter >= m_lastRtTlasBuildFrame + minTlasIntervalFrames) {
+                if (m_rtScene.rebuild(*m_context, m_frameCounter)) {
+                    m_lastRtTlasBuildFrame = m_frameCounter;
+                    submittedTlas = true;
+                    rtTlasDecision = "submitted";
+                } else {
+                    rtTlasDecision = "rebuild_false";
+                }
+            } else {
+                rtTlasDecision = "skip_cadence";
+            }
         }
-        if (shouldSyncChunkCache || rtPendingBuildWork) {
+        // Back off background builds under frame pressure, but keep edits responsive.
+        const uint64_t blasIntervalFrames =
+            (!highPriorityRtWork && m_streamingBudgetTier == kStreamingTierSlow) ? 2u : 1u;
+        if (!submittedTlas && (shouldSyncChunkCache || rtPendingBuildWork) &&
+            m_frameCounter >= m_lastRtBlasBuildFrame + blasIntervalFrames) {
+            // A large chunk cannot be split by this builder; allow eventual progress.
             allowOversizedRtBuild =
-                m_streamingBudgetTier <= kStreamingTierFast && m_streamingBudgetFrameMsEma < 11.5f;
+                (m_streamingBudgetTier <= kStreamingTierFast && m_streamingBudgetFrameMsEma < 11.5f) ||
+                ((m_frameCounter & 31u) < 4u);
             rtBlasUploadsSubmitted = m_rtScene.processPendingUploads(
                 *m_context,
                 m_uploadContext,
                 m_frameCounter,
-                rtBlasUploadsPerFrame,
+                1u,
                 rtBuildPrimitiveBudget,
                 rtBuildByteBudget,
                 allowOversizedRtBuild,
                 *scene.chunkWorld.cpuChunkMeshes
             );
-        }
-        if (m_rtScene.isDirty()) {
-            const bool rtWorkStillPending = m_rtScene.hasPendingBuildWork();
-            const bool submittedStreamingBlas = rtBlasUploadsSubmitted > 0u && !highPriorityRtWork;
-            const uint64_t minTlasIntervalFrames =
-                highPriorityRtWork ? 1u : (rtWorkStillPending ? 8u : 2u);
-            const bool canSubmitTlasThisFrame = !submittedStreamingBlas &&
-                                                m_frameCounter >=
-                                                    (m_lastRtTlasBuildFrame + minTlasIntervalFrames);
-            if (canSubmitTlasThisFrame) {
-                if (m_rtScene.rebuild(*m_context, m_frameCounter)) {
-                    m_lastRtTlasBuildFrame = m_frameCounter;
-                    rtTlasDecision = "submitted";
-                } else {
-                    rtTlasDecision = "rebuild_false";
-                }
-            } else if (submittedStreamingBlas) {
-                rtTlasDecision = "skip_same_frame_blas";
-            } else {
-                rtTlasDecision = "skip_cadence";
+            if (rtBlasUploadsSubmitted > 0u) {
+                m_lastRtBlasBuildFrame = m_frameCounter;
             }
         }
     }
@@ -783,7 +784,10 @@ void VulkanRenderDevice::renderFrame(RenderScene &scene) {
                       << " rtPendingGpuBatches=" << rtStats.pendingGpuBuildBatches
                       << " rtPendingTlas=" << (rtStats.pendingTlasBuild ? 1 : 0)
                       << " rtCachedBlas=" << rtStats.cachedBlasCount
-                      << " rtActiveBlas=" << rtStats.activeBlasCount
+                      << " rtActiveBlas=" << rtStats.activeRequestedCount
+                      << " rtActiveCachedBlas=" << rtStats.activeBlasCount
+                      << " rtActiveRequested=" << rtStats.activeRequestedCount
+                      << " rtPublishedBlas=" << rtStats.publishedBlasCount
                       << " rtBlasSubmittedThisFrame=" << rtBlasUploadsSubmitted
                       << " rtLastBuildFrame=" << rtStats.lastBuildFrame
                       << " rtLastBuildSubmitted=" << rtStats.lastBuildSubmitted
@@ -837,6 +841,7 @@ void VulkanRenderDevice::shutdown() {
     m_window = nullptr;
     m_initialized = false;
     m_lastRtTlasBuildFrame = 0;
+    m_lastRtBlasBuildFrame = 0;
     m_lastStreamingSyncFrame = 0;
     m_lastGiRebuildKickFrame = 0;
     m_lastGiChunkCacheContentVersion = 0;

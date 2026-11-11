@@ -2,6 +2,13 @@ cmake_minimum_required(VERSION 3.15)
 
 project(VoxelOps LANGUAGES C CXX)
 
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(VoxelOpsRtResourceLifetimeTests VoxelOps/tests/RtResourceLifetimeTests.cpp)
+    target_compile_features(VoxelOpsRtResourceLifetimeTests PRIVATE cxx_std_20)
+    add_test(NAME VoxelOpsRtResourceLifetimeTests COMMAND VoxelOpsRtResourceLifetimeTests)
+endif()
+
 if(MSVC)
     if(POLICY CMP0141)
         cmake_policy(SET CMP0141 NEW)

@@ -49,6 +49,20 @@ void VulkanSceneUploader::syncChunkCache(
                radius * radius;
     };
 
+    // Queue CPU meshes for RT as soon as they arrive instead of waiting for their
+    // raster upload. The build queue chooses work relative to the current camera.
+    if (context.isHardwareRayTracingSupported()) {
+        rtScene.setBuildPriorityCenter(cullingChunk);
+        for (const auto &[pos, mesh] : cpuChunkMeshes) {
+            if (withinRtRadius(pos) && !mesh.rtVertices.empty() && !mesh.indices.empty()) {
+                (void)rtScene.uploadChunkGeometry(
+                    context, uploadContext, frameCounter, pos, mesh,
+                    mesh.highPriorityRtBuild, true
+                );
+            }
+        }
+    }
+
     m_chunkRenderCache.syncFromCpuChunkMeshes(
         cpuChunkMeshes,
         cullingChunk,
@@ -77,7 +91,9 @@ void VulkanSceneUploader::syncChunkCache(
         }
     );
     if (context.isHardwareRayTracingSupported()) {
-        rtScene.updateActiveChunkRadius(frameCounter, cullingChunk, rtActiveRadiusChunks);
+        rtScene.updateActiveChunkRadius(
+            frameCounter, cullingChunk, rtActiveRadiusChunks, cpuChunkMeshes
+        );
     }
 }
 

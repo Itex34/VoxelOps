@@ -8,7 +8,7 @@ namespace {
     constexpr bool kEnablePathTracedGi = true;
     constexpr uint32_t kPathTraceRaysPerPixel = 1u;
     constexpr uint32_t kPathTraceCheckerboard = 0u;
-    constexpr float kPathTraceRenderScale = 0.8f;
+    constexpr float kPathTraceRenderScale = 1.0f;
     constexpr uint32_t kPathTraceMaxBounces = 2u;
     constexpr float kPathTraceSkyIntensity = 1.0f;
 } // namespace

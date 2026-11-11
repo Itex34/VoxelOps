@@ -12,5 +12,6 @@ struct CpuChunkMesh {
     std::vector<glm::vec3> rtVertices;
     std::vector<uint16_t> indices;
     uint64_t revision = 0;
+    uint64_t rtGeometryRevision = 0;
     bool highPriorityRtBuild = false;
 };

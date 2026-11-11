@@ -5,7 +5,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -28,6 +27,8 @@ public:
         bool pendingTlasBuild = false;
         size_t cachedBlasCount = 0;
         size_t activeBlasCount = 0;
+        size_t activeRequestedCount = 0;
+        size_t publishedBlasCount = 0;
 
         uint64_t lastBuildFrame = 0;
         size_t lastBuildSubmitted = 0;
@@ -54,7 +55,7 @@ public:
     VulkanRayTracingScene &operator=(VulkanRayTracingScene &&) = delete;
 
     void initialize(VulkanContext &context, UploadContext &uploadContext, uint64_t frameCounter);
-    void collectRetiredResources(uint64_t frameCounter);
+    void collectRetiredResources(VulkanContext &context);
     void reset();
 
     bool uploadChunkGeometry(
@@ -77,14 +78,17 @@ public:
         const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuChunkMeshes
     );
     void pollFinishedBlasBuilds(
-        VulkanContext &context, uint64_t frameCounter, bool forcePoll = false
+        VulkanContext &context, uint64_t frameCounter, bool forcePoll = false,
+        const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> *cpuChunkMeshes = nullptr
     );
     void pollFinishedTlasBuild(
         VulkanContext &context, uint64_t frameCounter, bool forcePoll = false
     );
     void removeChunkGeometry(uint64_t frameCounter, const glm::ivec3 &chunkPos);
+    void setBuildPriorityCenter(const glm::ivec3 &centerChunk) noexcept;
     void updateActiveChunkRadius(
-        uint64_t frameCounter, const glm::ivec3 &centerChunk, int radiusChunks
+        uint64_t frameCounter, const glm::ivec3 &centerChunk, int radiusChunks,
+        const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuChunkMeshes
     );
     bool rebuild(VulkanContext &context, uint64_t frameCounter);
     [[nodiscard]] bool hasPendingBuildWork() const noexcept;
@@ -107,13 +111,9 @@ private:
     };
 
     std::unique_ptr<RtSceneState> m_state;
-    std::deque<glm::ivec3> m_highPriorityChunkUploadQueue;
-    std::deque<glm::ivec3> m_pendingChunkUploadQueue;
-    std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> m_pendingChunkUploadSet;
-    std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> m_highPriorityChunkUploadPending;
-    std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> m_cancelledChunkBuilds;
     std::unordered_map<glm::ivec3, PendingChunkUpload, IVec3Hash> m_pendingChunkUploads;
     bool m_highPriorityTlasRefreshRequested = false;
+    glm::ivec3 m_buildPriorityCenter{0};
     bool m_dirty = false;
     VkAccelerationStructureKHR m_activeTlas = VK_NULL_HANDLE;
     StreamingStats m_streamingStats{};

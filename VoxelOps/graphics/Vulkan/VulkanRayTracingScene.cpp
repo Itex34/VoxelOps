@@ -1,4 +1,5 @@
 #include "VulkanRayTracingScene.hpp"
+#include "RtResourceLifetime.hpp"
 
 #include "../Mesh.hpp"
 #include "../../voxels/Chunk.hpp"
@@ -14,6 +15,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <cstdlib>
 #include <future>
 #include <iostream>
 #include <limits>
@@ -24,10 +26,27 @@
 
 namespace {
     constexpr glm::ivec3 kRtDummyChunkPos{250000, 250000, 250000};
-    constexpr uint64_t kRtRetireFrameLag = 24u;
     constexpr vk::DeviceSize kRtBlasCacheBudgetBytes = 512ull * 1024ull * 1024ull;
     constexpr size_t kMaxPendingBlasBuildBatches = 1u;
     constexpr int kRtActiveRadiusHysteresisChunks = 3;
+
+    bool sampleRtTiming(uint64_t frameCounter) {
+        static const bool enabled = [] {
+            const char *value = std::getenv("VOXELOPS_VK_TIMING_LOG");
+            return value && (value[0] == '1' || value[0] == 't' || value[0] == 'T' ||
+                             value[0] == 'y' || value[0] == 'Y');
+        }();
+        static const unsigned long interval = [] {
+            const char *value = std::getenv("VOXELOPS_VK_RT_TIMING_INTERVAL");
+            if (!value || !*value) {
+                return 60ul;
+            }
+            char *end = nullptr;
+            const unsigned long parsed = std::strtoul(value, &end, 10);
+            return end == value || parsed == 0 ? 60ul : parsed;
+        }();
+        return enabled && frameCounter % interval == 0;
+    }
 
     bool isWithinRtChunkRadius(
         const glm::ivec3 &chunkPos, const glm::ivec3 &centerChunk, int radiusChunks
@@ -217,20 +236,21 @@ struct VulkanRayTracingScene::RtSceneState {
 
     struct RetiredChunkBlas {
         ChunkBlas blas{};
-        uint64_t retireFrame = 0;
     };
 
     struct RetiredTlas {
         DeviceBufferAllocation asBuffer{};
         vk::raii::AccelerationStructureKHR as{nullptr};
+        vk::raii::Fence graphicsCompletion{nullptr};
+        std::vector<vk::AccelerationStructureKHR> referencedBlases;
         vk::DeviceSize asCapacity = 0;
-        uint64_t retireFrame = 0;
 
         void reset() {
             as.clear();
             asBuffer.reset();
+            graphicsCompletion.clear();
+            referencedBlases.clear();
             asCapacity = 0;
-            retireFrame = 0;
         }
     };
 
@@ -246,7 +266,7 @@ struct VulkanRayTracingScene::RtSceneState {
 
     struct PendingGpuChunkBlas {
         glm::ivec3 chunkPos{0};
-        uint64_t revision = 0;
+        RtBuildTicket ticket{};
         bool highPriority = false;
         ChunkBlas built{};
     };
@@ -254,6 +274,9 @@ struct VulkanRayTracingScene::RtSceneState {
     struct PendingGpuBuildBatch {
         vk::raii::Fence fence{nullptr};
         vk::raii::CommandBuffer commandBuffer{nullptr};
+        vk::raii::QueryPool timingQueries{nullptr};
+        uint32_t timestampValidBits = 0;
+        float timestampPeriod = 0.0f;
         std::vector<PendingGpuChunkBlas> chunks;
         DeviceBufferAllocation vertexStagingBuffer{};
         vk::DeviceSize vertexStagingCapacity = 0;
@@ -265,6 +288,12 @@ struct VulkanRayTracingScene::RtSceneState {
     struct PendingGpuTlasBuild {
         vk::raii::Fence fence{nullptr};
         vk::raii::CommandBuffer commandBuffer{nullptr};
+        vk::raii::QueryPool timingQueries{nullptr};
+        uint32_t timestampValidBits = 0;
+        float timestampPeriod = 0.0f;
+        uint32_t instanceCount = 0;
+        bool highPriority = false;
+        std::vector<vk::AccelerationStructureKHR> referencedBlases;
         DeviceBufferAllocation asBuffer{};
         vk::raii::AccelerationStructureKHR as{nullptr};
         vk::DeviceSize asCapacity = 0;
@@ -275,6 +304,7 @@ struct VulkanRayTracingScene::RtSceneState {
             asBuffer.reset();
             asCapacity = 0;
             commandBuffer.clear();
+            timingQueries.clear();
             fence.clear();
             submitFrame = 0;
         }
@@ -303,6 +333,7 @@ struct VulkanRayTracingScene::RtSceneState {
     DeviceBufferAllocation tlasScratchBuffer{};
     vk::DeviceSize tlasScratchCapacity = 0;
     vk::raii::AccelerationStructureKHR tlas{nullptr};
+    std::vector<vk::AccelerationStructureKHR> tlasReferencedBlases;
     std::vector<ReusableTlasAsBuffer> reusableTlasAsBuffers;
     std::vector<RetiredTlas> retiredTlases;
     std::optional<PendingGpuTlasBuild> pendingTlasBuild;
@@ -311,6 +342,7 @@ struct VulkanRayTracingScene::RtSceneState {
 
     void reset() {
         tlas.clear();
+        tlasReferencedBlases.clear();
         tlasAsBuffer.reset();
         tlasAsBufferCapacity = 0;
         tlasInstanceBuffer.reset();
@@ -388,6 +420,7 @@ bool VulkanRayTracingScene::isReady() const noexcept {
 }
 
 void VulkanRayTracingScene::trimInactiveBlasCache(uint64_t frameCounter) {
+    (void)frameCounter;
     if (!m_state || !m_state->ready) {
         return;
     }
@@ -421,7 +454,6 @@ void VulkanRayTracingScene::trimInactiveBlasCache(uint64_t frameCounter) {
 
         RtSceneState::RetiredChunkBlas retired{};
         retired.blas = std::move(evictIt->second);
-        retired.retireFrame = frameCounter + kRtRetireFrameLag;
         rt.retiredChunkBlases.push_back(std::move(retired));
         subtractResidentBytes(chunkBlasBytes(rt.retiredChunkBlases.back().blas));
         rt.chunkBlases.erase(evictIt);
@@ -503,14 +535,39 @@ void VulkanRayTracingScene::initialize(
     }
 }
 
-void VulkanRayTracingScene::collectRetiredResources(uint64_t frameCounter) {
+void VulkanRayTracingScene::collectRetiredResources(VulkanContext &context) {
     if (!m_state) {
         return;
     }
 
     RtSceneState &rt = *m_state;
+    // The fence follows the last graphics submission that could reference this TLAS.
+    for (auto it = rt.retiredTlases.begin(); it != rt.retiredTlases.end();) {
+        const std::array<vk::Fence, 1> fences = {*it->graphicsCompletion};
+        const vk::Result status = context.getDevice().waitForFences(fences, vk::True, 0);
+        if (status != vk::Result::eSuccess) {
+            ++it;
+            continue;
+        }
+        it->as.clear();
+        if (it->asBuffer.buffer != VK_NULL_HANDLE && it->asCapacity > 0) {
+            RtSceneState::ReusableTlasAsBuffer reusable{};
+            reusable.buffer = std::move(it->asBuffer);
+            reusable.capacity = it->asCapacity;
+            rt.reusableTlasAsBuffers.push_back(std::move(reusable));
+        }
+        it = rt.retiredTlases.erase(it);
+    }
+    const auto referenced = [&rt](vk::AccelerationStructureKHR blas) {
+        const auto *pending = rt.pendingTlasBuild.has_value()
+                                  ? &rt.pendingTlasBuild->referencedBlases : nullptr;
+        return rtBlasIsReferenced(
+            blas, rt.tlasReferencedBlases, pending, rt.retiredTlases,
+            [](const auto &tlas) -> const auto & { return tlas.referencedBlases; }
+        );
+    };
     for (auto it = rt.retiredChunkBlases.begin(); it != rt.retiredChunkBlases.end();) {
-        if (it->retireFrame > frameCounter) {
+        if (it->blas.as != nullptr && referenced(*it->blas.as)) {
             ++it;
             continue;
         }
@@ -532,35 +589,12 @@ void VulkanRayTracingScene::collectRetiredResources(uint64_t frameCounter) {
         it->blas.reset();
         it = rt.retiredChunkBlases.erase(it);
     }
-    for (auto it = rt.retiredTlases.begin(); it != rt.retiredTlases.end();) {
-        if (it->retireFrame > frameCounter) {
-            ++it;
-            continue;
-        }
-        it->as.clear();
-        if (it->asBuffer.buffer != VK_NULL_HANDLE && it->asCapacity > 0) {
-            RtSceneState::ReusableTlasAsBuffer reusable{};
-            reusable.buffer = std::move(it->asBuffer);
-            reusable.capacity = it->asCapacity;
-            rt.reusableTlasAsBuffers.push_back(std::move(reusable));
-        } else {
-            it->asBuffer.reset();
-        }
-        it->asCapacity = 0;
-        it->retireFrame = 0;
-        it = rt.retiredTlases.erase(it);
-    }
 }
 
 void VulkanRayTracingScene::reset() {
     m_activeTlas = VK_NULL_HANDLE;
     m_dirty = false;
     m_highPriorityTlasRefreshRequested = false;
-    m_highPriorityChunkUploadQueue.clear();
-    m_pendingChunkUploadQueue.clear();
-    m_pendingChunkUploadSet.clear();
-    m_highPriorityChunkUploadPending.clear();
-    m_cancelledChunkBuilds.clear();
     m_pendingChunkUploads.clear();
     if (!m_state) {
         return;
@@ -589,6 +623,8 @@ bool VulkanRayTracingScene::uploadChunkGeometry(
     }
 
     RtSceneState &rt = *m_state;
+    const uint64_t geometryRevision =
+        cpuMesh.rtGeometryRevision != 0 ? cpuMesh.rtGeometryRevision : cpuMesh.revision;
     auto existingIt = rt.chunkBlases.find(chunkPos);
     if (!activeForTracing) {
         if (existingIt != rt.chunkBlases.end()) {
@@ -596,15 +632,13 @@ bool VulkanRayTracingScene::uploadChunkGeometry(
         }
         const bool wasActive = (rt.activeChunkBlases.erase(chunkPos) > 0);
         m_pendingChunkUploads.erase(chunkPos);
-        m_pendingChunkUploadSet.erase(chunkPos);
-        m_highPriorityChunkUploadPending.erase(chunkPos);
         if (wasActive) {
             m_dirty = true;
         }
         return existingIt != rt.chunkBlases.end();
     }
 
-    if (existingIt != rt.chunkBlases.end() && existingIt->second.revision == cpuMesh.revision) {
+    if (existingIt != rt.chunkBlases.end() && existingIt->second.revision == geometryRevision) {
         existingIt->second.lastTouchedFrame = frameCounter;
         const bool becameActive = rt.activeChunkBlases.insert(chunkPos).second;
         if (becameActive) {
@@ -618,32 +652,28 @@ bool VulkanRayTracingScene::uploadChunkGeometry(
 
     rt.activeChunkBlases.insert(chunkPos);
 
-    auto pendingIt = m_pendingChunkUploads.find(chunkPos);
-    if (pendingIt != m_pendingChunkUploads.end() &&
-        pendingIt->second.revision == cpuMesh.revision) {
-        if (highPriority && !pendingIt->second.highPriority) {
-            pendingIt->second.highPriority = true;
-            if (m_highPriorityChunkUploadPending.insert(chunkPos).second) {
-                m_highPriorityChunkUploadQueue.push_back(chunkPos);
+    for (auto &batch : rt.pendingGpuBuildBatches) {
+        for (auto &build : batch.chunks) {
+            if (build.chunkPos == chunkPos && build.ticket.matches(geometryRevision)) {
+                build.highPriority = build.highPriority || highPriority;
+                return true;
             }
         }
+    }
+
+    auto pendingIt = m_pendingChunkUploads.find(chunkPos);
+    if (pendingIt != m_pendingChunkUploads.end() &&
+        pendingIt->second.revision == geometryRevision) {
+        pendingIt->second.highPriority = pendingIt->second.highPriority || highPriority;
         return true;
     }
 
-    m_cancelledChunkBuilds.erase(chunkPos);
-    m_pendingChunkUploads[chunkPos] = PendingChunkUpload{cpuMesh.revision, highPriority};
-    if (m_pendingChunkUploadSet.insert(chunkPos).second) {
-        if (highPriority) {
-            m_highPriorityChunkUploadPending.insert(chunkPos);
-            m_highPriorityChunkUploadQueue.push_back(chunkPos);
-        } else {
-            m_pendingChunkUploadQueue.push_back(chunkPos);
-        }
-    } else if (highPriority && m_highPriorityChunkUploadPending.insert(chunkPos).second) {
-        // Promote an already queued chunk so it is processed ahead of background uploads.
-        m_highPriorityChunkUploadQueue.push_back(chunkPos);
-    }
+    m_pendingChunkUploads[chunkPos] = PendingChunkUpload{geometryRevision, highPriority};
     return true;
+}
+
+void VulkanRayTracingScene::setBuildPriorityCenter(const glm::ivec3 &centerChunk) noexcept {
+    m_buildPriorityCenter = centerChunk;
 }
 
 size_t VulkanRayTracingScene::processPendingUploads(
@@ -748,64 +778,47 @@ size_t VulkanRayTracingScene::processPendingUploads(
     uint32_t selectedPrimitives = 0;
     vk::DeviceSize selectedBytes = 0;
     vk::DeviceSize maxScratchSize = 0;
+    std::unordered_set<glm::ivec3, IVec3Hash, IVec3Eq> deferredOversized;
     const auto requeuePendingUpload = [&](const glm::ivec3 &chunkPos,
                                           const PendingChunkUpload &pendingUpload,
                                           bool highPriorityUpload) {
         m_pendingChunkUploads[chunkPos] = pendingUpload;
-        if (m_pendingChunkUploadSet.insert(chunkPos).second) {
-            if (highPriorityUpload) {
-                m_highPriorityChunkUploadPending.insert(chunkPos);
-                m_highPriorityChunkUploadQueue.push_front(chunkPos);
-            } else {
-                m_pendingChunkUploadQueue.push_back(chunkPos);
-            }
-        }
+        m_pendingChunkUploads[chunkPos].highPriority = highPriorityUpload;
     };
 
-    while (processed < maxUploadsPerCall &&
-           (!m_highPriorityChunkUploadQueue.empty() || !m_pendingChunkUploadQueue.empty())) {
-        std::optional<glm::ivec3> nextChunkPos;
-        bool dequeuedHighPriority = false;
-        while (!m_highPriorityChunkUploadQueue.empty()) {
-            const glm::ivec3 chunkPos = m_highPriorityChunkUploadQueue.front();
-            m_highPriorityChunkUploadQueue.pop_front();
-            if (m_highPriorityChunkUploadPending.erase(chunkPos) == 0) {
+    const auto distanceSquared = [this](const glm::ivec3 &pos) {
+        const int64_t x = static_cast<int64_t>(pos.x) - m_buildPriorityCenter.x;
+        const int64_t y = static_cast<int64_t>(pos.y) - m_buildPriorityCenter.y;
+        const int64_t z = static_cast<int64_t>(pos.z) - m_buildPriorityCenter.z;
+        return x * x + y * y + z * z;
+    };
+    while (processed < maxUploadsPerCall && !m_pendingChunkUploads.empty()) {
+        auto pendingIt = m_pendingChunkUploads.end();
+        for (auto it = m_pendingChunkUploads.begin(); it != m_pendingChunkUploads.end(); ++it) {
+            if (deferredOversized.contains(it->first)) {
                 continue;
             }
-            if (m_pendingChunkUploadSet.erase(chunkPos) == 0) {
+            if (pendingIt == m_pendingChunkUploads.end()) {
+                pendingIt = it;
                 continue;
             }
-            nextChunkPos = chunkPos;
-            dequeuedHighPriority = true;
-            break;
-        }
-        if (!nextChunkPos.has_value()) {
-            while (!m_pendingChunkUploadQueue.empty()) {
-                const glm::ivec3 chunkPos = m_pendingChunkUploadQueue.front();
-                m_pendingChunkUploadQueue.pop_front();
-                if (m_highPriorityChunkUploadPending.find(chunkPos) !=
-                    m_highPriorityChunkUploadPending.end()) {
-                    continue;
-                }
-                if (m_pendingChunkUploadSet.erase(chunkPos) == 0) {
-                    continue;
-                }
-                nextChunkPos = chunkPos;
-                break;
+            const bool candidateMissing = !rt.chunkBlases.contains(it->first);
+            const bool selectedMissing = !rt.chunkBlases.contains(pendingIt->first);
+            if ((it->second.highPriority != pendingIt->second.highPriority)
+                    ? it->second.highPriority
+                    : ((candidateMissing != selectedMissing)
+                           ? candidateMissing
+                           : distanceSquared(it->first) < distanceSquared(pendingIt->first))) {
+                pendingIt = it;
             }
         }
-        if (!nextChunkPos.has_value()) {
-            break;
-        }
-        const glm::ivec3 chunkPos = nextChunkPos.value();
-
-        auto pendingIt = m_pendingChunkUploads.find(chunkPos);
         if (pendingIt == m_pendingChunkUploads.end()) {
-            continue;
+            break;
         }
+        const glm::ivec3 chunkPos = pendingIt->first;
         PendingChunkUpload pendingUpload = std::move(pendingIt->second);
         m_pendingChunkUploads.erase(pendingIt);
-        const bool highPriorityUpload = dequeuedHighPriority || pendingUpload.highPriority;
+        const bool highPriorityUpload = pendingUpload.highPriority;
 
         auto cpuMeshIt = cpuChunkMeshes.find(chunkPos);
         if (cpuMeshIt == cpuChunkMeshes.end()) {
@@ -817,13 +830,15 @@ size_t VulkanRayTracingScene::processPendingUploads(
             continue;
         }
         const CpuChunkMesh &cpuMesh = cpuMeshIt->second;
-        if (cpuMesh.revision != pendingUpload.revision) {
+        const uint64_t geometryRevision =
+            cpuMesh.rtGeometryRevision != 0 ? cpuMesh.rtGeometryRevision : cpuMesh.revision;
+        if (geometryRevision != pendingUpload.revision) {
             ++processed;
             continue;
         }
 
         auto existingIt = rt.chunkBlases.find(chunkPos);
-        if (existingIt != rt.chunkBlases.end() && existingIt->second.revision == cpuMesh.revision) {
+        if (existingIt != rt.chunkBlases.end() && existingIt->second.revision == geometryRevision) {
             existingIt->second.lastTouchedFrame = frameCounter;
             ++processed;
             continue;
@@ -839,7 +854,7 @@ size_t VulkanRayTracingScene::processPendingUploads(
 
         PendingBuild build{};
         build.pending.chunkPos = chunkPos;
-        build.pending.revision = cpuMesh.revision;
+        build.pending.ticket.revision = geometryRevision;
         build.pending.highPriority = highPriorityUpload;
         build.sourceVertices = &cpuMesh.rtVertices;
         build.sourceIndices = &cpuMesh.indices;
@@ -871,6 +886,11 @@ size_t VulkanRayTracingScene::processPendingUploads(
             m_streamingStats.lastBuildDeferredPrimitives = primitiveCount;
             m_streamingStats.lastBuildDeferredBytes = buildUploadBytes;
             requeuePendingUpload(chunkPos, pendingUpload, highPriorityUpload);
+            if (singleBuildOverBudget && !highPriorityUpload && !allowOversizedBuild &&
+                selectedPrimitives == 0u) {
+                deferredOversized.insert(chunkPos);
+                continue;
+            }
             break;
         }
 
@@ -909,7 +929,7 @@ size_t VulkanRayTracingScene::processPendingUploads(
         build.geometry.geometry.triangles = build.triangles;
 
         build.buildInfo.type = vk::AccelerationStructureTypeKHR::eBottomLevel;
-        build.buildInfo.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
+        build.buildInfo.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild;
         build.buildInfo.mode = vk::BuildAccelerationStructureModeKHR::eBuild;
         build.buildInfo.geometryCount = 1;
         build.buildInfo.pGeometries = &build.geometry;
@@ -934,7 +954,7 @@ size_t VulkanRayTracingScene::processPendingUploads(
         asCreateInfo.size = sizeInfo.accelerationStructureSize;
         asCreateInfo.type = vk::AccelerationStructureTypeKHR::eBottomLevel;
         build.pending.built.as = vk::raii::AccelerationStructureKHR(device, asCreateInfo);
-        build.pending.built.revision = build.pending.revision;
+        build.pending.built.revision = build.pending.ticket.revision;
         build.pending.built.primitiveCount = primitiveCount;
         build.pending.built.vertexBytes = build.pending.built.vertexCapacity;
         build.pending.built.indexBytes = build.pending.built.indexCapacity;
@@ -1084,6 +1104,22 @@ size_t VulkanRayTracingScene::processPendingUploads(
             alignDeviceAddress(scratchBaseAddress, rtScratchAlignment);
         vk::raii::CommandBuffer commandBuffer =
             VulkanUtils::beginSingleTimeCommands(device, rt.commandPool);
+        vk::raii::QueryPool timingQueries{nullptr};
+        uint32_t timestampValidBits = 0;
+        float timestampPeriod = 0.0f;
+        if (sampleRtTiming(frameCounter)) {
+            const auto queueFamilies = context.getPhysicalDevice().getQueueFamilyProperties();
+            timestampValidBits = queueFamilies[context.getRtBuildQueueFamily()].timestampValidBits;
+            timestampPeriod = context.getPhysicalDevice().getProperties().limits.timestampPeriod;
+        }
+        if (timestampValidBits != 0) {
+            vk::QueryPoolCreateInfo queryInfo{};
+            queryInfo.queryType = vk::QueryType::eTimestamp;
+            queryInfo.queryCount = 3;
+            timingQueries = vk::raii::QueryPool(device, queryInfo);
+            commandBuffer.resetQueryPool(*timingQueries, 0, 3);
+            commandBuffer.writeTimestamp(vk::PipelineStageFlagBits::eTopOfPipe, *timingQueries, 0);
+        }
         for (size_t i = 0; i < pendingBuilds.size(); ++i) {
             PendingBuild &build = pendingBuilds[i];
             if (build.vertexBytes == 0 || build.indexBytes == 0) {
@@ -1138,6 +1174,12 @@ size_t VulkanRayTracingScene::processPendingUploads(
                 {}
             );
 
+            if (timingQueries != nullptr && i == 0) {
+                commandBuffer.writeTimestamp(
+                    vk::PipelineStageFlagBits::eTransfer, *timingQueries, 1
+                );
+            }
+
             build.buildInfo.dstAccelerationStructure = *build.pending.built.as;
             build.buildInfo.scratchData.deviceAddress = scratchAddress;
             const std::array<vk::AccelerationStructureBuildRangeInfoKHR *, 1> rangeInfos = {
@@ -1163,10 +1205,18 @@ size_t VulkanRayTracingScene::processPendingUploads(
                 );
             }
         }
+        if (timingQueries != nullptr) {
+            commandBuffer.writeTimestamp(
+                vk::PipelineStageFlagBits::eBottomOfPipe, *timingQueries, 2
+            );
+        }
         commandBuffer.end();
         RtSceneState::PendingGpuBuildBatch batch{};
         batch.fence = vk::raii::Fence(device, vk::FenceCreateInfo{});
         batch.commandBuffer = std::move(commandBuffer);
+        batch.timingQueries = std::move(timingQueries);
+        batch.timestampValidBits = timestampValidBits;
+        batch.timestampPeriod = timestampPeriod;
         batch.submitFrame = frameCounter;
         batch.chunks.reserve(pendingBuilds.size());
         for (PendingBuild &build : pendingBuilds) {
@@ -1189,13 +1239,14 @@ size_t VulkanRayTracingScene::processPendingUploads(
         rt.pendingGpuBuildBatches.push_back(std::move(batch));
     } catch (const std::exception &e) {
         std::cerr << "[Vulkan][RT] Failed to build BLAS batch: " << e.what() << "\n";
-        return processed;
+        return 0;
     }
-    return processed;
+    return pendingBuilds.size();
 }
 
 void VulkanRayTracingScene::pollFinishedBlasBuilds(
-    VulkanContext &context, uint64_t frameCounter, bool forcePoll
+    VulkanContext &context, uint64_t frameCounter, bool forcePoll,
+    const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> *cpuChunkMeshes
 ) {
     if (!m_state || !m_state->ready) {
         return;
@@ -1236,7 +1287,7 @@ void VulkanRayTracingScene::pollFinishedBlasBuilds(
     };
     const vk::raii::Device &device = context.getDevice();
     for (auto it = rt.pendingGpuBuildBatches.begin(); it != rt.pendingGpuBuildBatches.end();) {
-        if (!forcePoll && frameCounter <= (it->submitFrame + 1u)) {
+        if (!forcePoll && frameCounter <= it->submitFrame) {
             ++it;
             continue;
         }
@@ -1257,27 +1308,80 @@ void VulkanRayTracingScene::pollFinishedBlasBuilds(
             continue;
         }
 
+        if (it->timingQueries != nullptr) {
+            std::array<uint64_t, 3> timestamps{};
+            const VkResult result = vkGetQueryPoolResults(
+                static_cast<VkDevice>(*device), static_cast<VkQueryPool>(*it->timingQueries),
+                0, 3, sizeof(timestamps), timestamps.data(), sizeof(uint64_t),
+                VK_QUERY_RESULT_64_BIT
+            );
+            if (result == VK_SUCCESS) {
+                const uint64_t mask = it->timestampValidBits >= 64
+                                          ? std::numeric_limits<uint64_t>::max()
+                                          : (uint64_t{1} << it->timestampValidBits) - 1u;
+                const uint64_t elapsed = (timestamps[2] - timestamps[0]) & mask;
+                const uint64_t uploadElapsed = (timestamps[1] - timestamps[0]) & mask;
+                uint64_t rtPrimitives = 0;
+                for (const auto &chunk : it->chunks) {
+                    rtPrimitives += chunk.built.primitiveCount;
+                }
+                std::cout << "[Vulkan][Timing][BLAS] frame=" << it->submitFrame
+                          << " chunks=" << it->chunks.size()
+                          << " queueElapsedMs=" << (static_cast<double>(elapsed) * it->timestampPeriod / 1e6)
+                          << " uploadQueueElapsedMs=" << (static_cast<double>(uploadElapsed) * it->timestampPeriod / 1e6)
+                          << " rtPrimitives=" << rtPrimitives
+                          << "\n";
+            }
+        }
+
         bool sceneChanged = false;
         bool highPrioritySceneChanged = false;
         for (auto &chunkBuild : it->chunks) {
-            if (m_cancelledChunkBuilds.find(chunkBuild.chunkPos) != m_cancelledChunkBuilds.end()) {
-                m_cancelledChunkBuilds.erase(chunkBuild.chunkPos);
-                recycleChunkBlasBuffers(chunkBuild.built);
-                continue;
+            if (cpuChunkMeshes != nullptr && chunkBuild.chunkPos != kRtDummyChunkPos) {
+                const auto meshIt = cpuChunkMeshes->find(chunkBuild.chunkPos);
+                if (meshIt == cpuChunkMeshes->end() || meshIt->second.rtVertices.empty() ||
+                    meshIt->second.indices.empty()) {
+                    recycleChunkBlasBuffers(chunkBuild.built);
+                    continue;
+                }
+                const auto &mesh = meshIt->second;
+                const uint64_t currentRevision =
+                    mesh.rtGeometryRevision != 0 ? mesh.rtGeometryRevision : mesh.revision;
+                if (!chunkBuild.ticket.matches(currentRevision)) {
+                    recycleChunkBlasBuffers(chunkBuild.built);
+                    continue;
+                }
             }
             const auto pendingIt = m_pendingChunkUploads.find(chunkBuild.chunkPos);
-            if (pendingIt != m_pendingChunkUploads.end() &&
-                pendingIt->second.revision > chunkBuild.revision) {
+            const std::optional<uint64_t> queuedRevision =
+                pendingIt != m_pendingChunkUploads.end()
+                    ? std::optional<uint64_t>{pendingIt->second.revision} : std::nullopt;
+            if (!chunkBuild.ticket.canPublish(queuedRevision)) {
                 recycleChunkBlasBuffers(chunkBuild.built);
                 continue;
             }
+
+            // Build inputs are no longer read once the batch fence signals. Keep
+            // them in the pool for the next chunk instead of retaining two GPU
+            // buffers for the lifetime of every resident acceleration structure.
+            recycleReusableBlasBuffer(
+                rt.reusableBlasVertexBuffers, chunkBuild.built.vertexBuffer,
+                chunkBuild.built.vertexCapacity
+            );
+            recycleReusableBlasBuffer(
+                rt.reusableBlasIndexBuffers, chunkBuild.built.indexBuffer,
+                chunkBuild.built.indexCapacity
+            );
+            chunkBuild.built.vertexBytes = 0;
+            chunkBuild.built.indexBytes = 0;
+            chunkBuild.built.vertexCapacity = 0;
+            chunkBuild.built.indexCapacity = 0;
 
             auto existingIt = rt.chunkBlases.find(chunkBuild.chunkPos);
             if (existingIt != rt.chunkBlases.end()) {
                 RtSceneState::RetiredChunkBlas retired{};
                 subtractResidentBytes(chunkBlasBytes(existingIt->second));
                 retired.blas = std::move(existingIt->second);
-                retired.retireFrame = frameCounter + kRtRetireFrameLag;
                 rt.retiredChunkBlases.push_back(std::move(retired));
                 rt.chunkBlases.erase(existingIt);
             }
@@ -1308,15 +1412,14 @@ void VulkanRayTracingScene::removeChunkGeometry(uint64_t frameCounter, const glm
     }
 
     m_pendingChunkUploads.erase(chunkPos);
-    m_pendingChunkUploadSet.erase(chunkPos);
-    m_highPriorityChunkUploadPending.erase(chunkPos);
 
     RtSceneState &rt = *m_state;
-    const bool hasCachedBlas = (rt.chunkBlases.find(chunkPos) != rt.chunkBlases.end());
-    if (hasCachedBlas) {
-        m_cancelledChunkBuilds.erase(chunkPos);
-    } else {
-        m_cancelledChunkBuilds.insert(chunkPos);
+    for (auto &batch : rt.pendingGpuBuildBatches) {
+        for (auto &build : batch.chunks) {
+            if (build.chunkPos == chunkPos) {
+                build.ticket.cancelled = true;
+            }
+        }
     }
     const bool wasActive = (rt.activeChunkBlases.erase(chunkPos) > 0);
     auto it = rt.chunkBlases.find(chunkPos);
@@ -1330,7 +1433,8 @@ void VulkanRayTracingScene::removeChunkGeometry(uint64_t frameCounter, const glm
 }
 
 void VulkanRayTracingScene::updateActiveChunkRadius(
-    uint64_t frameCounter, const glm::ivec3 &centerChunk, int radiusChunks
+    uint64_t frameCounter, const glm::ivec3 &centerChunk, int radiusChunks,
+    const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuChunkMeshes
 ) {
     if (!m_state || !m_state->ready) {
         return;
@@ -1338,11 +1442,30 @@ void VulkanRayTracingScene::updateActiveChunkRadius(
 
     RtSceneState &rt = *m_state;
     bool changed = false;
+    const auto hasGeometry = [&cpuChunkMeshes](const glm::ivec3 &pos) {
+        const auto it = cpuChunkMeshes.find(pos);
+        return it != cpuChunkMeshes.end() && !it->second.rtVertices.empty() &&
+               !it->second.indices.empty();
+    };
+    for (auto it = m_pendingChunkUploads.begin(); it != m_pendingChunkUploads.end();) {
+        if (!hasGeometry(it->first)) {
+            it = m_pendingChunkUploads.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    for (auto &batch : rt.pendingGpuBuildBatches) {
+        for (auto &build : batch.chunks) {
+            if (build.chunkPos != kRtDummyChunkPos && !hasGeometry(build.chunkPos)) {
+                build.ticket.cancelled = true;
+            }
+        }
+    }
     const int pruneRadiusChunks =
         (radiusChunks < 0) ? radiusChunks : radiusChunks + kRtActiveRadiusHysteresisChunks;
     for (auto it = rt.activeChunkBlases.begin(); it != rt.activeChunkBlases.end();) {
         if (*it == kRtDummyChunkPos ||
-            isWithinRtChunkRadius(*it, centerChunk, pruneRadiusChunks)) {
+            (hasGeometry(*it) && isWithinRtChunkRadius(*it, centerChunk, pruneRadiusChunks))) {
             ++it;
             continue;
         }
@@ -1351,7 +1474,9 @@ void VulkanRayTracingScene::updateActiveChunkRadius(
     }
 
     for (auto &[chunkPos, chunkBlas] : rt.chunkBlases) {
-        if (chunkPos == kRtDummyChunkPos ||
+        const auto meshIt = cpuChunkMeshes.find(chunkPos);
+        if (chunkPos == kRtDummyChunkPos || meshIt == cpuChunkMeshes.end() ||
+            meshIt->second.rtVertices.empty() || meshIt->second.indices.empty() ||
             !isWithinRtChunkRadius(chunkPos, centerChunk, radiusChunks)) {
             continue;
         }
@@ -1369,16 +1494,15 @@ void VulkanRayTracingScene::updateActiveChunkRadius(
 
 bool VulkanRayTracingScene::hasPendingBuildWork() const noexcept {
     if (!m_state || !m_state->ready) {
-        return !m_highPriorityChunkUploadQueue.empty() || !m_pendingChunkUploadQueue.empty() ||
-               !m_pendingChunkUploads.empty();
+        return !m_pendingChunkUploads.empty();
     }
-    return !m_highPriorityChunkUploadQueue.empty() || !m_pendingChunkUploadQueue.empty() ||
-           !m_pendingChunkUploads.empty() ||
+    return !m_pendingChunkUploads.empty() ||
            !m_state->pendingGpuBuildBatches.empty() || m_state->pendingTlasBuild.has_value();
 }
 
 bool VulkanRayTracingScene::hasHighPriorityBuildWork() const noexcept {
-    if (!m_highPriorityChunkUploadQueue.empty() || !m_highPriorityChunkUploadPending.empty()) {
+    if (std::any_of(m_pendingChunkUploads.begin(), m_pendingChunkUploads.end(),
+                    [](const auto &entry) { return entry.second.highPriority; })) {
         return true;
     }
     if (!m_state || !m_state->ready) {
@@ -1434,7 +1558,9 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
         }
 
         std::vector<VkAccelerationStructureInstanceKHR> instances;
+        std::vector<vk::AccelerationStructureKHR> references;
         instances.reserve(rt.activeChunkBlases.size());
+        references.reserve(rt.activeChunkBlases.size());
         for (const glm::ivec3 &chunkPos : rt.activeChunkBlases) {
             auto chunkIt = rt.chunkBlases.find(chunkPos);
             if (chunkIt == rt.chunkBlases.end()) {
@@ -1461,6 +1587,7 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
             instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
             instance.accelerationStructureReference = blasAddress;
             instances.push_back(instance);
+            references.push_back(*chunkBlas.as);
             chunkBlas.lastTouchedFrame = frameCounter;
         }
 
@@ -1474,6 +1601,8 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
         );
 
         RtSceneState::PendingGpuTlasBuild pending{};
+        pending.referencedBlases = std::move(references);
+        pending.highPriority = m_highPriorityTlasRefreshRequested;
         const vk::DeviceSize instanceBytes = static_cast<vk::DeviceSize>(
             std::max<size_t>(1u, instances.size()) * sizeof(VkAccelerationStructureInstanceKHR)
         );
@@ -1595,7 +1724,27 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
         const std::array<vk::AccelerationStructureBuildGeometryInfoKHR, 1> buildInfos = {buildInfo};
 
         pending.commandBuffer = VulkanUtils::beginSingleTimeCommands(device, rt.commandPool);
+        if (sampleRtTiming(frameCounter)) {
+            const auto families = context.getPhysicalDevice().getQueueFamilyProperties();
+            pending.timestampValidBits = families[context.getRtBuildQueueFamily()].timestampValidBits;
+            pending.timestampPeriod = context.getPhysicalDevice().getProperties().limits.timestampPeriod;
+            if (pending.timestampValidBits != 0) {
+                vk::QueryPoolCreateInfo queryInfo{};
+                queryInfo.queryType = vk::QueryType::eTimestamp;
+                queryInfo.queryCount = 2;
+                pending.timingQueries = vk::raii::QueryPool(device, queryInfo);
+                pending.commandBuffer.resetQueryPool(*pending.timingQueries, 0, 2);
+                pending.commandBuffer.writeTimestamp(
+                    vk::PipelineStageFlagBits::eTopOfPipe, *pending.timingQueries, 0
+                );
+            }
+        }
         pending.commandBuffer.buildAccelerationStructuresKHR(buildInfos, rangeInfos);
+        if (pending.timingQueries != nullptr) {
+            pending.commandBuffer.writeTimestamp(
+                vk::PipelineStageFlagBits::eBottomOfPipe, *pending.timingQueries, 1
+            );
+        }
         pending.commandBuffer.end();
         pending.fence = vk::raii::Fence(device, vk::FenceCreateInfo{});
         const vk::CommandBuffer rawCommandBuffer = *pending.commandBuffer;
@@ -1604,6 +1753,7 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
         submitInfo.pCommandBuffers = &rawCommandBuffer;
         context.getRtBuildQueue().submit(submitInfo, *pending.fence);
         pending.submitFrame = frameCounter;
+        pending.instanceCount = primitiveCount;
         rt.pendingTlasBuild = std::move(pending);
         m_streamingStats.lastTlasSubmitted = true;
         m_highPriorityTlasRefreshRequested = false;
@@ -1617,14 +1767,22 @@ bool VulkanRayTracingScene::rebuild(VulkanContext &context, uint64_t frameCounte
 
 VulkanRayTracingScene::StreamingStats VulkanRayTracingScene::streamingStats() const noexcept {
     StreamingStats stats = m_streamingStats;
-    stats.pendingNormalUploads = m_pendingChunkUploadQueue.size();
-    stats.pendingHighPriorityUploads = m_highPriorityChunkUploadQueue.size();
+    stats.pendingHighPriorityUploads = static_cast<size_t>(std::count_if(
+        m_pendingChunkUploads.begin(), m_pendingChunkUploads.end(),
+        [](const auto &entry) { return entry.second.highPriority; }
+    ));
+    stats.pendingNormalUploads = m_pendingChunkUploads.size() - stats.pendingHighPriorityUploads;
     stats.pendingTrackedUploads = m_pendingChunkUploads.size();
     if (m_state && m_state->ready) {
         stats.pendingGpuBuildBatches = m_state->pendingGpuBuildBatches.size();
         stats.pendingTlasBuild = m_state->pendingTlasBuild.has_value();
         stats.cachedBlasCount = m_state->chunkBlases.size();
-        stats.activeBlasCount = m_state->activeChunkBlases.size();
+        stats.activeRequestedCount = m_state->activeChunkBlases.size();
+        stats.publishedBlasCount = m_state->tlasReferencedBlases.size();
+        stats.activeBlasCount = static_cast<size_t>(std::count_if(
+            m_state->activeChunkBlases.begin(), m_state->activeChunkBlases.end(),
+            [this](const auto &pos) { return m_state->chunkBlases.contains(pos); }
+        ));
     }
     return stats;
 }
@@ -1640,7 +1798,7 @@ void VulkanRayTracingScene::pollFinishedTlasBuild(
     if (!rt.pendingTlasBuild.has_value()) {
         return;
     }
-    if (!forcePoll && frameCounter <= (rt.pendingTlasBuild->submitFrame + 1u)) {
+    if (!forcePoll && frameCounter <= rt.pendingTlasBuild->submitFrame) {
         return;
     }
 
@@ -1652,22 +1810,55 @@ void VulkanRayTracingScene::pollFinishedTlasBuild(
     if (status != vk::Result::eSuccess) {
         std::cerr << "[Vulkan][RT] TLAS build fence failed status=" << static_cast<int>(status)
                   << "\n";
+        m_highPriorityTlasRefreshRequested =
+            m_highPriorityTlasRefreshRequested || rt.pendingTlasBuild->highPriority;
         rt.pendingTlasBuild->reset();
         rt.pendingTlasBuild.reset();
+        m_dirty = true;
         return;
     }
 
+    if (rt.pendingTlasBuild->timingQueries != nullptr) {
+        const auto &pending = *rt.pendingTlasBuild;
+        std::array<uint64_t, 2> timestamps{};
+        const VkResult result = vkGetQueryPoolResults(
+            static_cast<VkDevice>(*context.getDevice()), static_cast<VkQueryPool>(*pending.timingQueries),
+            0, 2, sizeof(timestamps), timestamps.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT
+        );
+        if (result == VK_SUCCESS) {
+            const uint64_t mask = pending.timestampValidBits >= 64
+                                      ? std::numeric_limits<uint64_t>::max()
+                                      : (uint64_t{1} << pending.timestampValidBits) - 1u;
+            const uint64_t elapsed = (timestamps[1] - timestamps[0]) & mask;
+            std::cout << "[Vulkan][Timing][TLAS] frame=" << pending.submitFrame
+                      << " queueElapsedMs=" << (static_cast<double>(elapsed) * pending.timestampPeriod / 1e6)
+                      << " instances=" << pending.instanceCount << "\n";
+        }
+    }
+
     if (rt.tlas != nullptr) {
+        vk::raii::Fence completion{nullptr};
+        try {
+            rt.retiredTlases.reserve(rt.retiredTlases.size() + 1u);
+            completion = vk::raii::Fence(context.getDevice(), vk::FenceCreateInfo{});
+            const vk::SubmitInfo marker{};
+            context.getGraphicsQueue().submit(marker, *completion);
+        } catch (const std::exception &e) {
+            std::cerr << "[Vulkan][RT] Failed to retire TLAS: " << e.what() << "\n";
+            return;
+        }
         RtSceneState::RetiredTlas retired{};
         retired.as = std::move(rt.tlas);
         retired.asBuffer = std::move(rt.tlasAsBuffer);
         retired.asCapacity = rt.tlasAsBufferCapacity;
-        retired.retireFrame = frameCounter + kRtRetireFrameLag;
+        retired.graphicsCompletion = std::move(completion);
+        retired.referencedBlases = std::move(rt.tlasReferencedBlases);
         rt.retiredTlases.push_back(std::move(retired));
         rt.tlasAsBufferCapacity = 0;
     }
 
     rt.tlas = std::move(rt.pendingTlasBuild->as);
+    rt.tlasReferencedBlases = std::move(rt.pendingTlasBuild->referencedBlases);
     rt.tlasAsBuffer = std::move(rt.pendingTlasBuild->asBuffer);
     rt.tlasAsBufferCapacity = rt.pendingTlasBuild->asCapacity;
     m_activeTlas = (rt.tlas != nullptr)
