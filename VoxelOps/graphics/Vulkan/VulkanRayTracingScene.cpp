@@ -208,6 +208,7 @@ struct VulkanRayTracingScene::RtSceneState {
         DeviceBufferAllocation asBuffer{};
         vk::raii::AccelerationStructureKHR as{nullptr};
         uint64_t revision = 0;
+        bool fastTrace = false;
         uint32_t primitiveCount = 0;
         vk::DeviceSize vertexBytes = 0;
         vk::DeviceSize indexBytes = 0;
@@ -223,6 +224,7 @@ struct VulkanRayTracingScene::RtSceneState {
             indexBuffer.reset();
             vertexBuffer.reset();
             revision = 0;
+            fastTrace = false;
             primitiveCount = 0;
             vertexBytes = 0;
             indexBytes = 0;
@@ -596,6 +598,8 @@ void VulkanRayTracingScene::reset() {
     m_dirty = false;
     m_highPriorityTlasRefreshRequested = false;
     m_pendingChunkUploads.clear();
+    m_upgradeQuietSince = {};
+    m_lastUpgradeTime = {};
     if (!m_state) {
         return;
     }
@@ -674,6 +678,85 @@ bool VulkanRayTracingScene::uploadChunkGeometry(
 
 void VulkanRayTracingScene::setBuildPriorityCenter(const glm::ivec3 &centerChunk) noexcept {
     m_buildPriorityCenter = centerChunk;
+}
+
+void VulkanRayTracingScene::scheduleBlasUpgrade(
+    bool frameHasHeadroom,
+    const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuChunkMeshes
+) {
+    static const bool upgradesEnabled = [] {
+        const char *value = std::getenv("VOXELOPS_RT_BLAS_UPGRADES");
+        return value && (value[0] == '1' || value[0] == 'y' || value[0] == 'Y');
+    }();
+    if (!upgradesEnabled) {
+        return;
+    }
+    constexpr auto quietTime = std::chrono::seconds(1);
+    constexpr auto upgradeInterval = std::chrono::seconds(1);
+    // Limit a single, non-preemptible build. Larger BLASes remain fast-build.
+    constexpr uint32_t maxUpgradePrimitives = 512;
+    const bool hasNormalUpload = std::any_of(
+        m_pendingChunkUploads.begin(), m_pendingChunkUploads.end(),
+        [](const auto &entry) { return !entry.second.upgrade; }
+    );
+    if (!frameHasHeadroom || m_dirty || hasNormalUpload) {
+        for (auto it = m_pendingChunkUploads.begin(); it != m_pendingChunkUploads.end();) {
+            if (it->second.upgrade) {
+                it = m_pendingChunkUploads.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+    if (!m_state || !m_state->ready || !frameHasHeadroom || m_dirty ||
+        hasPendingBuildWork()) {
+        m_upgradeQuietSince = {};
+        return;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (m_upgradeQuietSince == std::chrono::steady_clock::time_point{}) {
+        m_upgradeQuietSince = now;
+        return;
+    }
+    if (now - m_upgradeQuietSince < quietTime ||
+        now - m_lastUpgradeTime < upgradeInterval) {
+        return;
+    }
+    RtSceneState &rt = *m_state;
+    auto selected = rt.chunkBlases.end();
+    int64_t selectedDistance = std::numeric_limits<int64_t>::max();
+    for (auto it = rt.chunkBlases.begin(); it != rt.chunkBlases.end(); ++it) {
+        const auto &blas = it->second;
+        if (it->first == kRtDummyChunkPos || blas.fastTrace ||
+            blas.primitiveCount > maxUpgradePrimitives ||
+            !rt.activeChunkBlases.contains(it->first) ||
+            rt.residentBlasBytes + 2u * blas.asCapacity > kRtBlasCacheBudgetBytes) {
+            continue;
+        }
+        const auto mesh = cpuChunkMeshes.find(it->first);
+        if (mesh == cpuChunkMeshes.end() || mesh->second.rtVertices.empty() ||
+            mesh->second.indices.empty()) {
+            continue;
+        }
+        const uint64_t revision = mesh->second.rtGeometryRevision != 0
+            ? mesh->second.rtGeometryRevision : mesh->second.revision;
+        if (revision != blas.revision) {
+            continue;
+        }
+        const int64_t x = static_cast<int64_t>(it->first.x) - m_buildPriorityCenter.x;
+        const int64_t z = static_cast<int64_t>(it->first.z) - m_buildPriorityCenter.z;
+        const int64_t distance = x * x + z * z;
+        if (selected == rt.chunkBlases.end() || distance < selectedDistance) {
+            selected = it;
+            selectedDistance = distance;
+        }
+    }
+    if (selected != rt.chunkBlases.end()) {
+        m_pendingChunkUploads.emplace(
+            selected->first, PendingChunkUpload{selected->second.revision, false, true}
+        );
+        m_lastUpgradeTime = now;
+    }
 }
 
 size_t VulkanRayTracingScene::processPendingUploads(
@@ -804,7 +887,9 @@ size_t VulkanRayTracingScene::processPendingUploads(
             }
             const bool candidateMissing = !rt.chunkBlases.contains(it->first);
             const bool selectedMissing = !rt.chunkBlases.contains(pendingIt->first);
-            if ((it->second.highPriority != pendingIt->second.highPriority)
+            if ((it->second.upgrade != pendingIt->second.upgrade)
+                    ? !it->second.upgrade
+                    : (it->second.highPriority != pendingIt->second.highPriority)
                     ? it->second.highPriority
                     : ((candidateMissing != selectedMissing)
                            ? candidateMissing
@@ -838,8 +923,15 @@ size_t VulkanRayTracingScene::processPendingUploads(
         }
 
         auto existingIt = rt.chunkBlases.find(chunkPos);
-        if (existingIt != rt.chunkBlases.end() && existingIt->second.revision == geometryRevision) {
+        if (existingIt != rt.chunkBlases.end() && existingIt->second.revision == geometryRevision &&
+            !pendingUpload.upgrade) {
             existingIt->second.lastTouchedFrame = frameCounter;
+            ++processed;
+            continue;
+        }
+        if (pendingUpload.upgrade &&
+            (existingIt == rt.chunkBlases.end() || existingIt->second.revision != geometryRevision ||
+             existingIt->second.fastTrace || !rt.activeChunkBlases.contains(chunkPos))) {
             ++processed;
             continue;
         }
@@ -929,7 +1021,9 @@ size_t VulkanRayTracingScene::processPendingUploads(
         build.geometry.geometry.triangles = build.triangles;
 
         build.buildInfo.type = vk::AccelerationStructureTypeKHR::eBottomLevel;
-        build.buildInfo.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild;
+        build.buildInfo.flags = pendingUpload.upgrade
+            ? vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace
+            : vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastBuild;
         build.buildInfo.mode = vk::BuildAccelerationStructureModeKHR::eBuild;
         build.buildInfo.geometryCount = 1;
         build.buildInfo.pGeometries = &build.geometry;
@@ -955,6 +1049,7 @@ size_t VulkanRayTracingScene::processPendingUploads(
         asCreateInfo.type = vk::AccelerationStructureTypeKHR::eBottomLevel;
         build.pending.built.as = vk::raii::AccelerationStructureKHR(device, asCreateInfo);
         build.pending.built.revision = build.pending.ticket.revision;
+        build.pending.built.fastTrace = pendingUpload.upgrade;
         build.pending.built.primitiveCount = primitiveCount;
         build.pending.built.vertexBytes = build.pending.built.vertexCapacity;
         build.pending.built.indexBytes = build.pending.built.indexCapacity;
@@ -1327,6 +1422,8 @@ void VulkanRayTracingScene::pollFinishedBlasBuilds(
                 }
                 std::cout << "[Vulkan][Timing][BLAS] frame=" << it->submitFrame
                           << " chunks=" << it->chunks.size()
+                          << " upgrades=" << std::count_if(it->chunks.begin(), it->chunks.end(),
+                                 [](const auto &chunk) { return chunk.built.fastTrace; })
                           << " queueElapsedMs=" << (static_cast<double>(elapsed) * it->timestampPeriod / 1e6)
                           << " uploadQueueElapsedMs=" << (static_cast<double>(uploadElapsed) * it->timestampPeriod / 1e6)
                           << " rtPrimitives=" << rtPrimitives
@@ -1359,6 +1456,19 @@ void VulkanRayTracingScene::pollFinishedBlasBuilds(
             if (!chunkBuild.ticket.canPublish(queuedRevision)) {
                 recycleChunkBlasBuffers(chunkBuild.built);
                 continue;
+            }
+            if (chunkBuild.built.fastTrace) {
+                const auto existingIt = rt.chunkBlases.find(chunkBuild.chunkPos);
+                const std::optional<uint64_t> currentRevision = existingIt == rt.chunkBlases.end()
+                    ? std::nullopt : std::optional<uint64_t>{existingIt->second.revision};
+                if (!rtUpgradeCanPublish(
+                        chunkBuild.ticket, currentRevision,
+                        existingIt != rt.chunkBlases.end() && existingIt->second.fastTrace,
+                        rt.activeChunkBlases.contains(chunkBuild.chunkPos),
+                        pendingIt != m_pendingChunkUploads.end())) {
+                    recycleChunkBlasBuffers(chunkBuild.built);
+                    continue;
+                }
             }
 
             // Build inputs are no longer read once the batch fence signals. Keep
@@ -1777,6 +1887,10 @@ VulkanRayTracingScene::StreamingStats VulkanRayTracingScene::streamingStats() co
         stats.pendingGpuBuildBatches = m_state->pendingGpuBuildBatches.size();
         stats.pendingTlasBuild = m_state->pendingTlasBuild.has_value();
         stats.cachedBlasCount = m_state->chunkBlases.size();
+        stats.fastTraceBlasCount = std::count_if(
+            m_state->chunkBlases.begin(), m_state->chunkBlases.end(),
+            [](const auto &entry) { return entry.second.fastTrace; }
+        );
         stats.activeRequestedCount = m_state->activeChunkBlases.size();
         stats.publishedBlasCount = m_state->tlasReferencedBlases.size();
         stats.activeBlasCount = static_cast<size_t>(std::count_if(

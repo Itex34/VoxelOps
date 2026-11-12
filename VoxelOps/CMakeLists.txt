@@ -218,6 +218,7 @@ if(NOT VOXELOPS_OPENGL_ONLY)
     )
 
     set(VK_SHADER_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders")
+    file(GLOB VK_SHADER_INCLUDES CONFIGURE_DEPENDS "${VK_SHADER_INCLUDE_DIR}/*.glsl")
     file(MAKE_DIRECTORY ${SPIRV_DIR})
 
     foreach(VKSHADER ${VKSHADERS})
@@ -228,7 +229,7 @@ if(NOT VOXELOPS_OPENGL_ONLY)
         add_custom_command(
             OUTPUT ${SPIRV}
             COMMAND ${GLSLC_EXECUTABLE} -I ${VK_SHADER_INCLUDE_DIR} ${VKSHADER_ABS} -o ${SPIRV}
-            DEPENDS ${VKSHADER_ABS}
+            DEPENDS ${VKSHADER_ABS} ${VK_SHADER_INCLUDES}
             COMMENT "Compiling shader ${FILE_NAME}"
             VERBATIM
         )
@@ -251,7 +252,7 @@ if(NOT VOXELOPS_OPENGL_ONLY)
         add_custom_command(
             OUTPUT ${SPIRV_RT}
             COMMAND ${GLSLC_EXECUTABLE} --target-env=vulkan1.2 -I ${VK_SHADER_INCLUDE_DIR} -DVOXELOPS_RAY_QUERY=1 ${VKSHADER_ABS} -o ${SPIRV_RT}
-            DEPENDS ${VKSHADER_ABS}
+            DEPENDS ${VKSHADER_ABS} ${VK_SHADER_INCLUDES}
             COMMENT "Compiling RT shader ${RT_FILE_NAME}"
             VERBATIM
         )
@@ -259,6 +260,22 @@ if(NOT VOXELOPS_OPENGL_ONLY)
 
 
         list(APPEND SPIRV_OUTPUTS ${SPIRV_RT})
+    endforeach()
+    # Diagnostic variants are selected only by VOXELOPS_PROFILE_RT_AB. They
+    # intentionally remove ray work and must never be used for normal rendering.
+    foreach(PROFILE_STAGE IN ITEMS PRIMARY_SUN INDIRECT SECONDARY_SUN SECOND_BOUNCE)
+        string(TOLOWER "${PROFILE_STAGE}" PROFILE_STAGE_LOWER)
+        set(PROFILE_SPIRV "${SPIRV_DIR}/VoxelTerrainGI_profile_${PROFILE_STAGE_LOWER}.frag.spv")
+        add_custom_command(
+            OUTPUT ${PROFILE_SPIRV}
+            COMMAND ${GLSLC_EXECUTABLE} --target-env=vulkan1.2 -I ${VK_SHADER_INCLUDE_DIR}
+                    -DVOXELOPS_RAY_QUERY=1 -DVOXELOPS_RT_PROFILE_NO_${PROFILE_STAGE}=1
+                    ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/VoxelTerrainGI.frag -o ${PROFILE_SPIRV}
+            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/graphics/Vulkan/shaders/VoxelTerrainGI.frag ${VK_SHADER_INCLUDES}
+            COMMENT "Compiling RT profiling shader ${PROFILE_STAGE_LOWER}"
+            VERBATIM
+        )
+        list(APPEND SPIRV_OUTPUTS ${PROFILE_SPIRV})
     endforeach()
     add_custom_target(VulkanShaders ALL DEPENDS ${SPIRV_OUTPUTS})
     add_dependencies(VoxelOps VulkanShaders)

@@ -1,0 +1,6 @@
+[Vulkan][RT profile] frame=0 stage=4 variant=0 triangles=100 chunkMs=5 gpuFrameMs=6
+[Vulkan][RT profile] frame=1 stage=4 variant=1 triangles=100 chunkMs=3 gpuFrameMs=4
+[Vulkan][RT profile] frame=2 stage=4 variant=1 triangles=100 chunkMs=2 gpuFrameMs=3
+[Vulkan][RT profile] frame=3 stage=4 variant=0 triangles=100 chunkMs=5 gpuFrameMs=6
+[Vulkan][RT profile] frame=4 stage=4 variant=0 triangles=100 chunkMs=9 gpuFrameMs=10
+[Vulkan][RT profile] frame=5 stage=4 variant=1 triangles=101 chunkMs=1 gpuFrameMs=2

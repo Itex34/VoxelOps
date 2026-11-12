@@ -11,10 +11,9 @@ bool sampleVoxelSolid(ivec3 voxel) {
     }
 
     ivec3 local = voxel - giParams.shadowOccupancyMinWordCount.xyz;
-    if (any(lessThan(local, ivec3(0))) ||
-        local.x >= int(giParams.shadowOccupancyDims.x) ||
-        local.y >= int(giParams.shadowOccupancyDims.y) ||
-        local.z >= int(giParams.shadowOccupancyDims.z)) {
+    // Unsigned conversion also rejects negative coordinates, so one vector
+    // comparison covers both sides of the occupancy bounds.
+    if (any(greaterThanEqual(uvec3(local), giParams.shadowOccupancyDims.xyz))) {
         return false;
     }
 
@@ -25,16 +24,17 @@ bool sampleVoxelSolid(ivec3 voxel) {
     if (wordIndex >= wordCount) {
         return false;
     }
-    uint mask = 1u << (linear & 31u);
-    return (shadowOccupancy.words[wordIndex] & mask) != 0u;
+    // The CPU derives this mask from the same block definitions previously
+    // used to build the occupancy buffer. Unknown IDs remain solid.
+    uint materialWord = traceMaterials.ids[linear >> 2u];
+    uint materialId = (materialWord >> ((linear & 3u) * 8u)) & 0xFFu;
+    uint solidMask = uint(giParams.shadowWorldBoundsZ.z);
+    return materialId >= 32u || ((solidMask >> (materialId & 31u)) & 1u) != 0u;
 }
 
 uint sampleVoxelMaterialId(ivec3 voxel) {
     ivec3 local = voxel - giParams.shadowOccupancyMinWordCount.xyz;
-    if (any(lessThan(local, ivec3(0))) ||
-        local.x >= int(giParams.shadowOccupancyDims.x) ||
-        local.y >= int(giParams.shadowOccupancyDims.y) ||
-        local.z >= int(giParams.shadowOccupancyDims.z)) {
+    if (any(greaterThanEqual(uvec3(local), giParams.shadowOccupancyDims.xyz))) {
         return 0u;
     }
 

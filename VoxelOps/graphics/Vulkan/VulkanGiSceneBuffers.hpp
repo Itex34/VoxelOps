@@ -79,21 +79,16 @@ private:
         glm::uvec3 dims{0u};
         uint32_t wordCount = 0;
         uint32_t voxelCount = 0;
-        std::vector<uint32_t> occupancyWords;
         std::vector<uint32_t> materialWords;
     };
 
     struct GiBufferSlot {
-        VulkanBuffer occupancyBuffer;
-        vk::DeviceSize occupancyCapacityBytes = 0;
         VulkanBuffer traceMaterialBuffer;
         vk::DeviceSize materialCapacityBytes = 0;
         uint64_t safeReuseAfterFrame = 0;
     };
 
     struct RetiredBuffers {
-        VulkanBuffer occupancyBuffer;
-        vk::DeviceSize occupancyCapacityBytes = 0;
         VulkanBuffer traceMaterialBuffer;
         vk::DeviceSize materialCapacityBytes = 0;
         uint64_t retireFrame = 0;
@@ -103,7 +98,6 @@ private:
         GiBufferSlot &slot,
         VulkanContext &context,
         uint64_t frameCounter,
-        vk::DeviceSize occupancyBytes,
         vk::DeviceSize materialBytes
     );
     void resetActiveState();
@@ -129,7 +123,6 @@ private:
     bool m_valid = false;
     std::vector<RetiredBuffers> m_retiredBuffers;
     std::unordered_map<glm::ivec3, CachedChunkSnapshot, IVec3Hash> m_chunkSnapshotCache;
-    std::vector<uint32_t> m_hostOccupancyWords;
     std::vector<uint32_t> m_hostMaterialWords;
 
     mutable std::mutex m_buildStateMutex;

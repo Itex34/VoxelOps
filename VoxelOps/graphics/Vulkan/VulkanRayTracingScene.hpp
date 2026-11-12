@@ -4,6 +4,7 @@
 #include <vulkan/vulkan.h>
 
 #include <cstddef>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -26,6 +27,7 @@ public:
         size_t pendingGpuBuildBatches = 0;
         bool pendingTlasBuild = false;
         size_t cachedBlasCount = 0;
+        size_t fastTraceBlasCount = 0;
         size_t activeBlasCount = 0;
         size_t activeRequestedCount = 0;
         size_t publishedBlasCount = 0;
@@ -77,6 +79,10 @@ public:
         bool allowOversizedBuild,
         const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuChunkMeshes
     );
+    void scheduleBlasUpgrade(
+        bool frameHasHeadroom,
+        const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> &cpuChunkMeshes
+    );
     void pollFinishedBlasBuilds(
         VulkanContext &context, uint64_t frameCounter, bool forcePoll = false,
         const std::unordered_map<glm::ivec3, CpuChunkMesh, IVec3Hash> *cpuChunkMeshes = nullptr
@@ -108,6 +114,7 @@ private:
     struct PendingChunkUpload {
         uint64_t revision = 0;
         bool highPriority = false;
+        bool upgrade = false;
     };
 
     std::unique_ptr<RtSceneState> m_state;
@@ -117,6 +124,8 @@ private:
     bool m_dirty = false;
     VkAccelerationStructureKHR m_activeTlas = VK_NULL_HANDLE;
     StreamingStats m_streamingStats{};
+    std::chrono::steady_clock::time_point m_upgradeQuietSince{};
+    std::chrono::steady_clock::time_point m_lastUpgradeTime{};
 
     void trimInactiveBlasCache(uint64_t frameCounter);
 };

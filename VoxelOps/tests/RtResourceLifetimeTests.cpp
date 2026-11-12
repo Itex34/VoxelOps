@@ -39,5 +39,14 @@ int main() {
         !reloaded.canPublish(std::nullopt) || reloaded.canPublish(13)) {
         return EXIT_FAILURE;
     }
+    if (!rtUpgradeCanPublish(reloaded, 12, false, true, false) ||
+        rtUpgradeCanPublish(first, 10, false, true, false) ||
+        rtUpgradeCanPublish(reloaded, std::nullopt, false, true, false) ||
+        rtUpgradeCanPublish(reloaded, 13, false, true, false) ||
+        rtUpgradeCanPublish(reloaded, 12, true, true, false) ||
+        rtUpgradeCanPublish(reloaded, 12, false, false, false) ||
+        rtUpgradeCanPublish(reloaded, 12, false, true, true)) {
+        return EXIT_FAILURE;
+    }
     return EXIT_SUCCESS;
 }

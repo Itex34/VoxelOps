@@ -54,8 +54,8 @@ vec3 computeVoxelFaceNormalFromHit(ivec3 hitVoxel, vec3 hitPos, vec3 rayDir) {
         n.z = (local.z >= 0.0) ? 1.0 : -1.0;
     }
 
-    vec3 dir = safeNormalize(rayDir);
-    if (dot(n, dir) > 0.0) {
+    // Only the sign matters here; scaling a nonzero direction cannot change it.
+    if (dot(n, rayDir) > 0.0) {
         n = -n;
     }
     return n;

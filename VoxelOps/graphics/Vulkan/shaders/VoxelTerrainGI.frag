@@ -14,7 +14,7 @@ layout(set = 2, binding = 0, std140) uniform GiLightingParams {
     ivec4 shadowOccupancyMinWordCount; // xyz = min occupancy blocks, w = word count
     uvec4 shadowOccupancyDims;         // xyz = occupancy dims
     ivec4 shadowWorldBoundsXy;         // x = minX, y = maxX, z = minY, w = maxY
-    ivec4 shadowWorldBoundsZ;          // x = minZ, y = maxZ
+    ivec4 shadowWorldBoundsZ;          // x = minZ, y = maxZ, z = material solidity mask
     vec4 shadowParams;                 // x = max trace distance, y = normal bias, z = max bounces, w = sky intensity
     vec4 screenParams;                 // x = RT render scale, y = RT ray density, zw = inv viewport size
     vec4 denoiseParams;                // x = temporal blend, y = spatial weight, z = luma phi, w = moments blend
@@ -24,9 +24,6 @@ layout(set = 2, binding = 0, std140) uniform GiLightingParams {
     mat4 nrdPrevViewProjection;
 } giParams;
 
-layout(set = 2, binding = 1, std430) readonly buffer ShadowOccupancyWords {
-    uint words[];
-} shadowOccupancy;
 layout(set = 2, binding = 2, std430) readonly buffer TraceMaterialIds {
     uint ids[];
 } traceMaterials;

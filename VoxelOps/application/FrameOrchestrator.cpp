@@ -13,6 +13,7 @@
 #include <cassert>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <utility>
@@ -23,6 +24,14 @@ namespace {
     using Clock = std::chrono::steady_clock;
     constexpr double kBotPredictionStep = 1.0 / 30.0;
     constexpr uint32_t kBotMaxUnackedShootLeadTicks = 12;
+
+    bool stationaryProfilingBot() {
+        static const bool enabled = [] {
+            const char *value = std::getenv("VOXELOPS_PROFILE_STATIONARY_BOT");
+            return value != nullptr && value[0] == '1';
+        }();
+        return enabled;
+    }
 
     float MeasureMs(const Clock::time_point &start, const Clock::time_point &end) {
         return static_cast<float>(
@@ -145,6 +154,16 @@ ClientInputIntent FrameOrchestrator::buildBotInputIntent() {
         return intent;
     }
 
+    if (stationaryProfilingBot()) {
+        m_botInput = {};
+        m_botInput.yaw = 0.0f;
+        m_botInput.pitch = -10.0f;
+        intent.gameplayInputEnabled = true;
+        intent.networkInput = m_botInput;
+        rt.gameplay.player->setNetworkInputState(intent.networkInput);
+        return intent;
+    }
+
     if (!m_botInitialized) {
         uint32_t seed = 0;
         if (m_context.simulation.botSeed != nullptr && *m_context.simulation.botSeed != 0) {
@@ -227,6 +246,9 @@ ClientInputIntent FrameOrchestrator::buildBotInputIntent() {
 }
 
 void FrameOrchestrator::maybeSendBotShot() {
+    if (stationaryProfilingBot()) {
+        return;
+    }
     Runtime &rt = runtime();
     if (!rt.combat.localPlayerAlive || !rt.network.clientNet.IsConnected() ||
         !rt.combat.equippedGun || !rt.gameplay.player) {

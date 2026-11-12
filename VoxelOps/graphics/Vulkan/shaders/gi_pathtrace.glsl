@@ -106,7 +106,11 @@ float computePathTracedDirectSunNormalized(
         return 0.0;
     }
 
+#if defined(VOXELOPS_RT_PROFILE_NO_PRIMARY_SUN)
+    float visibility = 1.0;
+#else
     float visibility = traceSunVisibilityNormalized(worldPos, normalWs, sunDir, maxDistance);
+#endif
     return ndl * giParams.tuning.z * visibility;
 }
 
@@ -114,6 +118,12 @@ float computePathTracedDirectSunNormalized(
 
 
 PathTraceResult tracePathTracedIndirect(vec3 worldPos, vec3 normal) {
+#if defined(VOXELOPS_RT_PROFILE_NO_INDIRECT)
+    PathTraceResult disabledResult;
+    disabledResult.indirect = vec3(0.0);
+    disabledResult.candidateHitDistance = max(1.0, giParams.shadowParams.x);
+    return disabledResult;
+#else
     uint raysPerPixel = clamp(giParams.pathConfig.x, 1u, 8u);
     uint maxBounces = uint(clamp(giParams.shadowParams.z, 1.0, 4.0));
     float maxDistance = max(1.0, giParams.shadowParams.x);
@@ -137,9 +147,14 @@ PathTraceResult tracePathTracedIndirect(vec3 worldPos, vec3 normal) {
         vec3 sampleRadiance = vec3(0.0);
 
         for (uint bounce = 0u; bounce < maxBounces; ++bounce) {
+#if defined(VOXELOPS_RT_PROFILE_NO_SECOND_BOUNCE)
+            if (bounce >= 1u) {
+                break;
+            }
+#endif
             TraceResult hit = traceSceneNormalized(rayOrigin, rayDir, maxDistance);
             if (!hit.hit) {
-                sampleRadiance += throughput * skyRadiance(rayDir) * skyIntensity;
+                sampleRadiance += throughput * skyRadiance(rayDir, sunDir) * skyIntensity;
                 break;
             }
             if (bounce == 0u) {
@@ -153,7 +168,7 @@ PathTraceResult tracePathTracedIndirect(vec3 worldPos, vec3 normal) {
                     sampleHitMaterialIdFallback(hit.hitVoxel, hitPos, hit.hitNormal, rayDir);
             }
             if (materialId == 0u) {
-                sampleRadiance += throughput * skyRadiance(rayDir) * skyIntensity;
+                sampleRadiance += throughput * skyRadiance(rayDir, sunDir) * skyIntensity;
                 break;
             }
             vec3 hitNormal = safeNormalize(hit.hitNormal);
@@ -163,7 +178,11 @@ PathTraceResult tracePathTracedIndirect(vec3 worldPos, vec3 normal) {
 
             float ndlSun = max(dot(hitNormal, sunDir), 0.0);
             if (ndlSun > 0.0) {
+#if defined(VOXELOPS_RT_PROFILE_NO_SECONDARY_SUN)
+                float sunVisibility = 1.0;
+#else
                 float sunVisibility = traceSunVisibility(hitPos, hitNormal, sunDir, maxDistance);
+#endif
                 vec3 sunRadiance = vec3(1.0, 0.92, 0.76) * (giParams.tuning.z * ndlSun * sunVisibility);
                 sampleRadiance += throughput * albedo * sunRadiance;
             }
@@ -194,5 +213,6 @@ PathTraceResult tracePathTracedIndirect(vec3 worldPos, vec3 normal) {
     outResult.indirect = radianceAccum / float(raysPerPixel);
     outResult.candidateHitDistance = clamp(hitDistanceAccum / float(raysPerPixel), 0.0, maxDistance);
     return outResult;
+#endif
 }
 

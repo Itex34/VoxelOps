@@ -125,6 +125,16 @@ private:
     RenderPass m_renderPass;
     RenderPass m_compositeRenderPass;
     Pipeline m_chunkPipeline;
+    // Present only in explicit diagnostic runs; normal rendering uses m_chunkPipeline.
+    Pipeline m_rtProfilePipeline;
+    int m_rtProfileStage = 0;
+    struct RtProfileImage {
+        uint32_t submittedFrame = 0;
+        uint64_t triangles = 0;
+        bool variant = false;
+        bool valid = false;
+    };
+    std::vector<RtProfileImage> m_rtProfileImages;
     Pipeline m_modelPipeline;
     FrameSync m_frameSync;
     UploadContext m_uploadContext;

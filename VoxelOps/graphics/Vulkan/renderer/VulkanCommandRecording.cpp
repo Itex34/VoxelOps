@@ -196,8 +196,23 @@ float VulkanRenderer::recordChunkPass(
     vk::DescriptorSet giDescriptorSet
 ) {
     const auto chunkCpuStart = std::chrono::steady_clock::now();
-    m_chunkPipeline.bind(commandBuffer);
-    m_chunkPipeline.pushViewProjection(commandBuffer, viewProjection);
+    // Reverse the order in successive pairs to avoid associating a shader
+    // permanently with one temporal sampling parity or frame slot.
+    const bool profileVariant = m_rtProfileStage != 0 &&
+                                ((m_frameCounterLow & 1u) != ((m_frameCounterLow >> 1u) & 1u));
+    Pipeline &chunkPipeline = profileVariant ? m_rtProfilePipeline : m_chunkPipeline;
+    if (m_rtProfileStage != 0 && imageIndex < m_rtProfileImages.size()) {
+        auto &profile = m_rtProfileImages[imageIndex];
+        profile.submittedFrame = m_frameCounterLow;
+        profile.variant = profileVariant;
+        profile.triangles = 0;
+        for (const auto &command : frameData.indirectCommands) {
+            profile.triangles += (static_cast<uint64_t>(command.indexCount) / 3u) * command.instanceCount;
+        }
+        profile.valid = true;
+    }
+    chunkPipeline.bind(commandBuffer);
+    chunkPipeline.pushViewProjection(commandBuffer, viewProjection);
 
     vk::DescriptorSet lastChunkTextureDescriptorSet = VK_NULL_HANDLE;
     bool hasBoundChunkDescriptorSet = false;
@@ -227,7 +242,7 @@ float VulkanRenderer::recordChunkPass(
                 if (!hasBoundChunkDescriptorSet || textureDescriptorSet != lastChunkTextureDescriptorSet) {
                     commandBuffer.bindDescriptorSets(
                         vk::PipelineBindPoint::eGraphics,
-                        *m_chunkPipeline.getLayout(),
+                        *chunkPipeline.getLayout(),
                         0,
                         descriptorSets,
                         {}
@@ -314,7 +329,7 @@ float VulkanRenderer::recordChunkPass(
                         textureDescriptorSet != lastChunkTextureDescriptorSet) {
                         commandBuffer.bindDescriptorSets(
                             vk::PipelineBindPoint::eGraphics,
-                            *m_chunkPipeline.getLayout(),
+                            *chunkPipeline.getLayout(),
                             0,
                             descriptorSets,
                             {}

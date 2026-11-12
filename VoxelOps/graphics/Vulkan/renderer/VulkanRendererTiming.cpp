@@ -1,5 +1,6 @@
 #include "VulkanRenderer.hpp"
 #include "../vulkan/VulkanContext.hpp"
+#include <iostream>
 
 void VulkanRenderer::updateGpuTimingStatsForImage(uint32_t imageIndex) {
     if (!m_timestampQueriesEnabled || imageIndex >= m_timestampQueryPools.size()) {
@@ -46,4 +47,13 @@ void VulkanRenderer::updateGpuTimingStatsForImage(uint32_t imageIndex) {
     m_lastFrameTimingStats.gpuCompositePassMs = deltaMs(ticks[5], ticks[6]);
     m_lastFrameTimingStats.gpuUiPassMs = m_lastFrameTimingStats.gpuCompositePassMs;
     m_lastFrameTimingStats.gpuFrameMs = deltaMs(ticks[0], ticks[6]);
+    if (m_rtProfileStage != 0 && imageIndex < m_rtProfileImages.size() &&
+        m_rtProfileImages[imageIndex].valid) {
+        const auto &profile = m_rtProfileImages[imageIndex];
+        std::cout << "[Vulkan][RT profile] frame=" << profile.submittedFrame
+                  << " stage=" << m_rtProfileStage << " variant=" << (profile.variant ? 1 : 0)
+                  << " triangles=" << profile.triangles
+                  << " chunkMs=" << m_lastFrameTimingStats.gpuChunkDrawMs
+                  << " gpuFrameMs=" << m_lastFrameTimingStats.gpuFrameMs << "\n";
+    }
 }

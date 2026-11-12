@@ -13,6 +13,7 @@
 
 #include <array>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -504,6 +505,40 @@ void VulkanRenderer::recreateSwapchainDependentResources() {
         chunkFragShader,
         renderPassColorAttachmentCount
     );
+    m_rtProfileStage = 0;
+    const char *profileStage = std::getenv("VOXELOPS_PROFILE_RT_AB");
+    const char *profileShader = nullptr;
+    if (profileStage != nullptr && !useRtShaderVariants) {
+        std::cerr << "[Vulkan][RT profile] Hardware ray queries are unavailable; profiling is disabled.\n";
+    }
+    if (profileStage != nullptr && useRtShaderVariants) {
+        if (std::strcmp(profileStage, "primary_sun") == 0) {
+            m_rtProfileStage = 1;
+            profileShader = "VoxelTerrainGI_profile_primary_sun.frag.spv";
+        } else if (std::strcmp(profileStage, "indirect") == 0) {
+            m_rtProfileStage = 2;
+            profileShader = "VoxelTerrainGI_profile_indirect.frag.spv";
+        } else if (std::strcmp(profileStage, "secondary_sun") == 0) {
+            m_rtProfileStage = 3;
+            profileShader = "VoxelTerrainGI_profile_secondary_sun.frag.spv";
+        } else if (std::strcmp(profileStage, "second_bounce") == 0) {
+            m_rtProfileStage = 4;
+            profileShader = "VoxelTerrainGI_profile_second_bounce.frag.spv";
+        } else {
+            std::cerr << "[Vulkan][RT profile] Unknown stage '" << profileStage
+                      << "'; expected primary_sun, indirect, secondary_sun or second_bounce.\n";
+        }
+    }
+    if (profileShader != nullptr) {
+        m_rtProfilePipeline.create(
+            device, m_renderPass.get(), m_fallbackArrayTexture.getDescriptorSetLayout(),
+            m_modelDescriptorSetLayout, m_giDescriptorSetLayout, PipelineVertexLayout::PackedVoxel,
+            "VoxelTerrainGI.vert.spv", profileShader, renderPassColorAttachmentCount
+        );
+        m_rtProfileImages.assign(m_framebuffers.size(), {});
+        std::cerr << "[Vulkan][RT profile] Alternating diagnostic shader '" << profileStage
+                  << "'; rendered lighting is intentionally modified.\n";
+    }
     m_modelPipeline.create(
         device,
         m_renderPass.get(),
@@ -522,6 +557,9 @@ void VulkanRenderer::recreateSwapchainDependentResources() {
     );
     createCommandBuffers();
     createTimestampResources();
+    if (m_rtProfileStage != 0 && !m_timestampQueriesEnabled) {
+        std::cerr << "[Vulkan][RT profile] GPU timestamps are unavailable; no timings will be logged.\n";
+    }
     m_frameSync.recreateSwapchainSync(device, m_framebuffers.size());
 
 #if VOXELOPS_IMGUI_VULKAN_BACKEND_AVAILABLE
@@ -551,6 +589,9 @@ void VulkanRenderer::cleanupSwapchainDependentResources() {
     cleanupNrdCompositePipeline();
     m_nativeUiRenderer.cleanup();
     m_chunkPipeline.cleanup();
+    m_rtProfilePipeline.cleanup();
+    m_rtProfileImages.clear();
+    m_rtProfileStage = 0;
     m_modelPipeline.cleanup();
     cleanupPerImageDrawResources();
     cleanupModelDescriptorResources();

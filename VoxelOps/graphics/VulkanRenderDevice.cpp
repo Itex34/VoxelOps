@@ -574,6 +574,11 @@ void VulkanRenderDevice::renderFrame(RenderScene &scene) {
             *m_context, m_frameCounter, false, scene.chunkWorld.cpuChunkMeshes
         );
         m_rtScene.pollFinishedTlasBuild(*m_context, m_frameCounter);
+        m_rtScene.scheduleBlasUpgrade(
+            !cpuChunkMeshesChanged && !cullingChunkChanged && frameMsSample < 10.0f &&
+                m_streamingBudgetFrameMsEma < 9.0f,
+            *scene.chunkWorld.cpuChunkMeshes
+        );
         const bool highPriorityRtWork = m_rtScene.hasHighPriorityBuildWork();
         const bool rtPendingBuildWork = m_rtScene.hasPendingBuildWork();
         uint64_t streamingSyncIntervalFrames = 4u;
@@ -784,6 +789,7 @@ void VulkanRenderDevice::renderFrame(RenderScene &scene) {
                       << " rtPendingGpuBatches=" << rtStats.pendingGpuBuildBatches
                       << " rtPendingTlas=" << (rtStats.pendingTlasBuild ? 1 : 0)
                       << " rtCachedBlas=" << rtStats.cachedBlasCount
+                      << " rtFastTraceBlas=" << rtStats.fastTraceBlasCount
                       << " rtActiveBlas=" << rtStats.activeRequestedCount
                       << " rtActiveCachedBlas=" << rtStats.activeBlasCount
                       << " rtActiveRequested=" << rtStats.activeRequestedCount

@@ -16,6 +16,14 @@ struct RtBuildTicket {
     }
 };
 
+inline bool rtUpgradeCanPublish(
+    const RtBuildTicket &ticket, std::optional<uint64_t> currentRevision,
+    bool currentIsFastTrace, bool active, bool hasQueuedBuild
+) noexcept {
+    return currentRevision && ticket.matches(*currentRevision) && !currentIsFastTrace &&
+           active && !hasQueuedBuild;
+}
+
 // A retired BLAS must remain alive while any live TLAS generation can refer to it.
 template <typename Handle, typename References, typename Retired, typename GetReferences>
 bool rtBlasIsReferenced(

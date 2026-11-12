@@ -29,6 +29,14 @@ add_subdirectory(VoxelOps)
 add_subdirectory(VoxelOps-Headless)
 add_subdirectory(Shared)
 
+if(BUILD_TESTING)
+    find_package(glm CONFIG REQUIRED)
+    add_executable(VoxelOpsGiMaterialSolidityTests VoxelOps/tests/GiMaterialSolidityTests.cpp)
+    target_compile_features(VoxelOpsGiMaterialSolidityTests PRIVATE cxx_std_20)
+    target_link_libraries(VoxelOpsGiMaterialSolidityTests PRIVATE glm::glm)
+    add_test(NAME VoxelOpsGiMaterialSolidityTests COMMAND VoxelOpsGiMaterialSolidityTests)
+endif()
+
 include(CheckIPOSupported)
 
 check_ipo_supported(
